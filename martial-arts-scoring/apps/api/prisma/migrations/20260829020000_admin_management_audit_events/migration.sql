@@ -1,0 +1,6 @@
+-- AlterEnum
+ALTER TYPE "audit_event_type" ADD VALUE 'TOURNAMENT_CREATED';
+ALTER TYPE "audit_event_type" ADD VALUE 'TOURNAMENT_UPDATED';
+ALTER TYPE "audit_event_type" ADD VALUE 'MATCH_CREATED';
+ALTER TYPE "audit_event_type" ADD VALUE 'MATCH_UPDATED';
+ALTER TYPE "audit_event_type" ADD VALUE 'MATCH_CODE_REGENERATED';

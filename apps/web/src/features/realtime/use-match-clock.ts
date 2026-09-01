@@ -1,0 +1,6 @@
+import { useEffect, useMemo, useState } from 'react';
+import { MatchStatus, type MatchSnapshot } from '@dau-vo/shared-types';
+export function calculateRemainingMs(endsAt: string | null, now: number): number | null { if (!endsAt) return null; const end = Date.parse(endsAt); return Number.isNaN(end) ? null : Math.max(0, end - now); }
+export function formatClock(ms: number | null): string { if (ms === null) return '--:--'; const total = Math.ceil(ms / 1000); return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`; }
+function endAt(snapshot: MatchSnapshot | null): string | null { if (!snapshot) return null; return snapshot.match.status === MatchStatus.BREAK ? snapshot.match.breakEndsAt : snapshot.round?.endsAt ?? null; }
+export function useMatchClock(snapshot: MatchSnapshot | null, offset: number) { const [now, setNow] = useState(Date.now()); useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), 100); return () => window.clearInterval(id); }, []); return useMemo(() => { const remainingMs = calculateRemainingMs(endAt(snapshot), now + offset); return { remainingMs, formatted: formatClock(remainingMs), awaitingServerTransition: remainingMs === 0 && snapshot?.match.status !== MatchStatus.FINISHED }; }, [now, offset, snapshot]); }

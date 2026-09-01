@@ -1,0 +1,9 @@
+{
+  "extends": "../../packages/tsconfig/react.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] },
+    "tsBuildInfoFile": "node_modules/.cache/tsconfig.app.tsbuildinfo"
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,60 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { LoggerModule } from 'nestjs-pino';
+
+import {
+  type EnvironmentVariables,
+  validateEnvironment,
+} from './config/environment';
+import { AdminAuthModule } from './admin-auth/admin-auth.module';
+import { AdminManagementModule } from './admin-management/admin-management.module';
+import { HealthModule } from './health/health.module';
+import { MatchAccessModule } from './match-access/match-access.module';
+import { PrismaModule } from './prisma/prisma.module';
+import { RealtimeCoreModule } from './realtime/realtime-core.module';
+import { RealtimeModule } from './realtime/realtime.module';
+import { RedisModule } from './redis/redis.module';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      cache: true,
+      envFilePath: ['.env', '../../.env'],
+      expandVariables: true,
+      isGlobal: true,
+      validate: validateEnvironment,
+    }),
+    LoggerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<EnvironmentVariables, true>) => ({
+        pinoHttp: {
+          level:
+            config.getOrThrow('NODE_ENV', { infer: true }) === 'production'
+              ? 'info'
+              : 'debug',
+          redact: {
+            censor: '[REDACTED]',
+            paths: [
+              'req.headers.authorization',
+              'req.headers.cookie',
+              'req.body.password',
+              'req.body.securityCode',
+              'req.body.takeoverToken',
+              'res.headers.set-cookie',
+            ],
+          },
+        },
+      }),
+    }),
+    PrismaModule,
+    RedisModule,
+    RealtimeCoreModule,
+    AdminAuthModule,
+    AdminManagementModule,
+    MatchAccessModule,
+    RealtimeModule,
+    HealthModule,
+  ],
+})
+export class AppModule {}
