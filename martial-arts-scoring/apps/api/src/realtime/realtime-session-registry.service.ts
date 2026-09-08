@@ -1,5 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type { MatchAccessRole } from '@prisma/client';
+
+import { RedisService } from '../redis/redis.service';
+
+const PRESENCE_TTL_SECONDS = 24 * 60 * 60;
 
 interface RealtimeConnectionRegistration {
   accessRole: MatchAccessRole;
@@ -16,45 +20,58 @@ export class RealtimeSessionRegistryService {
     Map<string, RealtimeConnectionRegistration>
   >();
 
-  register(registration: RealtimeConnectionRegistration): void {
+  constructor(@Inject(RedisService) private readonly redis: RedisService) {}
+
+  async register(registration: RealtimeConnectionRegistration): Promise<void> {
     const sessionConnections =
       this.connectionsBySession.get(registration.sessionId) ?? new Map();
     sessionConnections.set(registration.socketId, registration);
     this.connectionsBySession.set(registration.sessionId, sessionConnections);
+    await this.redis.incrementByWithExpiry(
+      this.presenceKey(registration.matchPublicId, registration.accessRole),
+      1,
+      PRESENCE_TTL_SECONDS,
+    );
   }
 
-  unregister(sessionId: string, socketId: string): void {
+  async unregister(sessionId: string, socketId: string): Promise<void> {
     const sessionConnections = this.connectionsBySession.get(sessionId);
 
     if (sessionConnections === undefined) {
       return;
     }
 
+    const registration = sessionConnections.get(socketId);
+
     sessionConnections.delete(socketId);
 
     if (sessionConnections.size === 0) {
       this.connectionsBySession.delete(sessionId);
     }
+
+    if (registration !== undefined) {
+      await this.redis.incrementByWithExpiry(
+        this.presenceKey(registration.matchPublicId, registration.accessRole),
+        -1,
+        PRESENCE_TTL_SECONDS,
+      );
+    }
   }
 
-  connectedSocketCount(
+  async connectedSocketCount(
     matchPublicId: string,
     accessRole: MatchAccessRole,
-  ): number {
-    let count = 0;
+  ): Promise<number> {
+    const value = await this.redis.get(
+      this.presenceKey(matchPublicId, accessRole),
+    );
 
-    for (const sessionConnections of this.connectionsBySession.values()) {
-      for (const connection of sessionConnections.values()) {
-        if (
-          connection.matchPublicId === matchPublicId &&
-          connection.accessRole === accessRole
-        ) {
-          count += 1;
-        }
-      }
+    if (value === null) {
+      return 0;
     }
 
-    return count;
+    const count = Number(value);
+    return Number.isSafeInteger(count) && count > 0 ? count : 0;
   }
 
   revokeSessions(sessionIds: readonly string[]): void {
@@ -67,5 +84,12 @@ export class RealtimeSessionRegistryService {
     for (const connection of connections) {
       connection.revoke();
     }
+  }
+
+  private presenceKey(
+    matchPublicId: string,
+    accessRole: MatchAccessRole,
+  ): string {
+    return `realtime:presence:${matchPublicId}:${accessRole}`;
   }
 }

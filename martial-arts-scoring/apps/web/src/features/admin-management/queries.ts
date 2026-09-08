@@ -9,6 +9,7 @@ export const tournamentQueryKeys = {
 
 export const matchQueryKeys = {
   detail: (id: string) => ['admin', 'matches', id] as const,
+  monitoring: (id: string) => ['admin', 'matches', id, 'monitoring'] as const,
 };
 
 export const tournamentsQueryOptions = queryOptions({
@@ -34,5 +35,13 @@ export function matchQueryOptions(id: string) {
   return queryOptions({
     queryKey: matchQueryKeys.detail(id),
     queryFn: () => adminManagementApi.getMatch(id),
+  });
+}
+
+export function matchMonitoringQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: matchQueryKeys.monitoring(id),
+    queryFn: () => adminManagementApi.getMatchMonitoring(id),
+    refetchInterval: 1_500,
   });
 }

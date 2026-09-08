@@ -12,6 +12,7 @@ import {
   RealtimeEvent,
   type MatchPresenceEntry,
   type MatchStatePayload,
+  type PublicMatchStatePayload,
   type PenaltyAddedPayload,
   type PenaltyAddResponse,
   type PresenceUpdatedPayload,
@@ -312,6 +313,20 @@ describe('Realtime match infrastructure (integration)', () => {
     return socket;
   }
 
+  function scoreboardSocket(publicMatchId: string): Socket {
+    const socket = io(baseUrl, {
+      auth: { matchPublicId: publicMatchId, mode: 'scoreboard' },
+      autoConnect: false,
+      forceNew: true,
+      path: SOCKET_PATH,
+      reconnection: false,
+      timeout: 2_500,
+      transports: ['websocket'],
+    });
+    sockets.add(socket);
+    return socket;
+  }
+
   async function requestSnapshot(
     socket: Socket,
     maliciousPayload?: Record<string, unknown>,
@@ -413,11 +428,37 @@ describe('Realtime match infrastructure (integration)', () => {
   });
 
   beforeEach(async () => {
+    await prisma.penalty.deleteMany({
+      where: { matchId: { in: [...createdMatchIds] } },
+    });
+    await prisma.scoreEvent.deleteMany({
+      where: {
+        matchId: { in: [...createdMatchIds] },
+        type: {
+          in: [ScoreEventType.PENALTY, ScoreEventType.REFEREE_POINT],
+        },
+      },
+    });
     await prisma.refereeVote.deleteMany({
+      where: { matchId: { in: [...createdMatchIds] } },
+    });
+    await prisma.scoringWindow.deleteMany({
+      where: { matchId: { in: [...createdMatchIds] } },
+    });
+    await prisma.round.deleteMany({
       where: { matchId: { in: [...createdMatchIds] } },
     });
     await prisma.matchSession.deleteMany({
       where: { matchId: { in: [...createdMatchIds] } },
+    });
+    await prisma.match.updateMany({
+      data: {
+        currentRound: null,
+        finishedAt: null,
+        startedAt: null,
+        status: 'WAITING',
+      },
+      where: { id: { in: [...createdMatchIds] } },
     });
     await redis.flushdb();
   });
@@ -479,6 +520,65 @@ describe('Realtime match infrastructure (integration)', () => {
       code: 'REALTIME_AUTHENTICATION_REQUIRED',
     });
     expect(socket.connected).toBe(false);
+  });
+
+  it('allows a read-only public scoreboard and never exposes participant data', async () => {
+    const socket = scoreboardSocket(primaryMatch.publicId);
+    const snapshot = waitForEvent<PublicMatchStatePayload>(
+      socket,
+      RealtimeEvent.PUBLIC_MATCH_STATE,
+    );
+    const connected = waitForConnect(socket);
+    socket.connect();
+    await connected;
+
+    const state = await snapshot;
+    expect(state).toMatchObject({
+      match: { publicId: primaryMatch.publicId, status: 'WAITING' },
+    });
+    expect(state).not.toHaveProperty('presence');
+    expect(state.match).not.toHaveProperty('id');
+    expect(state.athletes[0]).not.toHaveProperty('id');
+    await expect(startRound(socket)).resolves.toMatchObject({
+      error: { code: 'REALTIME_AUTHENTICATION_REQUIRED' },
+      ok: false,
+    });
+
+    const inspector = await login(
+      primaryMatch,
+      MatchAccessRole.INSPECTOR,
+      `${TEST_PREFIX}-public-scoreboard-inspector`,
+    );
+    const inspectorSocket = await connect(inspector.cookie);
+    const roundStarted = waitForEvent<PublicMatchStatePayload>(
+      socket,
+      RealtimeEvent.PUBLIC_MATCH_STATE,
+      (payload) => payload.match.status === 'ROUND_1_RUNNING',
+    );
+    await expect(startRound(inspectorSocket)).resolves.toMatchObject({
+      ok: true,
+    });
+    await expect(roundStarted).resolves.toMatchObject({
+      match: { publicId: primaryMatch.publicId, status: 'ROUND_1_RUNNING' },
+    });
+
+    const penaltyRecorded = waitForEvent<PublicMatchStatePayload>(
+      socket,
+      RealtimeEvent.PUBLIC_MATCH_STATE,
+      (payload) =>
+        payload.athletes.some(
+          (athlete) =>
+            athlete.color === 'RED' &&
+            athlete.score === 1 &&
+            athlete.violations === 1,
+        ),
+    );
+    await expect(
+      submitPenalty(inspectorSocket, AthleteColor.RED),
+    ).resolves.toMatchObject({
+      ok: true,
+    });
+    await expect(penaltyRecorded).resolves.toBeDefined();
   });
 
   it('rejects an authenticated WebSocket from an unexpected browser origin', async () => {

@@ -10,6 +10,7 @@ import { PenaltyService } from './penalty.service';
 import { ScoringService } from './scoring.service';
 
 @Module({
+  exports: [RealtimeMatchStateService],
   imports: [MatchAccessModule, PrismaModule, RealtimeCoreModule],
   providers: [
     MatchLifecycleService,

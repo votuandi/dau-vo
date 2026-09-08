@@ -3,6 +3,8 @@ import type { AthleteColor, MatchAccessRole, MatchStatus, RefereeSlot } from './
 export const RealtimeEvent = {
   MATCH_STATE: 'match:state',
   MATCH_STATE_REQUEST: 'match:state:request',
+  PUBLIC_MATCH_STATE: 'scoreboard:state',
+  PUBLIC_MATCH_STATE_REQUEST: 'scoreboard:state:request',
   MATCH_FINISHED: 'match:finished',
   PENALTY_ADD: 'penalty:add',
   PENALTY_ADDED: 'penalty:added',
@@ -86,6 +88,23 @@ export interface MatchStatePayload {
   presence: MatchPresenceEntry[];
   /** Present only on a direct `match:state:request` response. */
   viewer?: MatchStateViewer;
+}
+
+/**
+ * Deliberately minimal state exposed to public scoreboards. It omits internal
+ * database IDs, session/presence data, access codes, and referee vote details.
+ */
+export interface PublicMatchStatePayload {
+  activeRound: MatchRoundState | null;
+  athletes: Array<{
+    color: AthleteColor;
+    name: string;
+    organization: string;
+    score: number;
+    violations: number;
+  }>;
+  generatedAt: string;
+  match: Omit<MatchStateIdentity, 'id' | 'startedAt'>;
 }
 
 export interface RoundStartedPayload {

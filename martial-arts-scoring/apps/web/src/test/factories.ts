@@ -19,6 +19,15 @@ export const refereeSession: MatchAccessSession = {
   sessionId: 'session-referee-1',
 };
 
+export const inspectorSession: MatchAccessSession = {
+  deviceId: 'b2afd440-9705-48cc-a95f-4c17efaf0a2c',
+  expiresAt: '2030-01-01T00:00:00.000Z',
+  matchPublicId: 'A72K9P',
+  refereeSlot: null,
+  role: MatchRole.INSPECTOR,
+  sessionId: 'session-inspector',
+};
+
 export const acceptedRedVote: VoteAcceptedPayload = {
   athlete: AthleteColor.RED,
   matchPublicId: refereeSession.matchPublicId,

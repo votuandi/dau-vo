@@ -521,6 +521,23 @@ describe('Match participant authentication (integration)', () => {
     expectNoRawSecurityCode(loginResult.response.body, rawAccessCodes[role]);
   });
 
+  it('recovers a persisted browser session after ephemeral Redis state is reset', async () => {
+    const role = MatchAccessRole.REFEREE_1;
+    const loginResult = await login(role, `${TEST_PREFIX}-redis-reset-device`);
+    expect(loginResult.response.status).toBe(200);
+    const cookie = readCookie(loginResult.response.headers);
+
+    // Redis holds rate limits and other ephemeral coordination only. A loss of
+    // that cache must not invalidate a persisted participant session.
+    await redis.flushdb();
+
+    await request(app.getHttpServer())
+      .get('/api/match-access/session')
+      .set('Cookie', cookie.pair)
+      .expect(200)
+      .expect(loginResult.response.body);
+  });
+
   it('logs out, revokes the persisted session, and clears browser recovery', async () => {
     const role = MatchAccessRole.REFEREE_1;
     const authenticated = await login(role, `${TEST_PREFIX}-logout-device`);

@@ -8,7 +8,7 @@ import { AdminTournamentDetailPage } from '@/pages/admin-tournament-detail-page'
 import { AdminTournamentsPage } from '@/pages/admin-tournaments-page';
 import { MatchAccessPage } from '@/pages/match-access-page';
 import { NotFoundPage } from '@/pages/not-found-page';
-import { PlaceholderPage } from '@/pages/placeholder-page';
+import { ScoreboardPage } from '@/pages/scoreboard-page';
 import { MatchRole } from '@/types/shared';
 
 export const router = createBrowserRouter([
@@ -56,13 +56,11 @@ export const router = createBrowserRouter([
       },
       {
         path: 'bang-diem',
-        element: (
-          <PlaceholderPage
-            description="Bảng điểm công khai sẽ được triển khai ở giai đoạn sau."
-            route="/bang-diem"
-            title="Bảng điểm"
-          />
-        ),
+        element: <ScoreboardPage />,
+      },
+      {
+        path: 'bang-diem/:matchId',
+        element: <ScoreboardPage />,
       },
       {
         path: '*',

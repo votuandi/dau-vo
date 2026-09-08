@@ -88,3 +88,8 @@ export const PENALTY_FAILED_ERROR = {
 export function matchRoom(publicMatchId: string): string {
   return `match:${publicMatchId}`;
 }
+
+/** Public sockets are isolated from participant broadcasts and commands. */
+export function scoreboardRoom(publicMatchId: string): string {
+  return `scoreboard:${publicMatchId}`;
+}

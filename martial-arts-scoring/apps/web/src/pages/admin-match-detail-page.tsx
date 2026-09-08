@@ -2,6 +2,8 @@ import { useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { GeneratedAccessCodesPanel } from '@/components/generated-access-codes-panel';
+import { ClipboardCopyButton } from '@/components/ui/clipboard-copy-button';
+import { AdminMatchMonitoring } from '@/features/admin-management/admin-match-monitoring';
 import { Button } from '@/components/ui/button';
 import {
   accessCodeRoleLabels,
@@ -294,6 +296,7 @@ function AccessCodesManager({ match }: { readonly match: AdminMatch }) {
         <div className="mt-6">
           <GeneratedAccessCodesPanel
             accessCodes={generatedCodes}
+            matchPublicId={match.publicId}
             onDismiss={() => {
               setGeneratedCodes([]);
             }}
@@ -400,7 +403,12 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
           <h1 className="font-mono text-4xl font-black tracking-[0.18em] md:text-5xl">
             {match.publicId}
           </h1>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+          <ClipboardCopyButton
+            accessibleLabel="Sao chép mã trận đấu"
+            label="Sao chép ID"
+            value={match.publicId}
+          />
+          <span className="rounded-full border border-primary/10 bg-accent px-3 py-1 text-xs font-bold text-accent-foreground">
             {matchStatusLabels[match.status]}
           </span>
         </div>
@@ -410,6 +418,7 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
       </header>
 
       <MatchEditor key={match.updatedAt} match={match} />
+      <AdminMatchMonitoring matchId={match.id} />
       <AccessCodesManager match={match} />
     </div>
   );

@@ -7,6 +7,7 @@ import type {
   DependencyHealth,
   DependencyStatus,
   HealthReport,
+  LivenessReport,
 } from './health.types';
 
 const HEALTH_CHECK_TIMEOUT_MS = 2_000;
@@ -39,6 +40,14 @@ export class HealthService {
       },
       status:
         postgres.status === 'up' && redis.status === 'up' ? 'ok' : 'degraded',
+      timestamp: new Date().toISOString(),
+      uptimeSeconds: Math.floor(process.uptime()),
+    };
+  }
+
+  live(): LivenessReport {
+    return {
+      status: 'ok',
       timestamp: new Date().toISOString(),
       uptimeSeconds: Math.floor(process.uptime()),
     };

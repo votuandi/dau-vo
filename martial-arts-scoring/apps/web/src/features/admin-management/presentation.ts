@@ -36,7 +36,7 @@ export const accessCodeRoleLabels: Record<MatchAccessRole, string> = {
   [MatchAccessRole.REFEREE_1]: 'Trọng tài 1',
   [MatchAccessRole.REFEREE_2]: 'Trọng tài 2',
   [MatchAccessRole.REFEREE_3]: 'Trọng tài 3',
-  [MatchAccessRole.INSPECTOR]: 'Giám định',
+  [MatchAccessRole.INSPECTOR]: 'Giám định viên',
 };
 
 export const athleteColorLabels: Record<AthleteColor, string> = {
@@ -45,10 +45,10 @@ export const athleteColorLabels: Record<AthleteColor, string> = {
 };
 
 export const inputClassName =
-  'mt-2 h-11 w-full rounded-md border border-input bg-background px-3 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60';
+  'mt-2 h-11 w-full rounded-lg border border-input bg-white/80 px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60';
 
 export const textAreaClassName =
-  'mt-2 min-h-24 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60';
+  'mt-2 min-h-24 w-full resize-y rounded-lg border border-input bg-white/80 px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60';
 
 export function getApiErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiClientError) {

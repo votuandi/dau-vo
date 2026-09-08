@@ -51,6 +51,11 @@ export class AdminMatchesController {
     private readonly management: AdminManagementService,
   ) {}
 
+  @Get(':id/monitoring')
+  async monitoring(@Param('id', uuidPipe) id: string) {
+    return this.management.getMatchMonitoring(id);
+  }
+
   @Get(':id')
   async get(@Param('id', uuidPipe) id: string): Promise<MatchResponse> {
     return { match: await this.management.getMatch(id) };

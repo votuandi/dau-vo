@@ -15,3 +15,9 @@ export interface HealthReport {
   timestamp: string;
   uptimeSeconds: number;
 }
+
+export interface LivenessReport {
+  status: 'ok';
+  timestamp: string;
+  uptimeSeconds: number;
+}

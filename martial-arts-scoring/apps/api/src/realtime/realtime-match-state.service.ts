@@ -4,6 +4,7 @@ import {
   MatchAccessRole as SharedMatchAccessRole,
   MatchStatus as SharedMatchStatus,
   type MatchPresenceEntry,
+  type PublicMatchStatePayload,
   type MatchRoundState,
   type MatchScoringWindowState,
   type MatchStatePayload,
@@ -147,6 +148,43 @@ export class RealtimeMatchStateService {
     };
   }
 
+  async publicSnapshot(
+    publicMatchId: string,
+  ): Promise<PublicMatchStatePayload> {
+    const match = await this.prisma.match.findUnique({
+      select: { id: true },
+      where: { publicId: publicMatchId },
+    });
+
+    if (match === null) {
+      throw new NotFoundException('Match not found');
+    }
+
+    return this.toPublicSnapshot(await this.snapshot(match.id));
+  }
+
+  toPublicSnapshot(snapshot: MatchStatePayload): PublicMatchStatePayload {
+    return {
+      activeRound: snapshot.activeRound,
+      athletes: snapshot.athletes.map(
+        ({ color, name, organization, score, violations }) => ({
+          color,
+          name,
+          organization,
+          score,
+          violations,
+        }),
+      ),
+      generatedAt: snapshot.generatedAt,
+      match: {
+        currentRound: snapshot.match.currentRound,
+        finishedAt: snapshot.match.finishedAt,
+        publicId: snapshot.match.publicId,
+        status: snapshot.match.status,
+      },
+    };
+  }
+
   private async viewerState(
     viewer: { refereeSlot: RefereeSlot | null } | undefined,
     unresolvedWindow: {
@@ -276,19 +314,22 @@ export class RealtimeMatchStateService {
       activeOwners.map(({ accessCode }) => accessCode.role),
     );
 
-    return ACCESS_ROLES.map((accessRole) => {
-      const connectedSocketCount = this.sessionRegistry.connectedSocketCount(
-        matchPublicId,
-        accessRole,
-      );
+    return Promise.all(
+      ACCESS_ROLES.map(async (accessRole) => {
+        const connectedSocketCount =
+          await this.sessionRegistry.connectedSocketCount(
+            matchPublicId,
+            accessRole,
+          );
 
-      return {
-        accessRole: this.sharedAccessRole(accessRole),
-        activeSession: activeRoles.has(accessRole),
-        connected: connectedSocketCount > 0,
-        connectedSocketCount,
-      };
-    });
+        return {
+          accessRole: this.sharedAccessRole(accessRole),
+          activeSession: activeRoles.has(accessRole),
+          connected: connectedSocketCount > 0,
+          connectedSocketCount,
+        };
+      }),
+    );
   }
 
   private sharedAccessRole(role: MatchAccessRole): SharedMatchAccessRole {

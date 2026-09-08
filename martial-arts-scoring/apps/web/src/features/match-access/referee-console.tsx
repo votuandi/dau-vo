@@ -22,13 +22,13 @@ const connectionLabels: Record<RealtimeConnectionStatus, string> = {
 };
 
 const connectionDotClasses: Record<RealtimeConnectionStatus, string> = {
-  'authentication-required': 'bg-rose-500',
+  'authentication-required': 'bg-red-500',
   connected: 'bg-emerald-400',
   connecting: 'bg-amber-400',
-  disconnected: 'bg-rose-500',
-  error: 'bg-rose-500',
+  disconnected: 'bg-red-500',
+  error: 'bg-red-500',
   reconnecting: 'bg-amber-400',
-  revoked: 'bg-rose-500',
+  revoked: 'bg-red-500',
 };
 
 function refereeIdentity(session: MatchAccessSession): string {
@@ -127,8 +127,8 @@ function AthleteVoteButton({
       aria-pressed={isSubmitting}
       className={`group relative min-h-52 overflow-hidden rounded-3xl border-4 text-left text-white shadow-lg transition duration-100 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-64 lg:min-h-[min(38vh,25rem)] ${
         isRed
-          ? 'border-red-300 bg-red-700 hover:bg-red-800 focus-visible:ring-red-300'
-          : 'border-blue-300 bg-blue-700 hover:bg-blue-800 focus-visible:ring-blue-300'
+          ? 'border-red-300/80 bg-gradient-to-br from-red-600 via-red-700 to-red-950 shadow-red-950/30 hover:from-red-700 hover:via-red-800 hover:to-red-950 focus-visible:ring-red-300'
+          : 'border-sky-300/80 bg-gradient-to-br from-sky-700 via-blue-800 to-blue-950 shadow-blue-950/30 hover:from-sky-800 hover:via-blue-900 hover:to-blue-950 focus-visible:ring-sky-300'
       } focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-4`}
       disabled={disabled}
       onClick={() => {
@@ -138,10 +138,10 @@ function AthleteVoteButton({
     >
       <span
         aria-hidden="true"
-        className="absolute inset-0 bg-gradient-to-br from-white/20 via-transparent to-black/20"
+        className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-black/20"
       />
       <span className="relative flex h-full min-h-52 flex-col justify-between p-5 sm:min-h-64 sm:p-7 lg:min-h-[min(38vh,25rem)]">
-        <span className="text-sm font-black tracking-[0.2em] text-white/80">{colorLabel}</span>
+        <span className="text-sm font-black tracking-[0.2em] text-white">{colorLabel}</span>
         <span>
           <span className="block text-4xl font-black tracking-tight sm:text-5xl lg:text-6xl">
             {colorLabel}
@@ -150,7 +150,7 @@ function AthleteVoteButton({
             {name}
           </span>
         </span>
-        <span className="text-xs font-bold uppercase tracking-wider text-white/75">
+        <span className="text-xs font-bold uppercase tracking-wider text-white/90">
           {isSubmitting ? 'Đang gửi lựa chọn…' : 'Chạm để chọn'}
         </span>
       </span>
@@ -183,11 +183,11 @@ export function RefereeConsole({
   const acceptedVote = realtime.lastAcceptedVote;
 
   return (
-    <div className="min-h-dvh bg-slate-950 text-white">
+    <div className="arena-background min-h-dvh text-white">
       <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-3 py-3 sm:px-5 sm:py-5">
-        <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur sm:px-5">
+        <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/15 bg-blue-950/35 px-4 py-3 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5">
           <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-200/80">
               {refereeIdentity(session)}
             </p>
             <p className="mt-1 truncate font-mono text-lg font-black tracking-[0.14em] text-white sm:text-xl">
@@ -203,7 +203,7 @@ export function RefereeConsole({
               {connectionLabels[realtime.connectionStatus]}
             </div>
             <Button
-              className="border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
+              className="border-white/20 bg-transparent text-white hover:border-white/30 hover:bg-white/10 hover:text-white"
               disabled={isLogoutPending}
               onClick={onLogout}
               size="sm"
@@ -217,10 +217,10 @@ export function RefereeConsole({
 
         <section
           aria-labelledby="referee-round-title"
-          className="mt-3 flex flex-1 flex-col justify-center rounded-3xl border border-white/10 bg-slate-900 px-5 py-7 text-center sm:mt-5 sm:px-8 sm:py-10"
+          className="mt-3 flex flex-1 flex-col justify-center rounded-3xl border border-white/15 bg-white/10 px-5 py-7 text-center shadow-2xl shadow-blue-950/20 backdrop-blur-xl sm:mt-5 sm:px-8 sm:py-10"
         >
           <p
-            className="text-sm font-black uppercase tracking-[0.2em] text-slate-400"
+            className="text-sm font-black uppercase tracking-[0.2em] text-sky-200"
             id="referee-round-title"
           >
             {displayPhase(status)}
@@ -234,7 +234,7 @@ export function RefereeConsole({
               ? formatRemainingTime(remainingTime)
               : '--:--'}
           </p>
-          <p className="mt-3 text-sm text-slate-400">
+          <p className="mt-3 text-sm text-sky-100/75">
             {roundIsRunning
               ? 'Thời gian chính thức do máy chủ xác định'
               : status === MatchStatus.FINISHED
@@ -283,15 +283,17 @@ export function RefereeConsole({
             </p>
           ) : realtime.voteSubmitErrorMessage ? (
             <p
-              className="rounded-xl bg-rose-400/15 px-4 py-3 font-semibold text-rose-100"
+              className="rounded-xl bg-red-400/15 px-4 py-3 font-semibold text-red-100"
               role="alert"
             >
               {realtime.voteSubmitErrorMessage}
             </p>
           ) : realtime.connectionStatus !== 'connected' ? (
-            <p className="px-4 py-3 text-slate-400">Không thể gửi lựa chọn khi mất kết nối.</p>
+            <p className="px-4 py-3 text-sky-100/70">Không thể gửi lựa chọn khi mất kết nối.</p>
           ) : !roundIsRunning ? (
-            <p className="px-4 py-3 text-slate-400">Lựa chọn chỉ mở khi hiệp đấu đang diễn ra.</p>
+            <p className="px-4 py-3 text-sky-100/70">
+              Lựa chọn chỉ mở khi hiệp đấu đang diễn ra.
+            </p>
           ) : null}
         </section>
       </main>

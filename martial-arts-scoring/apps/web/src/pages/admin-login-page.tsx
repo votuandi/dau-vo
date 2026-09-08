@@ -93,26 +93,34 @@ export function AdminLoginPage() {
   }
 
   return (
-    <section className="mx-auto grid w-full max-w-5xl overflow-hidden rounded-2xl border border-border bg-card shadow-sm md:grid-cols-[1.05fr_0.95fr]">
-      <div className="hidden bg-slate-950 p-10 text-white md:flex md:flex-col md:justify-between">
-        <div className="grid size-12 place-items-center rounded-xl bg-white text-sm font-black text-slate-950">
+    <section className="mx-auto grid w-full max-w-5xl overflow-hidden rounded-[1.75rem] border border-white/80 bg-card/90 shadow-2xl shadow-blue-950/10 backdrop-blur md:grid-cols-[1.05fr_0.95fr]">
+      <div className="relative hidden overflow-hidden bg-gradient-to-br from-sky-700 via-blue-950 to-red-800 p-10 text-white md:flex md:flex-col md:justify-between">
+        <span
+          aria-hidden="true"
+          className="absolute -right-20 -top-20 size-64 rounded-full bg-white/15 blur-2xl"
+        />
+        <span
+          aria-hidden="true"
+          className="absolute -bottom-28 -left-16 size-72 rounded-full bg-red-300/20 blur-3xl"
+        />
+        <div className="relative grid size-12 place-items-center rounded-xl bg-white/20 text-sm font-black text-white shadow-lg ring-1 ring-white/40 backdrop-blur">
           ĐV
         </div>
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
+        <div className="relative">
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/90">
             Khu vực quản trị
           </p>
           <h1 className="mt-4 text-4xl font-black leading-tight tracking-tight">
             Điều hành giải đấu an toàn và tập trung.
           </h1>
-          <p className="mt-4 max-w-md text-sm leading-6 text-slate-300">
+          <p className="mt-4 max-w-md text-sm leading-6 text-white/90">
             Đăng nhập bằng tài khoản quản trị được cấp để truy cập bảng điều khiển.
           </p>
         </div>
       </div>
 
       <div className="p-7 sm:p-10">
-        <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">Đấu Võ</p>
+        <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">Đấu Võ</p>
         <h2 className="mt-3 text-3xl font-black tracking-tight">Đăng nhập quản trị</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Nhập thông tin tài khoản để tiếp tục.
@@ -137,7 +145,7 @@ export function AdminLoginPage() {
               aria-invalid={Boolean(formErrors.username)}
               autoCapitalize="none"
               autoComplete="username"
-              className="mt-2 h-11 w-full rounded-md border border-input bg-background px-3 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-2 h-11 w-full rounded-lg border border-input bg-white/80 px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={loginMutation.isPending}
               id="admin-username"
               maxLength={100}
@@ -164,7 +172,7 @@ export function AdminLoginPage() {
               aria-describedby={formErrors.password ? 'admin-password-error' : undefined}
               aria-invalid={Boolean(formErrors.password)}
               autoComplete="current-password"
-              className="mt-2 h-11 w-full rounded-md border border-input bg-background px-3 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-2 h-11 w-full rounded-lg border border-input bg-white/80 px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={loginMutation.isPending}
               id="admin-password"
               maxLength={256}

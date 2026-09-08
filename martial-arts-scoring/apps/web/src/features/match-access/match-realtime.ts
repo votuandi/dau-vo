@@ -158,6 +158,8 @@ export function useMatchRealtime({
   const acceptedVoteRef = useRef<VoteAcceptedPayload | null>(null);
   const onAuthenticationRequiredRef = useRef(onAuthenticationRequired);
   const onSessionRevokedRef = useRef(onSessionRevoked);
+  const penaltySubmissionInFlightRef = useRef(false);
+  const roundStartInFlightRef = useRef(false);
   const voteSubmissionInFlightRef = useRef(false);
 
   useEffect(() => {
@@ -191,6 +193,9 @@ export function useMatchRealtime({
 
   const startRound = useCallback(async () => {
     const socket = getSocketClient();
+    if (roundStartInFlightRef.current) {
+      return;
+    }
     if (!socket.connected) {
       setRoundStartErrorMessage(
         'Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi bắt đầu hiệp.',
@@ -198,6 +203,7 @@ export function useMatchRealtime({
       return;
     }
 
+    roundStartInFlightRef.current = true;
     setStartingRound(true);
     setRoundStartErrorMessage(null);
 
@@ -239,6 +245,7 @@ export function useMatchRealtime({
         'Máy chủ không phản hồi lệnh bắt đầu hiệp. Vui lòng kiểm tra trạng thái và thử lại.',
       );
     } finally {
+      roundStartInFlightRef.current = false;
       setStartingRound(false);
     }
   }, []);
@@ -306,11 +313,15 @@ export function useMatchRealtime({
 
   const submitPenalty = useCallback(async (athlete: AthleteColor) => {
     const socket = getSocketClient();
+    if (penaltySubmissionInFlightRef.current) {
+      return;
+    }
     if (!socket.connected) {
       setPenaltyErrorMessage('Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi ghi lỗi.');
       return;
     }
 
+    penaltySubmissionInFlightRef.current = true;
     setSubmittingPenalty(athlete);
     setPenaltyErrorMessage(null);
     try {
@@ -342,6 +353,7 @@ export function useMatchRealtime({
         'Máy chủ không phản hồi lệnh ghi lỗi. Vui lòng kiểm tra trạng thái trước khi thử lại.',
       );
     } finally {
+      penaltySubmissionInFlightRef.current = false;
       setSubmittingPenalty(null);
     }
   }, []);

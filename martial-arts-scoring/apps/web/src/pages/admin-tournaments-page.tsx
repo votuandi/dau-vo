@@ -169,7 +169,7 @@ export function AdminTournamentsPage() {
                         >
                           {tournament.name}
                         </Link>
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
+                        <span className="rounded-full border border-primary/10 bg-accent px-2.5 py-1 text-xs font-bold text-accent-foreground">
                           {tournamentStatusLabels[tournament.status]}
                         </span>
                       </div>

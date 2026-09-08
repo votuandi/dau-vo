@@ -77,6 +77,7 @@ import {
   VOTE_ROUND_ENDED_ERROR,
   VOTE_SCORING_WINDOW_PENDING_ERROR,
   matchRoom,
+  scoreboardRoom,
 } from './realtime.constants';
 import { RealtimeMatchStateService } from './realtime-match-state.service';
 import { RealtimeSessionRegistryService } from './realtime-session-registry.service';
@@ -143,6 +144,11 @@ export class RealtimeGateway
   }
 
   async handleConnection(client: RealtimeSocket): Promise<void> {
+    if (client.data.connectionKind === 'scoreboard') {
+      await this.connectScoreboard(client);
+      return;
+    }
+
     const identity = client.data.identity;
     const accessRole = client.data.accessRole;
 
@@ -151,7 +157,7 @@ export class RealtimeGateway
       return;
     }
 
-    this.sessionRegistry.register({
+    await this.sessionRegistry.register({
       accessRole,
       matchPublicId: identity.publicMatchId,
       revoke: () => this.revokeSocket(client),
@@ -184,6 +190,9 @@ export class RealtimeGateway
   async roundStart(
     @ConnectedSocket() client: RealtimeSocket,
   ): Promise<RoundStartResponse> {
+    if (this.isScoreboardSocket(client)) {
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    }
     const identity = client.data.identity;
     const sessionToken = client.data.matchSessionToken;
 
@@ -265,6 +274,9 @@ export class RealtimeGateway
     @ConnectedSocket() client: RealtimeSocket,
     @MessageBody() payload: unknown,
   ): Promise<VoteSubmitResponse> {
+    if (this.isScoreboardSocket(client)) {
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    }
     const identity = await this.revalidate(client);
 
     if (identity === null) {
@@ -355,6 +367,9 @@ export class RealtimeGateway
     @ConnectedSocket() client: RealtimeSocket,
     @MessageBody() payload: unknown,
   ): Promise<PenaltyAddResponse> {
+    if (this.isScoreboardSocket(client)) {
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    }
     const identity = await this.revalidate(client);
 
     if (identity === null) {
@@ -398,15 +413,18 @@ export class RealtimeGateway
     }
   }
 
-  handleDisconnect(client: RealtimeSocket): void {
+  async handleDisconnect(client: RealtimeSocket): Promise<void> {
+    if (this.isScoreboardSocket(client)) {
+      return;
+    }
     const identity = client.data.identity;
 
     if (identity === undefined) {
       return;
     }
 
-    this.sessionRegistry.unregister(identity.sessionId, client.id);
-    void this.broadcastPresence(identity).catch((error: unknown) => {
+    await this.sessionRegistry.unregister(identity.sessionId, client.id);
+    await this.broadcastPresence(identity).catch((error: unknown) => {
       this.logger.error(
         { error, matchPublicId: identity.publicMatchId },
         'Unable to broadcast match presence after disconnect',
@@ -442,7 +460,34 @@ export class RealtimeGateway
     client.emit(RealtimeEvent.MATCH_STATE, snapshot);
   }
 
+  @SubscribeMessage(RealtimeEvent.PUBLIC_MATCH_STATE_REQUEST)
+  async publicMatchStateRequest(
+    @ConnectedSocket() client: RealtimeSocket,
+  ): Promise<void> {
+    const publicMatchId = client.data.scoreboardMatchPublicId;
+
+    if (!this.isScoreboardSocket(client) || publicMatchId === undefined) {
+      client.disconnect(true);
+      return;
+    }
+
+    client.emit(
+      RealtimeEvent.PUBLIC_MATCH_STATE,
+      await this.matchState.publicSnapshot(publicMatchId),
+    );
+  }
+
   private async authenticate(client: RealtimeSocket): Promise<void> {
+    const requestedScoreboardMatch = this.requestedScoreboardMatch(client);
+    if (requestedScoreboardMatch !== null) {
+      const snapshot = await this.matchState.publicSnapshot(
+        requestedScoreboardMatch,
+      );
+      client.data.connectionKind = 'scoreboard';
+      client.data.scoreboardMatchPublicId = snapshot.match.publicId;
+      return;
+    }
+
     const sessionToken = this.readCookie(
       client.handshake.headers.cookie,
       MATCH_SESSION_COOKIE,
@@ -460,6 +505,7 @@ export class RealtimeGateway
 
     const socketIdentity = this.socketIdentity(identity);
     client.data.accessRole = this.accessRole(socketIdentity);
+    client.data.connectionKind = 'participant';
     client.data.identity = socketIdentity;
     client.data.matchSessionToken = sessionToken;
     client.data.revoked = false;
@@ -588,6 +634,50 @@ export class RealtimeGateway
     this.server
       .to(matchRoom(expectedPublicId))
       .emit(RealtimeEvent.MATCH_STATE, snapshot);
+    this.server
+      .to(scoreboardRoom(expectedPublicId))
+      .emit(
+        RealtimeEvent.PUBLIC_MATCH_STATE,
+        this.matchState.toPublicSnapshot(snapshot),
+      );
+  }
+
+  private async connectScoreboard(client: RealtimeSocket): Promise<void> {
+    const publicMatchId = client.data.scoreboardMatchPublicId;
+    if (publicMatchId === undefined) {
+      client.disconnect(true);
+      return;
+    }
+
+    await client.join(scoreboardRoom(publicMatchId));
+    client.emit(
+      RealtimeEvent.PUBLIC_MATCH_STATE,
+      await this.matchState.publicSnapshot(publicMatchId),
+    );
+  }
+
+  private isScoreboardSocket(client: RealtimeSocket): boolean {
+    return client.data.connectionKind === 'scoreboard';
+  }
+
+  private requestedScoreboardMatch(client: RealtimeSocket): string | null {
+    const auth = client.handshake.auth;
+    if (typeof auth !== 'object' || auth === null) {
+      return null;
+    }
+
+    const payload = auth as Record<string, unknown>;
+    if (
+      payload.mode !== 'scoreboard' ||
+      typeof payload.matchPublicId !== 'string'
+    ) {
+      return null;
+    }
+
+    const publicMatchId = payload.matchPublicId.trim().toUpperCase();
+    return publicMatchId.length > 0 && publicMatchId.length <= 32
+      ? publicMatchId
+      : null;
   }
 
   private revokeSocket(client: RealtimeSocket): void {

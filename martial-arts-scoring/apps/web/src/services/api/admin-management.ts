@@ -4,6 +4,7 @@ import {
   type MatchStatus,
   type TournamentStatus,
 } from '@/types/shared';
+import type { MatchStatePayload } from '@martial-arts-scoring/shared-types';
 import { apiClient } from '@/services/api/client';
 
 export interface AdminTournament {
@@ -51,6 +52,47 @@ export interface AdminMatch {
 export interface GeneratedAccessCode {
   readonly role: MatchAccessRole;
   readonly code: string;
+}
+
+export interface AdminMatchMonitoring {
+  readonly snapshot: MatchStatePayload;
+  readonly scoringWindows: readonly {
+    id: string;
+    roundNumber: number;
+    startedAt: string;
+    endsAt: string;
+    resolvedAt: string | null;
+    winningColor: AthleteColor | null;
+    scoreAwarded: boolean;
+    refereeVotes: readonly {
+      refereeSlot: string;
+      athleteColor: AthleteColor;
+      serverReceivedAt: string;
+    }[];
+  }[];
+  readonly penalties: readonly {
+    id: string;
+    roundNumber: number | null;
+    value: number;
+    createdAt: string;
+    athlete: { color: AthleteColor; name: string };
+  }[];
+  readonly scoreEvents: readonly {
+    id: string;
+    roundNumber: number | null;
+    type: string;
+    value: number;
+    createdAt: string;
+    scoringWindowId: string | null;
+    penaltyId: string | null;
+    athlete: { color: AthleteColor; name: string };
+  }[];
+  readonly auditLogs: readonly {
+    id: string;
+    eventType: string;
+    metadata: unknown;
+    createdAt: string;
+  }[];
 }
 
 export interface CreateTournamentInput {
@@ -134,6 +176,8 @@ export const adminManagementApi = {
       input,
     ),
   getMatch: (id: string) => apiClient.get<MatchResponse>(`admin/matches/${encodePathSegment(id)}`),
+  getMatchMonitoring: (id: string) =>
+    apiClient.get<AdminMatchMonitoring>(`admin/matches/${encodePathSegment(id)}/monitoring`),
   updateMatch: (id: string, input: UpdateMatchInput) =>
     apiClient.patch<MatchResponse>(`admin/matches/${encodePathSegment(id)}`, input),
   regenerateAllMatchCodes: (id: string) =>

@@ -4,8 +4,8 @@ This repository contains the technical foundation, persistence model,
 authentication, tournament/match administration, and authenticated realtime
 transport for a martial arts scoring system: a React/Vite web application, a
 NestJS API, shared TypeScript contracts, PostgreSQL/Prisma, Redis, and Socket.IO.
-Admin, referee, and inspector authentication are implemented; scoring rules and
-commands remain intentionally outside the current phase.
+Admin, referee, and inspector authentication, realtime match transport, and the
+authoritative scoring and penalty commands are implemented.
 
 ## Prerequisites
 
@@ -264,6 +264,68 @@ two penalties rather than using timing heuristics that could discard a valid
 second violation. A future retriable command protocol must add a stable request
 ID before claiming idempotency.
 
+## Inspector console
+
+`/giam-dinh` is the production, touch-first inspector screen. It reuses the same
+HTTP-only participant-session recovery and takeover flow as the referee screen,
+then rebuilds its display from authoritative Socket.IO snapshots after a refresh
+or reconnect. It shows the match ID, athletes, official score, persisted
+violation counts, round state, server-derived display timer, and Vietnamese
+connection status.
+
+The inspector screen only emits `round:start` and `penalty:add`; it never changes
+round state or score locally. It exposes the start control only in `WAITING` and
+`BREAK`, and enables RED/BLUE penalties only during an active round. A penalty
+requires a second press on the same colour within 1.8 seconds, which avoids an
+extra blocking confirmation while reducing accidental touches. Disconnects or a
+session takeover immediately disable live controls until the authoritative session
+is restored.
+
+## Public scoreboard and admin monitoring
+
+Open `/bang-diem?match=A72K9P` (or `/bang-diem/A72K9P`) for the television/projector
+scoreboard. It uses an isolated read-only Socket.IO room and receives only a
+filtered `scoreboard:state` snapshot: public match identity, status, active-round
+timestamps, athlete names/organisations, official score, and violation totals.
+It never receives access codes, session tokens, internal IDs, presence, or referee
+votes. On a reconnect it retains its last display and requests a new authoritative
+snapshot.
+
+`/admin/matches/:matchId` now provides protected live monitoring, refreshing the
+authoritative state and presence every 1.5 seconds. It also exposes resolved
+scoring windows (including each referee vote), penalty history, immutable score
+events, and audit logs so an administrator can trace the score to its source.
+
+## Operational hardening
+
+PostgreSQL is the authoritative store for match lifecycle, active rounds,
+scoring windows, referee votes, score events, penalties, and match sessions.
+At startup the API replays persisted active-round expiration and unresolved
+scoring-window resolution; both paths lock the match row and use conditional
+database updates, making replays safe across restarts and multiple API
+instances. Redis is used only for ephemeral rate limits, admin sessions and
+Socket.IO fan-out. Resetting Redis can require an admin to sign in again and
+rebuilds presence as browsers reconnect, but cannot alter official results.
+
+Socket.IO uses the official Redis adapter, so private match-room and public
+scoreboard-room publications propagate across API instances. Every sensitive
+command still validates its persisted session inside the PostgreSQL transaction;
+the adapter is transport, never scoring authority. `vote:submit` is naturally
+idempotent per referee/window through the database unique constraint and locked
+match row. Round starts and takeovers are likewise serialized by persisted
+state. Penalties represent deliberate separate presses; they are not blindly
+retried by the client because the current protocol has no stable request ID.
+
+Connected presence is an expiring Redis counter per public match and access
+role, so the count is shared by all API instances. It is intentionally
+ephemeral: after a Redis reset it starts at zero and is rebuilt as sockets
+reconnect; the persisted `MatchSession` query continues to distinguish an
+active credential from a currently connected browser.
+
+Health probes are available at `/api/health/live` (process liveness only) and
+`/api/health/ready` (PostgreSQL and Redis readiness). `/api/health` remains a
+compatibility alias for the readiness report.
+
 ## Database domain model
 
 The Prisma schema and migration history live in `apps/api/prisma`. The initial
@@ -320,3 +382,30 @@ pnpm format:check
 
 Stop local infrastructure with `pnpm docker:down`. Named volumes preserve data;
 removing them is an explicit manual operation.
+
+## Production deployment
+
+`docker-compose.production.yml` runs PostgreSQL, Redis, NestJS, the compiled
+Vite static site, and an edge Nginx proxy. Copy `.env.example` to a separate
+`.env.production`, set non-default database credentials and independent 32+
+character session secrets, then set `WEB_ORIGIN` to the public HTTPS origin.
+
+```powershell
+docker compose --env-file .env.production -f docker-compose.production.yml up --build -d
+docker compose --env-file .env.production -f docker-compose.production.yml ps
+```
+
+Nginx proxies `/api` and `/api/socket.io` with HTTP upgrade headers, while the
+web container serves the immutable React build. Put an HTTPS-capable reverse
+proxy or load balancer in front of Nginx and forward `X-Forwarded-Proto: https`;
+the browser will then use HTTPS/WSS on the single public origin. Do not expose
+PostgreSQL or Redis ports in production. Run migrations as part of the API
+startup only after backing up the database and reviewing the checked-in Prisma
+migrations.
+
+Architecture decisions: React + Vite keeps the operator UI a small static
+client rather than requiring a Next.js server; NestJS owns every authorization
+and match decision; PostgreSQL is durable truth; Redis provides rate limiting,
+shared presence and Socket.IO distribution; Socket.IO distributes snapshots and
+events; `serverReceivedAt` defines official vote time; immutable score events
+provide history; and one persisted active session owns each credential.

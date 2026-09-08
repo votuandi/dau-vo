@@ -17,6 +17,7 @@ export type {
   MatchStateIdentity,
   MatchStatePayload,
   MatchStateViewer,
+  PublicMatchStatePayload,
   PenaltyAddError,
   PenaltyAddErrorCode,
   PenaltyAddedPayload,

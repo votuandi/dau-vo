@@ -1,0 +1,219 @@
+import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { AthleteColor, MatchAccessRole, MatchStatus } from '@/types/shared';
+import { formatDateTime, matchStatusLabels } from './presentation';
+import { matchMonitoringQueryOptions } from './queries';
+
+const roleLabels: Record<MatchAccessRole, string> = {
+  [MatchAccessRole.REFEREE_1]: 'Trọng tài 1',
+  [MatchAccessRole.REFEREE_2]: 'Trọng tài 2',
+  [MatchAccessRole.REFEREE_3]: 'Trọng tài 3',
+  [MatchAccessRole.INSPECTOR]: 'Giám định',
+};
+
+function formatRemaining(milliseconds: number): string {
+  const seconds = Math.max(0, Math.ceil(milliseconds / 1_000));
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function useDisplayTimer(endsAt: string | undefined, generatedAt: string | undefined): string {
+  const [now, setNow] = useState(() => Date.now());
+  const offsetRef = useRef(0);
+  useEffect(() => {
+    const current = Date.now();
+    const source = generatedAt ? new Date(generatedAt).getTime() : Number.NaN;
+    offsetRef.current = Number.isNaN(source) ? 0 : source - current;
+    setNow(current);
+    if (!endsAt) return;
+    const interval = window.setInterval(() => {
+      setNow(Date.now());
+    }, 250);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [endsAt, generatedAt]);
+  if (!endsAt) return '--:--';
+  const end = new Date(endsAt).getTime();
+  return Number.isNaN(end) ? '--:--' : formatRemaining(end - (now + offsetRef.current));
+}
+
+function colorLabel(color: AthleteColor): string {
+  return color === AthleteColor.RED ? 'ĐỎ' : 'XANH';
+}
+
+function metadataText(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '—';
+  }
+}
+
+export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) {
+  const monitoring = useQuery(matchMonitoringQueryOptions(matchId));
+  const snapshot = monitoring.data?.snapshot;
+  const running =
+    snapshot?.match.status === MatchStatus.ROUND_1_RUNNING ||
+    snapshot?.match.status === MatchStatus.ROUND_2_RUNNING;
+  const timer = useDisplayTimer(
+    running ? snapshot.activeRound?.endsAt : undefined,
+    snapshot?.generatedAt,
+  );
+  const red = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
+  const blue = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
+
+  return (
+    <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-black tracking-tight">Theo dõi trực tiếp</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Tự làm mới mỗi 1,5 giây từ trạng thái authoritative của máy chủ.
+          </p>
+        </div>
+        <span className="text-sm font-bold text-emerald-700">
+          {monitoring.isFetching ? 'Đang đồng bộ…' : 'Đang theo dõi'}
+        </span>
+      </div>
+      {monitoring.isError ? (
+        <p className="mt-4 text-sm text-destructive" role="alert">
+          Không thể tải dữ liệu giám sát.
+        </p>
+      ) : null}
+      {snapshot ? (
+        <>
+          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl bg-muted p-4">
+              <p className="text-xs font-bold uppercase text-muted-foreground">Trạng thái</p>
+              <p className="mt-2 font-black">{matchStatusLabels[snapshot.match.status]}</p>
+            </div>
+            <div className="rounded-xl bg-muted p-4">
+              <p className="text-xs font-bold uppercase text-muted-foreground">Hiệp hiện tại</p>
+              <p className="mt-2 font-black">{snapshot.match.currentRound ?? 'Chưa bắt đầu'}</p>
+            </div>
+            <div className="rounded-xl bg-muted p-4">
+              <p className="text-xs font-bold uppercase text-muted-foreground">Thời gian</p>
+              <p className="mt-2 font-mono text-2xl font-black">{timer}</p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="rounded-xl border-2 border-red-200 bg-red-50 p-4">
+              <p className="font-black text-red-800">ĐỎ · {red?.name ?? '—'}</p>
+              <p className="mt-2 text-3xl font-black">{red?.score ?? 0} điểm</p>
+              <p className="text-sm font-semibold">{red?.violations ?? 0} lỗi</p>
+            </div>
+            <div className="rounded-xl border-2 border-blue-200 bg-blue-50 p-4">
+              <p className="font-black text-blue-800">XANH · {blue?.name ?? '—'}</p>
+              <p className="mt-2 text-3xl font-black">{blue?.score ?? 0} điểm</p>
+              <p className="text-sm font-semibold">{blue?.violations ?? 0} lỗi</p>
+            </div>
+          </div>
+          <h3 className="mt-7 font-black">Hiện diện thiết bị</h3>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+            {snapshot.presence.map((entry) => (
+              <li
+                className="flex items-center justify-between rounded-lg border p-3"
+                key={entry.accessRole}
+              >
+                <span className="font-semibold">{roleLabels[entry.accessRole]}</span>
+                <span
+                  className={
+                    entry.connected ? 'font-bold text-emerald-700' : 'font-bold text-slate-500'
+                  }
+                >
+                  {entry.connected ? 'Đã kết nối' : 'Mất kết nối'}
+                  {entry.connectedSocketCount > 1 ? ` (${String(entry.connectedSocketCount)})` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className="mt-5 text-sm text-muted-foreground">Đang tải trạng thái trận đấu…</p>
+      )}
+      <div className="mt-8 grid gap-4">
+        <details className="rounded-xl border p-4" open>
+          <summary className="cursor-pointer font-black">
+            Lịch sử cửa sổ chấm điểm ({monitoring.data?.scoringWindows.length ?? 0})
+          </summary>
+          <div className="mt-4 space-y-3">
+            {monitoring.data?.scoringWindows.map((window) => (
+              <article className="rounded-lg bg-muted/60 p-3" key={window.id}>
+                <div className="flex flex-wrap justify-between gap-2">
+                  <p className="font-bold">
+                    Hiệp {window.roundNumber} ·{' '}
+                    {window.scoreAwarded && window.winningColor
+                      ? `${colorLabel(window.winningColor)} +1`
+                      : 'Không tính điểm'}
+                  </p>
+                  <time className="text-xs text-muted-foreground">
+                    {formatDateTime(window.startedAt)}
+                  </time>
+                </div>
+                <ul className="mt-2 text-sm">
+                  {window.refereeVotes.map((vote) => (
+                    <li key={vote.refereeSlot}>
+                      {roleLabels[vote.refereeSlot as MatchAccessRole]} →{' '}
+                      <strong>{colorLabel(vote.athleteColor)}</strong>{' '}
+                      <span className="text-muted-foreground">
+                        {formatDateTime(vote.serverReceivedAt)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            )) ?? <p>Chưa có cửa sổ chấm điểm.</p>}
+          </div>
+        </details>
+        <details className="rounded-xl border p-4">
+          <summary className="cursor-pointer font-black">
+            Lỗi phạt ({monitoring.data?.penalties.length ?? 0})
+          </summary>
+          <ul className="mt-4 space-y-2 text-sm">
+            {monitoring.data?.penalties.map((penalty) => (
+              <li className="rounded-lg bg-muted/60 p-3" key={penalty.id}>
+                Hiệp {penalty.roundNumber ?? '—'} · {colorLabel(penalty.athlete.color)} ·{' '}
+                {penalty.athlete.name} · <strong>{penalty.value}</strong> ·{' '}
+                {formatDateTime(penalty.createdAt)}
+              </li>
+            )) ?? <li>Chưa có lỗi phạt.</li>}
+          </ul>
+        </details>
+        <details className="rounded-xl border p-4">
+          <summary className="cursor-pointer font-black">
+            Score events ({monitoring.data?.scoreEvents.length ?? 0})
+          </summary>
+          <ul className="mt-4 space-y-2 text-sm">
+            {monitoring.data?.scoreEvents.map((event) => (
+              <li className="rounded-lg bg-muted/60 p-3" key={event.id}>
+                {event.type} · Hiệp {event.roundNumber ?? '—'} · {colorLabel(event.athlete.color)} ·{' '}
+                {event.athlete.name} ·{' '}
+                <strong>
+                  {event.value > 0 ? '+' : ''}
+                  {event.value}
+                </strong>{' '}
+                · {formatDateTime(event.createdAt)}
+              </li>
+            )) ?? <li>Chưa có score event.</li>}
+          </ul>
+        </details>
+        <details className="rounded-xl border p-4">
+          <summary className="cursor-pointer font-black">
+            Audit logs ({monitoring.data?.auditLogs.length ?? 0})
+          </summary>
+          <ul className="mt-4 space-y-2 text-sm">
+            {monitoring.data?.auditLogs.map((event) => (
+              <li className="rounded-lg bg-muted/60 p-3" key={event.id}>
+                <strong>{event.eventType}</strong> · {formatDateTime(event.createdAt)}
+                <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs text-muted-foreground">
+                  {metadataText(event.metadata)}
+                </pre>
+              </li>
+            )) ?? <li>Chưa có audit log.</li>}
+          </ul>
+        </details>
+      </div>
+    </section>
+  );
+}

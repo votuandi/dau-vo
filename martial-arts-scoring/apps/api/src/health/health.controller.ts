@@ -1,7 +1,12 @@
-import { Controller, Get, Inject } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Inject,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 
 import { HealthService } from './health.service';
-import type { HealthReport } from './health.types';
+import type { HealthReport, LivenessReport } from './health.types';
 
 @Controller('health')
 export class HealthController {
@@ -10,7 +15,27 @@ export class HealthController {
   ) {}
 
   @Get()
-  check(): Promise<HealthReport> {
-    return this.healthService.check();
+  ready(): Promise<HealthReport> {
+    return this.requireReady();
+  }
+
+  @Get('live')
+  live(): LivenessReport {
+    return this.healthService.live();
+  }
+
+  @Get('ready')
+  readyProbe(): Promise<HealthReport> {
+    return this.requireReady();
+  }
+
+  private async requireReady(): Promise<HealthReport> {
+    const report = await this.healthService.check();
+
+    if (report.status !== 'ok') {
+      throw new ServiceUnavailableException(report);
+    }
+
+    return report;
   }
 }

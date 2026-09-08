@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MatchRole } from '@martial-arts-scoring/shared-types';
 import { MatchAccessPage } from './match-access-page';
 import { ApiClientError } from '@/services/api/client';
-import { refereeSession } from '@/test/factories';
+import { inspectorSession, refereeSession } from '@/test/factories';
 
 const matchAccessApiMock = vi.hoisted(() => ({
   login: vi.fn(),
@@ -27,12 +27,16 @@ vi.mock('@/features/match-access/referee-console', () => ({
   RefereeConsole: () => <div>Referee console ready</div>,
 }));
 
+vi.mock('@/features/match-access/inspector-console', () => ({
+  InspectorConsole: () => <div>Inspector console ready</div>,
+}));
+
 function LocationProbe() {
   const location = useLocation();
   return <output data-testid="location">{location.pathname}</output>;
 }
 
-function renderPage() {
+function renderPage(expectedRole = MatchRole.REFEREE) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -43,8 +47,10 @@ function renderPage() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/trong-tai']}>
-        <MatchAccessPage expectedRole={MatchRole.REFEREE} />
+      <MemoryRouter
+        initialEntries={[expectedRole === MatchRole.REFEREE ? '/trong-tai' : '/giam-dinh']}
+      >
+        <MatchAccessPage expectedRole={expectedRole} />
         <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -101,7 +107,7 @@ describe('MatchAccessPage referee login', () => {
     );
   });
 
-  it('shows takeover confirmation for an active credential and sends the stored takeover challenge only after confirmation', async () => {
+  it('shows inspector takeover confirmation and sends the stored challenge only after confirmation', async () => {
     const user = userEvent.setup();
     matchAccessApiMock.login.mockRejectedValue(
       new ApiClientError(409, {
@@ -110,8 +116,8 @@ describe('MatchAccessPage referee login', () => {
         takeoverToken: 'takeover-token',
       }),
     );
-    matchAccessApiMock.takeover.mockResolvedValue({ session: refereeSession });
-    renderPage();
+    matchAccessApiMock.takeover.mockResolvedValue({ session: inspectorSession });
+    renderPage(MatchRole.INSPECTOR);
 
     await fillLoginForm(user);
     const deviceId = storedDeviceId();
@@ -132,6 +138,26 @@ describe('MatchAccessPage referee login', () => {
         takeoverToken: 'takeover-token',
       });
     });
-    expect(await screen.findByText('Referee console ready')).toBeVisible();
+    expect(await screen.findByText('Inspector console ready')).toBeVisible();
+  });
+
+  it('uses the same login and session recovery flow for the inspector console', async () => {
+    const user = userEvent.setup();
+    matchAccessApiMock.login.mockResolvedValue({ session: inspectorSession });
+    renderPage(MatchRole.INSPECTOR);
+
+    await fillLoginForm(user);
+    await user.click(screen.getByRole('button', { name: 'Đăng nhập' }));
+
+    expect(await screen.findByText('Inspector console ready')).toBeVisible();
+    expect(screen.getByTestId('location')).toHaveTextContent('/giam-dinh');
+  });
+
+  it('restores a valid inspector session after a browser refresh', async () => {
+    matchAccessApiMock.session.mockResolvedValue({ session: inspectorSession });
+    renderPage(MatchRole.INSPECTOR);
+
+    expect(await screen.findByText('Inspector console ready')).toBeVisible();
+    expect(screen.getByTestId('location')).toHaveTextContent('/giam-dinh');
   });
 });

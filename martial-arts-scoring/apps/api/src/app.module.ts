@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
 import { LoggerModule } from 'nestjs-pino';
 
 import {
@@ -29,6 +30,13 @@ import { RedisModule } from './redis/redis.module';
       inject: [ConfigService],
       useFactory: (config: ConfigService<EnvironmentVariables, true>) => ({
         pinoHttp: {
+          genReqId: (request) => {
+            const requestId = request.headers['x-request-id'];
+
+            return typeof requestId === 'string' && requestId.length <= 128
+              ? requestId
+              : randomUUID();
+          },
           level:
             config.getOrThrow('NODE_ENV', { infer: true }) === 'production'
               ? 'info'

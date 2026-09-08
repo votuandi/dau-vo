@@ -1,6 +1,7 @@
 import type {
   MatchFinishedPayload,
   MatchStatePayload,
+  PublicMatchStatePayload,
   PenaltyAddedPayload,
   PenaltyAddPayload,
   PenaltyAddResponse,
@@ -21,6 +22,7 @@ import type {
 export interface ServerToClientEvents {
   'match:finished': (payload: MatchFinishedPayload) => void;
   'match:state': (payload: MatchStatePayload) => void;
+  'scoreboard:state': (payload: PublicMatchStatePayload) => void;
   'penalty:added': (payload: PenaltyAddedPayload) => void;
   'presence:updated': (payload: PresenceUpdatedPayload) => void;
   'round:ended': (payload: RoundEndedPayload) => void;
@@ -35,6 +37,7 @@ export interface ServerToClientEvents {
 
 export interface ClientToServerEvents {
   'match:state:request': () => void;
+  'scoreboard:state:request': () => void;
   'penalty:add': (
     payload: PenaltyAddPayload,
     acknowledge: (response: PenaltyAddResponse) => void,

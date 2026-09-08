@@ -18,6 +18,7 @@ import { hash } from 'bcryptjs';
 import type { EnvironmentVariables } from '../config/environment';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeSessionRegistryService } from '../realtime/realtime-session-registry.service';
+import { RealtimeMatchStateService } from '../realtime/realtime-match-state.service';
 import {
   INVALID_MATCH_ATHLETES_ERROR,
   INVALID_MATCH_ERROR,
@@ -144,6 +145,8 @@ export class AdminManagementService {
     private readonly credentialGenerator: MatchCredentialGeneratorService,
     @Inject(RealtimeSessionRegistryService)
     private readonly realtimeSessions: RealtimeSessionRegistryService,
+    @Inject(RealtimeMatchStateService)
+    private readonly matchState: RealtimeMatchStateService,
   ) {
     this.breakDurationMs = config.getOrThrow('BREAK_DURATION_MS', {
       infer: true,
@@ -420,6 +423,58 @@ export class AdminManagementService {
     }
 
     return match;
+  }
+
+  async getMatchMonitoring(id: string) {
+    await this.requireMatch(id);
+
+    const [snapshot, scoringWindows, penalties, scoreEvents, auditLogs] =
+      await Promise.all([
+        this.matchState.snapshot(id),
+        this.prisma.scoringWindow.findMany({
+          orderBy: { startedAt: 'desc' },
+          select: {
+            endsAt: true,
+            id: true,
+            refereeVotes: {
+              orderBy: { serverReceivedAt: 'asc' },
+              select: {
+                athleteColor: true,
+                refereeSlot: true,
+                serverReceivedAt: true,
+              },
+            },
+            resolvedAt: true,
+            roundNumber: true,
+            scoreAwarded: true,
+            startedAt: true,
+            winningColor: true,
+          },
+          where: { matchId: id },
+        }),
+        this.prisma.penalty.findMany({
+          include: { athlete: { select: { color: true, name: true } } },
+          orderBy: { createdAt: 'desc' },
+          where: { matchId: id },
+        }),
+        this.prisma.scoreEvent.findMany({
+          include: { athlete: { select: { color: true, name: true } } },
+          orderBy: { createdAt: 'desc' },
+          where: { matchId: id },
+        }),
+        this.prisma.auditLog.findMany({
+          orderBy: { createdAt: 'desc' },
+          select: {
+            createdAt: true,
+            eventType: true,
+            id: true,
+            metadata: true,
+          },
+          where: { matchId: id },
+        }),
+      ]);
+
+    return { auditLogs, penalties, scoreEvents, scoringWindows, snapshot };
   }
 
   async updateMatch(

@@ -227,7 +227,7 @@ function MatchCard({ match }: { readonly match: AdminMatch }) {
             >
               {match.publicId}
             </Link>
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
+            <span className="rounded-full border border-primary/10 bg-accent px-2.5 py-1 text-xs font-bold text-accent-foreground">
               {matchStatusLabels[match.status]}
             </span>
           </div>
@@ -317,14 +317,15 @@ function TournamentMatches({ tournament }: { readonly tournament: AdminTournamen
         ) : null}
       </div>
 
-      {generatedCodes.length > 0 ? (
+      {generatedCodes.length > 0 && newMatch ? (
         <div className="mt-6">
           <GeneratedAccessCodesPanel
             accessCodes={generatedCodes}
+            matchPublicId={newMatch.publicId}
             onDismiss={() => {
               setGeneratedCodes([]);
             }}
-            title={`Mã truy cập trận ${newMatch?.publicId ?? ''}`}
+            title={`Mã truy cập trận ${newMatch.publicId}`}
           />
           {newMatch ? (
             <Button asChild className="mt-3" size="sm" variant="outline">
@@ -523,7 +524,7 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
         </Link>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <h1 className="text-3xl font-black tracking-tight md:text-4xl">{tournament.name}</h1>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+          <span className="rounded-full border border-primary/10 bg-accent px-3 py-1 text-xs font-bold text-accent-foreground">
             {tournamentStatusLabels[tournament.status]}
           </span>
         </div>

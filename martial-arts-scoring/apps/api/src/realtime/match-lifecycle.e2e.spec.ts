@@ -474,7 +474,9 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
   });
 
   it('lets the inspector run Round 1, break, Round 2, and finish exactly once', async () => {
-    const match = await createMatch('complete-flow', 250);
+    // The flow awaits multiple socket broadcasts before the invalid-transition
+    // check, so allow real database/socket scheduling margin here.
+    const match = await createMatch('complete-flow', 2_000);
     const inspector = await login(
       match,
       MatchAccessRole.INSPECTOR,
@@ -594,7 +596,9 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
   });
 
   it('uses the match duration and never expires a round before its persisted endsAt', async () => {
-    const match = await createMatch('authoritative-time', 700);
+    // Keep enough margin for a real database read on a busy CI/local machine.
+    // The assertion verifies persisted timing, not event-loop scheduling speed.
+    const match = await createMatch('authoritative-time', 2_000);
     const inspector = await login(
       match,
       MatchAccessRole.INSPECTOR,

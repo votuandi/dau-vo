@@ -1,7 +1,10 @@
 import type { INestApplicationContext } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
 import type { IncomingMessage } from 'node:http';
-import type { ServerOptions } from 'socket.io';
+import { type Server, type ServerOptions } from 'socket.io';
+
+import type { RedisService } from '../redis/redis.service';
 
 type NestSocketIoOptions = Partial<ServerOptions> & {
   namespace?: string;
@@ -9,9 +12,13 @@ type NestSocketIoOptions = Partial<ServerOptions> & {
 };
 
 export class RealtimeSocketIoAdapter extends IoAdapter {
+  private socketIoClients:
+    ReturnType<RedisService['createSocketIoPubSubClients']> | undefined;
+
   constructor(
     app: INestApplicationContext,
     private readonly webOrigin: string,
+    private readonly redis: RedisService,
   ) {
     super(app);
   }
@@ -20,7 +27,7 @@ export class RealtimeSocketIoAdapter extends IoAdapter {
     port: number,
     options?: NestSocketIoOptions,
   ): unknown {
-    return super.createIOServer(port, {
+    const server = super.createIOServer(port, {
       ...options,
       // Socket.IO's CORS option only protects HTTP long-polling. Browsers send
       // an Origin header during the WebSocket upgrade too, so enforce the
@@ -38,6 +45,29 @@ export class RealtimeSocketIoAdapter extends IoAdapter {
         credentials: true,
         origin: this.webOrigin,
       },
-    }) as unknown;
+    }) as Server;
+
+    this.socketIoClients = this.redis.createSocketIoPubSubClients();
+    server.adapter(
+      createAdapter(
+        this.socketIoClients.pubClient,
+        this.socketIoClients.subClient,
+      ),
+    );
+
+    return server;
+  }
+
+  override async close(server: Server): Promise<void> {
+    try {
+      await super.close(server);
+    } finally {
+      const clients = this.socketIoClients;
+      this.socketIoClients = undefined;
+
+      if (clients !== undefined) {
+        await this.redis.closeSocketIoPubSubClients(clients);
+      }
+    }
   }
 }

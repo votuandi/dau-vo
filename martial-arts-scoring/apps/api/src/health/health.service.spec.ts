@@ -44,6 +44,14 @@ function createHarness(options?: {
 }
 
 describe('HealthService', () => {
+  it('reports process liveness without touching dependencies', () => {
+    const { healthService, ping, queryRaw } = createHarness();
+
+    expect(healthService.live()).toMatchObject({ status: 'ok' });
+    expect(queryRaw).not.toHaveBeenCalled();
+    expect(ping).not.toHaveBeenCalled();
+  });
+
   it('reports healthy dependencies', async () => {
     const { healthService, ping, queryRaw } = createHarness();
 

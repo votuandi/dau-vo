@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState, type SyntheticEvent } from 'react';
 import type { SessionRevokedPayload } from '@martial-arts-scoring/shared-types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { MatchRealtimePanel } from '@/components/match-realtime-panel';
 import { Button } from '@/components/ui/button';
 import {
   getLastMatchPublicId,
@@ -15,6 +14,7 @@ import {
   matchAccessSessionQueryOptions,
 } from '@/features/match-access/match-session';
 import { useMatchRealtime } from '@/features/match-access/match-realtime';
+import { InspectorConsole } from '@/features/match-access/inspector-console';
 import { RefereeConsole } from '@/features/match-access/referee-console';
 import {
   matchAccessApi,
@@ -23,7 +23,7 @@ import {
 } from '@/services/api/match-access';
 import { ApiClientError } from '@/services/api/client';
 import { connectSocket } from '@/services/socket/client';
-import { MatchRole, RefereeSlot } from '@/types/shared';
+import { MatchRole } from '@/types/shared';
 
 interface MatchAccessPageProps {
   readonly expectedRole: MatchRole;
@@ -46,15 +46,15 @@ const rolePresentation = {
     eyebrow: 'Khu vực trọng tài',
     title: 'Đăng nhập trọng tài',
     description: 'Nhập mã trận đấu và mã bảo mật được ban tổ chức cấp.',
-    accentClass: 'bg-red-700',
-    authenticatedTitle: 'Phiên trọng tài đã sẵn sàng',
+    accentClass: 'from-sky-700 via-blue-950 to-red-800',
+    eyebrowClass: 'text-sky-700',
   },
   [MatchRole.INSPECTOR]: {
     eyebrow: 'Khu vực giám định',
     title: 'Đăng nhập giám định',
     description: 'Nhập mã trận đấu và mã bảo mật được ban tổ chức cấp.',
-    accentClass: 'bg-blue-800',
-    authenticatedTitle: 'Phiên giám định đã sẵn sàng',
+    accentClass: 'from-sky-700 via-blue-950 to-red-800',
+    eyebrowClass: 'text-sky-700',
   },
 } as const;
 
@@ -105,35 +105,13 @@ function getTakeoverToken(error: ApiClientError): string | null {
   return typeof takeoverToken === 'string' && takeoverToken.length > 0 ? takeoverToken : null;
 }
 
-function getRoleLabel(role: MatchRole): string {
-  return role === MatchRole.REFEREE ? 'Trọng tài' : 'Giám định';
-}
-
-function getRefereeSlotLabel(slot: RefereeSlot | null): string {
-  switch (slot) {
-    case RefereeSlot.REFEREE_1:
-      return 'Trọng tài 1';
-    case RefereeSlot.REFEREE_2:
-      return 'Trọng tài 2';
-    case RefereeSlot.REFEREE_3:
-      return 'Trọng tài 3';
-    default:
-      return 'Không áp dụng';
-  }
-}
-
-function formatExpiration(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('vi-VN');
-}
-
 function LoadingSession() {
   return (
     <section
       aria-live="polite"
-      className="mx-auto w-full max-w-xl rounded-2xl border border-border bg-card p-8 text-center shadow-sm"
+      className="mx-auto w-full max-w-xl rounded-2xl border border-white/80 bg-card/90 p-8 text-center shadow-2xl shadow-blue-950/10 backdrop-blur"
     >
-      <div className="mx-auto size-9 animate-pulse rounded-full bg-slate-200" />
+      <div className="mx-auto size-9 animate-pulse rounded-full bg-gradient-to-br from-sky-600 to-red-600 shadow-lg shadow-sky-700/20" />
       <h1 className="mt-5 text-xl font-bold">Đang kiểm tra phiên đăng nhập…</h1>
       <p className="mt-2 text-sm text-muted-foreground">Vui lòng chờ trong giây lát.</p>
     </section>
@@ -143,7 +121,6 @@ function LoadingSession() {
 interface AuthenticatedMatchAccessProps {
   readonly expectedRole: MatchRole;
   readonly isLogoutPending: boolean;
-  readonly logoutFailed: boolean;
   readonly onAuthenticationRequired: () => void;
   readonly onLogout: () => void;
   readonly onSessionRevoked: (payload: SessionRevokedPayload) => void;
@@ -153,13 +130,11 @@ interface AuthenticatedMatchAccessProps {
 function AuthenticatedMatchAccess({
   expectedRole,
   isLogoutPending,
-  logoutFailed,
   onAuthenticationRequired,
   onLogout,
   onSessionRevoked,
   session,
 }: AuthenticatedMatchAccessProps) {
-  const presentation = rolePresentation[expectedRole];
   const realtime = useMatchRealtime({
     matchPublicId: session.matchPublicId,
     onAuthenticationRequired,
@@ -182,79 +157,15 @@ function AuthenticatedMatchAccess({
   }
 
   return (
-    <section className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-      <div className={`${presentation.accentClass} px-7 py-8 text-white sm:px-10`}>
-        <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/70">
-          {presentation.eyebrow}
-        </p>
-        <h1 className="mt-3 text-3xl font-black tracking-tight">
-          {presentation.authenticatedTitle}
-        </h1>
-        <p className="mt-3 max-w-xl text-sm leading-6 text-white/80">
-          Phiên đã xác thực và đang nhận trạng thái trận đấu cùng thời gian chính thức từ máy chủ.
-        </p>
-      </div>
-
-      <div className="p-7 sm:p-10">
-        <dl className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-xl border border-border bg-muted/40 p-4">
-            <dt className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Mã trận đấu
-            </dt>
-            <dd className="mt-2 font-mono text-xl font-black tracking-[0.15em]">
-              {session.matchPublicId}
-            </dd>
-          </div>
-          <div className="rounded-xl border border-border bg-muted/40 p-4">
-            <dt className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Vai trò
-            </dt>
-            <dd className="mt-2 text-lg font-bold">
-              {session.role === MatchRole.REFEREE
-                ? getRefereeSlotLabel(session.refereeSlot)
-                : getRoleLabel(session.role)}
-            </dd>
-          </div>
-          <div className="rounded-xl border border-border bg-muted/40 p-4">
-            <dt className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Phiên
-            </dt>
-            <dd className="mt-2 break-all font-mono text-sm">{session.sessionId}</dd>
-          </div>
-          <div className="rounded-xl border border-border bg-muted/40 p-4">
-            <dt className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Hết hạn
-            </dt>
-            <dd className="mt-2 text-sm font-semibold">{formatExpiration(session.expiresAt)}</dd>
-          </div>
-        </dl>
-
-        <MatchRealtimePanel canAddPenalty canStartRound canSubmitVote={false} realtime={realtime} />
-
-        {logoutFailed ? (
-          <div
-            className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-            role="alert"
-          >
-            Không thể đăng xuất. Vui lòng thử lại.
-          </div>
-        ) : null}
-
-        <div className="mt-7 flex justify-end">
-          <Button
-            disabled={isLogoutPending}
-            onClick={() => {
-              realtime.disconnect();
-              onLogout();
-            }}
-            type="button"
-            variant="outline"
-          >
-            {isLogoutPending ? 'Đang đăng xuất…' : 'Đăng xuất'}
-          </Button>
-        </div>
-      </div>
-    </section>
+    <InspectorConsole
+      isLogoutPending={isLogoutPending}
+      onLogout={() => {
+        realtime.disconnect();
+        onLogout();
+      }}
+      realtime={realtime}
+      session={session}
+    />
   );
 }
 
@@ -400,7 +311,6 @@ export function MatchAccessPage({ expectedRole }: MatchAccessPageProps) {
       <AuthenticatedMatchAccess
         expectedRole={expectedRole}
         isLogoutPending={logoutMutation.isPending}
-        logoutFailed={logoutMutation.isError}
         onAuthenticationRequired={handleRealtimeAuthenticationRequired}
         onLogout={() => {
           logoutMutation.mutate();
@@ -412,28 +322,36 @@ export function MatchAccessPage({ expectedRole }: MatchAccessPageProps) {
   }
 
   return (
-    <section className="mx-auto grid w-full max-w-5xl overflow-hidden rounded-2xl border border-border bg-card shadow-sm md:grid-cols-[1.05fr_0.95fr]">
+    <section className="mx-auto grid w-full max-w-5xl overflow-hidden rounded-[1.75rem] border border-white/80 bg-card/90 shadow-2xl shadow-blue-950/10 backdrop-blur md:grid-cols-[1.05fr_0.95fr]">
       <div
-        className={`hidden ${presentation.accentClass} p-10 text-white md:flex md:flex-col md:justify-between`}
+        className={`relative hidden overflow-hidden bg-gradient-to-br ${presentation.accentClass} p-10 text-white md:flex md:flex-col md:justify-between`}
       >
-        <div className="grid size-12 place-items-center rounded-xl bg-white text-sm font-black text-slate-950">
+        <span
+          aria-hidden="true"
+          className="absolute -right-20 -top-20 size-64 rounded-full bg-white/20 blur-2xl"
+        />
+        <span
+          aria-hidden="true"
+          className="absolute -bottom-28 -left-16 size-72 rounded-full bg-white/10 blur-3xl"
+        />
+        <div className="relative grid size-12 place-items-center rounded-xl bg-white/20 text-sm font-black text-white shadow-lg ring-1 ring-white/40 backdrop-blur">
           ĐV
         </div>
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/70">
+        <div className="relative">
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/90">
             {presentation.eyebrow}
           </p>
           <h1 className="mt-4 text-4xl font-black leading-tight tracking-tight">
             Xác thực an toàn cho từng vị trí thi đấu.
           </h1>
-          <p className="mt-4 max-w-md text-sm leading-6 text-white/80">
+          <p className="mt-4 max-w-md text-sm leading-6 text-white/90">
             Vai trò được xác định hoàn toàn từ mã bảo mật trên máy chủ.
           </p>
         </div>
       </div>
 
       <div className="p-7 sm:p-10">
-        <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">
+        <p className={`text-xs font-bold uppercase tracking-[0.2em] ${presentation.eyebrowClass}`}>
           {presentation.eyebrow}
         </p>
         <h2 className="mt-3 text-3xl font-black tracking-tight">{presentation.title}</h2>
@@ -497,7 +415,7 @@ export function MatchAccessPage({ expectedRole }: MatchAccessPageProps) {
                 autoCapitalize="characters"
                 autoComplete="off"
                 autoFocus
-                className="mt-2 h-14 w-full rounded-md border border-input bg-background px-4 font-mono text-base uppercase tracking-[0.12em] outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-2 h-14 w-full rounded-lg border border-input bg-white/80 px-4 font-mono text-base uppercase tracking-[0.12em] outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={isSubmitting}
                 id={`${expectedRole}-match-id`}
                 maxLength={32}
@@ -530,7 +448,7 @@ export function MatchAccessPage({ expectedRole }: MatchAccessPageProps) {
                 aria-invalid={Boolean(formErrors.securityCode)}
                 autoCapitalize="characters"
                 autoComplete="off"
-                className="mt-2 h-14 w-full rounded-md border border-input bg-background px-4 font-mono text-base uppercase tracking-wider outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-2 h-14 w-full rounded-lg border border-input bg-white/80 px-4 font-mono text-base uppercase tracking-wider outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={isSubmitting}
                 id={`${expectedRole}-security-code`}
                 maxLength={64}

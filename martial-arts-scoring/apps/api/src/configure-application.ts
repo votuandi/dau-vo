@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 
 import type { EnvironmentVariables } from './config/environment';
 import { RealtimeSocketIoAdapter } from './realtime/realtime-socket-io.adapter';
+import { RedisService } from './redis/redis.service';
 
 export function configureApplication(
   app: INestApplication,
@@ -27,6 +28,7 @@ export function configureApplication(
     new RealtimeSocketIoAdapter(
       app,
       config.getOrThrow('WEB_ORIGIN', { infer: true }),
+      app.get(RedisService),
     ),
   );
   app.enableShutdownHooks();
