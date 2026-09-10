@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AthleteColor, MatchAccessRole, MatchStatus } from '@/types/shared';
-import { formatDateTime, matchStatusLabels } from './presentation';
+import { formatDateTime, formatDateTimeWithSeconds, matchStatusLabels } from './presentation';
 import { matchMonitoringQueryOptions } from './queries';
 
 const roleLabels: Record<MatchAccessRole, string> = {
@@ -37,8 +37,37 @@ function useDisplayTimer(endsAt: string | undefined, generatedAt: string | undef
   return Number.isNaN(end) ? '--:--' : formatRemaining(end - (now + offsetRef.current));
 }
 
-function colorLabel(color: AthleteColor): string {
+function colorLabel(color: AthleteColor | null): string {
+  if (color === null) return '—';
   return color === AthleteColor.RED ? 'ĐỎ' : 'XANH';
+}
+
+function formatRoundElapsedTime(roundElapsedMs: number | null, roundNumber: number | null): string {
+  if (roundElapsedMs === null || roundNumber === null) {
+    return 'Không xác định thời gian trong hiệp';
+  }
+
+  const seconds = Math.max(0, Math.floor(roundElapsedMs / 1_000));
+  return `Giây ${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')} trong hiệp ${String(roundNumber)}`;
+}
+
+function scoringWindowHistoryClassName(
+  scoreAwarded: boolean,
+  winningColor: AthleteColor | null,
+): string {
+  if (scoreAwarded && winningColor === AthleteColor.RED) {
+    return 'border border-red-200 bg-red-50';
+  }
+  if (scoreAwarded && winningColor === AthleteColor.BLUE) {
+    return 'border border-blue-200 bg-blue-50';
+  }
+  return 'border border-slate-200 bg-slate-100';
+}
+
+function scoreEventHistoryClassName(color: AthleteColor | null): string {
+  if (color === AthleteColor.RED) return 'border border-red-200 bg-red-50';
+  if (color === AthleteColor.BLUE) return 'border border-blue-200 bg-blue-50';
+  return 'border border-slate-200 bg-slate-100';
 }
 
 function metadataText(value: unknown): string {
@@ -72,10 +101,7 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
   const paused =
     snapshot?.match.status === MatchStatus.ROUND_1_PAUSED ||
     snapshot?.match.status === MatchStatus.ROUND_2_PAUSED;
-  const timer = useDisplayTimer(
-    running ? activeRound?.endsAt : undefined,
-    snapshot?.generatedAt,
-  );
+  const timer = useDisplayTimer(running ? activeRound?.endsAt : undefined, snapshot?.generatedAt);
   const displayedTimer =
     paused && activeRound?.remainingDurationMs != null
       ? `${String(Math.floor(activeRound.remainingDurationMs / 60_000)).padStart(2, '0')}:${String(Math.ceil(activeRound.remainingDurationMs / 1_000) % 60).padStart(2, '0')}`
@@ -159,7 +185,11 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
           </summary>
           <div className="mt-4 space-y-3">
             {monitoring.data?.scoringWindows.map((window) => (
-              <article className="rounded-lg bg-muted/60 p-3" key={window.id}>
+              <article
+                className={`rounded-lg p-3 ${scoringWindowHistoryClassName(window.scoreAwarded, window.winningColor)}`}
+                data-testid={`scoring-window-${window.id}`}
+                key={window.id}
+              >
                 <div className="flex flex-wrap justify-between gap-2">
                   <p className="font-bold">
                     Hiệp {window.roundNumber} ·{' '}
@@ -168,9 +198,12 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                       : 'Không tính điểm'}
                     {window.invalidatedAt ? ' · Đã hủy kết quả' : ''}
                   </p>
-                  <time className="text-xs text-muted-foreground">
-                    {formatDateTime(window.startedAt)}
-                  </time>
+                  <div className="text-right text-xs text-muted-foreground">
+                    <time className="block">{formatDateTimeWithSeconds(window.occurredAt)}</time>
+                    <p className="mt-1">
+                      {formatRoundElapsedTime(window.roundElapsedMs, window.roundNumber)}
+                    </p>
+                  </div>
                 </div>
                 <ul className="mt-2 text-sm">
                   {window.refereeVotes.map((vote) => (
@@ -178,7 +211,7 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                       {roleLabels[vote.refereeSlot as MatchAccessRole]} →{' '}
                       <strong>{colorLabel(vote.athleteColor)}</strong>{' '}
                       <span className="text-muted-foreground">
-                        {formatDateTime(vote.serverReceivedAt)}
+                        {formatDateTimeWithSeconds(vote.serverReceivedAt)}
                       </span>
                       {vote.invalidatedAt ? (
                         <span className="ml-2 font-bold text-amber-700">Đã vô hiệu</span>
@@ -213,14 +246,23 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
           </summary>
           <ul className="mt-4 space-y-2 text-sm">
             {monitoring.data?.scoreEvents.map((event) => (
-              <li className="rounded-lg bg-muted/60 p-3" key={event.id}>
+              <li
+                className={`rounded-lg p-3 ${scoreEventHistoryClassName(event.athlete.color)}`}
+                data-testid={`score-event-${event.id}`}
+                key={event.id}
+              >
                 {event.type} · Hiệp {event.roundNumber ?? '—'} · {colorLabel(event.athlete.color)} ·{' '}
                 {event.athlete.name} ·{' '}
                 <strong>
                   {event.value > 0 ? '+' : ''}
                   {event.value}
                 </strong>{' '}
-                · {formatDateTime(event.createdAt)}
+                <div className="mt-1 text-xs text-muted-foreground">
+                  <time className="block">{formatDateTimeWithSeconds(event.occurredAt)}</time>
+                  <p className="mt-1">
+                    {formatRoundElapsedTime(event.roundElapsedMs, event.roundNumber)}
+                  </p>
+                </div>
                 {event.revertedAt ? (
                   <span className="ml-2 font-bold text-amber-700">Đã hoàn tác</span>
                 ) : null}

@@ -22,6 +22,7 @@ import {
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { activeRoundElapsedMs } from './round-timing';
 import {
   DuplicateRefereeVoteError,
   InactiveVoteSessionError,
@@ -48,7 +49,9 @@ interface ServerClock {
 }
 
 interface ActiveRound {
+  durationMs: number | null;
   endsAt: Date;
+  id: string;
   roundNumber: number;
   startedAt: Date;
 }
@@ -57,6 +60,8 @@ interface WindowRow {
   endsAt: Date;
   id: string;
   matchId: string;
+  roundElapsedMs: number | null;
+  roundId: string | null;
   roundNumber: number;
   startedAt: Date;
 }
@@ -163,7 +168,13 @@ export class ScoringService implements OnModuleDestroy {
             currentRound: true,
             publicId: true,
             rounds: {
-              select: { endsAt: true, roundNumber: true, startedAt: true },
+              select: {
+                durationMs: true,
+                endsAt: true,
+                id: true,
+                roundNumber: true,
+                startedAt: true,
+              },
               where: { endedAt: null },
             },
             status: true,
@@ -191,6 +202,8 @@ export class ScoringService implements OnModuleDestroy {
             endsAt: true,
             id: true,
             matchId: true,
+            roundElapsedMs: true,
+            roundId: true,
             roundNumber: true,
             startedAt: true,
           },
@@ -281,12 +294,16 @@ export class ScoringService implements OnModuleDestroy {
           data: {
             endsAt,
             matchId: input.matchId,
+            roundElapsedMs: activeRoundElapsedMs(activeRound, clock.serverNow),
+            roundId: activeRound.id,
             roundNumber: activeRound.roundNumber,
             startedAt: clock.serverNow,
           },
           select: {
             endsAt: true,
             id: true,
+            roundElapsedMs: true,
+            roundId: true,
             roundNumber: true,
             startedAt: true,
           },
@@ -388,6 +405,8 @@ export class ScoringService implements OnModuleDestroy {
               endsAt: true,
               id: true,
               matchId: true,
+              roundElapsedMs: true,
+              roundId: true,
               roundNumber: true,
               startedAt: true,
             },
@@ -470,6 +489,9 @@ export class ScoringService implements OnModuleDestroy {
         data: {
           athleteId: athlete.id,
           matchId: window.matchId,
+          occurredAt: window.startedAt,
+          roundElapsedMs: window.roundElapsedMs,
+          roundId: window.roundId,
           roundNumber: window.roundNumber,
           scoringWindowId: window.id,
           type: ScoreEventType.REFEREE_POINT,

@@ -241,6 +241,7 @@ model Round {
   id                   String    @id(map: "rounds_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   matchId              String    @map("match_id") @db.Uuid
   roundNumber          Int       @map("round_number") @db.SmallInt
+  durationMs           Int?      @map("duration_ms")
   startedAt            DateTime  @map("started_at") @db.Timestamptz(3)
   endsAt               DateTime  @map("ends_at") @db.Timestamptz(3)
   pausedAt             DateTime? @map("paused_at") @db.Timestamptz(3)
@@ -250,6 +251,8 @@ model Round {
   endedAt              DateTime? @map("ended_at") @db.Timestamptz(3)
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   match                Match     @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "rounds_match_id_fkey")
+  scoringWindows       ScoringWindow[]
+  scoreEvents          ScoreEvent[]
 
   @@index([matchId, roundNumber], map: "rounds_match_id_round_number_idx")
   @@index([matchId], map: "rounds_match_id_idx")
@@ -261,6 +264,8 @@ model ScoringWindow {
   id                   String        @id(map: "scoring_windows_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   matchId              String        @map("match_id") @db.Uuid
   roundNumber          Int           @map("round_number") @db.SmallInt
+  roundId              String?       @map("round_id") @db.Uuid
+  roundElapsedMs       Int?          @map("round_elapsed_ms")
   startedAt            DateTime      @map("started_at") @db.Timestamptz(3)
   endsAt               DateTime      @map("ends_at") @db.Timestamptz(3)
   resolvedAt           DateTime?     @map("resolved_at") @db.Timestamptz(3)
@@ -270,12 +275,14 @@ model ScoringWindow {
   invalidatedByAuditId String?       @map("invalidated_by_audit_id") @db.Uuid
   createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   match                Match         @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "scoring_windows_match_id_fkey")
+  round                Round?        @relation(fields: [roundId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "scoring_windows_round_id_fkey")
   refereeVotes         RefereeVote[]
   scoreEvents          ScoreEvent[]
 
   @@index([matchId], map: "scoring_windows_match_id_idx")
   @@index([resolvedAt], map: "scoring_windows_resolved_at_idx")
   @@index([matchId, resolvedAt], map: "scoring_windows_match_id_resolved_at_idx")
+  @@index([roundId], map: "scoring_windows_round_id_idx")
   @@map("scoring_windows")
 }
 
@@ -307,6 +314,9 @@ model ScoreEvent {
   matchId           String         @map("match_id") @db.Uuid
   athleteId         String         @map("athlete_id") @db.Uuid
   roundNumber       Int?           @map("round_number") @db.SmallInt
+  roundId           String?        @map("round_id") @db.Uuid
+  occurredAt        DateTime?      @map("occurred_at") @db.Timestamptz(3)
+  roundElapsedMs    Int?           @map("round_elapsed_ms")
   type              ScoreEventType
   value             Int
   scoringWindowId   String?        @map("scoring_window_id") @db.Uuid
@@ -315,6 +325,7 @@ model ScoreEvent {
   revertedAt        DateTime?      @map("reverted_at") @db.Timestamptz(3)
   revertedByAuditId String?        @map("reverted_by_audit_id") @db.Uuid
   match             Match          @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "score_events_match_id_fkey")
+  round             Round?         @relation(fields: [roundId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "score_events_round_id_fkey")
   athlete           MatchAthlete   @relation(fields: [athleteId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "score_events_athlete_id_fkey")
   scoringWindow     ScoringWindow? @relation(fields: [scoringWindowId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "score_events_scoring_window_id_fkey")
   penalty           Penalty?       @relation(fields: [penaltyId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "score_events_penalty_id_fkey")
@@ -323,6 +334,7 @@ model ScoreEvent {
   @@index([athleteId], map: "score_events_athlete_id_idx")
   @@index([scoringWindowId], map: "score_events_scoring_window_id_idx")
   @@index([penaltyId], map: "score_events_penalty_id_idx")
+  @@index([roundId], map: "score_events_round_id_idx")
   @@map("score_events")
 }
 

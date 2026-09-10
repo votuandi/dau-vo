@@ -41,6 +41,10 @@ import type {
   UpdateTournamentDto,
 } from './dto/tournament.dto';
 import { MatchCredentialGeneratorService } from './match-credential-generator.service';
+import {
+  monitoringScoreEvent,
+  monitoringScoringWindow,
+} from './monitoring-history';
 
 const ACCESS_CODE_HASH_COST = 12;
 const PUBLIC_ID_GENERATION_ATTEMPTS = 8;
@@ -448,6 +452,7 @@ export class AdminManagementService {
               },
             },
             resolvedAt: true,
+            roundElapsedMs: true,
             roundNumber: true,
             scoreAwarded: true,
             startedAt: true,
@@ -461,7 +466,12 @@ export class AdminManagementService {
           where: { matchId: id },
         }),
         this.prisma.scoreEvent.findMany({
-          include: { athlete: { select: { color: true, name: true } } },
+          include: {
+            athlete: { select: { color: true, name: true } },
+            scoringWindow: {
+              select: { roundElapsedMs: true, startedAt: true },
+            },
+          },
           orderBy: { createdAt: 'desc' },
           where: { matchId: id },
         }),
@@ -477,7 +487,15 @@ export class AdminManagementService {
         }),
       ]);
 
-    return { auditLogs, penalties, scoreEvents, scoringWindows, snapshot };
+    return {
+      auditLogs,
+      penalties,
+      scoreEvents: scoreEvents.map(({ scoringWindow, ...event }) =>
+        monitoringScoreEvent(event, scoringWindow),
+      ),
+      scoringWindows: scoringWindows.map(monitoringScoringWindow),
+      snapshot,
+    };
   }
 
   async updateMatch(

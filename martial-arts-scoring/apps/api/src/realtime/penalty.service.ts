@@ -13,6 +13,7 @@ import {
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { activeRoundElapsedMs } from './round-timing';
 import {
   InactivePenaltySessionError,
   MatchNotRunningForPenaltyError,
@@ -31,7 +32,9 @@ interface ServerClock {
 }
 
 interface ActiveRound {
+  durationMs: number | null;
   endsAt: Date;
+  id: string;
   roundNumber: number;
 }
 
@@ -77,7 +80,12 @@ export class PenaltyService {
             currentRound: true,
             publicId: true,
             rounds: {
-              select: { endsAt: true, roundNumber: true },
+              select: {
+                durationMs: true,
+                endsAt: true,
+                id: true,
+                roundNumber: true,
+              },
               where: { endedAt: null },
             },
             status: true,
@@ -101,6 +109,7 @@ export class PenaltyService {
         const penalty = await transaction.penalty.create({
           data: {
             athleteId: athlete.id,
+            createdAt: clock.serverNow,
             createdBySessionId: input.sessionId,
             matchId: input.matchId,
             roundNumber: activeRound.roundNumber,
@@ -111,8 +120,12 @@ export class PenaltyService {
         await transaction.scoreEvent.create({
           data: {
             athleteId: athlete.id,
+            createdAt: clock.serverNow,
             matchId: input.matchId,
+            occurredAt: clock.serverNow,
             penaltyId: penalty.id,
+            roundElapsedMs: activeRoundElapsedMs(activeRound, clock.serverNow),
+            roundId: activeRound.id,
             roundNumber: activeRound.roundNumber,
             type: ScoreEventType.PENALTY,
             value: penalty.value,

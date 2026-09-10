@@ -202,6 +202,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
         );
         const round = await transaction.round.create({
           data: {
+            durationMs: match.roundDurationMs,
             endsAt,
             matchId: input.matchId,
             roundNumber,

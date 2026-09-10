@@ -60,6 +60,8 @@ export interface AdminMatchMonitoring {
     id: string;
     roundNumber: number;
     startedAt: string;
+    occurredAt: string;
+    roundElapsedMs: number | null;
     endsAt: string;
     resolvedAt: string | null;
     invalidatedAt: string | null;
@@ -85,6 +87,8 @@ export interface AdminMatchMonitoring {
   readonly scoreEvents: readonly {
     id: string;
     roundNumber: number | null;
+    occurredAt: string;
+    roundElapsedMs: number | null;
     type: string;
     value: number;
     createdAt: string;
@@ -92,7 +96,7 @@ export interface AdminMatchMonitoring {
     revertedByAuditId: string | null;
     scoringWindowId: string | null;
     penaltyId: string | null;
-    athlete: { color: AthleteColor; name: string };
+    athlete: { color: AthleteColor | null; name: string | null };
   }[];
   readonly auditLogs: readonly {
     id: string;
