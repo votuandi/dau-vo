@@ -17,7 +17,7 @@ export class RealtimeSocketIoAdapter extends IoAdapter {
 
   constructor(
     app: INestApplicationContext,
-    private readonly webOrigin: string,
+    private readonly webOrigins: readonly string[],
     private readonly redis: RedisService,
   ) {
     super(app);
@@ -39,11 +39,11 @@ export class RealtimeSocketIoAdapter extends IoAdapter {
         callback: (error: string | null | undefined, success: boolean) => void,
       ) => {
         const origin = request.headers.origin;
-        callback(null, origin === undefined || origin === this.webOrigin);
+        callback(null, origin === undefined || this.webOrigins.includes(origin));
       },
       cors: {
         credentials: true,
-        origin: this.webOrigin,
+        origin: this.webOrigins,
       },
     }) as Server;
 

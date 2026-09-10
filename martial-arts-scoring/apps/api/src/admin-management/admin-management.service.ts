@@ -436,10 +436,13 @@ export class AdminManagementService {
           select: {
             endsAt: true,
             id: true,
+            invalidatedAt: true,
+            invalidatedByAuditId: true,
             refereeVotes: {
               orderBy: { serverReceivedAt: 'asc' },
               select: {
                 athleteColor: true,
+                invalidatedAt: true,
                 refereeSlot: true,
                 serverReceivedAt: true,
               },

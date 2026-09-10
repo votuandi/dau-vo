@@ -145,6 +145,17 @@ describe('validateEnvironment', () => {
         ...validEnvironment,
         WEB_ORIGIN: 'not-a-url',
       }),
-    ).toThrow('WEB_ORIGIN must be a valid HTTP(S) origin');
+    ).toThrow('WEB_ORIGIN must contain valid HTTP(S) origins');
+  });
+
+  it('normalizes a comma-separated web-origin allowlist', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        WEB_ORIGIN: 'http://localhost:5173, http://192.168.1.111:5173',
+      }),
+    ).toMatchObject({
+      WEB_ORIGIN: ['http://localhost:5173', 'http://192.168.1.111:5173'],
+    });
   });
 });

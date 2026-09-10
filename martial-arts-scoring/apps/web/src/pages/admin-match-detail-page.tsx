@@ -13,6 +13,8 @@ import {
   inputClassName,
   matchStatusLabels,
   millisecondsToSeconds,
+  notifyMutationError,
+  notifyMutationSuccess,
   secondsToMilliseconds,
 } from '@/features/admin-management/presentation';
 import {
@@ -63,11 +65,15 @@ function MatchEditor({ match }: { readonly match: AdminMatch }) {
 
   const updateMutation = useMutation({
     mutationFn: (input: UpdateMatchInput) => adminManagementApi.updateMatch(match.id, input),
-    onSuccess: async (response) => {
+    onSuccess: (response) => {
       queryClient.setQueryData(matchQueryKeys.detail(match.id), response);
-      await queryClient.invalidateQueries({
+      notifyMutationSuccess('Cập nhật trận đấu thành công.');
+      void queryClient.invalidateQueries({
         queryKey: tournamentQueryKeys.matches(match.tournamentId),
       });
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể cập nhật trận đấu.');
     },
   });
 
@@ -252,9 +258,13 @@ function AccessCodesManager({ match }: { readonly match: AdminMatch }) {
       role === 'ALL'
         ? adminManagementApi.regenerateAllMatchCodes(match.id)
         : adminManagementApi.regenerateMatchCode(match.id, role),
-    onSuccess: async (response) => {
+    onSuccess: (response) => {
       setGeneratedCodes(response.accessCodes);
-      await queryClient.invalidateQueries({ queryKey: matchQueryKeys.detail(match.id) });
+      notifyMutationSuccess('Tạo lại mã truy cập thành công.');
+      void queryClient.invalidateQueries({ queryKey: matchQueryKeys.detail(match.id) });
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể tạo lại mã truy cập.');
     },
   });
 

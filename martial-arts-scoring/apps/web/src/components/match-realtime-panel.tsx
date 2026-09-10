@@ -32,8 +32,10 @@ const accessRoleLabels: Record<MatchAccessRole, string> = {
 const matchStatusLabels: Record<MatchStatus, string> = {
   [MatchStatus.WAITING]: 'Đang chờ',
   [MatchStatus.ROUND_1_RUNNING]: 'Hiệp 1 đang diễn ra',
+  [MatchStatus.ROUND_1_PAUSED]: 'Hiệp 1 đang tạm dừng',
   [MatchStatus.BREAK]: 'Nghỉ giữa hiệp',
   [MatchStatus.ROUND_2_RUNNING]: 'Hiệp 2 đang diễn ra',
+  [MatchStatus.ROUND_2_PAUSED]: 'Hiệp 2 đang tạm dừng',
   [MatchStatus.FINISHED]: 'Đã kết thúc',
 };
 

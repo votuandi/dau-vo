@@ -17,7 +17,7 @@ export interface EnvironmentVariables {
   NODE_ENV: NodeEnvironment;
   REDIS_URL: string;
   ROUND_DURATION_MS: number;
-  WEB_ORIGIN: string;
+  WEB_ORIGIN: readonly string[];
 }
 
 const DEFAULT_ADMIN_LOGIN_RATE_LIMIT_MAX_ATTEMPTS = 5;
@@ -83,20 +83,30 @@ function parseNodeEnvironment(value: unknown): NodeEnvironment {
   return environment;
 }
 
-function requireWebOrigin(config: Record<string, unknown>): string {
-  const origin = requireString(config, 'WEB_ORIGIN');
+function requireWebOrigins(config: Record<string, unknown>): readonly string[] {
+  const origins = requireString(config, 'WEB_ORIGIN')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0)
+    .map((origin) => {
+      try {
+        const url = new URL(origin);
 
-  try {
-    const url = new URL(origin);
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+          throw new Error('unsupported protocol');
+        }
 
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      throw new Error('unsupported protocol');
-    }
+        return url.origin;
+      } catch {
+        throw new Error('WEB_ORIGIN must contain valid HTTP(S) origins');
+      }
+    });
 
-    return url.origin;
-  } catch {
-    throw new Error('WEB_ORIGIN must be a valid HTTP(S) origin');
+  if (origins.length === 0) {
+    throw new Error('WEB_ORIGIN must contain at least one HTTP(S) origin');
   }
+
+  return [...new Set(origins)];
 }
 
 export function validateEnvironment(
@@ -178,6 +188,6 @@ export function validateEnvironment(
     NODE_ENV: nodeEnvironment,
     REDIS_URL: requireString(config, 'REDIS_URL'),
     ROUND_DURATION_MS: requirePositiveInteger(config, 'ROUND_DURATION_MS'),
-    WEB_ORIGIN: requireWebOrigin(config),
+    WEB_ORIGIN: requireWebOrigins(config),
   };
 }

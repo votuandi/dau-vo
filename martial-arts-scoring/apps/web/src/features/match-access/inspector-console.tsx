@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AthleteColor, MatchStatus } from '@martial-arts-scoring/shared-types';
 import { Button } from '@/components/ui/button';
+import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import type { MatchRealtimeState, RealtimeConnectionStatus } from './match-realtime';
 import type { MatchAccessSession } from '@/services/api/match-access';
 
@@ -37,10 +38,14 @@ function displayPhase(status: MatchStatus | undefined): string {
       return 'CHỜ BẮT ĐẦU';
     case MatchStatus.ROUND_1_RUNNING:
       return 'HIỆP 1';
+    case MatchStatus.ROUND_1_PAUSED:
+      return 'HIỆP 1 · TẠM DỪNG';
     case MatchStatus.BREAK:
       return 'GIẢI LAO';
     case MatchStatus.ROUND_2_RUNNING:
       return 'HIỆP 2';
+    case MatchStatus.ROUND_2_PAUSED:
+      return 'HIỆP 2 · TẠM DỪNG';
     case MatchStatus.FINISHED:
       return 'TRẬN ĐẤU ĐÃ KẾT THÚC';
     default:
@@ -184,16 +189,31 @@ export function InspectorConsole({
   const status = snapshot?.match.status;
   const roundIsRunning =
     status === MatchStatus.ROUND_1_RUNNING || status === MatchStatus.ROUND_2_RUNNING;
+  const roundIsPaused =
+    status === MatchStatus.ROUND_1_PAUSED || status === MatchStatus.ROUND_2_PAUSED;
   const remainingTime = useServerDisplayTimer(
     roundIsRunning ? snapshot?.activeRound?.endsAt : undefined,
     snapshot?.generatedAt,
   );
   const [armedPenalty, setArmedPenalty] = useState<AthleteColor | null>(null);
+  const [confirmation, setConfirmation] = useState<
+    'pause' | 'resume' | 'cancel-round' | 'reset-match' | null
+  >(null);
+  const displayedRemaining = roundIsPaused
+    ? (snapshot?.activeRound?.remainingDurationMs ?? null)
+    : remainingTime;
   const penaltyControlsDisabled =
     realtime.connectionStatus !== 'connected' ||
     !roundIsRunning ||
     realtime.submittingPenalty !== null;
   const canStartRound = status === MatchStatus.WAITING || status === MatchStatus.BREAK;
+  const refereeReadiness = [
+    snapshot?.readiness.referees.REFEREE_1 ?? false,
+    snapshot?.readiness.referees.REFEREE_2 ?? false,
+    snapshot?.readiness.referees.REFEREE_3 ?? false,
+  ];
+  const scoreboardConnectedCount = snapshot?.readiness.scoreboardConnectedCount ?? 0;
+  const participantsReady = snapshot?.readiness.canStartRound ?? false;
   const startLabel = status === MatchStatus.BREAK ? 'BẮT ĐẦU HIỆP 2' : 'BẮT ĐẦU HIỆP 1';
   const redAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
   const blueAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
@@ -265,37 +285,134 @@ export function InspectorConsole({
         </header>
 
         <section className="mt-3 rounded-3xl border border-white/15 bg-white/10 px-5 py-7 text-center shadow-2xl shadow-blue-950/20 backdrop-blur-xl sm:mt-5 sm:px-8 sm:py-9">
-          <p className="text-sm font-black tracking-[0.2em] text-sky-200">
-            {displayPhase(status)}
-          </p>
+          <p className="text-sm font-black tracking-[0.2em] text-sky-200">{displayPhase(status)}</p>
           <p
-            aria-label={`Thời gian còn lại ${formatRemainingTime(remainingTime ?? 0)}`}
+            aria-label={`Thời gian còn lại ${formatRemainingTime(displayedRemaining ?? 0)}`}
             className="mt-2 font-mono text-6xl font-black tabular-nums tracking-tight sm:text-8xl"
             role="timer"
           >
-            {roundIsRunning && remainingTime !== null
-              ? formatRemainingTime(remainingTime)
+            {(roundIsRunning || roundIsPaused) && displayedRemaining !== null
+              ? formatRemainingTime(displayedRemaining)
               : '--:--'}
           </p>
           <p className="mt-3 text-sm text-sky-100/75">
-            {roundIsRunning
-              ? 'Thời gian chính thức do máy chủ xác định'
-              : status === MatchStatus.BREAK
-                ? 'Chờ giám định viên bắt đầu Hiệp 2'
-                : status === MatchStatus.FINISHED
-                  ? 'Trận đấu đã kết thúc'
-                  : 'Chờ trạng thái chính thức từ máy chủ'}
+            {roundIsPaused
+              ? 'Đồng hồ đang tạm dừng theo trạng thái chính thức từ máy chủ'
+              : roundIsRunning
+                ? 'Thời gian chính thức do máy chủ xác định'
+                : status === MatchStatus.BREAK
+                  ? 'Chờ giám định viên bắt đầu Hiệp 2'
+                  : status === MatchStatus.FINISHED
+                    ? 'Trận đấu đã kết thúc'
+                    : 'Chờ trạng thái chính thức từ máy chủ'}
           </p>
 
           {canStartRound ? (
+            <>
+              <section
+                aria-labelledby="match-readiness-title"
+                className="mx-auto mt-6 max-w-md rounded-2xl border border-white/15 bg-blue-950/30 p-4 text-left"
+              >
+                <h2 className="font-black" id="match-readiness-title">
+                  Sẵn sàng trận đấu
+                </h2>
+                <ul className="mt-3 grid gap-2 text-sm font-semibold">
+                  {refereeReadiness.map((connected, index) => (
+                    <li className={connected ? 'text-emerald-200' : 'text-red-200'} key={index}>
+                      <span aria-hidden="true">{connected ? '✓' : '✗'}</span> Trọng tài {index + 1}{' '}
+                      {connected ? 'đã kết nối' : 'chưa kết nối'}
+                    </li>
+                  ))}
+                  <li
+                    className={scoreboardConnectedCount > 0 ? 'text-emerald-200' : 'text-red-200'}
+                  >
+                    <span aria-hidden="true">{scoreboardConnectedCount > 0 ? '✓' : '✗'}</span> Bảng
+                    điểm{' '}
+                    {scoreboardConnectedCount > 0
+                      ? `đã kết nối (${String(scoreboardConnectedCount)})`
+                      : 'chưa kết nối'}
+                  </li>
+                </ul>
+              </section>
+              <Button
+                className="mt-4 h-16 w-full max-w-md text-lg font-black"
+                disabled={
+                  realtime.connectionStatus !== 'connected' ||
+                  realtime.startingRound ||
+                  !participantsReady
+                }
+                onClick={() => void realtime.startRound()}
+                type="button"
+              >
+                {realtime.startingRound ? 'ĐANG BẮT ĐẦU…' : startLabel}
+              </Button>
+              {!participantsReady ? (
+                <p className="mx-auto mt-3 max-w-md text-sm font-semibold text-amber-100">
+                  Chưa thể bắt đầu hiệp đấu. Cần kết nối đủ 3 trọng tài và ít nhất 1 bảng điểm.
+                </p>
+              ) : null}
+            </>
+          ) : null}
+
+          {roundIsRunning || roundIsPaused ? (
             <Button
-              className="mt-6 h-16 w-full max-w-md text-lg font-black"
-              disabled={realtime.connectionStatus !== 'connected' || realtime.startingRound}
-              onClick={() => void realtime.startRound()}
+              className="mt-6 h-14 w-full max-w-md text-lg font-black"
+              disabled={realtime.connectionStatus !== 'connected' || realtime.controllingRound}
+              onClick={() => {
+                setConfirmation(roundIsPaused ? 'resume' : 'pause');
+              }}
               type="button"
+              variant={roundIsPaused ? 'default' : 'outline'}
             >
-              {realtime.startingRound ? 'ĐANG BẮT ĐẦU…' : startLabel}
+              {realtime.controllingRound ? 'ĐANG XỬ LÝ…' : roundIsPaused ? 'TIẾP TỤC' : 'TẠM DỪNG'}
             </Button>
+          ) : null}
+
+          {realtime.roundControlErrorMessage ? (
+            <p
+              className="mx-auto mt-4 max-w-xl rounded-xl bg-red-400/15 px-4 py-3 text-sm font-semibold text-red-100"
+              role="alert"
+            >
+              {realtime.roundControlErrorMessage}
+            </p>
+          ) : null}
+
+          {status === MatchStatus.BREAK || status === MatchStatus.FINISHED ? (
+            <div className="mx-auto mt-6 grid max-w-xl gap-3">
+              <Button
+                disabled={realtime.connectionStatus !== 'connected' || realtime.cancellingResults}
+                onClick={() => {
+                  setConfirmation('cancel-round');
+                }}
+                type="button"
+                variant="outline"
+              >
+                {status === MatchStatus.BREAK
+                  ? 'HỦY KẾT QUẢ HIỆP 1 VÀ BẮT ĐẦU LẠI'
+                  : 'HỦY KẾT QUẢ HIỆP 2 VÀ BẮT ĐẦU LẠI'}
+              </Button>
+              {status === MatchStatus.FINISHED ? (
+                <Button
+                  disabled={realtime.connectionStatus !== 'connected' || realtime.cancellingResults}
+                  onClick={() => {
+                    setConfirmation('reset-match');
+                  }}
+                  type="button"
+                  variant="outline"
+                >
+                  HỦY KẾT QUẢ VÀ BẮT ĐẦU LẠI 2 HIỆP ĐẤU
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {realtime.resultCancellationErrorMessage ? (
+            <p
+              className="mx-auto mt-4 max-w-xl rounded-xl bg-red-400/15 px-4 py-3 text-sm font-semibold text-red-100"
+              role="alert"
+            >
+              {realtime.resultCancellationErrorMessage}
+            </p>
           ) : null}
 
           {realtime.roundStartErrorMessage ? (
@@ -393,6 +510,53 @@ export function InspectorConsole({
           </div>
         </section>
       </main>
+      {confirmation ? (
+        <ConfirmationDialog
+          actionLabel={
+            confirmation === 'pause'
+              ? 'Tạm dừng'
+              : confirmation === 'resume'
+                ? 'Tiếp tục'
+                : confirmation === 'cancel-round'
+                  ? 'Hủy kết quả hiệp'
+                  : 'Đặt lại trận đấu'
+          }
+          busy={realtime.controllingRound || realtime.cancellingResults}
+          description={
+            confirmation === 'pause'
+              ? 'Bạn có chắc muốn tạm dừng hiệp đấu hiện tại?'
+              : confirmation === 'resume'
+                ? 'Bạn có chắc muốn tiếp tục hiệp đấu?'
+                : confirmation === 'cancel-round'
+                  ? `Hủy kết quả Hiệp ${status === MatchStatus.BREAK ? '1' : '2'}?`
+                  : 'Hủy toàn bộ kết quả trận đấu?'
+          }
+          onCancel={() => {
+            setConfirmation(null);
+          }}
+          onConfirm={() => {
+            const command =
+              confirmation === 'pause'
+                ? realtime.pauseRound()
+                : confirmation === 'resume'
+                  ? realtime.resumeRound()
+                  : confirmation === 'cancel-round'
+                    ? realtime.cancelRoundResult()
+                    : realtime.resetMatchResults();
+            void command.then((ok) => {
+              if (ok) setConfirmation(null);
+            });
+          }}
+          title="Xác nhận"
+          warning={
+            confirmation === 'reset-match'
+              ? 'Tất cả điểm và lỗi của cả hai hiệp sẽ bị loại khỏi kết quả chính thức. Hành động này có thể được hoàn tác.'
+              : confirmation === 'cancel-round'
+                ? `Tất cả điểm trọng tài và lỗi trong Hiệp ${status === MatchStatus.BREAK ? '1' : '2'} sẽ bị loại khỏi kết quả chính thức. Hành động này có thể được hoàn tác.`
+                : undefined
+          }
+        />
+      ) : null}
     </div>
   );
 }

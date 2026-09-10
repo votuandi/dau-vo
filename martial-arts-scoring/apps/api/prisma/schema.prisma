@@ -26,8 +26,10 @@ enum TournamentStatus {
 enum MatchStatus {
   WAITING
   ROUND_1_RUNNING
+  ROUND_1_PAUSED
   BREAK
   ROUND_2_RUNNING
+  ROUND_2_PAUSED
   FINISHED
 
   @@map("match_status")
@@ -65,6 +67,20 @@ enum ScoreEventType {
   @@map("score_event_type")
 }
 
+enum MatchResultOperationType {
+  ROUND_RESET
+  MATCH_RESET
+
+  @@map("match_result_operation_type")
+}
+
+enum MatchResultOperationStatus {
+  APPLIED
+  UNDONE
+
+  @@map("match_result_operation_status")
+}
+
 enum AuditEventType {
   ADMIN_ACTION
   MATCH_ACTION
@@ -78,6 +94,12 @@ enum AuditEventType {
   MATCH_UPDATED
   MATCH_CODE_REGENERATED
   ROUND_STARTED
+  ROUND_PAUSED
+  ROUND_RESUMED
+  ROUND_RESULT_CANCELLED
+  ROUND_RESULT_CANCEL_UNDONE
+  MATCH_RESULT_RESET
+  MATCH_RESULT_RESET_UNDONE
   ROUND_ENDED
   MATCH_FINISHED
 
@@ -127,6 +149,7 @@ model Match {
   accessCodes     MatchAccessCode[]
   sessions        MatchSession[]
   rounds          Round[]
+  resultOperations MatchResultOperation[]
   scoringWindows  ScoringWindow[]
   refereeVotes    RefereeVote[]
   scoreEvents     ScoreEvent[]
@@ -136,6 +159,28 @@ model Match {
   @@index([tournamentId], map: "matches_tournament_id_idx")
   @@index([status], map: "matches_status_idx")
   @@map("matches")
+}
+
+model MatchResultOperation {
+  id                    String                     @id(map: "match_result_operations_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId               String                     @map("match_id") @db.Uuid
+  auditLogId            String                     @unique(map: "match_result_operations_audit_log_id_key") @map("audit_log_id") @db.Uuid
+  type                  MatchResultOperationType
+  roundNumbers          Int[]                      @map("round_numbers") @db.SmallInt
+  previousStatus        MatchStatus                @map("previous_status")
+  previousCurrentRound  Int?                       @map("previous_current_round") @db.SmallInt
+  previousStartedAt     DateTime?                  @map("previous_started_at") @db.Timestamptz(3)
+  previousFinishedAt    DateTime?                  @map("previous_finished_at") @db.Timestamptz(3)
+  resultingStatus       MatchStatus                @map("resulting_status")
+  resultingCurrentRound Int?                       @map("resulting_current_round") @db.SmallInt
+  createdBySessionId    String                     @map("created_by_session_id") @db.Uuid
+  status                MatchResultOperationStatus @default(APPLIED)
+  createdAt             DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  undoneAt              DateTime?                  @map("undone_at") @db.Timestamptz(3)
+  match                 Match                      @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "match_result_operations_match_id_fkey")
+
+  @@index([matchId, status, createdAt], map: "match_result_operations_match_id_status_created_at_idx")
+  @@map("match_result_operations")
 }
 
 model MatchAthlete {
@@ -193,34 +238,40 @@ model MatchSession {
 }
 
 model Round {
-  id          String    @id(map: "rounds_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId     String    @map("match_id") @db.Uuid
-  roundNumber Int       @map("round_number") @db.SmallInt
-  startedAt   DateTime  @map("started_at") @db.Timestamptz(3)
-  endsAt      DateTime  @map("ends_at") @db.Timestamptz(3)
-  endedAt     DateTime? @map("ended_at") @db.Timestamptz(3)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  match       Match     @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "rounds_match_id_fkey")
+  id                   String    @id(map: "rounds_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId              String    @map("match_id") @db.Uuid
+  roundNumber          Int       @map("round_number") @db.SmallInt
+  startedAt            DateTime  @map("started_at") @db.Timestamptz(3)
+  endsAt               DateTime  @map("ends_at") @db.Timestamptz(3)
+  pausedAt             DateTime? @map("paused_at") @db.Timestamptz(3)
+  remainingDurationMs  Int?      @map("remaining_duration_ms")
+  invalidatedAt        DateTime? @map("invalidated_at") @db.Timestamptz(3)
+  invalidatedByAuditId String?   @map("invalidated_by_audit_id") @db.Uuid
+  endedAt              DateTime? @map("ended_at") @db.Timestamptz(3)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  match                Match     @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "rounds_match_id_fkey")
 
-  @@unique([matchId, roundNumber], map: "rounds_match_id_round_number_key")
+  @@index([matchId, roundNumber], map: "rounds_match_id_round_number_idx")
   @@index([matchId], map: "rounds_match_id_idx")
   @@index([endedAt, endsAt], map: "rounds_ended_at_ends_at_idx")
   @@map("rounds")
 }
 
 model ScoringWindow {
-  id           String        @id(map: "scoring_windows_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId      String        @map("match_id") @db.Uuid
-  roundNumber  Int           @map("round_number") @db.SmallInt
-  startedAt    DateTime      @map("started_at") @db.Timestamptz(3)
-  endsAt       DateTime      @map("ends_at") @db.Timestamptz(3)
-  resolvedAt   DateTime?     @map("resolved_at") @db.Timestamptz(3)
-  winningColor AthleteColor? @map("winning_color")
-  scoreAwarded Boolean       @default(false) @map("score_awarded")
-  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  match        Match         @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "scoring_windows_match_id_fkey")
-  refereeVotes RefereeVote[]
-  scoreEvents  ScoreEvent[]
+  id                   String        @id(map: "scoring_windows_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId              String        @map("match_id") @db.Uuid
+  roundNumber          Int           @map("round_number") @db.SmallInt
+  startedAt            DateTime      @map("started_at") @db.Timestamptz(3)
+  endsAt               DateTime      @map("ends_at") @db.Timestamptz(3)
+  resolvedAt           DateTime?     @map("resolved_at") @db.Timestamptz(3)
+  winningColor         AthleteColor? @map("winning_color")
+  scoreAwarded         Boolean       @default(false) @map("score_awarded")
+  invalidatedAt        DateTime?     @map("invalidated_at") @db.Timestamptz(3)
+  invalidatedByAuditId String?       @map("invalidated_by_audit_id") @db.Uuid
+  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  match                Match         @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "scoring_windows_match_id_fkey")
+  refereeVotes         RefereeVote[]
+  scoreEvents          ScoreEvent[]
 
   @@index([matchId], map: "scoring_windows_match_id_idx")
   @@index([resolvedAt], map: "scoring_windows_resolved_at_idx")
@@ -229,18 +280,20 @@ model ScoringWindow {
 }
 
 model RefereeVote {
-  id               String        @id(map: "referee_votes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  scoringWindowId  String        @map("scoring_window_id") @db.Uuid
-  matchId          String        @map("match_id") @db.Uuid
-  refereeSlot      RefereeSlot   @map("referee_slot")
-  athleteColor     AthleteColor  @map("athlete_color")
-  sessionId        String        @map("session_id") @db.Uuid
-  serverReceivedAt DateTime      @default(now()) @map("server_received_at") @db.Timestamptz(3)
-  clientPressedAt  DateTime?     @map("client_pressed_at") @db.Timestamptz(3)
-  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  scoringWindow    ScoringWindow @relation(fields: [scoringWindowId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "referee_votes_scoring_window_id_fkey")
-  match            Match         @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "referee_votes_match_id_fkey")
-  session          MatchSession  @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "referee_votes_session_id_fkey")
+  id                   String        @id(map: "referee_votes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  scoringWindowId      String        @map("scoring_window_id") @db.Uuid
+  matchId              String        @map("match_id") @db.Uuid
+  refereeSlot          RefereeSlot   @map("referee_slot")
+  athleteColor         AthleteColor  @map("athlete_color")
+  sessionId            String        @map("session_id") @db.Uuid
+  serverReceivedAt     DateTime      @default(now()) @map("server_received_at") @db.Timestamptz(3)
+  clientPressedAt      DateTime?     @map("client_pressed_at") @db.Timestamptz(3)
+  invalidatedAt        DateTime?     @map("invalidated_at") @db.Timestamptz(3)
+  invalidatedByAuditId String?       @map("invalidated_by_audit_id") @db.Uuid
+  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  scoringWindow        ScoringWindow @relation(fields: [scoringWindowId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "referee_votes_scoring_window_id_fkey")
+  match                Match         @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "referee_votes_match_id_fkey")
+  session              MatchSession  @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "referee_votes_session_id_fkey")
 
   @@unique([scoringWindowId, refereeSlot], map: "referee_votes_scoring_window_id_referee_slot_key")
   @@index([scoringWindowId], map: "referee_votes_scoring_window_id_idx")
@@ -250,19 +303,21 @@ model RefereeVote {
 }
 
 model ScoreEvent {
-  id              String         @id(map: "score_events_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId         String         @map("match_id") @db.Uuid
-  athleteId       String         @map("athlete_id") @db.Uuid
-  roundNumber     Int?           @map("round_number") @db.SmallInt
-  type            ScoreEventType
-  value           Int
-  scoringWindowId String?        @map("scoring_window_id") @db.Uuid
-  penaltyId       String?        @map("penalty_id") @db.Uuid
-  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  match           Match          @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "score_events_match_id_fkey")
-  athlete         MatchAthlete   @relation(fields: [athleteId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "score_events_athlete_id_fkey")
-  scoringWindow   ScoringWindow? @relation(fields: [scoringWindowId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "score_events_scoring_window_id_fkey")
-  penalty         Penalty?       @relation(fields: [penaltyId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "score_events_penalty_id_fkey")
+  id                String         @id(map: "score_events_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId           String         @map("match_id") @db.Uuid
+  athleteId         String         @map("athlete_id") @db.Uuid
+  roundNumber       Int?           @map("round_number") @db.SmallInt
+  type              ScoreEventType
+  value             Int
+  scoringWindowId   String?        @map("scoring_window_id") @db.Uuid
+  penaltyId         String?        @map("penalty_id") @db.Uuid
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  revertedAt        DateTime?      @map("reverted_at") @db.Timestamptz(3)
+  revertedByAuditId String?        @map("reverted_by_audit_id") @db.Uuid
+  match             Match          @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "score_events_match_id_fkey")
+  athlete           MatchAthlete   @relation(fields: [athleteId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "score_events_athlete_id_fkey")
+  scoringWindow     ScoringWindow? @relation(fields: [scoringWindowId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "score_events_scoring_window_id_fkey")
+  penalty           Penalty?       @relation(fields: [penaltyId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "score_events_penalty_id_fkey")
 
   @@index([matchId], map: "score_events_match_id_idx")
   @@index([athleteId], map: "score_events_athlete_id_idx")
@@ -279,6 +334,8 @@ model Penalty {
   value              Int          @default(-1)
   createdBySessionId String       @map("created_by_session_id") @db.Uuid
   createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  revertedAt         DateTime?    @map("reverted_at") @db.Timestamptz(3)
+  revertedByAuditId  String?      @map("reverted_by_audit_id") @db.Uuid
   match              Match        @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "penalties_match_id_fkey")
   athlete            MatchAthlete @relation(fields: [athleteId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "penalties_athlete_id_fkey")
   createdBySession   MatchSession @relation("PenaltyCreatedBySession", fields: [createdBySessionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "penalties_created_by_session_id_fkey")

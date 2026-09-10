@@ -50,16 +50,36 @@ function metadataText(value: unknown): string {
   }
 }
 
+function auditEventLabel(eventType: string): string {
+  const labels: Record<string, string> = {
+    MATCH_RESULT_RESET: 'Đã hủy kết quả toàn trận',
+    MATCH_RESULT_RESET_UNDONE: 'Đã hoàn tác hủy kết quả toàn trận',
+    ROUND_RESULT_CANCELLED: 'Đã hủy kết quả hiệp',
+    ROUND_RESULT_CANCEL_UNDONE: 'Đã hoàn tác hủy kết quả hiệp',
+    ROUND_PAUSED: 'Đã tạm dừng hiệp',
+    ROUND_RESUMED: 'Đã tiếp tục hiệp',
+  };
+  return labels[eventType] ?? eventType;
+}
+
 export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) {
   const monitoring = useQuery(matchMonitoringQueryOptions(matchId));
   const snapshot = monitoring.data?.snapshot;
+  const activeRound = snapshot?.activeRound;
   const running =
     snapshot?.match.status === MatchStatus.ROUND_1_RUNNING ||
     snapshot?.match.status === MatchStatus.ROUND_2_RUNNING;
+  const paused =
+    snapshot?.match.status === MatchStatus.ROUND_1_PAUSED ||
+    snapshot?.match.status === MatchStatus.ROUND_2_PAUSED;
   const timer = useDisplayTimer(
-    running ? snapshot.activeRound?.endsAt : undefined,
+    running ? activeRound?.endsAt : undefined,
     snapshot?.generatedAt,
   );
+  const displayedTimer =
+    paused && activeRound?.remainingDurationMs != null
+      ? `${String(Math.floor(activeRound.remainingDurationMs / 60_000)).padStart(2, '0')}:${String(Math.ceil(activeRound.remainingDurationMs / 1_000) % 60).padStart(2, '0')}`
+      : timer;
   const red = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
   const blue = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
 
@@ -94,7 +114,7 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
             </div>
             <div className="rounded-xl bg-muted p-4">
               <p className="text-xs font-bold uppercase text-muted-foreground">Thời gian</p>
-              <p className="mt-2 font-mono text-2xl font-black">{timer}</p>
+              <p className="mt-2 font-mono text-2xl font-black">{displayedTimer}</p>
             </div>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -146,6 +166,7 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                     {window.scoreAwarded && window.winningColor
                       ? `${colorLabel(window.winningColor)} +1`
                       : 'Không tính điểm'}
+                    {window.invalidatedAt ? ' · Đã hủy kết quả' : ''}
                   </p>
                   <time className="text-xs text-muted-foreground">
                     {formatDateTime(window.startedAt)}
@@ -159,6 +180,9 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                       <span className="text-muted-foreground">
                         {formatDateTime(vote.serverReceivedAt)}
                       </span>
+                      {vote.invalidatedAt ? (
+                        <span className="ml-2 font-bold text-amber-700">Đã vô hiệu</span>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
@@ -176,6 +200,9 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                 Hiệp {penalty.roundNumber ?? '—'} · {colorLabel(penalty.athlete.color)} ·{' '}
                 {penalty.athlete.name} · <strong>{penalty.value}</strong> ·{' '}
                 {formatDateTime(penalty.createdAt)}
+                {penalty.revertedAt ? (
+                  <span className="ml-2 font-bold text-amber-700">Đã hoàn tác</span>
+                ) : null}
               </li>
             )) ?? <li>Chưa có lỗi phạt.</li>}
           </ul>
@@ -194,6 +221,9 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                   {event.value}
                 </strong>{' '}
                 · {formatDateTime(event.createdAt)}
+                {event.revertedAt ? (
+                  <span className="ml-2 font-bold text-amber-700">Đã hoàn tác</span>
+                ) : null}
               </li>
             )) ?? <li>Chưa có score event.</li>}
           </ul>
@@ -205,7 +235,8 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
           <ul className="mt-4 space-y-2 text-sm">
             {monitoring.data?.auditLogs.map((event) => (
               <li className="rounded-lg bg-muted/60 p-3" key={event.id}>
-                <strong>{event.eventType}</strong> · {formatDateTime(event.createdAt)}
+                <strong>{auditEventLabel(event.eventType)}</strong> ·{' '}
+                {formatDateTime(event.createdAt)}
                 <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs text-muted-foreground">
                   {metadataText(event.metadata)}
                 </pre>

@@ -92,7 +92,7 @@ export function ClipboardCopyButton({
     }
 
     try {
-      if (!navigator.clipboard?.writeText) {
+      if (typeof navigator.clipboard.writeText !== 'function') {
         throw new Error('Clipboard API is unavailable.');
       }
 

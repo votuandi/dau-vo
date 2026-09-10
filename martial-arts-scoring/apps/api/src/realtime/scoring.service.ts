@@ -26,6 +26,7 @@ import {
   DuplicateRefereeVoteError,
   InactiveVoteSessionError,
   MatchNotRunningForVoteError,
+  RoundPausedForVoteError,
   PriorScoringWindowPendingError,
   RoundEndedForVoteError,
 } from './scoring.errors';
@@ -131,7 +132,7 @@ export class ScoringService implements OnModuleDestroy {
     this.resolutionListener = listener;
     const windows = await this.prisma.scoringWindow.findMany({
       select: { endsAt: true, id: true, matchId: true },
-      where: { resolvedAt: null },
+      where: { invalidatedAt: null, resolvedAt: null },
     });
 
     for (const window of windows) {
@@ -169,6 +170,12 @@ export class ScoringService implements OnModuleDestroy {
           },
           where: { id: input.matchId },
         });
+        if (
+          match.status === MatchStatus.ROUND_1_PAUSED ||
+          match.status === MatchStatus.ROUND_2_PAUSED
+        ) {
+          throw new RoundPausedForVoteError();
+        }
         const activeRound = this.activeRound(match);
 
         if (activeRound === null) {
@@ -187,7 +194,11 @@ export class ScoringService implements OnModuleDestroy {
             roundNumber: true,
             startedAt: true,
           },
-          where: { matchId: input.matchId, resolvedAt: null },
+          where: {
+            invalidatedAt: null,
+            matchId: input.matchId,
+            resolvedAt: null,
+          },
         });
         let resolvedBeforeAcceptance: ScoringResolutionTransition | null = null;
 
@@ -380,7 +391,12 @@ export class ScoringService implements OnModuleDestroy {
               roundNumber: true,
               startedAt: true,
             },
-            where: { id: windowId, matchId, resolvedAt: null },
+            where: {
+              id: windowId,
+              invalidatedAt: null,
+              matchId,
+              resolvedAt: null,
+            },
           }),
         ]);
         if (window === null) {
@@ -434,7 +450,7 @@ export class ScoringService implements OnModuleDestroy {
         scoreAwarded: winningColor !== null,
         winningColor,
       },
-      where: { id: window.id, resolvedAt: null },
+      where: { id: window.id, invalidatedAt: null, resolvedAt: null },
     });
     if (updated.count !== 1) {
       throw new Error(
@@ -531,7 +547,7 @@ export class ScoringService implements OnModuleDestroy {
       transaction.scoreEvent.groupBy({
         _sum: { value: true },
         by: ['athleteId'],
-        where: { matchId },
+        where: { matchId, revertedAt: null },
       }),
     ]);
     const totalsByAthlete = new Map(

@@ -4,6 +4,8 @@ import {
   MatchAccessRole as SharedMatchAccessRole,
   MatchStatus as SharedMatchStatus,
   type MatchPresenceEntry,
+  type MatchReadiness,
+  type MatchStartReadinessDetails,
   type PublicMatchStatePayload,
   type MatchRoundState,
   type MatchScoringWindowState,
@@ -63,10 +65,12 @@ export class RealtimeMatchStateService {
             endedAt: true,
             endsAt: true,
             id: true,
+            pausedAt: true,
+            remainingDurationMs: true,
             roundNumber: true,
             startedAt: true,
           },
-          where: { endedAt: null },
+          where: { endedAt: null, invalidatedAt: null },
         },
         startedAt: true,
         status: true,
@@ -78,17 +82,17 @@ export class RealtimeMatchStateService {
       throw new NotFoundException('Match not found');
     }
 
-    const [scoreTotals, penaltyTotals, presence, unresolvedWindow] =
+    const [scoreTotals, penaltyTotals, presenceState, unresolvedWindow] =
       await Promise.all([
         this.prisma.scoreEvent.groupBy({
           _sum: { value: true },
           by: ['athleteId'],
-          where: { matchId },
+          where: { matchId, revertedAt: null },
         }),
         this.prisma.penalty.groupBy({
           _count: { id: true },
           by: ['athleteId'],
-          where: { matchId },
+          where: { matchId, revertedAt: null },
         }),
         this.presence(match.id, match.publicId),
         this.prisma.scoringWindow.findFirst({
@@ -99,7 +103,7 @@ export class RealtimeMatchStateService {
             roundNumber: true,
             startedAt: true,
           },
-          where: { matchId, resolvedAt: null },
+          where: { invalidatedAt: null, matchId, resolvedAt: null },
         }),
       ]);
     const scoresByAthlete = new Map(
@@ -143,7 +147,9 @@ export class RealtimeMatchStateService {
         startedAt: match.startedAt?.toISOString() ?? null,
         status: this.sharedMatchStatus(match.status),
       },
-      presence,
+      presence: presenceState.presence,
+      readiness: this.readinessFromPresence(presenceState),
+      scoreboardConnectedCount: presenceState.scoreboardConnectedCount,
       ...(viewerState === undefined ? {} : { viewer: viewerState }),
     };
   }
@@ -234,13 +240,17 @@ export class RealtimeMatchStateService {
       endedAt: Date | null;
       endsAt: Date;
       id: string;
+      pausedAt: Date | null;
+      remainingDurationMs: number | null;
       roundNumber: number;
       startedAt: Date;
     }>,
   ): MatchRoundState | null {
     if (
       status !== MatchStatus.ROUND_1_RUNNING &&
-      status !== MatchStatus.ROUND_2_RUNNING
+      status !== MatchStatus.ROUND_1_PAUSED &&
+      status !== MatchStatus.ROUND_2_RUNNING &&
+      status !== MatchStatus.ROUND_2_PAUSED
     ) {
       return null;
     }
@@ -261,6 +271,8 @@ export class RealtimeMatchStateService {
       endedAt: round.endedAt?.toISOString() ?? null,
       endsAt: round.endsAt.toISOString(),
       id: round.id,
+      pausedAt: round.pausedAt?.toISOString() ?? null,
+      remainingDurationMs: round.remainingDurationMs,
       roundNumber: round.roundNumber,
       startedAt: round.startedAt.toISOString(),
     };
@@ -290,31 +302,99 @@ export class RealtimeMatchStateService {
     matchId: string,
     matchPublicId: string,
   ): Promise<PresenceUpdatedPayload> {
+    const presenceState = await this.presence(matchId, matchPublicId);
     return {
       matchPublicId,
-      presence: await this.presence(matchId, matchPublicId),
+      ...presenceState,
       updatedAt: new Date().toISOString(),
+    };
+  }
+
+  async presenceUpdatedForPublicMatch(
+    matchPublicId: string,
+  ): Promise<PresenceUpdatedPayload> {
+    const match = await this.prisma.match.findUnique({
+      select: { id: true },
+      where: { publicId: matchPublicId },
+    });
+    if (match === null) {
+      throw new NotFoundException('Match not found');
+    }
+
+    return this.presenceUpdated(match.id, matchPublicId);
+  }
+
+  async startReadiness(
+    matchId: string,
+    matchPublicId: string,
+  ): Promise<MatchStartReadinessDetails> {
+    const { presence, scoreboardConnectedCount } = await this.presence(
+      matchId,
+      matchPublicId,
+    );
+    const isConnected = (role: SharedMatchAccessRole): boolean =>
+      presence.some((entry) => entry.accessRole === role && entry.connected);
+
+    return {
+      referee1Connected: isConnected(SharedMatchAccessRole.REFEREE_1),
+      referee2Connected: isConnected(SharedMatchAccessRole.REFEREE_2),
+      referee3Connected: isConnected(SharedMatchAccessRole.REFEREE_3),
+      scoreboardConnectedCount,
+    };
+  }
+
+  private readinessFromPresence(presenceState: {
+    presence: MatchPresenceEntry[];
+    scoreboardConnectedCount: number;
+  }): MatchReadiness {
+    const isConnected = (role: SharedMatchAccessRole): boolean =>
+      presenceState.presence.some(
+        (entry) => entry.accessRole === role && entry.connected,
+      );
+    const referees = {
+      REFEREE_1: isConnected(SharedMatchAccessRole.REFEREE_1),
+      REFEREE_2: isConnected(SharedMatchAccessRole.REFEREE_2),
+      REFEREE_3: isConnected(SharedMatchAccessRole.REFEREE_3),
+    };
+    const missingRequirements: MatchReadiness['missingRequirements'] = [];
+    if (!referees.REFEREE_1) missingRequirements.push('REFEREE_1');
+    if (!referees.REFEREE_2) missingRequirements.push('REFEREE_2');
+    if (!referees.REFEREE_3) missingRequirements.push('REFEREE_3');
+    if (presenceState.scoreboardConnectedCount < 1) {
+      missingRequirements.push('SCOREBOARD');
+    }
+    return {
+      canStartRound: missingRequirements.length === 0,
+      missingRequirements,
+      referees,
+      scoreboardConnectedCount: presenceState.scoreboardConnectedCount,
     };
   }
 
   private async presence(
     matchId: string,
     matchPublicId: string,
-  ): Promise<MatchPresenceEntry[]> {
-    const activeOwners = await this.prisma.matchSession.findMany({
-      select: { accessCode: { select: { role: true } } },
-      where: {
-        active: true,
-        expiresAt: { gt: new Date() },
-        matchId,
-        revokedAt: null,
-      },
-    });
+  ): Promise<{
+    presence: MatchPresenceEntry[];
+    scoreboardConnectedCount: number;
+  }> {
+    const [activeOwners, scoreboardConnectedCount] = await Promise.all([
+      this.prisma.matchSession.findMany({
+        select: { accessCode: { select: { role: true } } },
+        where: {
+          active: true,
+          expiresAt: { gt: new Date() },
+          matchId,
+          revokedAt: null,
+        },
+      }),
+      this.sessionRegistry.scoreboardConnectedCount(matchPublicId),
+    ]);
     const activeRoles = new Set<string>(
       activeOwners.map(({ accessCode }) => accessCode.role),
     );
 
-    return Promise.all(
+    const presence = await Promise.all(
       ACCESS_ROLES.map(async (accessRole) => {
         const connectedSocketCount =
           await this.sessionRegistry.connectedSocketCount(
@@ -330,6 +410,8 @@ export class RealtimeMatchStateService {
         };
       }),
     );
+
+    return { presence, scoreboardConnectedCount };
   }
 
   private sharedAccessRole(role: MatchAccessRole): SharedMatchAccessRole {
@@ -383,10 +465,14 @@ export class RealtimeMatchStateService {
         return SharedMatchStatus.WAITING;
       case MatchStatus.ROUND_1_RUNNING:
         return SharedMatchStatus.ROUND_1_RUNNING;
+      case MatchStatus.ROUND_1_PAUSED:
+        return SharedMatchStatus.ROUND_1_PAUSED;
       case MatchStatus.BREAK:
         return SharedMatchStatus.BREAK;
       case MatchStatus.ROUND_2_RUNNING:
         return SharedMatchStatus.ROUND_2_RUNNING;
+      case MatchStatus.ROUND_2_PAUSED:
+        return SharedMatchStatus.ROUND_2_PAUSED;
       case MatchStatus.FINISHED:
         return SharedMatchStatus.FINISHED;
       default: {

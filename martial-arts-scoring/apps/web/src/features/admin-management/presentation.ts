@@ -1,5 +1,23 @@
 import { AthleteColor, MatchAccessRole, MatchStatus, TournamentStatus } from '@/types/shared';
 import { ApiClientError } from '@/services/api/client';
+import { toast } from '@/components/ui/toast';
+
+const apiErrorMessages: Readonly<Record<string, string>> = {
+  INVALID_ACCESS_ROLE: 'Vai trò truy cập không hợp lệ.',
+  INVALID_DATE: 'Ngày đã nhập không hợp lệ.',
+  INVALID_ID: 'Mã định danh không hợp lệ.',
+  INVALID_MATCH: 'Thông tin trận đấu không hợp lệ.',
+  INVALID_MATCH_ATHLETES: 'Trận đấu phải có đúng một vận động viên Đỏ và một vận động viên Xanh.',
+  INVALID_TEXT: 'Nội dung đã nhập không hợp lệ.',
+  INVALID_TOURNAMENT: 'Thông tin giải đấu không hợp lệ.',
+  INVALID_TOURNAMENT_DATE_RANGE: 'Ngày bắt đầu không thể sau ngày kết thúc.',
+  MATCH_ACCESS_CODE_NOT_FOUND: 'Không tìm thấy mã truy cập trận đấu.',
+  MATCH_ACCESS_CODES_INCOMPLETE: 'Trận đấu chưa có đủ các mã truy cập cần thiết.',
+  MATCH_NOT_FOUND: 'Không tìm thấy trận đấu.',
+  PUBLIC_MATCH_ID_COLLISION: 'Không thể tạo mã trận đấu duy nhất. Vui lòng thử lại.',
+  TOURNAMENT_ARCHIVED: 'Không thể tạo trận trong giải đấu đã lưu trữ.',
+  TOURNAMENT_NOT_FOUND: 'Không tìm thấy giải đấu.',
+};
 
 export const tournamentStatuses = [
   TournamentStatus.DRAFT,
@@ -27,8 +45,10 @@ export const tournamentStatusLabels: Record<TournamentStatus, string> = {
 export const matchStatusLabels: Record<MatchStatus, string> = {
   [MatchStatus.WAITING]: 'Chờ thi đấu',
   [MatchStatus.ROUND_1_RUNNING]: 'Hiệp 1',
+  [MatchStatus.ROUND_1_PAUSED]: 'Hiệp 1 tạm dừng',
   [MatchStatus.BREAK]: 'Nghỉ giữa hiệp',
   [MatchStatus.ROUND_2_RUNNING]: 'Hiệp 2',
+  [MatchStatus.ROUND_2_PAUSED]: 'Hiệp 2 tạm dừng',
   [MatchStatus.FINISHED]: 'Đã kết thúc',
 };
 
@@ -52,10 +72,32 @@ export const textAreaClassName =
 
 export function getApiErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiClientError) {
-    return error.body.message ?? fallback;
+    const codeMessage = error.body.code ? apiErrorMessages[error.body.code] : undefined;
+    if (codeMessage) {
+      return codeMessage;
+    }
+
+    const message = error.body.message;
+    if (
+      message &&
+      message.length <= 200 &&
+      !/[\r\n]/u.test(message) &&
+      !/(?:Error:|at\s+\S+\s*\(|stack|Prisma)/iu.test(message)
+    ) {
+      return message;
+    }
   }
 
   return fallback;
+}
+
+export function notifyMutationSuccess(message: string): void {
+  toast({ title: message, variant: 'success' });
+}
+
+export function notifyMutationError(error: unknown, fallback: string): void {
+  console.error('Admin mutation failed', error);
+  toast({ title: getApiErrorMessage(error, fallback), variant: 'destructive' });
 }
 
 export function formatDate(value: string | null): string {

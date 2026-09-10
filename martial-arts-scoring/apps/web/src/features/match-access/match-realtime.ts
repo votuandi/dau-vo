@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AthleteColor,
   RealtimeEvent,
+  type AthleteColor,
   type MatchFinishedPayload,
   type MatchPresenceEntry,
   type MatchStatePayload,
@@ -13,6 +13,15 @@ import {
   type RoundStartedPayload,
   type RoundStartErrorCode,
   type RoundStartResponse,
+  type RoundControlErrorCode,
+  type RoundControlResponse,
+  type RoundPausedPayload,
+  type ResultCancellationErrorCode,
+  type ResultCancellationPayload,
+  type ResultCancellationResponse,
+  type ResultCancellationUndoPayload,
+  type ResultCancellationUndoErrorCode,
+  type ResultCancellationUndoResponse,
   type ScoreUpdatedPayload,
   type ScoringWindowOpenedPayload,
   type ScoringWindowResolvedPayload,
@@ -29,6 +38,7 @@ import {
   getSocketClient,
   reconnectSocket,
 } from '@/services/socket/client';
+import { toast } from '@/components/ui/toast';
 
 export type RealtimeConnectionStatus =
   | 'authentication-required'
@@ -60,6 +70,15 @@ export interface MatchRealtimeState {
   readonly scoringWindowMessage: string | null;
   readonly snapshot: MatchStatePayload | null;
   readonly startRound: () => Promise<void>;
+  readonly pauseRound: () => Promise<boolean>;
+  readonly resumeRound: () => Promise<boolean>;
+  readonly controllingRound: boolean;
+  readonly roundControlErrorMessage: string | null;
+  readonly cancelRoundResult: () => Promise<boolean>;
+  readonly resetMatchResults: () => Promise<boolean>;
+  readonly undoResultCancellation: (operationId: string) => Promise<boolean>;
+  readonly cancellingResults: boolean;
+  readonly resultCancellationErrorMessage: string | null;
   readonly startingRound: boolean;
   readonly submitVote: (athlete: AthleteColor) => Promise<void>;
   readonly submittingVote: AthleteColor | null;
@@ -92,9 +111,56 @@ function getRoundStartErrorMessage(code: RoundStartErrorCode, fallback: string):
       return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
     case 'ROUND_START_FORBIDDEN':
       return 'Chỉ giám định viên được phép bắt đầu hiệp đấu.';
+    case 'MATCH_PARTICIPANTS_NOT_READY':
+      return 'Chưa thể bắt đầu hiệp đấu. Cần kết nối đủ 3 trọng tài và ít nhất 1 bảng điểm.';
     case 'ROUND_START_INVALID_STATE':
       return 'Không thể bắt đầu hiệp từ trạng thái hiện tại. Trạng thái mới nhất đang được tải lại.';
     case 'ROUND_START_FAILED':
+      return fallback;
+  }
+}
+
+function getRoundControlErrorMessage(code: RoundControlErrorCode, fallback: string): string {
+  switch (code) {
+    case 'REALTIME_AUTHENTICATION_REQUIRED':
+      return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
+    case 'ROUND_CONTROL_FORBIDDEN':
+      return 'Chỉ giám định viên được phép tạm dừng hoặc tiếp tục hiệp đấu.';
+    case 'ROUND_CONTROL_INVALID_STATE':
+      return 'Trạng thái hiệp đấu đã thay đổi. Dữ liệu mới nhất đang được tải lại.';
+    case 'ROUND_CONTROL_FAILED':
+      return fallback;
+  }
+}
+
+function getResultCancellationErrorMessage(
+  code: ResultCancellationErrorCode,
+  fallback: string,
+): string {
+  switch (code) {
+    case 'REALTIME_AUTHENTICATION_REQUIRED':
+      return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
+    case 'RESULT_CANCELLATION_FORBIDDEN':
+      return 'Chỉ giám định viên được phép hủy kết quả.';
+    case 'RESULT_CANCELLATION_INVALID_STATE':
+      return 'Không thể hủy kết quả từ trạng thái hiện tại. Dữ liệu mới nhất đang được tải lại.';
+    case 'RESULT_CANCELLATION_FAILED':
+      return fallback;
+  }
+}
+
+function getResultCancellationUndoErrorMessage(
+  code: ResultCancellationUndoErrorCode,
+  fallback: string,
+): string {
+  switch (code) {
+    case 'REALTIME_AUTHENTICATION_REQUIRED':
+      return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
+    case 'RESET_UNDO_FORBIDDEN':
+      return 'Chỉ giám định viên được phép hoàn tác kết quả.';
+    case 'RESET_UNDO_NOT_ALLOWED':
+      return 'Không thể hoàn tác vì trận đấu đã có hoạt động mới hoặc thao tác này đã được hoàn tác.';
+    case 'RESET_UNDO_FAILED':
       return fallback;
   }
 }
@@ -109,6 +175,8 @@ function getVoteSubmitErrorMessage(code: VoteSubmitErrorCode, fallback: string):
       return 'Lựa chọn võ sĩ không hợp lệ.';
     case 'VOTE_MATCH_NOT_RUNNING':
       return 'Chỉ có thể chấm điểm khi hiệp đấu đang diễn ra.';
+    case 'ROUND_PAUSED':
+      return 'Không thể chấm điểm khi hiệp đấu đang tạm dừng.';
     case 'VOTE_ROUND_ENDED':
       return 'Hiệp đấu đã kết thúc trước khi lựa chọn được ghi nhận.';
     case 'VOTE_ALREADY_SUBMITTED':
@@ -151,6 +219,12 @@ export function useMatchRealtime({
   const [scoringWindowMessage, setScoringWindowMessage] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<MatchStatePayload | null>(null);
   const [startingRound, setStartingRound] = useState(false);
+  const [controllingRound, setControllingRound] = useState(false);
+  const [roundControlErrorMessage, setRoundControlErrorMessage] = useState<string | null>(null);
+  const [cancellingResults, setCancellingResults] = useState(false);
+  const [resultCancellationErrorMessage, setResultCancellationErrorMessage] = useState<
+    string | null
+  >(null);
   const [submittingVote, setSubmittingVote] = useState<AthleteColor | null>(null);
   const [submittingPenalty, setSubmittingPenalty] = useState<AthleteColor | null>(null);
   const [penaltyErrorMessage, setPenaltyErrorMessage] = useState<string | null>(null);
@@ -160,6 +234,8 @@ export function useMatchRealtime({
   const onSessionRevokedRef = useRef(onSessionRevoked);
   const penaltySubmissionInFlightRef = useRef(false);
   const roundStartInFlightRef = useRef(false);
+  const roundControlInFlightRef = useRef(false);
+  const resultCancellationInFlightRef = useRef(false);
   const voteSubmissionInFlightRef = useRef(false);
 
   useEffect(() => {
@@ -249,6 +325,214 @@ export function useMatchRealtime({
       setStartingRound(false);
     }
   }, []);
+
+  const controlRound = useCallback(async (action: 'pause' | 'resume'): Promise<boolean> => {
+    const socket = getSocketClient();
+    if (roundControlInFlightRef.current) return false;
+    if (!socket.connected) {
+      const message =
+        'Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi điều khiển hiệp đấu.';
+      setRoundControlErrorMessage(message);
+      toast({
+        title: action === 'pause' ? 'Không thể tạm dừng hiệp đấu.' : 'Không thể tiếp tục hiệp đấu.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+    roundControlInFlightRef.current = true;
+    setControllingRound(true);
+    setRoundControlErrorMessage(null);
+    try {
+      const event = action === 'pause' ? RealtimeEvent.ROUND_PAUSE : RealtimeEvent.ROUND_RESUME;
+      const response = await new Promise<RoundControlResponse>((resolve, reject) => {
+        socket
+          .timeout(10_000)
+          .emit(event, (error: Error | null, acknowledgement: RoundControlResponse) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve(acknowledgement);
+            }
+          });
+      });
+      if (!response.ok) {
+        const message = getRoundControlErrorMessage(response.error.code, response.error.message);
+        setRoundControlErrorMessage(message);
+        toast({
+          title:
+            action === 'pause' ? 'Không thể tạm dừng hiệp đấu.' : 'Không thể tiếp tục hiệp đấu.',
+          description: message,
+          variant: 'destructive',
+        });
+        socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+        if (response.error.code === 'REALTIME_AUTHENTICATION_REQUIRED') {
+          socket.disconnect();
+          setConnectionStatus('authentication-required');
+          onAuthenticationRequiredRef.current();
+        }
+        return false;
+      }
+      toast({
+        title: action === 'pause' ? 'Đã tạm dừng hiệp đấu.' : 'Đã tiếp tục hiệp đấu.',
+        variant: 'success',
+      });
+      socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+      return true;
+    } catch {
+      const message = 'Máy chủ không phản hồi. Vui lòng kiểm tra trạng thái hiệp đấu và thử lại.';
+      setRoundControlErrorMessage(message);
+      toast({
+        title: action === 'pause' ? 'Không thể tạm dừng hiệp đấu.' : 'Không thể tiếp tục hiệp đấu.',
+        description: message,
+        variant: 'destructive',
+      });
+      return false;
+    } finally {
+      roundControlInFlightRef.current = false;
+      setControllingRound(false);
+    }
+  }, []);
+  const pauseRound = useCallback(() => controlRound('pause'), [controlRound]);
+  const resumeRound = useCallback(() => controlRound('resume'), [controlRound]);
+
+  const undoResultCancellation = useCallback(async (operationId: string): Promise<boolean> => {
+    const socket = getSocketClient();
+    if (resultCancellationInFlightRef.current) return false;
+    if (!socket.connected) {
+      const message = 'Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi hoàn tác.';
+      setResultCancellationErrorMessage(message);
+      toast({ title: 'Không thể hoàn tác kết quả.', description: message, variant: 'destructive' });
+      return false;
+    }
+    resultCancellationInFlightRef.current = true;
+    setCancellingResults(true);
+    setResultCancellationErrorMessage(null);
+    try {
+      const response = await new Promise<ResultCancellationUndoResponse>((resolve, reject) => {
+        socket
+          .timeout(10_000)
+          .emit(
+            RealtimeEvent.RESULT_CANCELLATION_UNDO,
+            { operationId },
+            (error: Error | null, acknowledgement: ResultCancellationUndoResponse) => {
+              if (error) reject(error);
+              else resolve(acknowledgement);
+            },
+          );
+      });
+      if (!response.ok) {
+        const message = getResultCancellationUndoErrorMessage(
+          response.error.code,
+          response.error.message,
+        );
+        setResultCancellationErrorMessage(message);
+        toast({
+          title: 'Không thể hoàn tác kết quả.',
+          description: message,
+          variant: 'destructive',
+        });
+        socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+        return false;
+      }
+      toast({ title: 'Đã khôi phục kết quả trước đó.', variant: 'success' });
+      socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+      return true;
+    } catch {
+      const message = 'Máy chủ không phản hồi. Vui lòng kiểm tra trạng thái và thử lại.';
+      setResultCancellationErrorMessage(message);
+      toast({ title: 'Không thể hoàn tác kết quả.', description: message, variant: 'destructive' });
+      return false;
+    } finally {
+      resultCancellationInFlightRef.current = false;
+      setCancellingResults(false);
+    }
+  }, []);
+
+  const changeResults = useCallback(
+    async (entireMatch: boolean): Promise<boolean> => {
+      const socket = getSocketClient();
+      if (resultCancellationInFlightRef.current) return false;
+      if (!socket.connected) {
+        const message = 'Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi hủy kết quả.';
+        setResultCancellationErrorMessage(message);
+        toast({
+          title: entireMatch
+            ? 'Không thể đặt lại kết quả trận đấu.'
+            : 'Không thể hủy kết quả hiệp.',
+          description: message,
+          variant: 'destructive',
+        });
+        return false;
+      }
+      resultCancellationInFlightRef.current = true;
+      setCancellingResults(true);
+      setResultCancellationErrorMessage(null);
+      try {
+        const event = entireMatch ? RealtimeEvent.MATCH_RESET : RealtimeEvent.ROUND_CANCEL;
+        const response = await new Promise<ResultCancellationResponse>((resolve, reject) => {
+          socket
+            .timeout(10_000)
+            .emit(event, (error: Error | null, acknowledgement: ResultCancellationResponse) => {
+              if (error) reject(error);
+              else resolve(acknowledgement);
+            });
+        });
+        if (!response.ok) {
+          const message = getResultCancellationErrorMessage(
+            response.error.code,
+            response.error.message,
+          );
+          setResultCancellationErrorMessage(message);
+          toast({
+            title: entireMatch
+              ? 'Không thể đặt lại kết quả trận đấu.'
+              : 'Không thể hủy kết quả hiệp.',
+            description: message,
+            variant: 'destructive',
+          });
+          socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+          if (response.error.code === 'REALTIME_AUTHENTICATION_REQUIRED') {
+            socket.disconnect();
+            setConnectionStatus('authentication-required');
+            onAuthenticationRequiredRef.current();
+          }
+          return false;
+        }
+        toast({
+          action: {
+            label: 'HOÀN TÁC',
+            onClick: () => {
+              void undoResultCancellation(response.action.actionId);
+            },
+          },
+          durationMs: 15_000,
+          title: entireMatch
+            ? 'Đã hủy kết quả trận đấu.'
+            : `Đã hủy kết quả Hiệp ${String(response.action.roundNumbers[0] ?? '')}.`,
+          variant: 'success',
+        });
+        socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+        return true;
+      } catch {
+        const message = 'Máy chủ không phản hồi. Vui lòng kiểm tra trạng thái và thử lại.';
+        setResultCancellationErrorMessage(message);
+        toast({
+          title: entireMatch
+            ? 'Không thể đặt lại kết quả trận đấu.'
+            : 'Không thể hủy kết quả hiệp.',
+          description: message,
+          variant: 'destructive',
+        });
+        return false;
+      } finally {
+        resultCancellationInFlightRef.current = false;
+        setCancellingResults(false);
+      }
+    },
+    [undoResultCancellation],
+  );
+  const cancelRoundResult = useCallback(() => changeResults(false), [changeResults]);
+  const resetMatchResults = useCallback(() => changeResults(true), [changeResults]);
 
   const submitVote = useCallback(async (athlete: AthleteColor) => {
     const socket = getSocketClient();
@@ -425,6 +709,7 @@ export function useMatchRealtime({
           ? {
               ...currentSnapshot,
               presence: payload.presence,
+              scoreboardConnectedCount: payload.scoreboardConnectedCount,
             }
           : null,
       );
@@ -468,6 +753,24 @@ export function useMatchRealtime({
         setScoringWindowMessage(null);
         setVoteSubmitErrorMessage(null);
         setPenaltyErrorMessage(null);
+        socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+      }
+    }
+
+    function handleRoundControl(payload: RoundPausedPayload): void {
+      if (payload.matchPublicId === matchPublicId) {
+        setRoundControlErrorMessage(null);
+        socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+      }
+    }
+
+    function handleResultCancellation(
+      payload: ResultCancellationPayload | ResultCancellationUndoPayload,
+    ): void {
+      if (payload.matchPublicId === matchPublicId) {
+        acceptedVoteRef.current = null;
+        setLastAcceptedVote(null);
+        setResultCancellationErrorMessage(null);
         socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
       }
     }
@@ -579,6 +882,11 @@ export function useMatchRealtime({
     socket.on(RealtimeEvent.PRESENCE_UPDATED, handlePresenceUpdated);
     socket.on(RealtimeEvent.ROUND_ENDED, handleRoundEnded);
     socket.on(RealtimeEvent.ROUND_STARTED, handleRoundStarted);
+    socket.on(RealtimeEvent.ROUND_PAUSED, handleRoundControl);
+    socket.on(RealtimeEvent.ROUND_RESUMED, handleRoundControl);
+    socket.on(RealtimeEvent.ROUND_CANCELLED, handleResultCancellation);
+    socket.on(RealtimeEvent.MATCH_RESET_COMPLETED, handleResultCancellation);
+    socket.on(RealtimeEvent.RESULT_CANCELLATION_UNDONE, handleResultCancellation);
     socket.on(RealtimeEvent.SCORE_UPDATED, handleScoreUpdated);
     socket.on(RealtimeEvent.SCORING_WINDOW_OPENED, handleScoringWindowOpened);
     socket.on(RealtimeEvent.SCORING_WINDOW_RESOLVED, handleScoringWindowResolved);
@@ -605,6 +913,11 @@ export function useMatchRealtime({
       socket.off(RealtimeEvent.PRESENCE_UPDATED, handlePresenceUpdated);
       socket.off(RealtimeEvent.ROUND_ENDED, handleRoundEnded);
       socket.off(RealtimeEvent.ROUND_STARTED, handleRoundStarted);
+      socket.off(RealtimeEvent.ROUND_PAUSED, handleRoundControl);
+      socket.off(RealtimeEvent.ROUND_RESUMED, handleRoundControl);
+      socket.off(RealtimeEvent.ROUND_CANCELLED, handleResultCancellation);
+      socket.off(RealtimeEvent.MATCH_RESET_COMPLETED, handleResultCancellation);
+      socket.off(RealtimeEvent.RESULT_CANCELLATION_UNDONE, handleResultCancellation);
       socket.off(RealtimeEvent.SCORE_UPDATED, handleScoreUpdated);
       socket.off(RealtimeEvent.SCORING_WINDOW_OPENED, handleScoringWindowOpened);
       socket.off(RealtimeEvent.SCORING_WINDOW_RESOLVED, handleScoringWindowResolved);
@@ -624,6 +937,15 @@ export function useMatchRealtime({
     errorMessage,
     lastAcceptedVote,
     presence,
+    pauseRound,
+    resumeRound,
+    controllingRound,
+    roundControlErrorMessage,
+    cancelRoundResult,
+    resetMatchResults,
+    undoResultCancellation,
+    cancellingResults,
+    resultCancellationErrorMessage,
     reconnect,
     requestSnapshot,
     submitPenalty,

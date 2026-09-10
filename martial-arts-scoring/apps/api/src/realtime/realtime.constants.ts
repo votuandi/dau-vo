@@ -25,6 +25,25 @@ export const ROUND_START_FAILED_ERROR = {
   message: 'The round could not be started',
 } as const;
 
+export const ROUND_CONTROL_FORBIDDEN_ERROR = {
+  code: 'ROUND_CONTROL_FORBIDDEN',
+  message: 'Only the inspector may pause or resume a round',
+} as const;
+export const ROUND_CONTROL_INVALID_STATE_ERROR = {
+  code: 'ROUND_CONTROL_INVALID_STATE',
+  message: 'The round cannot be paused or resumed from the current match state',
+} as const;
+export const ROUND_CONTROL_FAILED_ERROR = {
+  code: 'ROUND_CONTROL_FAILED',
+  message: 'The round control command could not be completed',
+} as const;
+
+export const MATCH_PARTICIPANTS_NOT_READY_ERROR = {
+  code: 'MATCH_PARTICIPANTS_NOT_READY',
+  message:
+    'All three referees and at least one scoreboard must be connected before the round can start.',
+} as const;
+
 export const VOTE_FORBIDDEN_ERROR = {
   code: 'VOTE_FORBIDDEN',
   message: 'Only an active referee may submit a vote',
@@ -43,6 +62,35 @@ export const VOTE_ALREADY_SUBMITTED_ERROR = {
 export const VOTE_MATCH_NOT_RUNNING_ERROR = {
   code: 'VOTE_MATCH_NOT_RUNNING',
   message: 'Votes are only accepted while a round is running',
+} as const;
+export const ROUND_PAUSED_ERROR = {
+  code: 'ROUND_PAUSED',
+  message: 'Votes are not accepted while the round is paused',
+} as const;
+
+export const RESULT_CANCELLATION_FORBIDDEN_ERROR = {
+  code: 'RESULT_CANCELLATION_FORBIDDEN',
+  message: 'Only the inspector may cancel match results',
+} as const;
+export const RESULT_CANCELLATION_INVALID_STATE_ERROR = {
+  code: 'RESULT_CANCELLATION_INVALID_STATE',
+  message: 'Results cannot be cancelled from the current match state',
+} as const;
+export const RESULT_CANCELLATION_FAILED_ERROR = {
+  code: 'RESULT_CANCELLATION_FAILED',
+  message: 'The result cancellation could not be completed',
+} as const;
+export const RESET_UNDO_FORBIDDEN_ERROR = {
+  code: 'RESET_UNDO_FORBIDDEN',
+  message: 'Only the inspector may undo a result cancellation',
+} as const;
+export const RESET_UNDO_NOT_ALLOWED_ERROR = {
+  code: 'RESET_UNDO_NOT_ALLOWED',
+  message: 'This result cancellation can no longer be undone safely',
+} as const;
+export const RESET_UNDO_FAILED_ERROR = {
+  code: 'RESET_UNDO_FAILED',
+  message: 'The result cancellation could not be undone',
 } as const;
 
 export const VOTE_ROUND_ENDED_ERROR = {

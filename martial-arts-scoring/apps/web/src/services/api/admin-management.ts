@@ -62,12 +62,15 @@ export interface AdminMatchMonitoring {
     startedAt: string;
     endsAt: string;
     resolvedAt: string | null;
+    invalidatedAt: string | null;
+    invalidatedByAuditId: string | null;
     winningColor: AthleteColor | null;
     scoreAwarded: boolean;
     refereeVotes: readonly {
       refereeSlot: string;
       athleteColor: AthleteColor;
       serverReceivedAt: string;
+      invalidatedAt: string | null;
     }[];
   }[];
   readonly penalties: readonly {
@@ -75,6 +78,8 @@ export interface AdminMatchMonitoring {
     roundNumber: number | null;
     value: number;
     createdAt: string;
+    revertedAt: string | null;
+    revertedByAuditId: string | null;
     athlete: { color: AthleteColor; name: string };
   }[];
   readonly scoreEvents: readonly {
@@ -83,6 +88,8 @@ export interface AdminMatchMonitoring {
     type: string;
     value: number;
     createdAt: string;
+    revertedAt: string | null;
+    revertedByAuditId: string | null;
     scoringWindowId: string | null;
     penaltyId: string | null;
     athlete: { color: AthleteColor; name: string };

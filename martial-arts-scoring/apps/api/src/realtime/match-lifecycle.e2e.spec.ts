@@ -14,6 +14,9 @@ import {
   type RoundEndedPayload,
   type RoundStartedPayload,
   type RoundStartResponse,
+  type RoundControlResponse,
+  type ResultCancellationResponse,
+  type ResultCancellationUndoResponse,
 } from '@martial-arts-scoring/shared-types';
 import { hash } from 'bcryptjs';
 import Redis from 'ioredis';
@@ -165,6 +168,61 @@ function startRound(socket: Socket): Promise<RoundStartResponse> {
   });
 }
 
+function controlRound(
+  socket: Socket,
+  event: 'round:pause' | 'round:resume',
+): Promise<RoundControlResponse> {
+  return new Promise<RoundControlResponse>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Timed out waiting for ${event} response`)),
+      EVENT_TIMEOUT_MS,
+    );
+    socket.emit(event, (response: RoundControlResponse) => {
+      clearTimeout(timer);
+      resolve(response);
+    });
+  });
+}
+
+function cancelResults(
+  socket: Socket,
+  event: 'round:cancel' | 'match:reset',
+): Promise<ResultCancellationResponse> {
+  return new Promise<ResultCancellationResponse>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Timed out waiting for ${event} response`)),
+      EVENT_TIMEOUT_MS,
+    );
+    socket.emit(event, (response: ResultCancellationResponse) => {
+      clearTimeout(timer);
+      resolve(response);
+    });
+  });
+}
+
+function undoResultCancellation(
+  socket: Socket,
+  operationId: string,
+): Promise<ResultCancellationUndoResponse> {
+  return new Promise<ResultCancellationUndoResponse>((resolve, reject) => {
+    const timer = setTimeout(
+      () =>
+        reject(
+          new Error('Timed out waiting for result cancellation undo response'),
+        ),
+      EVENT_TIMEOUT_MS,
+    );
+    socket.emit(
+      RealtimeEvent.RESULT_CANCELLATION_UNDO,
+      { operationId },
+      (response: ResultCancellationUndoResponse) => {
+        clearTimeout(timer);
+        resolve(response);
+      },
+    );
+  });
+}
+
 async function waitUntil<T>(
   query: () => Promise<T>,
   predicate: (value: T) => boolean,
@@ -290,6 +348,64 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     await connected;
 
     return socket;
+  }
+
+  async function connectScoreboard(publicMatchId: string): Promise<Socket> {
+    const socket = io(baseUrl, {
+      auth: { matchPublicId: publicMatchId, mode: 'scoreboard' },
+      autoConnect: false,
+      forceNew: true,
+      path: SOCKET_PATH,
+      reconnection: false,
+      timeout: 2_500,
+      transports: ['websocket'],
+    });
+    sockets.add(socket);
+    const connected = waitForConnect(socket);
+    socket.connect();
+    await connected;
+    return socket;
+  }
+
+  async function requestSnapshot(socket: Socket): Promise<MatchStatePayload> {
+    const snapshot = waitForEvent<MatchStatePayload>(
+      socket,
+      RealtimeEvent.MATCH_STATE,
+    );
+    socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+    return snapshot;
+  }
+
+  async function connectRequiredPresence(
+    match: TestMatch,
+    inspectorSocket: Socket,
+    label: string,
+  ): Promise<void> {
+    const refereeLogins = await Promise.all(
+      [
+        MatchAccessRole.REFEREE_1,
+        MatchAccessRole.REFEREE_2,
+        MatchAccessRole.REFEREE_3,
+      ].map((role) => login(match, role, `${label}-${role}`)),
+    );
+    await Promise.all(refereeLogins.map(({ cookie }) => connect(cookie)));
+    await connectScoreboard(match.publicId);
+
+    await waitUntil(
+      () => requestSnapshot(inspectorSocket),
+      (snapshot) =>
+        snapshot.scoreboardConnectedCount >= 1 &&
+        [
+          MatchAccessRole.REFEREE_1,
+          MatchAccessRole.REFEREE_2,
+          MatchAccessRole.REFEREE_3,
+        ].every((role) =>
+          snapshot.presence.some(
+            (entry) => entry.accessRole === role && entry.connected,
+          ),
+        ),
+      'required round-start presence',
+    );
   }
 
   async function auditEventNames(matchId: string): Promise<string[]> {
@@ -483,6 +599,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       'complete-flow-inspector',
     );
     const socket = await connect(inspector.cookie);
+    await connectRequiredPresence(match, socket, 'complete-flow-ready');
     const roundOneStartedEvent = waitForEvent<RoundStartedPayload>(
       socket,
       RealtimeEvent.ROUND_STARTED,
@@ -605,6 +722,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       'authoritative-time-inspector',
     );
     const socket = await connect(inspector.cookie);
+    await connectRequiredPresence(match, socket, 'authoritative-time-ready');
     const endedEvent = waitForEvent<RoundEndedPayload>(
       socket,
       RealtimeEvent.ROUND_ENDED,
@@ -633,10 +751,8 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     expect(Date.now()).toBeGreaterThanOrEqual(endsAt);
     expect(endedAt).toBe(endsAt);
 
-    const persistedRound = await prisma.round.findUniqueOrThrow({
-      where: {
-        matchId_roundNumber: { matchId: match.id, roundNumber: 1 },
-      },
+    const persistedRound = await prisma.round.findFirstOrThrow({
+      where: { invalidatedAt: null, matchId: match.id, roundNumber: 1 },
     });
     expect(persistedRound.startedAt.getTime()).toBe(startedAt);
     expect(persistedRound.endsAt.getTime()).toBe(endsAt);
@@ -705,6 +821,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       connect(inspector.cookie),
       connect(inspector.cookie),
     ]);
+    await connectRequiredPresence(match, firstSocket, 'concurrent-start-ready');
     const roundEnded = waitForEvent<RoundEndedPayload>(
       firstSocket,
       RealtimeEvent.ROUND_ENDED,
@@ -729,5 +846,539 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     ).resolves.toBe(1);
     const audits = await auditEventNames(match.id);
     expect(audits.filter((event) => event === 'ROUND_STARTED')).toHaveLength(1);
+  });
+
+  it('persists pause duration, rejects invalid controls, and resumes with a new deadline', async () => {
+    const match = await createMatch('pause-resume', 2_000);
+    const inspector = await login(
+      match,
+      MatchAccessRole.INSPECTOR,
+      'pause-resume-inspector',
+    );
+    const socket = await connect(inspector.cookie);
+    await connectRequiredPresence(match, socket, 'pause-resume-ready');
+    const started = await startRound(socket);
+    expect(started.ok).toBe(true);
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 150));
+    const paused = await controlRound(socket, RealtimeEvent.ROUND_PAUSE);
+    expect(paused).toMatchObject({
+      ok: true,
+      round: {
+        pausedAt: expect.any(String),
+        remainingDurationMs: expect.any(Number),
+      },
+    });
+    if (!paused.ok) throw new Error('Pause unexpectedly failed');
+    expect(paused.round.remainingDurationMs).toBeGreaterThan(0);
+    expect(paused.round.remainingDurationMs).toBeLessThan(
+      match.roundDurationMs,
+    );
+
+    const persistedPause = await prisma.match.findUniqueOrThrow({
+      include: { rounds: { where: { roundNumber: 1 } } },
+      where: { id: match.id },
+    });
+    expect(persistedPause.status).toBe(MatchStatus.ROUND_1_PAUSED);
+    expect(persistedPause.rounds[0]?.pausedAt).not.toBeNull();
+    expect(persistedPause.rounds[0]?.remainingDurationMs).toBe(
+      paused.round.remainingDurationMs,
+    );
+    await expect(
+      controlRound(socket, RealtimeEvent.ROUND_PAUSE),
+    ).resolves.toMatchObject({
+      error: { code: 'ROUND_CONTROL_INVALID_STATE' },
+      ok: false,
+    });
+
+    const resumedAt = Date.now();
+    const resumed = await controlRound(socket, RealtimeEvent.ROUND_RESUME);
+    expect(resumed.ok).toBe(true);
+    if (!resumed.ok) throw new Error('Resume unexpectedly failed');
+    expect(new Date(resumed.round.endsAt).getTime()).toBeGreaterThan(resumedAt);
+    expect(resumed.round.pausedAt).toBeNull();
+    expect(resumed.round.remainingDurationMs).toBeNull();
+    await expect(
+      prisma.auditLog.findMany({
+        orderBy: { createdAt: 'asc' },
+        select: { eventType: true, metadata: true, sessionId: true },
+        where: { matchId: match.id },
+      }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: 'ROUND_PAUSED',
+          sessionId: inspector.sessionId,
+        }),
+        expect.objectContaining({
+          eventType: 'ROUND_RESUMED',
+          sessionId: inspector.sessionId,
+        }),
+      ]),
+    );
+    await expect(
+      controlRound(socket, RealtimeEvent.ROUND_RESUME),
+    ).resolves.toMatchObject({
+      error: { code: 'ROUND_CONTROL_INVALID_STATE' },
+      ok: false,
+    });
+  });
+
+  it('cancels Round 1 without deleting history and permits a presence-gated new attempt', async () => {
+    const match = await createMatch('cancel-round-one', 500);
+    const inspector = await login(
+      match,
+      MatchAccessRole.INSPECTOR,
+      'cancel-r1-inspector',
+    );
+    const socket = await connect(inspector.cookie);
+    await prisma.match.update({
+      data: {
+        currentRound: 1,
+        startedAt: new Date(),
+        status: MatchStatus.BREAK,
+      },
+      where: { id: match.id },
+    });
+    const round = await prisma.round.create({
+      data: {
+        endedAt: new Date(),
+        endsAt: new Date(),
+        matchId: match.id,
+        roundNumber: 1,
+        startedAt: new Date(Date.now() - 1_000),
+      },
+    });
+    const athlete = await prisma.matchAthlete.findFirstOrThrow({
+      where: { color: AthleteColor.RED, matchId: match.id },
+    });
+    await prisma.scoreEvent.create({
+      data: {
+        athleteId: athlete.id,
+        matchId: match.id,
+        roundNumber: 1,
+        type: 'REFEREE_POINT',
+        value: 3,
+      },
+    });
+
+    const cancelled = await cancelResults(socket, RealtimeEvent.ROUND_CANCEL);
+    expect(cancelled).toMatchObject({
+      action: { roundNumbers: [1], status: 'WAITING' },
+      ok: true,
+    });
+    if (!cancelled.ok)
+      throw new Error('Round cancellation unexpectedly failed');
+    await expect(
+      prisma.round.findUniqueOrThrow({ where: { id: round.id } }),
+    ).resolves.toMatchObject({
+      invalidatedAt: expect.any(Date),
+      invalidatedByAuditId: expect.any(String),
+    });
+    await expect(
+      prisma.scoreEvent.findFirstOrThrow({ where: { matchId: match.id } }),
+    ).resolves.toMatchObject({
+      revertedAt: expect.any(Date),
+      revertedByAuditId: expect.any(String),
+    });
+    await expect(startRound(socket)).resolves.toMatchObject({
+      error: { code: 'MATCH_PARTICIPANTS_NOT_READY' },
+      ok: false,
+    });
+    await connectRequiredPresence(match, socket, 'cancel-r1-restart-ready');
+    await expect(startRound(socket)).resolves.toMatchObject({
+      ok: true,
+      round: { roundNumber: 1 },
+    });
+    await expect(
+      prisma.round.count({ where: { matchId: match.id, roundNumber: 1 } }),
+    ).resolves.toBe(2);
+    await expect(
+      undoResultCancellation(socket, cancelled.action.actionId),
+    ).resolves.toMatchObject({
+      error: { code: 'RESET_UNDO_NOT_ALLOWED' },
+      ok: false,
+    });
+  });
+
+  it('resets both finished rounds to zero effective scores and violations while preserving records', async () => {
+    const match = await createMatch('reset-entire-match');
+    const inspector = await login(
+      match,
+      MatchAccessRole.INSPECTOR,
+      'reset-match-inspector',
+    );
+    const socket = await connect(inspector.cookie);
+    const athletes = await prisma.matchAthlete.findMany({
+      where: { matchId: match.id },
+    });
+    const red = athletes.find(({ color }) => color === AthleteColor.RED);
+    if (red === undefined) throw new Error('Missing red athlete');
+    const now = new Date();
+    await prisma.match.update({
+      data: {
+        currentRound: 2,
+        finishedAt: now,
+        startedAt: new Date(now.getTime() - 5_000),
+        status: MatchStatus.FINISHED,
+      },
+      where: { id: match.id },
+    });
+    await prisma.round.createMany({
+      data: [1, 2].map((roundNumber) => ({
+        endedAt: now,
+        endsAt: now,
+        matchId: match.id,
+        roundNumber,
+        startedAt: new Date(now.getTime() - 2_000),
+      })),
+    });
+    const penalty = await prisma.penalty.create({
+      data: {
+        athleteId: red.id,
+        createdBySessionId: inspector.sessionId,
+        matchId: match.id,
+        roundNumber: 2,
+        value: -1,
+      },
+    });
+    await prisma.scoreEvent.createMany({
+      data: [
+        {
+          athleteId: red.id,
+          matchId: match.id,
+          roundNumber: 1,
+          type: 'REFEREE_POINT',
+          value: 5,
+        },
+        {
+          athleteId: red.id,
+          matchId: match.id,
+          penaltyId: penalty.id,
+          roundNumber: 2,
+          type: 'PENALTY',
+          value: -1,
+        },
+        {
+          athleteId: red.id,
+          matchId: match.id,
+          roundNumber: null,
+          type: 'ADMIN_ADJUSTMENT',
+          value: 2,
+        },
+      ],
+    });
+
+    const cancelled = await cancelResults(socket, RealtimeEvent.MATCH_RESET);
+    expect(cancelled).toMatchObject({
+      action: { roundNumbers: [1, 2], status: 'WAITING' },
+      ok: true,
+    });
+    if (!cancelled.ok) throw new Error('Match reset unexpectedly failed');
+    const snapshot = await requestSnapshot(socket);
+    expect(snapshot.match).toMatchObject({
+      currentRound: null,
+      finishedAt: null,
+      startedAt: null,
+      status: 'WAITING',
+    });
+    expect(
+      snapshot.athletes.find(({ color }) => color === 'RED'),
+    ).toMatchObject({ score: 0, violations: 0 });
+    await expect(
+      prisma.round.count({
+        where: { invalidatedAt: { not: null }, matchId: match.id },
+      }),
+    ).resolves.toBe(2);
+    await expect(
+      prisma.scoreEvent.count({
+        where: { matchId: match.id, revertedAt: { not: null } },
+      }),
+    ).resolves.toBe(3);
+    await expect(
+      prisma.penalty.count({
+        where: { matchId: match.id, revertedAt: { not: null } },
+      }),
+    ).resolves.toBe(1);
+    socket.disconnect();
+    const refreshedSocket = await connect(inspector.cookie);
+    await expect(
+      undoResultCancellation(refreshedSocket, cancelled.action.actionId),
+    ).resolves.toMatchObject({
+      ok: true,
+      undo: { operationId: cancelled.action.actionId, status: 'FINISHED' },
+    });
+    const restoredSnapshot = await requestSnapshot(refreshedSocket);
+    expect(restoredSnapshot.match).toMatchObject({
+      currentRound: 2,
+      status: 'FINISHED',
+    });
+    expect(
+      restoredSnapshot.athletes.find(({ color }) => color === 'RED'),
+    ).toMatchObject({ score: 6, violations: 1 });
+    await expect(
+      prisma.auditLog.findMany({
+        select: { eventType: true, metadata: true, sessionId: true },
+        where: { matchId: match.id },
+      }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: 'MATCH_RESULT_RESET',
+          metadata: expect.objectContaining({
+            resetOperationId: cancelled.action.actionId,
+          }),
+          sessionId: inspector.sessionId,
+        }),
+        expect.objectContaining({
+          eventType: 'MATCH_RESULT_RESET_UNDONE',
+          metadata: expect.objectContaining({
+            resetOperationId: cancelled.action.actionId,
+          }),
+          sessionId: inspector.sessionId,
+        }),
+      ]),
+    );
+    await expect(
+      undoResultCancellation(refreshedSocket, cancelled.action.actionId),
+    ).resolves.toMatchObject({
+      error: { code: 'RESET_UNDO_NOT_ALLOWED' },
+      ok: false,
+    });
+  });
+
+  it('restores only Round 1 points and penalties when its cancellation is undone', async () => {
+    const match = await createMatch('undo-round-one');
+    const inspector = await login(
+      match,
+      MatchAccessRole.INSPECTOR,
+      'undo-r1-inspector',
+    );
+    const socket = await connect(inspector.cookie);
+    const athletes = await prisma.matchAthlete.findMany({
+      where: { matchId: match.id },
+    });
+    const red = athletes.find(({ color }) => color === AthleteColor.RED);
+    const blue = athletes.find(({ color }) => color === AthleteColor.BLUE);
+    if (red === undefined || blue === undefined)
+      throw new Error('Missing athletes');
+    const now = new Date();
+    await prisma.match.update({
+      data: { currentRound: 1, startedAt: now, status: MatchStatus.BREAK },
+      where: { id: match.id },
+    });
+    await prisma.round.create({
+      data: {
+        endedAt: now,
+        endsAt: now,
+        matchId: match.id,
+        roundNumber: 1,
+        startedAt: new Date(now.getTime() - 1_000),
+      },
+    });
+    const penalty = await prisma.penalty.create({
+      data: {
+        athleteId: red.id,
+        createdBySessionId: inspector.sessionId,
+        matchId: match.id,
+        roundNumber: 1,
+      },
+    });
+    await prisma.scoreEvent.createMany({
+      data: [
+        {
+          athleteId: red.id,
+          matchId: match.id,
+          roundNumber: 1,
+          type: 'REFEREE_POINT',
+          value: 3,
+        },
+        {
+          athleteId: blue.id,
+          matchId: match.id,
+          roundNumber: 1,
+          type: 'REFEREE_POINT',
+          value: 2,
+        },
+        {
+          athleteId: red.id,
+          matchId: match.id,
+          penaltyId: penalty.id,
+          roundNumber: 1,
+          type: 'PENALTY',
+          value: -1,
+        },
+      ],
+    });
+
+    const cancelled = await cancelResults(socket, RealtimeEvent.ROUND_CANCEL);
+    if (!cancelled.ok)
+      throw new Error('Round cancellation unexpectedly failed');
+    const cancelledSnapshot = await requestSnapshot(socket);
+    expect(cancelledSnapshot.match).toMatchObject({
+      currentRound: null,
+      status: 'WAITING',
+    });
+    expect(
+      cancelledSnapshot.athletes.find(({ color }) => color === 'RED'),
+    ).toMatchObject({ score: 0, violations: 0 });
+    expect(
+      cancelledSnapshot.athletes.find(({ color }) => color === 'BLUE'),
+    ).toMatchObject({ score: 0, violations: 0 });
+
+    await expect(
+      undoResultCancellation(socket, cancelled.action.actionId),
+    ).resolves.toMatchObject({
+      ok: true,
+      undo: { operationId: cancelled.action.actionId, status: 'BREAK' },
+    });
+    const restoredSnapshot = await requestSnapshot(socket);
+    expect(restoredSnapshot.match).toMatchObject({
+      currentRound: 1,
+      status: 'BREAK',
+    });
+    expect(
+      restoredSnapshot.athletes.find(({ color }) => color === 'RED'),
+    ).toMatchObject({ score: 2, violations: 1 });
+    expect(
+      restoredSnapshot.athletes.find(({ color }) => color === 'BLUE'),
+    ).toMatchObject({ score: 2, violations: 0 });
+    await expect(
+      prisma.matchResultOperation.findUniqueOrThrow({
+        where: { id: cancelled.action.actionId },
+      }),
+    ).resolves.toMatchObject({ status: 'UNDONE', undoneAt: expect.any(Date) });
+  });
+
+  it('serializes duplicate cancellation and undo commands from the same inspector session', async () => {
+    const match = await createMatch('duplicate-cancel-undo');
+    const inspector = await login(
+      match,
+      MatchAccessRole.INSPECTOR,
+      'duplicate-cancel-undo-inspector',
+    );
+    const [firstSocket, secondSocket] = await Promise.all([
+      connect(inspector.cookie),
+      connect(inspector.cookie),
+    ]);
+    const now = new Date();
+    await prisma.match.update({
+      data: { currentRound: 1, startedAt: now, status: MatchStatus.BREAK },
+      where: { id: match.id },
+    });
+    await prisma.round.create({
+      data: {
+        endedAt: now,
+        endsAt: now,
+        matchId: match.id,
+        roundNumber: 1,
+        startedAt: new Date(now.getTime() - 1_000),
+      },
+    });
+
+    const cancellations = await Promise.all([
+      cancelResults(firstSocket, RealtimeEvent.ROUND_CANCEL),
+      cancelResults(secondSocket, RealtimeEvent.ROUND_CANCEL),
+    ]);
+    const appliedCancellation = cancellations.find((response) => response.ok);
+    expect(cancellations.filter((response) => response.ok)).toHaveLength(1);
+    if (appliedCancellation === undefined || !appliedCancellation.ok) {
+      throw new Error('One cancellation should have been applied');
+    }
+    await expect(
+      prisma.matchResultOperation.count({ where: { matchId: match.id } }),
+    ).resolves.toBe(1);
+    await expect(
+      prisma.auditLog.count({
+        where: { eventType: 'ROUND_RESULT_CANCELLED', matchId: match.id },
+      }),
+    ).resolves.toBe(1);
+
+    const undos = await Promise.all([
+      undoResultCancellation(firstSocket, appliedCancellation.action.actionId),
+      undoResultCancellation(secondSocket, appliedCancellation.action.actionId),
+    ]);
+    expect(undos.filter((response) => response.ok)).toHaveLength(1);
+    await expect(
+      prisma.auditLog.count({
+        where: { eventType: 'ROUND_RESULT_CANCEL_UNDONE', matchId: match.id },
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      prisma.matchResultOperation.findUniqueOrThrow({
+        where: { id: appliedCancellation.action.actionId },
+      }),
+    ).resolves.toMatchObject({ status: 'UNDONE' });
+  });
+
+  it('cancels only Round 2 effects and keeps effective Round 1 scoring', async () => {
+    const match = await createMatch('cancel-round-two');
+    const inspector = await login(
+      match,
+      MatchAccessRole.INSPECTOR,
+      'cancel-r2-inspector',
+    );
+    const socket = await connect(inspector.cookie);
+    const red = await prisma.matchAthlete.findFirstOrThrow({
+      where: { color: AthleteColor.RED, matchId: match.id },
+    });
+    const now = new Date();
+    await prisma.match.update({
+      data: {
+        currentRound: 2,
+        finishedAt: now,
+        startedAt: now,
+        status: MatchStatus.FINISHED,
+      },
+      where: { id: match.id },
+    });
+    await prisma.round.createMany({
+      data: [1, 2].map((roundNumber) => ({
+        endedAt: now,
+        endsAt: now,
+        matchId: match.id,
+        roundNumber,
+        startedAt: now,
+      })),
+    });
+    await prisma.scoreEvent.createMany({
+      data: [
+        {
+          athleteId: red.id,
+          matchId: match.id,
+          roundNumber: 1,
+          type: 'REFEREE_POINT',
+          value: 5,
+        },
+        {
+          athleteId: red.id,
+          matchId: match.id,
+          roundNumber: 2,
+          type: 'REFEREE_POINT',
+          value: 3,
+        },
+      ],
+    });
+
+    await expect(
+      cancelResults(socket, RealtimeEvent.ROUND_CANCEL),
+    ).resolves.toMatchObject({
+      action: { roundNumbers: [2], status: 'BREAK' },
+      ok: true,
+    });
+    const snapshot = await requestSnapshot(socket);
+    expect(snapshot.athletes.find(({ color }) => color === 'RED')?.score).toBe(
+      5,
+    );
+    await expect(
+      prisma.scoreEvent.count({
+        where: { matchId: match.id, revertedAt: null },
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      prisma.scoreEvent.count({
+        where: { matchId: match.id, revertedAt: { not: null } },
+      }),
+    ).resolves.toBe(1);
   });
 });

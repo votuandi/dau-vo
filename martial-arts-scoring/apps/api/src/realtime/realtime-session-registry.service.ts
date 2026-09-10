@@ -19,6 +19,7 @@ export class RealtimeSessionRegistryService {
     string,
     Map<string, RealtimeConnectionRegistration>
   >();
+  private readonly scoreboardConnections = new Map<string, string>();
 
   constructor(@Inject(RedisService) private readonly redis: RedisService) {}
 
@@ -74,6 +75,49 @@ export class RealtimeSessionRegistryService {
     return Number.isSafeInteger(count) && count > 0 ? count : 0;
   }
 
+  async registerScoreboard(
+    matchPublicId: string,
+    socketId: string,
+  ): Promise<void> {
+    if (this.scoreboardConnections.has(socketId)) {
+      return;
+    }
+
+    this.scoreboardConnections.set(socketId, matchPublicId);
+    await this.redis.incrementByWithExpiry(
+      this.scoreboardPresenceKey(matchPublicId),
+      1,
+      PRESENCE_TTL_SECONDS,
+    );
+  }
+
+  async unregisterScoreboard(socketId: string): Promise<string | null> {
+    const matchPublicId = this.scoreboardConnections.get(socketId);
+    if (matchPublicId === undefined) {
+      return null;
+    }
+
+    this.scoreboardConnections.delete(socketId);
+    await this.redis.incrementByWithExpiry(
+      this.scoreboardPresenceKey(matchPublicId),
+      -1,
+      PRESENCE_TTL_SECONDS,
+    );
+    return matchPublicId;
+  }
+
+  async scoreboardConnectedCount(matchPublicId: string): Promise<number> {
+    const value = await this.redis.get(
+      this.scoreboardPresenceKey(matchPublicId),
+    );
+    if (value === null) {
+      return 0;
+    }
+
+    const count = Number(value);
+    return Number.isSafeInteger(count) && count > 0 ? count : 0;
+  }
+
   revokeSessions(sessionIds: readonly string[]): void {
     const connections = sessionIds.flatMap((sessionId) => [
       ...(this.connectionsBySession.get(sessionId)?.values() ?? []),
@@ -91,5 +135,9 @@ export class RealtimeSessionRegistryService {
     accessRole: MatchAccessRole,
   ): string {
     return `realtime:presence:${matchPublicId}:${accessRole}`;
+  }
+
+  private scoreboardPresenceKey(matchPublicId: string): string {
+    return `realtime:presence:${matchPublicId}:SCOREBOARD`;
   }
 }

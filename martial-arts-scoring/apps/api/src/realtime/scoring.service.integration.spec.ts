@@ -14,6 +14,7 @@ import {
   InactiveVoteSessionError,
   MatchNotRunningForVoteError,
   RoundEndedForVoteError,
+  RoundPausedForVoteError,
 } from './scoring.errors';
 import { isWithinScoringWindow, ScoringService } from './scoring.service';
 
@@ -311,6 +312,28 @@ describe('ScoringService (PostgreSQL integration)', () => {
     await expect(
       vote(ended, RefereeSlot.REFEREE_1, AthleteColor.RED),
     ).rejects.toBeInstanceOf(RoundEndedForVoteError);
+  });
+
+  it('rejects votes after pause while resolving the already-open window from pre-pause votes', async () => {
+    const current = await fixture();
+    await vote(current, RefereeSlot.REFEREE_1, AthleteColor.RED);
+    await vote(current, RefereeSlot.REFEREE_2, AthleteColor.RED);
+    await prisma.match.update({
+      data: { status: MatchStatus.ROUND_1_PAUSED },
+      where: { id: current.matchId },
+    });
+
+    await expect(
+      vote(current, RefereeSlot.REFEREE_3, AthleteColor.BLUE),
+    ).rejects.toBeInstanceOf(RoundPausedForVoteError);
+    const resolved = await waitForResolution(current.matchId);
+    expect(resolved.winningColor).toBe(AthleteColor.RED);
+    await expect(
+      prisma.refereeVote.count({ where: { scoringWindowId: resolved.id } }),
+    ).resolves.toBe(2);
+    await expect(
+      prisma.scoreEvent.count({ where: { scoringWindowId: resolved.id } }),
+    ).resolves.toBe(1);
   });
 
   it('resolves overdue persisted windows safely during recovery and only awards one point', async () => {

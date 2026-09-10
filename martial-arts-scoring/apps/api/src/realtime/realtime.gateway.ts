@@ -1,4 +1,9 @@
-import { Inject, Logger, type OnApplicationBootstrap } from '@nestjs/common';
+import {
+  Inject,
+  Logger,
+  NotFoundException,
+  type OnApplicationBootstrap,
+} from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -16,6 +21,9 @@ import {
   type PenaltyAddPayload,
   type PenaltyAddResponse,
   type RoundStartResponse,
+  type RoundControlResponse,
+  type ResultCancellationResponse,
+  type ResultCancellationUndoResponse,
   type VoteSubmitError,
   type VoteSubmitPayload,
   type VoteSubmitResponse,
@@ -33,12 +41,19 @@ import { MatchAccessService } from '../match-access/match-access.service';
 import type { ValidatedMatchSession } from '../match-access/match-access.types';
 import {
   InactiveRoundStartSessionError,
+  InactiveRoundControlSessionError,
+  InvalidRoundControlStateError,
+  InvalidResultCancellationStateError,
   InvalidRoundStartStateError,
+  ResultCancellationUndoNotAllowedError,
 } from './match-lifecycle.errors';
 import {
   MatchLifecycleService,
   type RoundEndedTransition,
   type RoundStartedTransition,
+  type RoundControlTransition,
+  type ResultCancellationTransition,
+  type ResultCancellationUndoTransition,
 } from './match-lifecycle.service';
 import {
   InactivePenaltySessionError,
@@ -52,6 +67,7 @@ import {
   MatchNotRunningForVoteError,
   PriorScoringWindowPendingError,
   RoundEndedForVoteError,
+  RoundPausedForVoteError,
 } from './scoring.errors';
 import {
   ScoringService,
@@ -59,6 +75,7 @@ import {
 } from './scoring.service';
 import {
   MATCH_SOCKET_PATH,
+  MATCH_PARTICIPANTS_NOT_READY_ERROR,
   PENALTY_FAILED_ERROR,
   PENALTY_FORBIDDEN_ERROR,
   PENALTY_INVALID_ATHLETE_ERROR,
@@ -68,6 +85,16 @@ import {
   ROUND_START_FAILED_ERROR,
   ROUND_START_FORBIDDEN_ERROR,
   ROUND_START_INVALID_STATE_ERROR,
+  ROUND_CONTROL_FAILED_ERROR,
+  ROUND_CONTROL_FORBIDDEN_ERROR,
+  ROUND_CONTROL_INVALID_STATE_ERROR,
+  ROUND_PAUSED_ERROR,
+  RESULT_CANCELLATION_FAILED_ERROR,
+  RESULT_CANCELLATION_FORBIDDEN_ERROR,
+  RESULT_CANCELLATION_INVALID_STATE_ERROR,
+  RESET_UNDO_FAILED_ERROR,
+  RESET_UNDO_FORBIDDEN_ERROR,
+  RESET_UNDO_NOT_ALLOWED_ERROR,
   SESSION_REVOKED_EVENT,
   VOTE_ALREADY_SUBMITTED_ERROR,
   VOTE_FAILED_ERROR,
@@ -168,6 +195,7 @@ export class RealtimeGateway
     const validatedIdentity = await this.revalidate(client);
 
     if (validatedIdentity === null || this.isSocketUnavailable(client)) {
+      await this.sessionRegistry.unregister(identity.sessionId, client.id);
       return;
     }
 
@@ -221,6 +249,31 @@ export class RealtimeGateway
       };
     }
 
+    let readiness;
+    try {
+      readiness = await this.matchState.startReadiness(
+        identity.matchId,
+        identity.publicMatchId,
+      );
+    } catch (error: unknown) {
+      this.logger.error(
+        { error, matchId: identity.matchId },
+        'Unable to verify match participant readiness',
+      );
+      return { error: ROUND_START_FAILED_ERROR, ok: false };
+    }
+    if (
+      !readiness.referee1Connected ||
+      !readiness.referee2Connected ||
+      !readiness.referee3Connected ||
+      readiness.scoreboardConnectedCount < 1
+    ) {
+      return {
+        error: { ...MATCH_PARTICIPANTS_NOT_READY_ERROR, details: readiness },
+        ok: false,
+      };
+    }
+
     let transition: RoundStartedTransition;
 
     try {
@@ -267,6 +320,228 @@ export class RealtimeGateway
     }
 
     return { ok: true, round: transition.payload.round };
+  }
+
+  @SubscribeMessage(RealtimeEvent.ROUND_PAUSE)
+  async roundPause(
+    @ConnectedSocket() client: RealtimeSocket,
+  ): Promise<RoundControlResponse> {
+    return this.controlRound(client, 'pause');
+  }
+
+  @SubscribeMessage(RealtimeEvent.ROUND_RESUME)
+  async roundResume(
+    @ConnectedSocket() client: RealtimeSocket,
+  ): Promise<RoundControlResponse> {
+    return this.controlRound(client, 'resume');
+  }
+
+  private async controlRound(
+    client: RealtimeSocket,
+    action: 'pause' | 'resume',
+  ): Promise<RoundControlResponse> {
+    if (this.isScoreboardSocket(client))
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    const identity = client.data.identity;
+    const token = client.data.matchSessionToken;
+    if (
+      client.data.revoked === true ||
+      identity === undefined ||
+      token === undefined
+    ) {
+      this.revokeSocket(client);
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    }
+    if (identity.role !== MatchRole.INSPECTOR)
+      return { error: ROUND_CONTROL_FORBIDDEN_ERROR, ok: false };
+    if (!(await this.ensureMatchRoomMembership(client, identity)))
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    let transition: RoundControlTransition;
+    try {
+      const input = {
+        matchId: identity.matchId,
+        sessionId: identity.sessionId,
+        sessionTokenHash: this.matchAccess.hashSessionToken(token),
+      };
+      transition =
+        action === 'pause'
+          ? await this.lifecycle.pauseRound(input)
+          : await this.lifecycle.resumeRound(input);
+    } catch (error: unknown) {
+      if (error instanceof InactiveRoundControlSessionError) {
+        this.sessionRegistry.revokeSessions([identity.sessionId]);
+        return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+      }
+      if (error instanceof InvalidRoundControlStateError)
+        return { error: ROUND_CONTROL_INVALID_STATE_ERROR, ok: false };
+      this.logger.error(
+        {
+          action,
+          error,
+          matchId: identity.matchId,
+          sessionId: identity.sessionId,
+        },
+        'Unable to commit round control command',
+      );
+      return { error: ROUND_CONTROL_FAILED_ERROR, ok: false };
+    }
+    const event =
+      action === 'pause'
+        ? RealtimeEvent.ROUND_PAUSED
+        : RealtimeEvent.ROUND_RESUMED;
+    this.server
+      .to(matchRoom(identity.publicMatchId))
+      .emit(event, transition.payload);
+    await this.broadcastMatchState(
+      transition.matchId,
+      identity.publicMatchId,
+    ).catch((error: unknown) => {
+      this.logger.error(
+        { action, error, matchId: identity.matchId },
+        'Round control committed but realtime publication failed',
+      );
+    });
+    return { ok: true, round: transition.payload.round };
+  }
+
+  @SubscribeMessage(RealtimeEvent.ROUND_CANCEL)
+  async roundCancel(
+    @ConnectedSocket() client: RealtimeSocket,
+  ): Promise<ResultCancellationResponse> {
+    return this.cancelResults(client, false);
+  }
+
+  @SubscribeMessage(RealtimeEvent.MATCH_RESET)
+  async matchReset(
+    @ConnectedSocket() client: RealtimeSocket,
+  ): Promise<ResultCancellationResponse> {
+    return this.cancelResults(client, true);
+  }
+
+  private async cancelResults(
+    client: RealtimeSocket,
+    entireMatch: boolean,
+  ): Promise<ResultCancellationResponse> {
+    if (this.isScoreboardSocket(client))
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    const identity = client.data.identity;
+    const token = client.data.matchSessionToken;
+    if (
+      client.data.revoked === true ||
+      identity === undefined ||
+      token === undefined
+    ) {
+      this.revokeSocket(client);
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    }
+    if (identity.role !== MatchRole.INSPECTOR)
+      return { error: RESULT_CANCELLATION_FORBIDDEN_ERROR, ok: false };
+    if (!(await this.ensureMatchRoomMembership(client, identity)))
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    let transition: ResultCancellationTransition;
+    try {
+      const input = {
+        matchId: identity.matchId,
+        sessionId: identity.sessionId,
+        sessionTokenHash: this.matchAccess.hashSessionToken(token),
+      };
+      transition = entireMatch
+        ? await this.lifecycle.resetMatchResults(input)
+        : await this.lifecycle.cancelCurrentRoundResult(input);
+    } catch (error: unknown) {
+      if (error instanceof InactiveRoundControlSessionError) {
+        this.sessionRegistry.revokeSessions([identity.sessionId]);
+        return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+      }
+      if (error instanceof InvalidResultCancellationStateError)
+        return { error: RESULT_CANCELLATION_INVALID_STATE_ERROR, ok: false };
+      this.logger.error(
+        { entireMatch, error, matchId: identity.matchId },
+        'Unable to cancel match results',
+      );
+      return { error: RESULT_CANCELLATION_FAILED_ERROR, ok: false };
+    }
+    const event = entireMatch
+      ? RealtimeEvent.MATCH_RESET_COMPLETED
+      : RealtimeEvent.ROUND_CANCELLED;
+    this.server
+      .to(matchRoom(identity.publicMatchId))
+      .emit(event, transition.payload);
+    await this.broadcastMatchState(
+      transition.matchId,
+      identity.publicMatchId,
+    ).catch((error: unknown) => {
+      this.logger.error(
+        { error, matchId: identity.matchId },
+        'Result cancellation committed but publication failed',
+      );
+    });
+    return { action: transition.payload, ok: true };
+  }
+
+  @SubscribeMessage(RealtimeEvent.RESULT_CANCELLATION_UNDO)
+  async undoResultCancellation(
+    @ConnectedSocket() client: RealtimeSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<ResultCancellationUndoResponse> {
+    if (this.isScoreboardSocket(client)) {
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    }
+    const identity = client.data.identity;
+    const token = client.data.matchSessionToken;
+    if (
+      client.data.revoked === true ||
+      identity === undefined ||
+      token === undefined ||
+      !this.isResultCancellationUndoPayload(payload)
+    ) {
+      if (identity !== undefined && token !== undefined) {
+        return { error: RESET_UNDO_NOT_ALLOWED_ERROR, ok: false };
+      }
+      this.revokeSocket(client);
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    }
+    if (identity.role !== MatchRole.INSPECTOR) {
+      return { error: RESET_UNDO_FORBIDDEN_ERROR, ok: false };
+    }
+    if (!(await this.ensureMatchRoomMembership(client, identity))) {
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    }
+    let transition: ResultCancellationUndoTransition;
+    try {
+      transition = await this.lifecycle.undoResultCancellation({
+        matchId: identity.matchId,
+        operationId: payload.operationId,
+        sessionId: identity.sessionId,
+        sessionTokenHash: this.matchAccess.hashSessionToken(token),
+      });
+    } catch (error: unknown) {
+      if (error instanceof InactiveRoundControlSessionError) {
+        this.sessionRegistry.revokeSessions([identity.sessionId]);
+        return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+      }
+      if (error instanceof ResultCancellationUndoNotAllowedError) {
+        return { error: RESET_UNDO_NOT_ALLOWED_ERROR, ok: false };
+      }
+      this.logger.error(
+        { error, matchId: identity.matchId, operationId: payload.operationId },
+        'Unable to undo result cancellation',
+      );
+      return { error: RESET_UNDO_FAILED_ERROR, ok: false };
+    }
+    this.server
+      .to(matchRoom(identity.publicMatchId))
+      .emit(RealtimeEvent.RESULT_CANCELLATION_UNDONE, transition.payload);
+    await this.broadcastMatchState(
+      transition.matchId,
+      identity.publicMatchId,
+    ).catch((error: unknown) => {
+      this.logger.error(
+        { error, matchId: identity.matchId },
+        'Result cancellation undo committed but realtime publication failed',
+      );
+    });
+    return { ok: true, undo: transition.payload };
   }
 
   @SubscribeMessage(RealtimeEvent.VOTE_SUBMIT)
@@ -337,6 +612,13 @@ export class RealtimeGateway
           client,
           identity.publicMatchId,
           VOTE_MATCH_NOT_RUNNING_ERROR,
+        );
+      }
+      if (error instanceof RoundPausedForVoteError) {
+        return this.rejectVote(
+          client,
+          identity.publicMatchId,
+          ROUND_PAUSED_ERROR,
         );
       }
       if (error instanceof RoundEndedForVoteError) {
@@ -415,6 +697,19 @@ export class RealtimeGateway
 
   async handleDisconnect(client: RealtimeSocket): Promise<void> {
     if (this.isScoreboardSocket(client)) {
+      const matchPublicId = await this.sessionRegistry.unregisterScoreboard(
+        client.id,
+      );
+      if (matchPublicId !== null) {
+        await this.broadcastScoreboardPresence(matchPublicId).catch(
+          (error: unknown) => {
+            this.logger.error(
+              { error, matchPublicId },
+              'Unable to broadcast scoreboard presence after disconnect',
+            );
+          },
+        );
+      }
       return;
     }
     const identity = client.data.identity;
@@ -649,11 +944,45 @@ export class RealtimeGateway
       return;
     }
 
+    await this.sessionRegistry.registerScoreboard(publicMatchId, client.id);
+    if (this.isSocketUnavailable(client)) {
+      await this.sessionRegistry.unregisterScoreboard(client.id);
+      return;
+    }
     await client.join(scoreboardRoom(publicMatchId));
+    await this.broadcastScoreboardPresence(publicMatchId).catch(
+      (error: unknown) => {
+        this.logger.error(
+          { error, matchPublicId: publicMatchId },
+          'Unable to broadcast scoreboard presence after connect',
+        );
+      },
+    );
     client.emit(
       RealtimeEvent.PUBLIC_MATCH_STATE,
       await this.matchState.publicSnapshot(publicMatchId),
     );
+  }
+
+  private async broadcastScoreboardPresence(
+    matchPublicId: string,
+  ): Promise<void> {
+    let payload;
+
+    try {
+      payload =
+        await this.matchState.presenceUpdatedForPublicMatch(matchPublicId);
+    } catch (error: unknown) {
+      if (error instanceof NotFoundException) {
+        return;
+      }
+
+      throw error;
+    }
+
+    this.server
+      .to(matchRoom(matchPublicId))
+      .emit(RealtimeEvent.PRESENCE_UPDATED, payload);
   }
 
   private isScoreboardSocket(client: RealtimeSocket): boolean {
@@ -742,6 +1071,14 @@ export class RealtimeGateway
 
   private isPenaltyPayload(payload: unknown): payload is PenaltyAddPayload {
     return this.isVotePayload(payload);
+  }
+
+  private isResultCancellationUndoPayload(
+    payload: unknown,
+  ): payload is { operationId: string } {
+    if (typeof payload !== 'object' || payload === null) return false;
+    const operationId = (payload as Record<string, unknown>).operationId;
+    return typeof operationId === 'string' && operationId.length > 0;
   }
 
   private accessRole(identity: RealtimeSocketIdentity): MatchAccessRole {

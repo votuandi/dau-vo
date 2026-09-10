@@ -1,13 +1,18 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { AthleteColor, MatchStatus } from '@martial-arts-scoring/shared-types';
+import { AthleteColor, MatchAccessRole, MatchStatus } from '@martial-arts-scoring/shared-types';
 import { InspectorConsole } from './inspector-console';
 import { createMatchSnapshot, createRealtimeState, inspectorSession } from '@/test/factories';
 
 function snapshotFor(status: MatchStatus) {
-  const running = status === MatchStatus.ROUND_1_RUNNING || status === MatchStatus.ROUND_2_RUNNING;
-  const roundNumber = status === MatchStatus.ROUND_2_RUNNING ? 2 : 1;
+  const active =
+    status === MatchStatus.ROUND_1_RUNNING ||
+    status === MatchStatus.ROUND_1_PAUSED ||
+    status === MatchStatus.ROUND_2_RUNNING ||
+    status === MatchStatus.ROUND_2_PAUSED;
+  const roundNumber =
+    status === MatchStatus.ROUND_2_RUNNING || status === MatchStatus.ROUND_2_PAUSED ? 2 : 1;
   const base = createMatchSnapshot();
   const activeRound = base.activeRound;
 
@@ -16,9 +21,17 @@ function snapshotFor(status: MatchStatus) {
   }
 
   return createMatchSnapshot({
-    activeRound: running
+    activeRound: active
       ? {
           ...activeRound,
+          pausedAt:
+            status === MatchStatus.ROUND_1_PAUSED || status === MatchStatus.ROUND_2_PAUSED
+              ? '2026-09-01T12:01:00.000Z'
+              : null,
+          remainingDurationMs:
+            status === MatchStatus.ROUND_1_PAUSED || status === MatchStatus.ROUND_2_PAUSED
+              ? 60_000
+              : null,
           roundNumber,
         }
       : null,
@@ -152,5 +165,126 @@ describe('InspectorConsole', () => {
     expect(screen.getByText('Mất kết nối')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Ghi lỗi XANH' })).toBeDisabled();
+  });
+
+  it('shows match-scoped readiness and disables round start until every required display is connected', () => {
+    const presence = createMatchSnapshot().presence.map((entry) =>
+      entry.accessRole === MatchAccessRole.REFEREE_2
+        ? { ...entry, connected: false, connectedSocketCount: 0 }
+        : entry,
+    );
+
+    render(
+      <InspectorConsole
+        isLogoutPending={false}
+        onLogout={vi.fn()}
+        realtime={createRealtimeState({
+          presence,
+          snapshot: createMatchSnapshot({
+            ...snapshotFor(MatchStatus.WAITING),
+            readiness: {
+              canStartRound: false,
+              missingRequirements: ['REFEREE_2'],
+              referees: { REFEREE_1: true, REFEREE_2: false, REFEREE_3: true },
+              scoreboardConnectedCount: 1,
+            },
+          }),
+        })}
+        session={inspectorSession}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Sẵn sàng trận đấu' })).toBeVisible();
+    expect(screen.getByText('Trọng tài 1 đã kết nối')).toBeVisible();
+    expect(screen.getByText('Trọng tài 2 chưa kết nối')).toBeVisible();
+    expect(screen.getByText('Bảng điểm đã kết nối (1)')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'BẮT ĐẦU HIỆP 1' })).toBeDisabled();
+    expect(
+      screen.getByText(
+        'Chưa thể bắt đầu hiệp đấu. Cần kết nối đủ 3 trọng tài và ít nhất 1 bảng điểm.',
+      ),
+    ).toBeVisible();
+  });
+
+  it('confirms pause and resume without changing display state before server success', async () => {
+    const user = userEvent.setup();
+    const pauseRound = vi.fn(() => Promise.resolve(true));
+    const resumeRound = vi.fn(() => Promise.resolve(true));
+    const { rerender } = render(
+      <InspectorConsole
+        isLogoutPending={false}
+        onLogout={vi.fn()}
+        realtime={createRealtimeState({
+          pauseRound,
+          snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING),
+        })}
+        session={inspectorSession}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'TẠM DỪNG' }));
+    expect(pauseRound).not.toHaveBeenCalled();
+    expect(screen.getByText('Bạn có chắc muốn tạm dừng hiệp đấu hiện tại?')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Tạm dừng' }));
+    expect(pauseRound).toHaveBeenCalledOnce();
+
+    rerender(
+      <InspectorConsole
+        isLogoutPending={false}
+        onLogout={vi.fn()}
+        realtime={createRealtimeState({
+          resumeRound,
+          snapshot: snapshotFor(MatchStatus.ROUND_1_PAUSED),
+        })}
+        session={inspectorSession}
+      />,
+    );
+    expect(screen.getByText('HIỆP 1 · TẠM DỪNG')).toBeVisible();
+    expect(screen.getByRole('timer')).toHaveTextContent('01:00');
+    expect(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'TIẾP TỤC' }));
+    expect(resumeRound).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Tiếp tục' }));
+    expect(resumeRound).toHaveBeenCalledOnce();
+  });
+
+  it('uses strong application dialogs for round cancellation and full match reset', async () => {
+    const user = userEvent.setup();
+    const cancelRoundResult = vi.fn(() => Promise.resolve(true));
+    const resetMatchResults = vi.fn(() => Promise.resolve(true));
+    const { rerender } = render(
+      <InspectorConsole
+        isLogoutPending={false}
+        onLogout={vi.fn()}
+        realtime={createRealtimeState({
+          cancelRoundResult,
+          snapshot: snapshotFor(MatchStatus.BREAK),
+        })}
+        session={inspectorSession}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'HỦY KẾT QUẢ HIỆP 1 VÀ BẮT ĐẦU LẠI' }));
+    expect(cancelRoundResult).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeVisible();
+    expect(screen.getByText(/Tất cả điểm trọng tài và lỗi trong Hiệp 1/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Hủy kết quả hiệp' }));
+    expect(cancelRoundResult).toHaveBeenCalledOnce();
+
+    rerender(
+      <InspectorConsole
+        isLogoutPending={false}
+        onLogout={vi.fn()}
+        realtime={createRealtimeState({
+          resetMatchResults,
+          snapshot: snapshotFor(MatchStatus.FINISHED),
+        })}
+        session={inspectorSession}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'HỦY KẾT QUẢ VÀ BẮT ĐẦU LẠI 2 HIỆP ĐẤU' }));
+    expect(resetMatchResults).not.toHaveBeenCalled();
+    expect(screen.getByText(/Tất cả điểm và lỗi của cả hai hiệp/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Đặt lại trận đấu' }));
+    expect(resetMatchResults).toHaveBeenCalledOnce();
   });
 });

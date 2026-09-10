@@ -19,6 +19,8 @@ const snapshot: PublicMatchStatePayload = {
     endedAt: null,
     endsAt: '2030-01-01T00:02:00.000Z',
     id: 'round-1',
+    pausedAt: null,
+    remainingDurationMs: null,
     roundNumber: 1,
     startedAt: '2030-01-01T00:00:00.000Z',
   },
@@ -42,6 +44,20 @@ const snapshot: PublicMatchStatePayload = {
 };
 
 describe('ScoreboardPage', () => {
+  it('renders its connecting state before a realtime snapshot arrives', () => {
+    realtimeMock.mockReturnValue({ connectionStatus: 'connecting', snapshot: null });
+    render(
+      <MemoryRouter initialEntries={['/bang-diem?match=9E29BA']}>
+        <Routes>
+          <Route element={<ScoreboardPage />} path="/bang-diem" />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getAllByText('ĐANG KẾT NỐI')).toHaveLength(2);
+    expect(screen.getByText('--:--')).toBeVisible();
+  });
+
   it('renders an authoritative public snapshot and keeps it visible while reconnecting', () => {
     realtimeMock.mockReturnValue({ connectionStatus: 'disconnected', snapshot });
     render(

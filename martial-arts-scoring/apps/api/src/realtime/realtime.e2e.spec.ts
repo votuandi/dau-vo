@@ -313,6 +313,59 @@ describe('Realtime match infrastructure (integration)', () => {
     return socket;
   }
 
+  async function connectScoreboard(publicMatchId: string): Promise<Socket> {
+    const socket = scoreboardSocket(publicMatchId);
+    const connected = waitForConnect(socket);
+    socket.connect();
+    await connected;
+    return socket;
+  }
+
+  async function waitForReadySnapshot(
+    socket: Socket,
+  ): Promise<MatchStatePayload> {
+    const deadline = Date.now() + EVENT_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      const snapshot = await requestSnapshot(socket);
+      const connectedRoles = new Set<string>(
+        snapshot.presence
+          .filter((entry) => entry.connected)
+          .map((entry) => entry.accessRole),
+      );
+      if (
+        connectedRoles.has(MatchAccessRole.REFEREE_1) &&
+        connectedRoles.has(MatchAccessRole.REFEREE_2) &&
+        connectedRoles.has(MatchAccessRole.REFEREE_3) &&
+        snapshot.scoreboardConnectedCount >= 1
+      ) {
+        return snapshot;
+      }
+    }
+    throw new Error('Timed out waiting for match start readiness');
+  }
+
+  async function waitForRefereesSnapshot(
+    socket: Socket,
+  ): Promise<MatchStatePayload> {
+    const deadline = Date.now() + EVENT_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      const snapshot = await requestSnapshot(socket);
+      const connectedRoles = new Set<string>(
+        snapshot.presence
+          .filter((entry) => entry.connected)
+          .map((entry) => entry.accessRole),
+      );
+      if (
+        connectedRoles.has(MatchAccessRole.REFEREE_1) &&
+        connectedRoles.has(MatchAccessRole.REFEREE_2) &&
+        connectedRoles.has(MatchAccessRole.REFEREE_3)
+      ) {
+        return snapshot;
+      }
+    }
+    throw new Error('Timed out waiting for referee readiness');
+  }
+
   function scoreboardSocket(publicMatchId: string): Socket {
     const socket = io(baseUrl, {
       auth: { matchPublicId: publicMatchId, mode: 'scoreboard' },
@@ -550,6 +603,17 @@ describe('Realtime match infrastructure (integration)', () => {
       `${TEST_PREFIX}-public-scoreboard-inspector`,
     );
     const inspectorSocket = await connect(inspector.cookie);
+    const refereeLogins = await Promise.all(
+      [
+        MatchAccessRole.REFEREE_1,
+        MatchAccessRole.REFEREE_2,
+        MatchAccessRole.REFEREE_3,
+      ].map((role) =>
+        login(primaryMatch, role, `${TEST_PREFIX}-public-scoreboard-${role}`),
+      ),
+    );
+    await Promise.all(refereeLogins.map(({ cookie }) => connect(cookie)));
+    await waitForReadySnapshot(inspectorSocket);
     const roundStarted = waitForEvent<PublicMatchStatePayload>(
       socket,
       RealtimeEvent.PUBLIC_MATCH_STATE,
@@ -579,6 +643,91 @@ describe('Realtime match infrastructure (integration)', () => {
       ok: true,
     });
     await expect(penaltyRecorded).resolves.toBeDefined();
+  });
+
+  it('rejects starts unless referees and scoreboards are present on the same match', async () => {
+    const match = await createTestMatch('readiness-scope');
+    const [inspector, refereeOne, refereeTwo, refereeThree] = await Promise.all(
+      [
+        login(
+          match,
+          MatchAccessRole.INSPECTOR,
+          `${TEST_PREFIX}-readiness-inspector`,
+        ),
+        login(match, MatchAccessRole.REFEREE_1, `${TEST_PREFIX}-readiness-r1`),
+        login(match, MatchAccessRole.REFEREE_2, `${TEST_PREFIX}-readiness-r2`),
+        login(match, MatchAccessRole.REFEREE_3, `${TEST_PREFIX}-readiness-r3`),
+      ],
+    );
+    const [inspectorSocket, , refereeTwoSocket] = await Promise.all([
+      connect(inspector.cookie),
+      connect(refereeOne.cookie),
+      connect(refereeTwo.cookie),
+      connect(refereeThree.cookie),
+      connectScoreboard(secondaryMatch.publicId),
+    ]);
+    await waitForRefereesSnapshot(inspectorSocket);
+
+    await expect(startRound(inspectorSocket)).resolves.toEqual({
+      error: {
+        code: 'MATCH_PARTICIPANTS_NOT_READY',
+        details: {
+          referee1Connected: true,
+          referee2Connected: true,
+          referee3Connected: true,
+          scoreboardConnectedCount: 0,
+        },
+        message:
+          'All three referees and at least one scoreboard must be connected before the round can start.',
+      },
+      ok: false,
+    });
+    await expect(
+      prisma.round.count({ where: { matchId: match.id } }),
+    ).resolves.toBe(0);
+
+    const firstScoreboard = await connectScoreboard(match.publicId);
+    await connectScoreboard(match.publicId);
+    const readySnapshot = await waitForReadySnapshot(inspectorSocket);
+    expect(readySnapshot.scoreboardConnectedCount).toBe(2);
+
+    const secondaryRefereeTwo = await login(
+      secondaryMatch,
+      MatchAccessRole.REFEREE_2,
+      `${TEST_PREFIX}-secondary-readiness-r2`,
+    );
+    await connect(secondaryRefereeTwo.cookie);
+    const primaryParticipantMissing = waitForEvent<PresenceUpdatedPayload>(
+      inspectorSocket,
+      RealtimeEvent.PRESENCE_UPDATED,
+      (payload) =>
+        payload.scoreboardConnectedCount === 1 &&
+        !presenceFor(payload, MatchAccessRole.REFEREE_2).connected,
+    );
+    firstScoreboard.disconnect();
+    refereeTwoSocket.disconnect();
+    await expect(primaryParticipantMissing).resolves.toMatchObject({
+      matchPublicId: match.publicId,
+      scoreboardConnectedCount: 1,
+    });
+    await expect(startRound(inspectorSocket)).resolves.toMatchObject({
+      error: {
+        code: 'MATCH_PARTICIPANTS_NOT_READY',
+        details: {
+          referee1Connected: true,
+          referee2Connected: false,
+          referee3Connected: true,
+          scoreboardConnectedCount: 1,
+        },
+      },
+      ok: false,
+    });
+
+    await connect(refereeTwo.cookie);
+    await waitForReadySnapshot(inspectorSocket);
+    await expect(startRound(inspectorSocket)).resolves.toMatchObject({
+      ok: true,
+    });
   });
 
   it('rejects an authenticated WebSocket from an unexpected browser origin', async () => {
@@ -679,8 +828,10 @@ describe('Realtime match infrastructure (integration)', () => {
     expect(secondaryState.match.id).toBe(secondaryMatch.id);
 
     let crossMatchPresenceReceived = false;
-    const crossMatchListener = (): void => {
-      crossMatchPresenceReceived = true;
+    const crossMatchListener = (payload: PresenceUpdatedPayload): void => {
+      if (payload.matchPublicId === primaryMatch.publicId) {
+        crossMatchPresenceReceived = true;
+      }
     };
     secondarySocket.on(RealtimeEvent.PRESENCE_UPDATED, crossMatchListener);
 
@@ -934,6 +1085,8 @@ describe('Realtime match infrastructure (integration)', () => {
       connect(refereeTwo.cookie),
       connect(refereeThree.cookie),
     ]);
+    await connectScoreboard(match.publicId);
+    await waitForReadySnapshot(inspectorSocket);
     await expect(startRound(inspectorSocket)).resolves.toMatchObject({
       ok: true,
     });
@@ -973,21 +1126,27 @@ describe('Realtime match infrastructure (integration)', () => {
 
   it('returns unresolved voting state and the accepted vote only to its direct referee snapshot', async () => {
     const match = await createTestMatch('viewer-scoring-state');
-    const [inspector, refereeOne, refereeTwo] = await Promise.all([
-      login(
-        match,
-        MatchAccessRole.INSPECTOR,
-        `${TEST_PREFIX}-viewer-inspector`,
-      ),
-      login(match, MatchAccessRole.REFEREE_1, `${TEST_PREFIX}-viewer-r1`),
-      login(match, MatchAccessRole.REFEREE_2, `${TEST_PREFIX}-viewer-r2`),
-    ]);
+    const [inspector, refereeOne, refereeTwo, refereeThree] = await Promise.all(
+      [
+        login(
+          match,
+          MatchAccessRole.INSPECTOR,
+          `${TEST_PREFIX}-viewer-inspector`,
+        ),
+        login(match, MatchAccessRole.REFEREE_1, `${TEST_PREFIX}-viewer-r1`),
+        login(match, MatchAccessRole.REFEREE_2, `${TEST_PREFIX}-viewer-r2`),
+        login(match, MatchAccessRole.REFEREE_3, `${TEST_PREFIX}-viewer-r3`),
+      ],
+    );
     const [inspectorSocket, refereeOneSocket, refereeTwoSocket] =
       await Promise.all([
         connect(inspector.cookie),
         connect(refereeOne.cookie),
         connect(refereeTwo.cookie),
+        connect(refereeThree.cookie),
       ]);
+    await connectScoreboard(match.publicId);
+    await waitForReadySnapshot(inspectorSocket);
 
     const roomBroadcast = waitForEvent<MatchStatePayload>(
       refereeOneSocket,
@@ -1046,18 +1205,24 @@ describe('Realtime match infrastructure (integration)', () => {
 
   it('accepts inspector-only penalty:add and broadcasts the durable penalty score', async () => {
     const match = await createTestMatch('penalty-command');
-    const [inspector, referee] = await Promise.all([
+    const [inspector, referee, refereeTwo, refereeThree] = await Promise.all([
       login(
         match,
         MatchAccessRole.INSPECTOR,
         `${TEST_PREFIX}-penalty-inspector`,
       ),
       login(match, MatchAccessRole.REFEREE_1, `${TEST_PREFIX}-penalty-r1`),
+      login(match, MatchAccessRole.REFEREE_2, `${TEST_PREFIX}-penalty-r2`),
+      login(match, MatchAccessRole.REFEREE_3, `${TEST_PREFIX}-penalty-r3`),
     ]);
     const [inspectorSocket, refereeSocket] = await Promise.all([
       connect(inspector.cookie),
       connect(referee.cookie),
+      connect(refereeTwo.cookie),
+      connect(refereeThree.cookie),
     ]);
+    await connectScoreboard(match.publicId);
+    await waitForReadySnapshot(inspectorSocket);
     await expect(startRound(inspectorSocket)).resolves.toMatchObject({
       ok: true,
     });

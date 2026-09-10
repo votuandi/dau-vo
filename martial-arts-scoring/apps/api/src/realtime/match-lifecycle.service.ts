@@ -8,16 +8,30 @@ import {
   MatchStatus as SharedMatchStatus,
   type MatchFinishedPayload,
   type MatchRoundState,
+  type RoundPausedPayload,
+  type RoundResumedPayload,
+  type ResultCancellationPayload,
+  type ResultCancellationUndoPayload,
   type RoundEndedPayload,
   type RoundStartedPayload,
 } from '@martial-arts-scoring/shared-types';
-import { AuditEventType, MatchStatus } from '@prisma/client';
+import {
+  AuditEventType,
+  MatchResultOperationStatus,
+  MatchResultOperationType,
+  MatchStatus,
+} from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import {
   InactiveRoundStartSessionError,
+  InactiveRoundControlSessionError,
+  InvalidRoundControlStateError,
+  InvalidResultCancellationStateError,
   InvalidRoundStartStateError,
+  MatchLifecycleTargetMissingError,
+  ResultCancellationUndoNotAllowedError,
 } from './match-lifecycle.errors';
 
 const TRANSACTION_MAX_WAIT_MS = 5_000;
@@ -40,6 +54,8 @@ interface ServerClock {
 interface LifecycleRound {
   endedAt: Date | null;
   endsAt: Date;
+  pausedAt: Date | null;
+  remainingDurationMs: number | null;
   id: string;
   roundNumber: number;
   startedAt: Date;
@@ -76,6 +92,21 @@ export interface RoundEndedTransition {
   matchFinished: MatchFinishedPayload | null;
   matchId: string;
   payload: RoundEndedPayload;
+}
+
+export interface RoundControlTransition {
+  matchId: string;
+  payload: RoundPausedPayload | RoundResumedPayload;
+}
+
+export interface ResultCancellationTransition {
+  matchId: string;
+  payload: ResultCancellationPayload;
+}
+
+export interface ResultCancellationUndoTransition {
+  matchId: string;
+  payload: ResultCancellationUndoPayload;
 }
 
 export type RoundExpirationListener = (
@@ -149,6 +180,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
         const match = await transaction.match.findUniqueOrThrow({
           select: {
             currentRound: true,
+            finishedAt: true,
             publicId: true,
             roundDurationMs: true,
             startedAt: true,
@@ -179,6 +211,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
             endedAt: true,
             endsAt: true,
             id: true,
+            pausedAt: true,
+            remainingDurationMs: true,
             roundNumber: true,
             startedAt: true,
           },
@@ -236,6 +270,461 @@ export class MatchLifecycleService implements OnModuleDestroy {
     return { matchId: result.matchId, payload: result.payload };
   }
 
+  async pauseRound(input: {
+    matchId: string;
+    sessionId: string;
+    sessionTokenHash: string;
+  }): Promise<RoundControlTransition> {
+    const result = await this.prisma.$transaction(
+      async (transaction) => {
+        await this.lockMatch(transaction, input.matchId);
+        await this.lockActiveControlSession(transaction, input);
+        const clock = await this.serverClock(transaction);
+        const match = await transaction.match.findUniqueOrThrow({
+          select: { currentRound: true, publicId: true, status: true },
+          where: { id: input.matchId },
+        });
+        const roundNumber =
+          match.status === MatchStatus.ROUND_1_RUNNING
+            ? 1
+            : match.status === MatchStatus.ROUND_2_RUNNING
+              ? 2
+              : null;
+        if (roundNumber === null || match.currentRound !== roundNumber) {
+          throw new InvalidRoundControlStateError(match.status);
+        }
+        const round = await transaction.round.findFirstOrThrow({
+          orderBy: { createdAt: 'desc' },
+          where: { invalidatedAt: null, matchId: input.matchId, roundNumber },
+        });
+        const remainingDurationMs = Math.max(
+          0,
+          round.endsAt.getTime() - clock.serverNow.getTime(),
+        );
+        if (remainingDurationMs === 0) {
+          throw new InvalidRoundControlStateError(match.status);
+        }
+        const status =
+          roundNumber === 1
+            ? MatchStatus.ROUND_1_PAUSED
+            : MatchStatus.ROUND_2_PAUSED;
+        const pausedRound = await transaction.round.update({
+          data: { pausedAt: clock.serverNow, remainingDurationMs },
+          where: { id: round.id },
+        });
+        await transaction.match.update({
+          data: { status },
+          where: { id: input.matchId },
+        });
+        await transaction.auditLog.create({
+          data: {
+            eventType: AuditEventType.ROUND_PAUSED,
+            matchId: input.matchId,
+            sessionId: input.sessionId,
+            metadata: {
+              fromStatus: match.status,
+              pausedAt: clock.serverNow.toISOString(),
+              remainingDurationMs,
+              roundId: round.id,
+              roundNumber,
+              toStatus: status,
+            },
+          },
+        });
+        return {
+          matchId: input.matchId,
+          payload: {
+            matchPublicId: match.publicId,
+            round: this.sharedRound(pausedRound),
+            status: this.sharedStatus(status),
+          },
+        };
+      },
+      { maxWait: TRANSACTION_MAX_WAIT_MS, timeout: TRANSACTION_TIMEOUT_MS },
+    );
+    this.cancelExpiration(input.matchId);
+    return result;
+  }
+
+  async resumeRound(input: {
+    matchId: string;
+    sessionId: string;
+    sessionTokenHash: string;
+  }): Promise<RoundControlTransition> {
+    const result = await this.prisma.$transaction(
+      async (transaction) => {
+        await this.lockMatch(transaction, input.matchId);
+        await this.lockActiveControlSession(transaction, input);
+        const clock = await this.serverClock(transaction);
+        const match = await transaction.match.findUniqueOrThrow({
+          select: { currentRound: true, publicId: true, status: true },
+          where: { id: input.matchId },
+        });
+        const roundNumber =
+          match.status === MatchStatus.ROUND_1_PAUSED
+            ? 1
+            : match.status === MatchStatus.ROUND_2_PAUSED
+              ? 2
+              : null;
+        if (roundNumber === null || match.currentRound !== roundNumber)
+          throw new InvalidRoundControlStateError(match.status);
+        const round = await transaction.round.findFirstOrThrow({
+          orderBy: { createdAt: 'desc' },
+          where: { invalidatedAt: null, matchId: input.matchId, roundNumber },
+        });
+        if (round.pausedAt === null || round.remainingDurationMs === null)
+          throw new InvalidRoundControlStateError(match.status);
+        const endsAt = new Date(
+          clock.serverNow.getTime() + round.remainingDurationMs,
+        );
+        const status =
+          roundNumber === 1
+            ? MatchStatus.ROUND_1_RUNNING
+            : MatchStatus.ROUND_2_RUNNING;
+        const resumedRound = await transaction.round.update({
+          data: { endsAt, pausedAt: null, remainingDurationMs: null },
+          where: { id: round.id },
+        });
+        await transaction.match.update({
+          data: { status },
+          where: { id: input.matchId },
+        });
+        await transaction.auditLog.create({
+          data: {
+            eventType: AuditEventType.ROUND_RESUMED,
+            matchId: input.matchId,
+            sessionId: input.sessionId,
+            metadata: {
+              endsAt: endsAt.toISOString(),
+              fromStatus: match.status,
+              resumedAt: clock.serverNow.toISOString(),
+              roundId: round.id,
+              roundNumber,
+              toStatus: status,
+            },
+          },
+        });
+        return {
+          matchId: input.matchId,
+          payload: {
+            matchPublicId: match.publicId,
+            round: this.sharedRound(resumedRound),
+            status: this.sharedStatus(status),
+          },
+          serverNow: clock.serverNow,
+        };
+      },
+      { maxWait: TRANSACTION_MAX_WAIT_MS, timeout: TRANSACTION_TIMEOUT_MS },
+    );
+    this.scheduleExpiration(
+      result.matchId,
+      result.payload.round.id,
+      result.payload.round.endsAt,
+      result.serverNow,
+    );
+    return { matchId: result.matchId, payload: result.payload };
+  }
+
+  async cancelCurrentRoundResult(input: {
+    matchId: string;
+    sessionId: string;
+    sessionTokenHash: string;
+  }): Promise<ResultCancellationTransition> {
+    return this.cancelResults(input, false);
+  }
+
+  async resetMatchResults(input: {
+    matchId: string;
+    sessionId: string;
+    sessionTokenHash: string;
+  }): Promise<ResultCancellationTransition> {
+    return this.cancelResults(input, true);
+  }
+
+  private async cancelResults(
+    input: { matchId: string; sessionId: string; sessionTokenHash: string },
+    entireMatch: boolean,
+  ): Promise<ResultCancellationTransition> {
+    const result = await this.prisma.$transaction(
+      async (transaction) => {
+        await this.lockMatch(transaction, input.matchId);
+        await this.lockActiveControlSession(transaction, input);
+        const clock = await this.serverClock(transaction);
+        const match = await transaction.match.findUniqueOrThrow({
+          select: {
+            currentRound: true,
+            finishedAt: true,
+            publicId: true,
+            startedAt: true,
+            status: true,
+          },
+          where: { id: input.matchId },
+        });
+        const roundNumbers: Array<1 | 2> = entireMatch
+          ? match.status === MatchStatus.FINISHED
+            ? [1, 2]
+            : []
+          : match.status === MatchStatus.BREAK && match.currentRound === 1
+            ? [1]
+            : match.status === MatchStatus.FINISHED && match.currentRound === 2
+              ? [2]
+              : [];
+        if (roundNumbers.length === 0) {
+          throw new InvalidResultCancellationStateError(match.status);
+        }
+        const nextStatus = roundNumbers.includes(1)
+          ? MatchStatus.WAITING
+          : MatchStatus.BREAK;
+        const audit = await transaction.auditLog.create({
+          data: {
+            eventType: entireMatch
+              ? AuditEventType.MATCH_RESULT_RESET
+              : AuditEventType.ROUND_RESULT_CANCELLED,
+            matchId: input.matchId,
+            metadata: {
+              cancelledAt: clock.serverNow.toISOString(),
+              fromStatus: match.status,
+              roundNumbers,
+              toStatus: nextStatus,
+            },
+            sessionId: input.sessionId,
+          },
+          select: { id: true },
+        });
+        const resultingCurrentRound =
+          nextStatus === MatchStatus.WAITING ? null : 1;
+        const operation = await transaction.matchResultOperation.create({
+          data: {
+            auditLogId: audit.id,
+            createdAt: clock.serverNow,
+            createdBySessionId: input.sessionId,
+            matchId: input.matchId,
+            previousCurrentRound: match.currentRound,
+            previousFinishedAt: match.finishedAt,
+            previousStartedAt: match.startedAt,
+            previousStatus: match.status,
+            resultingCurrentRound,
+            resultingStatus: nextStatus,
+            roundNumbers,
+            type: entireMatch
+              ? MatchResultOperationType.MATCH_RESET
+              : MatchResultOperationType.ROUND_RESET,
+          },
+          select: { id: true },
+        });
+        await transaction.auditLog.update({
+          data: {
+            metadata: {
+              cancelledAt: clock.serverNow.toISOString(),
+              fromStatus: match.status,
+              resetOperationId: operation.id,
+              roundNumber: entireMatch ? null : roundNumbers[0],
+              roundNumbers,
+              toStatus: nextStatus,
+            },
+          },
+          where: { id: audit.id },
+        });
+        const roundNumber = { in: roundNumbers };
+        await transaction.refereeVote.updateMany({
+          data: {
+            invalidatedAt: clock.serverNow,
+            invalidatedByAuditId: audit.id,
+          },
+          where: {
+            invalidatedAt: null,
+            matchId: input.matchId,
+            scoringWindow: { roundNumber },
+          },
+        });
+        await transaction.scoreEvent.updateMany({
+          data: { revertedAt: clock.serverNow, revertedByAuditId: audit.id },
+          where: {
+            matchId: input.matchId,
+            revertedAt: null,
+            ...(entireMatch ? {} : { roundNumber }),
+          },
+        });
+        await transaction.penalty.updateMany({
+          data: { revertedAt: clock.serverNow, revertedByAuditId: audit.id },
+          where: {
+            matchId: input.matchId,
+            revertedAt: null,
+            ...(entireMatch ? {} : { roundNumber }),
+          },
+        });
+        await transaction.scoringWindow.updateMany({
+          data: {
+            invalidatedAt: clock.serverNow,
+            invalidatedByAuditId: audit.id,
+          },
+          where: { invalidatedAt: null, matchId: input.matchId, roundNumber },
+        });
+        await transaction.round.updateMany({
+          data: {
+            invalidatedAt: clock.serverNow,
+            invalidatedByAuditId: audit.id,
+          },
+          where: { invalidatedAt: null, matchId: input.matchId, roundNumber },
+        });
+        await transaction.match.update({
+          data: {
+            currentRound: resultingCurrentRound,
+            finishedAt: null,
+            startedAt:
+              nextStatus === MatchStatus.WAITING ? null : match.startedAt,
+            status: nextStatus,
+          },
+          where: { id: input.matchId },
+        });
+        return {
+          matchId: input.matchId,
+          payload: {
+            actionId: operation.id,
+            matchPublicId: match.publicId,
+            roundNumbers,
+            status: this.sharedStatus(nextStatus),
+          },
+        };
+      },
+      { maxWait: TRANSACTION_MAX_WAIT_MS, timeout: TRANSACTION_TIMEOUT_MS },
+    );
+    this.cancelExpiration(input.matchId);
+    return result;
+  }
+
+  async undoResultCancellation(input: {
+    matchId: string;
+    operationId: string;
+    sessionId: string;
+    sessionTokenHash: string;
+  }): Promise<ResultCancellationUndoTransition> {
+    return this.prisma.$transaction(
+      async (transaction) => {
+        await this.lockMatch(transaction, input.matchId);
+        await this.lockActiveControlSession(transaction, input);
+        const clock = await this.serverClock(transaction);
+        const operation = await transaction.matchResultOperation.findFirst({
+          where: { id: input.operationId, matchId: input.matchId },
+        });
+        if (
+          operation === null ||
+          operation.status !== MatchResultOperationStatus.APPLIED
+        ) {
+          throw new ResultCancellationUndoNotAllowedError();
+        }
+        const match = await transaction.match.findUniqueOrThrow({
+          select: { currentRound: true, publicId: true, status: true },
+          where: { id: input.matchId },
+        });
+        const activitySinceCancellation = await Promise.all([
+          transaction.round.count({
+            where: {
+              createdAt: { gt: operation.createdAt },
+              invalidatedAt: null,
+              matchId: input.matchId,
+            },
+          }),
+          transaction.scoringWindow.count({
+            where: {
+              createdAt: { gt: operation.createdAt },
+              invalidatedAt: null,
+              matchId: input.matchId,
+            },
+          }),
+          transaction.scoreEvent.count({
+            where: {
+              createdAt: { gt: operation.createdAt },
+              matchId: input.matchId,
+              revertedAt: null,
+            },
+          }),
+          transaction.penalty.count({
+            where: {
+              createdAt: { gt: operation.createdAt },
+              matchId: input.matchId,
+              revertedAt: null,
+            },
+          }),
+        ]);
+        if (
+          match.status !== operation.resultingStatus ||
+          match.currentRound !== operation.resultingCurrentRound ||
+          activitySinceCancellation.some((count) => count > 0)
+        ) {
+          throw new ResultCancellationUndoNotAllowedError();
+        }
+        const auditId = operation.auditLogId;
+        await transaction.refereeVote.updateMany({
+          data: { invalidatedAt: null, invalidatedByAuditId: null },
+          where: { invalidatedByAuditId: auditId, matchId: input.matchId },
+        });
+        await transaction.scoreEvent.updateMany({
+          data: { revertedAt: null, revertedByAuditId: null },
+          where: { matchId: input.matchId, revertedByAuditId: auditId },
+        });
+        await transaction.penalty.updateMany({
+          data: { revertedAt: null, revertedByAuditId: null },
+          where: { matchId: input.matchId, revertedByAuditId: auditId },
+        });
+        await transaction.scoringWindow.updateMany({
+          data: { invalidatedAt: null, invalidatedByAuditId: null },
+          where: { invalidatedByAuditId: auditId, matchId: input.matchId },
+        });
+        await transaction.round.updateMany({
+          data: { invalidatedAt: null, invalidatedByAuditId: null },
+          where: { invalidatedByAuditId: auditId, matchId: input.matchId },
+        });
+        await transaction.match.update({
+          data: {
+            currentRound: operation.previousCurrentRound,
+            finishedAt: operation.previousFinishedAt,
+            startedAt: operation.previousStartedAt,
+            status: operation.previousStatus,
+          },
+          where: { id: input.matchId },
+        });
+        await transaction.matchResultOperation.update({
+          data: {
+            status: MatchResultOperationStatus.UNDONE,
+            undoneAt: clock.serverNow,
+          },
+          where: { id: operation.id },
+        });
+        await transaction.auditLog.create({
+          data: {
+            eventType:
+              operation.type === MatchResultOperationType.MATCH_RESET
+                ? AuditEventType.MATCH_RESULT_RESET_UNDONE
+                : AuditEventType.ROUND_RESULT_CANCEL_UNDONE,
+            matchId: input.matchId,
+            metadata: {
+              resetOperationId: operation.id,
+              restoredAt: clock.serverNow.toISOString(),
+              restoredStatus: operation.previousStatus,
+              roundNumber:
+                operation.type === MatchResultOperationType.ROUND_RESET
+                  ? operation.roundNumbers[0]
+                  : null,
+              roundNumbers: operation.roundNumbers,
+            },
+            sessionId: input.sessionId,
+          },
+        });
+        return {
+          matchId: input.matchId,
+          payload: {
+            matchPublicId: match.publicId,
+            operationId: operation.id,
+            roundNumbers: operation.roundNumbers as Array<1 | 2>,
+            status: this.sharedStatus(operation.previousStatus),
+          },
+        };
+      },
+      { maxWait: TRANSACTION_MAX_WAIT_MS, timeout: TRANSACTION_TIMEOUT_MS },
+    );
+  }
+
   async recoverActiveRounds(): Promise<void> {
     const matches = await this.prisma.match.findMany({
       select: {
@@ -245,7 +734,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
         rounds: {
           orderBy: { roundNumber: 'desc' },
           select: { id: true, roundNumber: true },
-          where: { endedAt: null },
+          where: { endedAt: null, invalidatedAt: null },
         },
       },
       where: { status: { in: [...RUNNING_STATUSES] } },
@@ -276,7 +765,18 @@ export class MatchLifecycleService implements OnModuleDestroy {
     matchId: string,
     roundId: string,
   ): Promise<void> {
-    const decision = await this.evaluateExpiration(matchId, roundId);
+    let decision: ExpirationDecision;
+
+    try {
+      decision = await this.evaluateExpiration(matchId, roundId);
+    } catch (error: unknown) {
+      if (error instanceof MatchLifecycleTargetMissingError) {
+        this.cancelExpiration(matchId, roundId);
+        return;
+      }
+
+      throw error;
+    }
 
     if (decision.kind === 'pending') {
       this.scheduleExpirationAfter(matchId, roundId, decision.delayMs);
@@ -325,6 +825,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
               endedAt: true,
               endsAt: true,
               id: true,
+              pausedAt: true,
+              remainingDurationMs: true,
               roundNumber: true,
               startedAt: true,
             },
@@ -356,6 +858,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
             endedAt: true,
             endsAt: true,
             id: true,
+            pausedAt: true,
+            remainingDurationMs: true,
             roundNumber: true,
             startedAt: true,
           },
@@ -440,7 +944,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
     const row = rows[0];
 
     if (row === undefined) {
-      throw new Error('Match not found while acquiring lifecycle lock');
+      throw new MatchLifecycleTargetMissingError();
     }
   }
 
@@ -468,6 +972,24 @@ export class MatchLifecycleService implements OnModuleDestroy {
 
     if (rows.length !== 1) {
       throw new InactiveRoundStartSessionError();
+    }
+  }
+
+  private async lockActiveControlSession(
+    transaction: Prisma.TransactionClient,
+    input: { matchId: string; sessionId: string; sessionTokenHash: string },
+  ): Promise<void> {
+    try {
+      await this.lockActiveInspectorSession(
+        transaction,
+        input.matchId,
+        input.sessionId,
+        input.sessionTokenHash,
+      );
+    } catch (error: unknown) {
+      if (error instanceof InactiveRoundStartSessionError)
+        throw new InactiveRoundControlSessionError();
+      throw error;
     }
   }
 
@@ -529,6 +1051,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
     return {
       endedAt: round.endedAt?.toISOString() ?? null,
       endsAt: round.endsAt.toISOString(),
+      pausedAt: round.pausedAt?.toISOString() ?? null,
+      remainingDurationMs: round.remainingDurationMs,
       id: round.id,
       roundNumber: round.roundNumber,
       startedAt: round.startedAt.toISOString(),
@@ -541,10 +1065,14 @@ export class MatchLifecycleService implements OnModuleDestroy {
         return SharedMatchStatus.WAITING;
       case MatchStatus.ROUND_1_RUNNING:
         return SharedMatchStatus.ROUND_1_RUNNING;
+      case MatchStatus.ROUND_1_PAUSED:
+        return SharedMatchStatus.ROUND_1_PAUSED;
       case MatchStatus.BREAK:
         return SharedMatchStatus.BREAK;
       case MatchStatus.ROUND_2_RUNNING:
         return SharedMatchStatus.ROUND_2_RUNNING;
+      case MatchStatus.ROUND_2_PAUSED:
+        return SharedMatchStatus.ROUND_2_PAUSED;
       case MatchStatus.FINISHED:
         return SharedMatchStatus.FINISHED;
       default: {

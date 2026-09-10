@@ -6,10 +6,20 @@ export const RealtimeEvent = {
   PUBLIC_MATCH_STATE: 'scoreboard:state',
   PUBLIC_MATCH_STATE_REQUEST: 'scoreboard:state:request',
   MATCH_FINISHED: 'match:finished',
+  MATCH_RESET: 'match:reset',
+  MATCH_RESET_COMPLETED: 'match:reset:completed',
+  RESULT_CANCELLATION_UNDO: 'result-cancellation:undo',
+  RESULT_CANCELLATION_UNDONE: 'result-cancellation:undone',
   PENALTY_ADD: 'penalty:add',
   PENALTY_ADDED: 'penalty:added',
   PRESENCE_UPDATED: 'presence:updated',
   ROUND_ENDED: 'round:ended',
+  ROUND_CANCEL: 'round:cancel',
+  ROUND_CANCELLED: 'round:cancelled',
+  ROUND_PAUSE: 'round:pause',
+  ROUND_PAUSED: 'round:paused',
+  ROUND_RESUME: 'round:resume',
+  ROUND_RESUMED: 'round:resumed',
   ROUND_START: 'round:start',
   ROUND_STARTED: 'round:started',
   SCORE_UPDATED: 'score:updated',
@@ -31,7 +41,26 @@ export interface MatchPresenceEntry {
 export interface PresenceUpdatedPayload {
   matchPublicId: string;
   presence: MatchPresenceEntry[];
+  scoreboardConnectedCount: number;
   updatedAt: string;
+}
+
+export interface MatchStartReadinessDetails {
+  referee1Connected: boolean;
+  referee2Connected: boolean;
+  referee3Connected: boolean;
+  scoreboardConnectedCount: number;
+}
+
+export interface MatchReadiness {
+  canStartRound: boolean;
+  missingRequirements: Array<'REFEREE_1' | 'REFEREE_2' | 'REFEREE_3' | 'SCOREBOARD'>;
+  referees: {
+    REFEREE_1: boolean;
+    REFEREE_2: boolean;
+    REFEREE_3: boolean;
+  };
+  scoreboardConnectedCount: number;
 }
 
 export interface MatchStateIdentity {
@@ -46,6 +75,8 @@ export interface MatchStateIdentity {
 export interface MatchRoundState {
   endedAt: string | null;
   endsAt: string;
+  pausedAt: string | null;
+  remainingDurationMs: number | null;
   id: string;
   roundNumber: 1 | 2;
   startedAt: string;
@@ -86,6 +117,8 @@ export interface MatchStatePayload {
   generatedAt: string;
   match: MatchStateIdentity;
   presence: MatchPresenceEntry[];
+  readiness: MatchReadiness;
+  scoreboardConnectedCount: number;
   /** Present only on a direct `match:state:request` response. */
   viewer?: MatchStateViewer;
 }
@@ -119,12 +152,65 @@ export interface RoundEndedPayload {
   status: MatchStatus;
 }
 
+export interface RoundPausedPayload {
+  matchPublicId: string;
+  round: MatchRoundState;
+  status: MatchStatus;
+}
+
+export type RoundResumedPayload = RoundPausedPayload;
+
+export type RoundControlErrorCode =
+  | 'REALTIME_AUTHENTICATION_REQUIRED'
+  | 'ROUND_CONTROL_FAILED'
+  | 'ROUND_CONTROL_FORBIDDEN'
+  | 'ROUND_CONTROL_INVALID_STATE';
+
+export type RoundControlResponse =
+  | { ok: true; round: MatchRoundState }
+  | { error: { code: RoundControlErrorCode; message: string }; ok: false };
+
+export interface ResultCancellationPayload {
+  actionId: string;
+  matchPublicId: string;
+  roundNumbers: Array<1 | 2>;
+  status: MatchStatus;
+}
+
+export type ResultCancellationErrorCode =
+  | 'REALTIME_AUTHENTICATION_REQUIRED'
+  | 'RESULT_CANCELLATION_FAILED'
+  | 'RESULT_CANCELLATION_FORBIDDEN'
+  | 'RESULT_CANCELLATION_INVALID_STATE';
+
+export type ResultCancellationResponse =
+  | { action: ResultCancellationPayload; ok: true }
+  | { error: { code: ResultCancellationErrorCode; message: string }; ok: false };
+
+export interface ResultCancellationUndoPayload {
+  matchPublicId: string;
+  operationId: string;
+  roundNumbers: Array<1 | 2>;
+  status: MatchStatus;
+}
+
+export type ResultCancellationUndoErrorCode =
+  | 'REALTIME_AUTHENTICATION_REQUIRED'
+  | 'RESET_UNDO_FAILED'
+  | 'RESET_UNDO_FORBIDDEN'
+  | 'RESET_UNDO_NOT_ALLOWED';
+
+export type ResultCancellationUndoResponse =
+  | { ok: true; undo: ResultCancellationUndoPayload }
+  | { error: { code: ResultCancellationUndoErrorCode; message: string }; ok: false };
+
 export interface MatchFinishedPayload {
   finishedAt: string;
   matchPublicId: string;
 }
 
 export type RoundStartErrorCode =
+  | 'MATCH_PARTICIPANTS_NOT_READY'
   | 'REALTIME_AUTHENTICATION_REQUIRED'
   | 'ROUND_START_FAILED'
   | 'ROUND_START_FORBIDDEN'
@@ -138,6 +224,7 @@ export type RoundStartResponse =
   | {
       error: {
         code: RoundStartErrorCode;
+        details?: MatchStartReadinessDetails;
         message: string;
       };
       ok: false;
@@ -154,6 +241,7 @@ export type VoteSubmitErrorCode =
   | 'VOTE_FORBIDDEN'
   | 'VOTE_INVALID_ATHLETE'
   | 'VOTE_MATCH_NOT_RUNNING'
+  | 'ROUND_PAUSED'
   | 'VOTE_ROUND_ENDED'
   | 'VOTE_SCORING_WINDOW_PENDING';
 

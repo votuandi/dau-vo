@@ -13,8 +13,10 @@ export enum TournamentStatus {
 export enum MatchStatus {
   WAITING = 'WAITING',
   ROUND_1_RUNNING = 'ROUND_1_RUNNING',
+  ROUND_1_PAUSED = 'ROUND_1_PAUSED',
   BREAK = 'BREAK',
   ROUND_2_RUNNING = 'ROUND_2_RUNNING',
+  ROUND_2_PAUSED = 'ROUND_2_PAUSED',
   FINISHED = 'FINISHED',
 }
 

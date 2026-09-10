@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import {
   getApiErrorMessage,
   inputClassName,
+  notifyMutationError,
+  notifyMutationSuccess,
   textAreaClassName,
   tournamentStatusLabels,
 } from '@/features/admin-management/presentation';
@@ -47,17 +49,25 @@ export function AdminTournamentsPage() {
 
   const createMutation = useMutation({
     mutationFn: adminManagementApi.createTournament,
-    onSuccess: async ({ tournament }) => {
-      await queryClient.invalidateQueries({ queryKey: tournamentQueryKeys.all });
+    onSuccess: ({ tournament }) => {
+      notifyMutationSuccess('Tạo giải đấu thành công.');
+      void queryClient.invalidateQueries({ queryKey: tournamentQueryKeys.all });
       void navigate(`/admin/tournaments/${tournament.id}`);
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể tạo giải đấu.');
     },
   });
 
   const archiveMutation = useMutation({
     mutationFn: adminManagementApi.archiveTournament,
-    onSuccess: async ({ tournament }) => {
+    onSuccess: ({ tournament }) => {
       queryClient.setQueryData(tournamentQueryKeys.detail(tournament.id), { tournament });
-      await queryClient.invalidateQueries({ queryKey: tournamentQueryKeys.all });
+      notifyMutationSuccess('Lưu trữ giải đấu thành công.');
+      void queryClient.invalidateQueries({ queryKey: tournamentQueryKeys.all });
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể lưu trữ giải đấu.');
     },
   });
 

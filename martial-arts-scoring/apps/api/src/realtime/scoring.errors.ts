@@ -19,6 +19,13 @@ export class MatchNotRunningForVoteError extends Error {
   }
 }
 
+export class RoundPausedForVoteError extends Error {
+  constructor() {
+    super('Votes are not accepted while the round is paused');
+    this.name = RoundPausedForVoteError.name;
+  }
+}
+
 export class RoundEndedForVoteError extends Error {
   constructor() {
     super('The official round end time has passed');

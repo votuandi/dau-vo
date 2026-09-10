@@ -48,8 +48,12 @@ function displayPhase(status: MatchStatus | undefined): string {
   switch (status) {
     case MatchStatus.ROUND_1_RUNNING:
       return 'Hiệp 1';
+    case MatchStatus.ROUND_1_PAUSED:
+      return 'Hiệp 1 · TẠM DỪNG';
     case MatchStatus.ROUND_2_RUNNING:
       return 'Hiệp 2';
+    case MatchStatus.ROUND_2_PAUSED:
+      return 'Hiệp 2 · TẠM DỪNG';
     case MatchStatus.BREAK:
       return 'Nghỉ giữa hiệp';
     case MatchStatus.FINISHED:
@@ -168,10 +172,15 @@ export function RefereeConsole({
   const status = snapshot?.match.status;
   const roundIsRunning =
     status === MatchStatus.ROUND_1_RUNNING || status === MatchStatus.ROUND_2_RUNNING;
+  const roundIsPaused =
+    status === MatchStatus.ROUND_1_PAUSED || status === MatchStatus.ROUND_2_PAUSED;
   const remainingTime = useServerDisplayTimer(
     roundIsRunning ? snapshot?.activeRound?.endsAt : undefined,
     snapshot?.generatedAt,
   );
+  const displayedRemaining = roundIsPaused
+    ? (snapshot?.activeRound?.remainingDurationMs ?? null)
+    : remainingTime;
   const redAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
   const blueAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
   const controlsDisabled =
@@ -226,20 +235,22 @@ export function RefereeConsole({
             {displayPhase(status)}
           </p>
           <p
-            aria-label={`Thời gian còn lại ${formatRemainingTime(remainingTime ?? 0)}`}
+            aria-label={`Thời gian còn lại ${formatRemainingTime(displayedRemaining ?? 0)}`}
             className="mt-2 font-mono text-7xl font-black tabular-nums tracking-tight sm:text-8xl lg:text-9xl"
             role="timer"
           >
-            {roundIsRunning && remainingTime !== null
-              ? formatRemainingTime(remainingTime)
+            {(roundIsRunning || roundIsPaused) && displayedRemaining !== null
+              ? formatRemainingTime(displayedRemaining)
               : '--:--'}
           </p>
           <p className="mt-3 text-sm text-sky-100/75">
-            {roundIsRunning
-              ? 'Thời gian chính thức do máy chủ xác định'
-              : status === MatchStatus.FINISHED
-                ? 'Trận đấu đã kết thúc'
-                : 'Chờ trạng thái chính thức từ máy chủ'}
+            {roundIsPaused
+              ? 'Hiệp đấu đang tạm dừng. Không thể chấm điểm.'
+              : roundIsRunning
+                ? 'Thời gian chính thức do máy chủ xác định'
+                : status === MatchStatus.FINISHED
+                  ? 'Trận đấu đã kết thúc'
+                  : 'Chờ trạng thái chính thức từ máy chủ'}
           </p>
         </section>
 
@@ -291,9 +302,7 @@ export function RefereeConsole({
           ) : realtime.connectionStatus !== 'connected' ? (
             <p className="px-4 py-3 text-sky-100/70">Không thể gửi lựa chọn khi mất kết nối.</p>
           ) : !roundIsRunning ? (
-            <p className="px-4 py-3 text-sky-100/70">
-              Lựa chọn chỉ mở khi hiệp đấu đang diễn ra.
-            </p>
+            <p className="px-4 py-3 text-sky-100/70">Lựa chọn chỉ mở khi hiệp đấu đang diễn ra.</p>
           ) : null}
         </section>
       </main>

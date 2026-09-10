@@ -9,6 +9,8 @@ import {
   getApiErrorMessage,
   inputClassName,
   matchStatusLabels,
+  notifyMutationError,
+  notifyMutationSuccess,
   textAreaClassName,
   toDateInputValue,
   tournamentStatusLabels,
@@ -56,9 +58,13 @@ function TournamentEditor({ tournament }: { readonly tournament: AdminTournament
   const updateMutation = useMutation({
     mutationFn: (input: UpdateTournamentInput) =>
       adminManagementApi.updateTournament(tournament.id, input),
-    onSuccess: async (response) => {
+    onSuccess: (response) => {
       queryClient.setQueryData(tournamentQueryKeys.detail(tournament.id), response);
-      await queryClient.invalidateQueries({ queryKey: tournamentQueryKeys.all });
+      notifyMutationSuccess('Đã lưu thay đổi giải đấu.');
+      void queryClient.invalidateQueries({ queryKey: tournamentQueryKeys.all });
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể lưu thay đổi giải đấu.');
     },
   });
 
@@ -268,13 +274,17 @@ function TournamentMatches({ tournament }: { readonly tournament: AdminTournamen
   const createMutation = useMutation({
     mutationFn: (athletes: readonly [MatchAthleteInput, MatchAthleteInput]) =>
       adminManagementApi.createMatch(tournament.id, { athletes }),
-    onSuccess: async (response) => {
+    onSuccess: (response) => {
       setGeneratedCodes(response.accessCodes);
       setNewMatch(response.match);
       setRedAthlete({ name: '', organization: '' });
       setBlueAthlete({ name: '', organization: '' });
       queryClient.setQueryData(matchQueryKeys.detail(response.match.id), { match: response.match });
-      await queryClient.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournament.id) });
+      notifyMutationSuccess('Tạo trận đấu thành công.');
+      void queryClient.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournament.id) });
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể tạo trận đấu.');
     },
   });
 
@@ -327,11 +337,9 @@ function TournamentMatches({ tournament }: { readonly tournament: AdminTournamen
             }}
             title={`Mã truy cập trận ${newMatch.publicId}`}
           />
-          {newMatch ? (
-            <Button asChild className="mt-3" size="sm" variant="outline">
-              <Link to={`/admin/matches/${newMatch.id}`}>Mở trận {newMatch.publicId}</Link>
-            </Button>
-          ) : null}
+          <Button asChild className="mt-3" size="sm" variant="outline">
+            <Link to={`/admin/matches/${newMatch.id}`}>Mở trận {newMatch.publicId}</Link>
+          </Button>
         </div>
       ) : null}
 

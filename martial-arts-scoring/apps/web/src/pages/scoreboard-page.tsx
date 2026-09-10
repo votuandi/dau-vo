@@ -7,8 +7,12 @@ function phaseLabel(status: MatchStatus | undefined): string {
   switch (status) {
     case MatchStatus.ROUND_1_RUNNING:
       return 'HIỆP 1';
+    case MatchStatus.ROUND_1_PAUSED:
+      return 'HIỆP 1 · PAUSED';
     case MatchStatus.ROUND_2_RUNNING:
       return 'HIỆP 2';
+    case MatchStatus.ROUND_2_PAUSED:
+      return 'HIỆP 2 · PAUSED';
     case MatchStatus.BREAK:
       return 'GIẢI LAO';
     case MatchStatus.FINISHED:
@@ -150,11 +154,15 @@ export function ScoreboardPage() {
 
 function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }) {
   const { connectionStatus, snapshot } = useScoreboardRealtime(matchPublicId);
+  const activeRound = snapshot?.activeRound;
   const running =
     snapshot?.match.status === MatchStatus.ROUND_1_RUNNING ||
     snapshot?.match.status === MatchStatus.ROUND_2_RUNNING;
+  const paused =
+    snapshot?.match.status === MatchStatus.ROUND_1_PAUSED ||
+    snapshot?.match.status === MatchStatus.ROUND_2_PAUSED;
   const remaining = useDisplayTimer(
-    running ? snapshot.activeRound?.endsAt : undefined,
+    running ? activeRound?.endsAt : undefined,
     snapshot?.generatedAt,
   );
   const red = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
@@ -181,7 +189,11 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
           {phaseLabel(snapshot?.match.status)}
         </p>
         <p className="mt-2 font-mono text-7xl font-black tabular-nums sm:text-9xl">
-          {running && remaining !== null ? formatRemaining(remaining) : '--:--'}
+          {running && remaining !== null
+            ? formatRemaining(remaining)
+            : paused && activeRound?.remainingDurationMs != null
+              ? formatRemaining(activeRound.remainingDurationMs)
+              : '--:--'}
         </p>
       </section>
       <section className="grid min-h-[58vh] gap-4 sm:gap-7 md:grid-cols-2">

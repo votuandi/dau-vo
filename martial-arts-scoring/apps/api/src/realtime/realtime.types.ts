@@ -8,6 +8,13 @@ import type {
   PresenceUpdatedPayload,
   RoundEndedPayload,
   RoundStartedPayload,
+  RoundPausedPayload,
+  RoundResumedPayload,
+  RoundControlResponse,
+  ResultCancellationPayload,
+  ResultCancellationResponse,
+  ResultCancellationUndoPayload,
+  ResultCancellationUndoResponse,
   RoundStartResponse,
   ScoreUpdatedPayload,
   ScoringWindowOpenedPayload,
@@ -30,6 +37,22 @@ export interface ClientToServerEvents {
     acknowledge: (response: PenaltyAddResponse) => void,
   ) => void;
   'round:start': (acknowledge: (response: RoundStartResponse) => void) => void;
+  'round:pause': (
+    acknowledge: (response: RoundControlResponse) => void,
+  ) => void;
+  'round:resume': (
+    acknowledge: (response: RoundControlResponse) => void,
+  ) => void;
+  'round:cancel': (
+    acknowledge: (response: ResultCancellationResponse) => void,
+  ) => void;
+  'match:reset': (
+    acknowledge: (response: ResultCancellationResponse) => void,
+  ) => void;
+  'result-cancellation:undo': (
+    payload: { operationId: string },
+    acknowledge: (response: ResultCancellationUndoResponse) => void,
+  ) => void;
   'vote:submit': (
     payload: VoteSubmitPayload,
     acknowledge: (response: VoteSubmitResponse) => void,
@@ -44,6 +67,13 @@ export interface ServerToClientEvents {
   'presence:updated': (payload: PresenceUpdatedPayload) => void;
   'round:ended': (payload: RoundEndedPayload) => void;
   'round:started': (payload: RoundStartedPayload) => void;
+  'round:paused': (payload: RoundPausedPayload) => void;
+  'round:resumed': (payload: RoundResumedPayload) => void;
+  'round:cancelled': (payload: ResultCancellationPayload) => void;
+  'match:reset:completed': (payload: ResultCancellationPayload) => void;
+  'result-cancellation:undone': (
+    payload: ResultCancellationUndoPayload,
+  ) => void;
   'score:updated': (payload: ScoreUpdatedPayload) => void;
   'scoring-window:opened': (payload: ScoringWindowOpenedPayload) => void;
   'scoring-window:resolved': (payload: ScoringWindowResolvedPayload) => void;

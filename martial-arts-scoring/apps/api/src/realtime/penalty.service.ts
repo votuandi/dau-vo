@@ -120,7 +120,11 @@ export class PenaltyService {
           select: { id: true },
         });
         const violationCount = await transaction.penalty.count({
-          where: { athleteId: athlete.id, matchId: input.matchId },
+          where: {
+            athleteId: athlete.id,
+            matchId: input.matchId,
+            revertedAt: null,
+          },
         });
         await transaction.auditLog.create({
           data: {
@@ -253,7 +257,7 @@ export class PenaltyService {
       transaction.scoreEvent.groupBy({
         _sum: { value: true },
         by: ['athleteId'],
-        where: { matchId },
+        where: { matchId, revertedAt: null },
       }),
     ]);
     const totalsByAthlete = new Map(
