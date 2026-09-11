@@ -18,6 +18,7 @@ import { RedisModule } from './redis/redis.module';
 import { PublicViewModule } from './public-view/public-view.module';
 import { PricingModule } from './pricing/pricing.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { SuperAdminModule } from './super-admin/super-admin.module';
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
     PublicViewModule,
     PricingModule,
     SubscriptionsModule,
+    SuperAdminModule,
   ],
 })
 export class AppModule {}

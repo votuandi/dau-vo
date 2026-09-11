@@ -10,7 +10,7 @@ import { IdentityNormalizationService } from './identity-normalization.service';
 
 @Module({
   controllers: [AuthController],
-  exports: [AuthGuard, AuthService, RolesGuard],
+  exports: [AuthGuard, AuthService, RolesGuard, IdentityNormalizationService],
   imports: [PrismaModule, RedisModule],
   providers: [AuthGuard, AuthService, RolesGuard, IdentityNormalizationService],
 })

@@ -1,6 +1,7 @@
 import { Navigate, createBrowserRouter } from 'react-router-dom';
 import { AdminRouteGuard } from '@/features/admin-auth/admin-route-guard';
 import { AuthenticatedRouteGuard } from '@/features/auth/authenticated-route-guard';
+import { SuperAdminRouteGuard } from '@/features/auth/super-admin-route-guard';
 import { AppLayout } from '@/layouts/app-layout';
 import { AdminDashboardPage } from '@/pages/admin-dashboard-page';
 import { AdminLoginPage } from '@/pages/admin-login-page';
@@ -13,6 +14,7 @@ import { ScoreboardPage } from '@/pages/scoreboard-page';
 import { RegisterPage } from '@/pages/register-page';
 import { AccountPage, MatchPage, TournamentPage, TournamentsPage } from '@/pages/public-view-pages';
 import { SubscriptionPage } from '@/pages/subscription-page';
+import { SuperAdminHomePage, SuperAdminPricingPage, SuperAdminUserPage, SuperAdminUsersPage } from '@/pages/super-admin-pages';
 import { MatchRole } from '@/types/shared';
 
 export const router = createBrowserRouter([
@@ -65,6 +67,7 @@ export const router = createBrowserRouter([
           },
         ],
       },
+      { path: 'super-admin', element: <SuperAdminRouteGuard />, children: [{ index: true, element: <SuperAdminHomePage /> }, { path: 'users', element: <SuperAdminUsersPage /> }, { path: 'users/:id', element: <SuperAdminUserPage /> }, { path: 'pricing', element: <SuperAdminPricingPage /> }] },
       {
         path: 'trong-tai',
         element: <MatchAccessPage expectedRole={MatchRole.REFEREE} key="referee-access" />,
