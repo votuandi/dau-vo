@@ -116,6 +116,20 @@ export class SuperAdminService {
   async create(i: CreateSuperAdminUserDto, a: AuthenticatedUser) {
     if (!this.phone(i.phone))
       throw new BadRequestException({ code: 'INVALID_PHONE' });
+    const initialAccess = i.initialAdminAccess;
+    const activeFrom = initialAccess?.activeFrom
+      ? new Date(initialAccess.activeFrom)
+      : new Date();
+    const activeUntil = initialAccess
+      ? new Date(initialAccess.activeUntil)
+      : undefined;
+    if (
+      initialAccess &&
+      (!Number.isFinite(activeFrom.getTime()) ||
+        !Number.isFinite(activeUntil?.getTime()) ||
+        activeUntil! <= activeFrom)
+    )
+      throw new BadRequestException({ code: 'INVALID_ENTITLEMENT_PERIOD' });
     try {
       return await this.prisma.$transaction(async (tx) => {
         const user = await tx.user.create({
@@ -129,19 +143,34 @@ export class SuperAdminService {
             normalizedPhone: this.identities.phone(i.phone),
             organization: i.organization?.trim() || null,
             passwordHash: await hash(i.password, 12),
-            role: UserRole.USER,
+            // This endpoint deliberately has no client-controlled role.  An
+            // initial entitlement is the only supported path to ADMIN.
+            role: initialAccess ? UserRole.ADMIN : UserRole.USER,
           },
           select,
         });
+        if (initialAccess)
+          await tx.adminEntitlement.create({
+            data: {
+              userId: user.id,
+              status: AdminEntitlementStatus.ACTIVE,
+              activeFrom,
+              activeUntil: activeUntil!,
+              tournamentLimit: initialAccess.tournamentLimit,
+            },
+          });
+        const created = initialAccess
+          ? await tx.user.findUniqueOrThrow({ where: { id: user.id }, select })
+          : user;
         await this.audit(
           tx,
           a.id,
           'SUPER_ADMIN_USER_CREATED',
-          user.id,
+          created.id,
           null,
-          user,
+          created,
         );
-        return user;
+        return created;
       });
     } catch (e) {
       this.unique(e);

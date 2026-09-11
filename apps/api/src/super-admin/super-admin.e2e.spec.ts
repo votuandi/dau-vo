@@ -172,6 +172,136 @@ describe('Super-admin management (e2e)', () => {
     expect(JSON.stringify(audit?.metadata)).not.toContain(
       `${prefix}managed@example.test`,
     );
+    expect(JSON.stringify(audit?.metadata)).not.toContain('0900000002');
+  });
+
+  it('creates ADMIN users atomically with their initial entitlement', async () => {
+    const root = request.agent(app.getHttpServer());
+    await root
+      .post('/api/auth/login')
+      .send({ username: superAdmin.username, password })
+      .expect(200);
+
+    const admin = await root
+      .post('/api/super-admin/users')
+      .send({
+        username: `${prefix}initial-admin`,
+        password,
+        fullName: 'Initial Admin',
+        email: `${prefix}initial-admin@example.test`,
+        phone: '0900000011',
+        initialAdminAccess: {
+          activeFrom: '2030-01-01T00:00:00.000Z',
+          activeUntil: '2030-12-31T00:00:00.000Z',
+          tournamentLimit: 3,
+        },
+      })
+      .expect(201);
+    expect(admin.body.role).toBe(UserRole.ADMIN);
+    expect(admin.body.adminEntitlement).toMatchObject({
+      status: AdminEntitlementStatus.ACTIVE,
+      tournamentLimit: 3,
+    });
+
+    await root
+      .post('/api/super-admin/users')
+      .send({
+        username: `${prefix}invalid-dates`,
+        password,
+        fullName: 'Invalid Dates',
+        email: `${prefix}invalid-dates@example.test`,
+        phone: '0900000012',
+        initialAdminAccess: {
+          activeFrom: '2030-12-31T00:00:00.000Z',
+          activeUntil: '2030-01-01T00:00:00.000Z',
+          tournamentLimit: 1,
+        },
+      })
+      .expect(400);
+    await root
+      .post('/api/super-admin/users')
+      .send({
+        username: `${prefix}invalid-limit`,
+        password,
+        fullName: 'Invalid Limit',
+        email: `${prefix}invalid-limit@example.test`,
+        phone: '0900000013',
+        initialAdminAccess: {
+          activeUntil: '2030-12-31T00:00:00.000Z',
+          tournamentLimit: -1,
+        },
+      })
+      .expect(400);
+    await expect(
+      prisma.user.count({
+        where: {
+          username: {
+            in: [`${prefix}invalid-dates`, `${prefix}invalid-limit`],
+          },
+        },
+      }),
+    ).resolves.toBe(0);
+  });
+
+  it('rejects arbitrary roles and duplicate identities without partial users', async () => {
+    const root = request.agent(app.getHttpServer());
+    await root
+      .post('/api/auth/login')
+      .send({ username: superAdmin.username, password })
+      .expect(200);
+    const base = {
+      username: `${prefix}duplicate`,
+      password,
+      fullName: 'Duplicate Source',
+      email: `${prefix}duplicate@example.test`,
+      phone: '0900000014',
+    };
+    await root.post('/api/super-admin/users').send(base).expect(201);
+    for (const [code, duplicate] of [
+      [
+        'USERNAME_ALREADY_EXISTS',
+        {
+          ...base,
+          email: `${prefix}unique-a@example.test`,
+          phone: '0900000015',
+        },
+      ],
+      [
+        'EMAIL_ALREADY_EXISTS',
+        { ...base, username: `${prefix}unique-b`, phone: '0900000016' },
+      ],
+      [
+        'PHONE_ALREADY_EXISTS',
+        {
+          ...base,
+          username: `${prefix}unique-c`,
+          email: `${prefix}unique-c@example.test`,
+        },
+      ],
+    ] as const) {
+      await root
+        .post('/api/super-admin/users')
+        .send(duplicate)
+        .expect(409)
+        .expect(({ body }: { body: { code: string } }) =>
+          expect(body.code).toBe(code),
+        );
+    }
+    await root
+      .post('/api/super-admin/users')
+      .send({
+        ...base,
+        username: `${prefix}role`,
+        email: `${prefix}role@example.test`,
+        phone: '0900000017',
+        role: 'SUPER_ADMIN',
+      })
+      .expect(400);
+    await expect(
+      prisma.user.count({
+        where: { username: { startsWith: `${prefix}unique-` } },
+      }),
+    ).resolves.toBe(0);
   });
 
   it('supports every entitlement transition and protects super admins and deleted users', async () => {

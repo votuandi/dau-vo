@@ -10,12 +10,16 @@ import { superAdminUserKeys } from './query-keys';
 
 type AccountType = 'USER' | 'ADMIN';
 type Field =
-  keyof CreateSuperAdminUserInput | 'passwordConfirmation' | 'adminActiveUntil' | 'tournamentLimit';
+  | Exclude<keyof CreateSuperAdminUserInput, 'initialAdminAccess'>
+  | 'passwordConfirmation'
+  | 'adminActiveUntil'
+  | 'tournamentLimit';
 const errorFields: Record<string, Field> = {
   USERNAME_ALREADY_EXISTS: 'username',
   EMAIL_ALREADY_EXISTS: 'email',
   PHONE_ALREADY_EXISTS: 'phone',
   INVALID_PHONE: 'phone',
+  INVALID_ENTITLEMENT_PERIOD: 'adminActiveUntil',
 };
 const initial = (): Record<Field, string> => ({
   fullName: '',
@@ -45,15 +49,16 @@ export function CreateSuperAdminUserPage() {
         phone: values.phone.trim(),
         password: values.password,
         ...(values.organization.trim() ? { organization: values.organization.trim() } : {}),
+        ...(accountType === 'ADMIN'
+          ? {
+              initialAdminAccess: {
+                activeUntil: new Date(`${values.adminActiveUntil}T23:59:59`).toISOString(),
+                tournamentLimit: Number(values.tournamentLimit),
+              },
+            }
+          : {}),
       };
-      const user = await superAdminApi.create(input);
-      if (accountType === 'ADMIN')
-        await superAdminApi.access(user.id, {
-          action: 'ACTIVATE',
-          activeUntil: new Date(`${values.adminActiveUntil}T23:59:59`).toISOString(),
-          tournamentLimit: Number(values.tournamentLimit),
-        });
-      return user;
+      return superAdminApi.create(input);
     },
     onSuccess: (user) => {
       void cache.invalidateQueries({ queryKey: superAdminUserKeys.all });
@@ -65,8 +70,10 @@ export function CreateSuperAdminUserPage() {
       setValues((current) => ({ ...current, password: '', passwordConfirmation: '' }));
       if (cause instanceof ApiClientError)
         setErrors({
-          [errorFields[cause.body.code ?? ''] ?? 'fullName']:
-            cause.body.message ?? 'Không thể tạo người dùng.',
+          [errorFields[cause.body.code ?? ''] ??
+          (String(cause.body.message).includes('tournamentLimit')
+            ? 'tournamentLimit'
+            : 'fullName')]: cause.body.message ?? 'Không thể tạo người dùng.',
         });
     },
   });
@@ -76,6 +83,7 @@ export function CreateSuperAdminUserPage() {
   }
   function submit(event: SyntheticEvent<HTMLFormElement>): void {
     event.preventDefault();
+    if (create.isPending) return;
     const next: Partial<Record<Field, string>> = {};
     if (!values.fullName.trim()) next.fullName = 'Họ và tên là bắt buộc.';
     if (!/^[a-zA-Z0-9._-]{1,100}$/u.test(values.username))

@@ -14,6 +14,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 import { UserRole } from '@prisma/client';
 
@@ -23,6 +24,12 @@ export class UserIdParamDto {
   @IsUUID() id!: string;
 }
 
+export class InitialAdminAccessDto {
+  @IsOptional() @IsDateString() activeFrom?: string;
+  @IsDateString() activeUntil!: string;
+  @Type(() => Number) @IsInt() @Min(0) tournamentLimit!: number;
+}
+
 export class CreateSuperAdminUserDto {
   @IsString() @MinLength(1) @MaxLength(255) fullName!: string;
   @IsString() @Matches(USERNAME) @MaxLength(100) username!: string;
@@ -30,6 +37,10 @@ export class CreateSuperAdminUserDto {
   @IsString() @MinLength(6) @MaxLength(50) phone!: string;
   @IsString() @MinLength(8) @MaxLength(72) password!: string;
   @IsOptional() @IsString() @MaxLength(255) organization?: string;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => InitialAdminAccessDto)
+  initialAdminAccess?: InitialAdminAccessDto;
 }
 
 export class UpdateSuperAdminUserDto {

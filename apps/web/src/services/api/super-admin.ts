@@ -21,6 +21,11 @@ export interface CreateSuperAdminUserInput {
   readonly phone: string;
   readonly organization?: string;
   readonly password: string;
+  readonly initialAdminAccess?: {
+    readonly activeFrom?: string;
+    readonly activeUntil: string;
+    readonly tournamentLimit: number;
+  };
 }
 
 export interface AdminAccessInput {
