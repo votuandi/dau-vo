@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { UserRole } from '@prisma/client';
 import { Test } from '@nestjs/testing';
 import { hash } from 'bcryptjs';
 import Redis from 'ioredis';
@@ -45,7 +46,7 @@ describe('Admin authentication (integration)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let redis: Redis;
-  let testAdmin: { id: string; username: string };
+  let testAdmin: { id: string; username: string; fullName: string | null; role: UserRole; isActive: boolean };
 
   beforeAll(async () => {
     configureTestEnvironment();
@@ -74,14 +75,15 @@ describe('Admin authentication (integration)', () => {
     await redis.flushdb();
 
     const passwordHash = await hash(TEST_ADMIN_PASSWORD, 10);
-    testAdmin = await prisma.adminUser.upsert({
+    testAdmin = await prisma.user.upsert({
       create: {
+        normalizedUsername: TEST_ADMIN_USERNAME,
         passwordHash,
         username: TEST_ADMIN_USERNAME,
       },
-      select: { id: true, username: true },
+      select: { id: true, username: true, fullName: true, role: true, isActive: true },
       update: { passwordHash },
-      where: { username: TEST_ADMIN_USERNAME },
+      where: { normalizedUsername: TEST_ADMIN_USERNAME },
     });
   });
 
@@ -91,7 +93,7 @@ describe('Admin authentication (integration)', () => {
 
   afterAll(async () => {
     if (prisma !== undefined) {
-      await prisma.adminUser.deleteMany({
+      await prisma.user.deleteMany({
         where: { username: TEST_ADMIN_USERNAME },
       });
     }
@@ -108,14 +110,14 @@ describe('Admin authentication (integration)', () => {
 
   it('logs in with valid credentials and issues an HTTP-only cookie', async () => {
     const response = await request(app.getHttpServer())
-      .post('/api/admin/auth/login')
+      .post('/api/auth/login')
       .send({
         password: TEST_ADMIN_PASSWORD,
         username: TEST_ADMIN_USERNAME,
       })
       .expect(200);
 
-    expect(response.body).toEqual({ admin: testAdmin });
+    expect(response.body).toEqual({ user: testAdmin });
 
     const setCookie = response.headers['set-cookie'];
     expect(setCookie).toBeDefined();
@@ -125,12 +127,12 @@ describe('Admin authentication (integration)', () => {
       : String(setCookie);
     expect(cookieAttributes).toContain('HttpOnly');
     expect(cookieAttributes).toContain('SameSite=Strict');
-    expect(cookieAttributes).toContain('Path=/api/admin');
+    expect(cookieAttributes).toContain('Path=/api');
   });
 
   it('returns the same standardized error for a bad username or password', async () => {
     const unknownUsernameResponse = await request(app.getHttpServer())
-      .post('/api/admin/auth/login')
+      .post('/api/auth/login')
       .send({
         password: TEST_ADMIN_PASSWORD,
         username: `${TEST_ADMIN_USERNAME}-missing`,
@@ -138,7 +140,7 @@ describe('Admin authentication (integration)', () => {
       .expect(401);
 
     const wrongPasswordResponse = await request(app.getHttpServer())
-      .post('/api/admin/auth/login')
+      .post('/api/auth/login')
       .send({
         password: 'definitely-not-the-password',
         username: TEST_ADMIN_USERNAME,
@@ -152,7 +154,7 @@ describe('Admin authentication (integration)', () => {
 
   it('rejects a password that only matches after bcrypt truncation', async () => {
     await request(app.getHttpServer())
-      .post('/api/admin/auth/login')
+      .post('/api/auth/login')
       .send({
         password: `${TEST_ADMIN_PASSWORD}-ignored-by-bcrypt`,
         username: TEST_ADMIN_USERNAME,
@@ -169,13 +171,13 @@ describe('Admin authentication (integration)', () => {
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       await request(app.getHttpServer())
-        .post('/api/admin/auth/login')
+        .post('/api/auth/login')
         .send(attemptedCredentials)
         .expect(401);
     }
 
     await request(app.getHttpServer())
-      .post('/api/admin/auth/login')
+      .post('/api/auth/login')
       .send(attemptedCredentials)
       .expect(429)
       .expect({
@@ -186,10 +188,10 @@ describe('Admin authentication (integration)', () => {
 
   it('rejects the protected session endpoint without a login cookie', async () => {
     await request(app.getHttpServer())
-      .get('/api/admin/auth/me')
+      .get('/api/auth/me')
       .expect(401)
       .expect({
-        code: 'ADMIN_AUTH_REQUIRED',
+        code: 'AUTH_REQUIRED',
         message: 'Authentication required',
       });
   });
@@ -198,7 +200,7 @@ describe('Admin authentication (integration)', () => {
     const authenticatedAgent = request.agent(app.getHttpServer());
 
     await authenticatedAgent
-      .post('/api/admin/auth/login')
+      .post('/api/auth/login')
       .send({
         password: TEST_ADMIN_PASSWORD,
         username: TEST_ADMIN_USERNAME,
@@ -206,27 +208,45 @@ describe('Admin authentication (integration)', () => {
       .expect(200);
 
     await authenticatedAgent
-      .get('/api/admin/auth/me')
+      .get('/api/auth/me')
       .expect(200)
-      .expect({ admin: testAdmin });
+      .expect({ user: testAdmin });
   });
 
   it('revokes the server-side session on logout', async () => {
     const authenticatedAgent = request.agent(app.getHttpServer());
 
     await authenticatedAgent
-      .post('/api/admin/auth/login')
+      .post('/api/auth/login')
       .send({
         password: TEST_ADMIN_PASSWORD,
         username: TEST_ADMIN_USERNAME,
       })
       .expect(200);
 
-    await authenticatedAgent.post('/api/admin/auth/logout').expect(204);
+    await authenticatedAgent.post('/api/auth/logout').expect(204);
 
-    await authenticatedAgent.get('/api/admin/auth/me').expect(401).expect({
-      code: 'ADMIN_AUTH_REQUIRED',
+    await authenticatedAgent.get('/api/auth/me').expect(401).expect({
+      code: 'AUTH_REQUIRED',
       message: 'Authentication required',
     });
+  });
+
+  it('rejects an inactive or soft-deleted user even when a Redis session exists', async () => {
+    const authenticatedAgent = request.agent(app.getHttpServer());
+    await authenticatedAgent.post('/api/auth/login').send({ password: TEST_ADMIN_PASSWORD, username: TEST_ADMIN_USERNAME }).expect(200);
+    await prisma.user.update({ where: { id: testAdmin.id }, data: { isActive: false } });
+    await authenticatedAgent.get('/api/auth/me').expect(401);
+    await prisma.user.update({ where: { id: testAdmin.id }, data: { isActive: true, deletedAt: new Date() } });
+    await request(app.getHttpServer()).post('/api/auth/login').send({ password: TEST_ADMIN_PASSWORD, username: TEST_ADMIN_USERNAME }).expect(401);
+    await prisma.user.update({ where: { id: testAdmin.id }, data: { deletedAt: null } });
+  });
+
+  it('returns a changed role on the next authenticated request', async () => {
+    const authenticatedAgent = request.agent(app.getHttpServer());
+    await authenticatedAgent.post('/api/auth/login').send({ password: TEST_ADMIN_PASSWORD, username: TEST_ADMIN_USERNAME }).expect(200);
+    await prisma.user.update({ where: { id: testAdmin.id }, data: { role: 'SUPER_ADMIN' } });
+    await authenticatedAgent.get('/api/auth/me').expect(200).expect(({ body }: { body: { user: { role: string } } }) => expect(body.user.role).toBe('SUPER_ADMIN'));
+    await prisma.user.update({ where: { id: testAdmin.id }, data: { role: 'ADMIN' } });
   });
 });

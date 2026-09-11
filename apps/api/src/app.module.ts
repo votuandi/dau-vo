@@ -7,7 +7,7 @@ import {
   type EnvironmentVariables,
   validateEnvironment,
 } from './config/environment';
-import { AdminAuthModule } from './admin-auth/admin-auth.module';
+import { AuthModule } from './auth/admin-auth.module';
 import { AdminManagementModule } from './admin-management/admin-management.module';
 import { HealthModule } from './health/health.module';
 import { MatchAccessModule } from './match-access/match-access.module';
@@ -58,7 +58,7 @@ import { RedisModule } from './redis/redis.module';
     PrismaModule,
     RedisModule,
     RealtimeCoreModule,
-    AdminAuthModule,
+    AuthModule,
     AdminManagementModule,
     MatchAccessModule,
     RealtimeModule,

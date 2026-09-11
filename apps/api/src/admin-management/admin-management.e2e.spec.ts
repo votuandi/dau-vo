@@ -246,7 +246,7 @@ describe('Admin tournament and match management (integration)', () => {
       });
     }
 
-    await prisma.adminUser.deleteMany({
+    await prisma.user.deleteMany({
       where: { username: TEST_ADMIN_USERNAME },
     });
   }
@@ -277,8 +277,9 @@ describe('Admin tournament and match management (integration)', () => {
     });
     await redis.flushdb();
 
-    const testAdmin = await prisma.adminUser.create({
+    const testAdmin = await prisma.user.create({
       data: {
+        normalizedUsername: TEST_ADMIN_USERNAME,
         passwordHash: await hash(TEST_ADMIN_PASSWORD, 10),
         username: TEST_ADMIN_USERNAME,
       },
@@ -287,7 +288,7 @@ describe('Admin tournament and match management (integration)', () => {
     testAdminId = testAdmin.id;
 
     const loginResponse = await request(app.getHttpServer())
-      .post('/api/admin/auth/login')
+      .post('/api/auth/login')
       .send({
         password: TEST_ADMIN_PASSWORD,
         username: TEST_ADMIN_USERNAME,

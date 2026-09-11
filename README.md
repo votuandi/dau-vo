@@ -77,9 +77,16 @@ available at `http://localhost:3000/api/health`.
 
 ## Admin authentication
 
+Normal application identities use the unified `User` model and `POST /api/auth/login`,
+`POST /api/auth/logout`, and `GET /api/auth/me`. Existing administrator rows are
+migrated in place with their IDs, password hashes, timestamps, and audit attribution
+preserved. Legacy rows intentionally retain nullable profile fields during this
+compatibility phase; registration and profile-completeness rules are deferred.
+Referee and inspector match-access sessions remain a separate security domain.
+
 After running the development seed, open `http://localhost:5173/admin/login` and
 sign in with `SEED_ADMIN_USERNAME` and `SEED_ADMIN_PASSWORD`. The frontend restores
-the session with `GET /api/admin/auth/me`, protects `/admin`, and invalidates the
+the session with `GET /api/auth/me`, protects `/admin`, and invalidates the
 server-side session on logout.
 
 The API stores only an opaque, cryptographically random session identifier in an

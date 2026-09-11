@@ -1,12 +1,12 @@
-export const ADMIN_SESSION_COOKIE = 'martial_arts_admin_session';
+export const AUTH_SESSION_COOKIE = 'martial_arts_session';
 
 export const INVALID_CREDENTIALS_ERROR = {
   code: 'INVALID_CREDENTIALS',
   message: 'Invalid username or password',
 } as const;
 
-export const ADMIN_AUTH_REQUIRED_ERROR = {
-  code: 'ADMIN_AUTH_REQUIRED',
+export const AUTH_REQUIRED_ERROR = {
+  code: 'AUTH_REQUIRED',
   message: 'Authentication required',
 } as const;
 

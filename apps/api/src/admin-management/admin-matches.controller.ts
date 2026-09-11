@@ -16,8 +16,8 @@ import {
 } from '@nestjs/common';
 import { MatchAccessRole } from '@prisma/client';
 
-import { AdminAuthGuard } from '../admin-auth/admin-auth.guard';
-import type { AuthenticatedAdminRequest } from '../admin-auth/admin-auth.types';
+import { AuthGuard } from '../auth/admin-auth.guard';
+import type { AuthenticatedUserRequest } from '../auth/admin-auth.types';
 import {
   INVALID_ACCESS_ROLE_ERROR,
   INVALID_ID_ERROR,
@@ -44,7 +44,7 @@ interface MatchResponse {
 }
 
 @Controller('admin/matches')
-@UseGuards(AdminAuthGuard)
+@UseGuards(AuthGuard)
 export class AdminMatchesController {
   constructor(
     @Inject(AdminManagementService)
@@ -65,10 +65,10 @@ export class AdminMatchesController {
   async update(
     @Param('id', uuidPipe) id: string,
     @Body() input: UpdateMatchDto,
-    @Req() request: AuthenticatedAdminRequest,
+    @Req() request: AuthenticatedUserRequest,
   ): Promise<MatchResponse> {
     return {
-      match: await this.management.updateMatch(id, input, request.admin.id),
+      match: await this.management.updateMatch(id, input, request.user.id),
     };
   }
 
@@ -77,9 +77,9 @@ export class AdminMatchesController {
   @HttpCode(200)
   regenerateAllAccessCodes(
     @Param('id', uuidPipe) id: string,
-    @Req() request: AuthenticatedAdminRequest,
+    @Req() request: AuthenticatedUserRequest,
   ): Promise<RegeneratedAccessCodesResult> {
-    return this.management.regenerateAllAccessCodes(id, request.admin.id);
+    return this.management.regenerateAllAccessCodes(id, request.user.id);
   }
 
   @Post(':id/access-codes/:role/regenerate')
@@ -88,8 +88,8 @@ export class AdminMatchesController {
   regenerateAccessCode(
     @Param('id', uuidPipe) id: string,
     @Param('role', accessRolePipe) role: MatchAccessRole,
-    @Req() request: AuthenticatedAdminRequest,
+    @Req() request: AuthenticatedUserRequest,
   ): Promise<RegeneratedAccessCodesResult> {
-    return this.management.regenerateAccessCode(id, role, request.admin.id);
+    return this.management.regenerateAccessCode(id, role, request.user.id);
   }
 }

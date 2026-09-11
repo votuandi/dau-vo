@@ -21,8 +21,12 @@ export const router = createBrowserRouter([
         element: <Navigate replace to="/admin" />,
       },
       {
-        path: 'admin/login',
+        path: 'login',
         element: <AdminLoginPage />,
+      },
+      {
+        path: 'admin/login',
+        element: <Navigate replace to="/login" />,
       },
       {
         path: 'admin',

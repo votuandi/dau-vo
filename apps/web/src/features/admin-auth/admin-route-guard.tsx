@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { adminSessionQueryOptions } from '@/features/admin-auth/admin-session';
+import { authenticatedUserQueryOptions } from '@/features/auth/authenticated-user-session';
 
 export function AdminRouteGuard() {
   const location = useLocation();
-  const sessionQuery = useQuery(adminSessionQueryOptions);
+  const sessionQuery = useQuery(authenticatedUserQueryOptions);
 
   if (sessionQuery.isPending) {
     return (
@@ -37,8 +37,8 @@ export function AdminRouteGuard() {
   if (!sessionQuery.data) {
     const returnPath = `${location.pathname}${location.search}${location.hash}`;
 
-    return <Navigate replace state={{ from: returnPath }} to="/admin/login" />;
+    return <Navigate replace state={{ from: returnPath }} to="/login" />;
   }
 
-  return <Outlet context={sessionQuery.data.admin} />;
+  return <Outlet context={sessionQuery.data.user} />;
 }

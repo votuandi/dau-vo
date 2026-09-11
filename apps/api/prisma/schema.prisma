@@ -106,15 +106,33 @@ enum AuditEventType {
   @@map("audit_event_type")
 }
 
-model AdminUser {
-  id           String     @id(map: "admin_users_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  username     String     @unique(map: "admin_users_username_key") @db.VarChar(100)
-  passwordHash String     @map("password_hash") @db.VarChar(255)
-  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  auditLogs    AuditLog[]
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  USER
 
-  @@map("admin_users")
+  @@map("user_role")
+}
+
+model User {
+  id                 String     @id(map: "users_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fullName           String?    @map("full_name") @db.VarChar(255)
+  username           String     @db.VarChar(100)
+  normalizedUsername String     @unique(map: "users_normalized_username_key") @map("normalized_username") @db.VarChar(100)
+  email              String?    @db.VarChar(320)
+  normalizedEmail    String?    @unique(map: "users_normalized_email_key") @map("normalized_email") @db.VarChar(320)
+  phone              String?    @db.VarChar(50)
+  normalizedPhone    String?    @unique(map: "users_normalized_phone_key") @map("normalized_phone") @db.VarChar(50)
+  organization       String?    @db.VarChar(255)
+  passwordHash       String     @map("password_hash") @db.VarChar(255)
+  role               UserRole   @default(ADMIN)
+  isActive           Boolean    @default(true) @map("is_active")
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt          DateTime?  @map("deleted_at") @db.Timestamptz(3)
+  auditLogs          AuditLog[]
+
+  @@map("users")
 }
 
 model Tournament {
@@ -362,17 +380,18 @@ model Penalty {
 model AuditLog {
   id          String         @id(map: "audit_logs_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   matchId     String?        @map("match_id") @db.Uuid
-  adminUserId String?        @map("admin_user_id") @db.Uuid
+  // Compatibility name for existing scoring services; maps to the unified user FK.
+  adminUserId String?        @map("user_id") @db.Uuid
   sessionId   String?        @map("session_id") @db.Uuid
   eventType   AuditEventType @map("event_type")
   metadata    Json?          @db.JsonB
   createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   match       Match?         @relation(fields: [matchId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "audit_logs_match_id_fkey")
-  adminUser   AdminUser?     @relation(fields: [adminUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "audit_logs_admin_user_id_fkey")
+  user        User?          @relation(fields: [adminUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "audit_logs_user_id_fkey")
   session     MatchSession?  @relation(fields: [sessionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "audit_logs_session_id_fkey")
 
   @@index([matchId, createdAt], map: "audit_logs_match_id_created_at_idx")
-  @@index([adminUserId], map: "audit_logs_admin_user_id_idx")
+  @@index([adminUserId], map: "audit_logs_user_id_idx")
   @@index([sessionId], map: "audit_logs_session_id_idx")
   @@map("audit_logs")
 }

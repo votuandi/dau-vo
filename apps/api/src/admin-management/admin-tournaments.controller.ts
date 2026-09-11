@@ -14,8 +14,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
-import { AdminAuthGuard } from '../admin-auth/admin-auth.guard';
-import type { AuthenticatedAdminRequest } from '../admin-auth/admin-auth.types';
+import { AuthGuard } from '../auth/admin-auth.guard';
+import type { AuthenticatedUserRequest } from '../auth/admin-auth.types';
 import { INVALID_ID_ERROR } from './admin-management.errors';
 import {
   AdminManagementService,
@@ -46,7 +46,7 @@ interface MatchListResponse {
 }
 
 @Controller('admin/tournaments')
-@UseGuards(AdminAuthGuard)
+@UseGuards(AuthGuard)
 export class AdminTournamentsController {
   constructor(
     @Inject(AdminManagementService)
@@ -61,12 +61,12 @@ export class AdminTournamentsController {
   @Post()
   async create(
     @Body() input: CreateTournamentDto,
-    @Req() request: AuthenticatedAdminRequest,
+    @Req() request: AuthenticatedUserRequest,
   ): Promise<TournamentResponse> {
     return {
       tournament: await this.management.createTournament(
         input,
-        request.admin.id,
+        request.user.id,
       ),
     };
   }
@@ -80,13 +80,13 @@ export class AdminTournamentsController {
   async update(
     @Param('id', uuidPipe) id: string,
     @Body() input: UpdateTournamentDto,
-    @Req() request: AuthenticatedAdminRequest,
+    @Req() request: AuthenticatedUserRequest,
   ): Promise<TournamentResponse> {
     return {
       tournament: await this.management.updateTournament(
         id,
         input,
-        request.admin.id,
+        request.user.id,
       ),
     };
   }
@@ -94,10 +94,10 @@ export class AdminTournamentsController {
   @Delete(':id')
   async archive(
     @Param('id', uuidPipe) id: string,
-    @Req() request: AuthenticatedAdminRequest,
+    @Req() request: AuthenticatedUserRequest,
   ): Promise<TournamentResponse> {
     return {
-      tournament: await this.management.archiveTournament(id, request.admin.id),
+      tournament: await this.management.archiveTournament(id, request.user.id),
     };
   }
 
@@ -113,8 +113,8 @@ export class AdminTournamentsController {
   createMatch(
     @Param('tournamentId', uuidPipe) tournamentId: string,
     @Body() input: CreateMatchDto,
-    @Req() request: AuthenticatedAdminRequest,
+    @Req() request: AuthenticatedUserRequest,
   ): Promise<CreatedMatchResult> {
-    return this.management.createMatch(tournamentId, input, request.admin.id);
+    return this.management.createMatch(tournamentId, input, request.user.id);
   }
 }

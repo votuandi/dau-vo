@@ -1,10 +1,10 @@
 import type { Request } from 'express';
 
-import { ADMIN_SESSION_COOKIE } from './admin-auth.constants';
+import { AUTH_SESSION_COOKIE } from './admin-auth.constants';
 
-export function readAdminSessionToken(request: Request): string | undefined {
+export function readAuthSessionToken(request: Request): string | undefined {
   const cookies = request.cookies as Record<string, unknown> | undefined;
-  const token = cookies?.[ADMIN_SESSION_COOKIE];
+  const token = cookies?.[AUTH_SESSION_COOKIE];
 
   return typeof token === 'string' ? token : undefined;
 }

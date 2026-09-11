@@ -2,23 +2,23 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useOutletContext } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { adminSessionQueryKey } from '@/features/admin-auth/admin-session';
-import { adminAuthApi, type AdminIdentity } from '@/services/api/admin-auth';
+import { authenticatedUserQueryKey } from '@/features/auth/authenticated-user-session';
+import { authApi, type AuthenticatedUser } from '@/services/api/auth';
 
 export function AdminDashboardPage() {
-  const admin = useOutletContext<AdminIdentity>();
+  const admin = useOutletContext<AuthenticatedUser>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [logoutError, setLogoutError] = useState<string | null>(null);
 
   const logoutMutation = useMutation({
-    mutationFn: adminAuthApi.logout,
+    mutationFn: authApi.logout,
     onMutate: () => {
       setLogoutError(null);
     },
     onSuccess: () => {
-      queryClient.setQueryData(adminSessionQueryKey, null);
-      void navigate('/admin/login', { replace: true });
+      queryClient.setQueryData(authenticatedUserQueryKey, null);
+      void navigate('/login', { replace: true });
     },
     onError: () => {
       setLogoutError('Không thể đăng xuất lúc này. Vui lòng thử lại.');

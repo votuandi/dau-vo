@@ -2,11 +2,8 @@ import { useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import {
-  adminSessionQueryKey,
-  adminSessionQueryOptions,
-} from '@/features/admin-auth/admin-session';
-import { adminAuthApi } from '@/services/api/admin-auth';
+import { authenticatedUserQueryKey, authenticatedUserQueryOptions } from '@/features/auth/authenticated-user-session';
+import { authApi } from '@/services/api/auth';
 import { ApiClientError } from '@/services/api/client';
 
 interface LoginFormErrors {
@@ -61,15 +58,15 @@ export function AdminLoginPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const sessionQuery = useQuery(adminSessionQueryOptions);
+  const sessionQuery = useQuery(authenticatedUserQueryOptions);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [formErrors, setFormErrors] = useState<LoginFormErrors>({});
 
   const loginMutation = useMutation({
-    mutationFn: adminAuthApi.login,
+    mutationFn: authApi.login,
     onSuccess: (session) => {
-      queryClient.setQueryData(adminSessionQueryKey, session);
+      queryClient.setQueryData(authenticatedUserQueryKey, session);
       void navigate(getReturnPath(location.state), { replace: true });
     },
   });

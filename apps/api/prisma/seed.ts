@@ -79,10 +79,10 @@ async function seedDevelopmentAdmin(): Promise<void> {
   const prisma = new PrismaClient();
 
   try {
-    await prisma.adminUser.upsert({
-      where: { username },
-      update: { passwordHash },
-      create: { username, passwordHash },
+    await prisma.user.upsert({
+      where: { normalizedUsername: username.toLowerCase() },
+      update: { passwordHash, isActive: true },
+      create: { username, normalizedUsername: username.toLowerCase(), passwordHash, role: 'ADMIN' },
     });
 
     process.stdout.write(

@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { UserRole } from '@prisma/client';
 import { compare, hash } from 'bcryptjs';
 import { Buffer } from 'node:buffer';
 import { createHmac, randomBytes } from 'node:crypto';
@@ -17,7 +18,7 @@ import {
   INVALID_CREDENTIALS_ERROR,
   LOGIN_RATE_LIMITED_ERROR,
 } from './admin-auth.constants';
-import type { AdminIdentity, CreatedAdminSession } from './admin-auth.types';
+import type { AuthenticatedUser, CreatedSession } from './admin-auth.types';
 
 const SESSION_TOKEN_BYTES = 32;
 const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
@@ -26,7 +27,7 @@ const IP_RATE_LIMIT_MULTIPLIER = 20;
 const MAX_BCRYPT_PASSWORD_BYTES = 72;
 
 @Injectable()
-export class AdminAuthService {
+export class AuthService {
   private readonly adminSessionSecret: string;
   private readonly loginRateLimitMaxAttempts: number;
   private readonly loginRateLimitWindowSeconds: number;
@@ -65,8 +66,8 @@ export class AdminAuthService {
     username: string,
     password: string,
     clientAddress: string,
-  ): Promise<CreatedAdminSession> {
-    const normalizedUsername = username.trim();
+  ): Promise<CreatedSession> {
+    const normalizedUsername = username.trim().toLocaleLowerCase();
     const identityRateLimitKey = this.deriveRedisKey(
       'login-rate:identity',
       normalizedUsername,
@@ -94,16 +95,16 @@ export class AdminAuthService {
       );
     }
 
-    const admin = await this.prisma.adminUser.findUnique({
-      select: { id: true, passwordHash: true, username: true },
-      where: { username: normalizedUsername },
+    const user = await this.prisma.user.findUnique({
+      select: { id: true, passwordHash: true, username: true, isActive: true, deletedAt: true, fullName: true, role: true },
+      where: { normalizedUsername },
     });
-    const passwordHash = admin?.passwordHash ?? (await this.dummyPasswordHash);
+    const passwordHash = user?.passwordHash ?? (await this.dummyPasswordHash);
     const passwordMatches = await compare(password, passwordHash);
     const passwordFitsBcrypt =
       Buffer.byteLength(password, 'utf8') <= MAX_BCRYPT_PASSWORD_BYTES;
 
-    if (admin === null || !passwordMatches || !passwordFitsBcrypt) {
+    if (user === null || !user.isActive || user.deletedAt !== null || !passwordMatches || !passwordFitsBcrypt) {
       throw new UnauthorizedException(INVALID_CREDENTIALS_ERROR);
     }
 
@@ -112,39 +113,39 @@ export class AdminAuthService {
     const sessionToken = randomBytes(SESSION_TOKEN_BYTES).toString('base64url');
     await this.redis.setWithExpiry(
       this.sessionRedisKey(sessionToken),
-      admin.id,
+      user.id,
       this.sessionTtlSeconds,
     );
 
     return {
-      admin: { id: admin.id, username: admin.username },
+      user: this.safeUser(user),
       sessionToken,
     };
   }
 
-  async resolveSession(sessionToken: string): Promise<AdminIdentity | null> {
+  async resolveSession(sessionToken: string): Promise<AuthenticatedUser | null> {
     if (!SESSION_TOKEN_PATTERN.test(sessionToken)) {
       return null;
     }
 
     const sessionKey = this.sessionRedisKey(sessionToken);
-    const adminUserId = await this.redis.get(sessionKey);
+    const userId = await this.redis.get(sessionKey);
 
-    if (adminUserId === null) {
+    if (userId === null) {
       return null;
     }
 
-    const admin = await this.prisma.adminUser.findUnique({
-      select: { id: true, username: true },
-      where: { id: adminUserId },
+    const user = await this.prisma.user.findUnique({
+      select: { id: true, username: true, fullName: true, role: true, isActive: true, deletedAt: true },
+      where: { id: userId },
     });
 
-    if (admin === null) {
+    if (user === null || !user.isActive || user.deletedAt !== null) {
       await this.redis.delete(sessionKey);
       return null;
     }
 
-    return admin;
+    return this.safeUser(user);
   }
 
   async revokeSession(sessionToken: string): Promise<void> {
@@ -166,6 +167,10 @@ export class AdminAuthService {
       .update(value)
       .digest('base64url');
 
-    return `admin-auth:${namespace}:${digest}`;
+    return `auth:${namespace}:${digest}`;
+  }
+
+  private safeUser(user: { id: string; username: string; fullName: string | null; role: UserRole; isActive: boolean }): AuthenticatedUser {
+    return { id: user.id, username: user.username, fullName: user.fullName, role: user.role, isActive: user.isActive };
   }
 }

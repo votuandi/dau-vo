@@ -14,31 +14,31 @@ import { ConfigService } from '@nestjs/config';
 import type { CookieOptions, Request, Response } from 'express';
 
 import type { EnvironmentVariables } from '../config/environment';
-import { ADMIN_SESSION_COOKIE } from './admin-auth.constants';
-import { AdminAuthGuard } from './admin-auth.guard';
-import { AdminAuthService } from './admin-auth.service';
+import { AUTH_SESSION_COOKIE } from './admin-auth.constants';
+import { AuthGuard } from './admin-auth.guard';
+import { AuthService } from './admin-auth.service';
 import type {
-  AdminAuthResponse,
-  AuthenticatedAdminRequest,
+  AuthResponse,
+  AuthenticatedUserRequest,
 } from './admin-auth.types';
-import { getClientAddress, readAdminSessionToken } from './admin-auth.utils';
+import { getClientAddress, readAuthSessionToken } from './admin-auth.utils';
 // This class must remain a runtime import for Nest's emitted validation metadata.
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { AdminLoginDto } from './dto/admin-login.dto';
 
-@Controller('admin/auth')
-export class AdminAuthController {
+@Controller('auth')
+export class AuthController {
   private readonly cookieOptions: CookieOptions;
 
   constructor(
-    @Inject(AdminAuthService)
-    private readonly adminAuthService: AdminAuthService,
+    @Inject(AuthService)
+    private readonly authService: AuthService,
     @Inject(ConfigService)
     config: ConfigService<EnvironmentVariables, true>,
   ) {
     this.cookieOptions = {
       httpOnly: true,
-      path: '/api/admin',
+      path: '/api',
       sameSite: 'strict',
       secure: config.getOrThrow('NODE_ENV', { infer: true }) === 'production',
     };
@@ -51,25 +51,25 @@ export class AdminAuthController {
     @Body() credentials: AdminLoginDto,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<AdminAuthResponse> {
-    const session = await this.adminAuthService.login(
+  ): Promise<AuthResponse> {
+    const session = await this.authService.login(
       credentials.username,
       credentials.password,
       getClientAddress(request),
     );
-    const previousSessionToken = readAdminSessionToken(request);
+    const previousSessionToken = readAuthSessionToken(request);
 
     if (previousSessionToken !== undefined) {
-      await this.adminAuthService.revokeSession(previousSessionToken);
+      await this.authService.revokeSession(previousSessionToken);
     }
 
     response.cookie(
-      ADMIN_SESSION_COOKIE,
+      AUTH_SESSION_COOKIE,
       session.sessionToken,
       this.cookieOptions,
     );
 
-    return { admin: session.admin };
+    return { user: session.user };
   }
 
   @Post('logout')
@@ -79,19 +79,19 @@ export class AdminAuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
-    const sessionToken = readAdminSessionToken(request);
+    const sessionToken = readAuthSessionToken(request);
 
     if (sessionToken !== undefined) {
-      await this.adminAuthService.revokeSession(sessionToken);
+      await this.authService.revokeSession(sessionToken);
     }
 
-    response.clearCookie(ADMIN_SESSION_COOKIE, this.cookieOptions);
+    response.clearCookie(AUTH_SESSION_COOKIE, this.cookieOptions);
   }
 
   @Get('me')
-  @UseGuards(AdminAuthGuard)
+  @UseGuards(AuthGuard)
   @Header('Cache-Control', 'no-store')
-  me(@Req() request: AuthenticatedAdminRequest): AdminAuthResponse {
-    return { admin: request.admin };
+  me(@Req() request: AuthenticatedUserRequest): AuthResponse {
+    return { user: request.user };
   }
 }
