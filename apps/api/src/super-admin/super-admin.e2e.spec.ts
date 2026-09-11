@@ -1,6 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { UserRole } from '@prisma/client';
+import { AdminEntitlementStatus, UserRole } from '@prisma/client';
 import { Test } from '@nestjs/testing';
 import { hash } from 'bcryptjs';
 import Redis from 'ioredis';
@@ -172,5 +172,73 @@ describe('Super-admin management (e2e)', () => {
     expect(JSON.stringify(audit?.metadata)).not.toContain(
       `${prefix}managed@example.test`,
     );
+  });
+
+  it('supports every entitlement transition and protects super admins and deleted users', async () => {
+    const root = request.agent(app.getHttpServer());
+    await root
+      .post('/api/auth/login')
+      .send({ username: superAdmin.username, password })
+      .expect(200);
+    const created = await root
+      .post('/api/super-admin/users')
+      .send({
+        username: `${prefix}transitions`,
+        password,
+        fullName: 'Transition User',
+        email: `${prefix}transitions@example.test`,
+        phone: '0900000003',
+      })
+      .expect(201);
+    const id = created.body.id as string;
+    const activate = (action: 'ACTIVATE' | 'ADJUST') =>
+      root.post(`/api/super-admin/users/${id}/admin-access`).send({
+        action,
+        activeFrom: '2030-01-01T00:00:00.000Z',
+        activeUntil: '2030-12-31T00:00:00.000Z',
+        tournamentLimit: 4,
+      });
+
+    await activate('ACTIVATE').expect(201);
+    await activate('ADJUST').expect(
+      ({ body }: { body: { entitlement: { status: string } } }) =>
+        expect(body.entitlement.status).toBe('ACTIVE'),
+    );
+    await root
+      .post(`/api/super-admin/users/${id}/admin-access`)
+      .send({ action: 'SUSPEND' })
+      .expect(201);
+    await activate('ACTIVATE').expect(
+      ({ body }: { body: { entitlement: { status: string } } }) =>
+        expect(body.entitlement.status).toBe('ACTIVE'),
+    );
+    await prisma.adminEntitlement.update({
+      where: { userId: id },
+      data: { status: AdminEntitlementStatus.EXPIRED },
+    });
+    await activate('ACTIVATE').expect(
+      ({ body }: { body: { entitlement: { status: string } } }) =>
+        expect(body.entitlement.status).toBe('ACTIVE'),
+    );
+    await root
+      .post(`/api/super-admin/users/${id}/admin-access`)
+      .send({ action: 'REVOKE' })
+      .expect(201);
+    await prisma.user
+      .findUniqueOrThrow({ where: { id } })
+      .then((user) => expect(user.role).toBe(UserRole.USER));
+    await activate('ACTIVATE').expect(
+      ({ body }: { body: { entitlement: { status: string } } }) =>
+        expect(body.entitlement.status).toBe('ACTIVE'),
+    );
+    await root
+      .post(`/api/super-admin/users/${superAdmin.id}/admin-access`)
+      .send({ action: 'ADJUST' })
+      .expect(403);
+    await root.delete(`/api/super-admin/users/${id}`).expect(200);
+    await root
+      .post(`/api/super-admin/users/${id}/admin-access`)
+      .send({ action: 'SUSPEND' })
+      .expect(409);
   });
 });

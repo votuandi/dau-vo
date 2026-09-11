@@ -9,10 +9,19 @@ import { formatDate, formatDateTime } from '@/features/admin-management/presenta
 import { ApiClientError } from '@/services/api/client';
 import { superAdminApi, type AdminAccessInput, type ManagedUser } from '@/services/api/super-admin';
 import { superAdminUserKeys } from './query-keys';
+import { localDateTimeInputToIso, toLocalDateTimeInput } from './local-date-time';
 
 type ProfileField = 'username' | 'fullName' | 'email' | 'phone' | 'organization';
 type ConfirmAction =
-  'deactivate' | 'reactivate' | 'delete' | 'restore' | 'suspend' | 'resume' | 'revoke' | null;
+  | 'deactivate'
+  | 'reactivate'
+  | 'delete'
+  | 'restore'
+  | 'suspend'
+  | 'resume'
+  | 'revoke'
+  | 'reactivateEntitlement'
+  | null;
 const fields: readonly ProfileField[] = ['username', 'fullName', 'email', 'phone', 'organization'];
 const labels: Record<ProfileField, string> = {
   username: 'Tên đăng nhập',
@@ -25,6 +34,8 @@ const codeText: Record<string, string> = {
   CANNOT_MODIFY_SELF: 'Không thể thực hiện thao tác này với chính tài khoản đang đăng nhập.',
   LAST_SUPER_ADMIN: 'Không thể thay đổi siêu quản trị viên đang hoạt động cuối cùng.',
   INVALID_ENTITLEMENT_PERIOD: 'Thời hạn quyền quản trị không hợp lệ.',
+  ENTITLEMENT_NOT_FOUND: 'Không tìm thấy quyền quản trị để thực hiện thao tác này.',
+  USER_DELETED: 'Hãy khôi phục người dùng trước khi thay đổi quyền quản trị.',
   CANNOT_CHANGE_SUPER_ADMIN_ENTITLEMENT:
     'Không thể thay đổi quyền quản trị của siêu quản trị viên.',
   USERNAME_ALREADY_EXISTS: 'Tên đăng nhập đã được sử dụng.',
@@ -41,15 +52,9 @@ function profileOf(user: ManagedUser): Record<ProfileField, string> {
     organization: user.organization ?? '',
   };
 }
-function localDateTime(value?: string | null): string {
-  return value ? new Date(value).toISOString().slice(0, 16) : '';
-}
-function iso(value: string): string {
-  return new Date(value).toISOString();
-}
 function errorMessage(error: unknown): string {
   return error instanceof ApiClientError
-    ? (codeText[error.body.code ?? ''] ?? error.body.message ?? 'Thao tác không thành công.')
+    ? (codeText[error.body.code ?? ''] ?? 'Thao tác không thành công.')
     : 'Thao tác không thành công.';
 }
 function money(value: number): string {
@@ -71,6 +76,7 @@ export function SuperAdminUserDetailPage() {
   const [values, setValues] = useState<Record<ProfileField, string> | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<ProfileField, string>>>({});
   const [confirm, setConfirm] = useState<ConfirmAction>(null);
+  const [pendingActivation, setPendingActivation] = useState<AdminAccessInput | null>(null);
   const invalidate = async () => {
     await cache.invalidateQueries({ queryKey: superAdminUserKeys.all });
     await cache.invalidateQueries({ queryKey: ['super-admin', 'users'] });
@@ -161,12 +167,17 @@ export function SuperAdminUserDetailPage() {
       });
       return;
     }
-    access.mutate({
-      action: entitlement ? 'ADJUST' : 'ACTIVATE',
-      activeFrom: iso(activeFrom),
-      activeUntil: iso(activeUntil),
+    const payload: AdminAccessInput = {
+      action: entitlement?.status === 'ACTIVE' ? 'ADJUST' : 'ACTIVATE',
+      activeFrom: localDateTimeInputToIso(activeFrom) ?? '',
+      activeUntil: localDateTimeInputToIso(activeUntil) ?? '',
       tournamentLimit: limit,
-    });
+    };
+    if (!payload.activeFrom || !payload.activeUntil) return;
+    if (entitlement?.status === 'REVOKED') {
+      setPendingActivation(payload);
+      setConfirm('reactivateEntitlement');
+    } else access.mutate(payload);
   }
   const busy = profile.isPending || action.isPending || access.isPending;
   const confirmCopy: Record<Exclude<ConfirmAction, null>, [string, string, string]> = {
@@ -196,7 +207,7 @@ export function SuperAdminUserDetailPage() {
       'Đình chỉ',
     ],
     resume: [
-      'Khôi phục quyền quản trị',
+      'Tiếp tục quyền ADMIN',
       'Khôi phục quyền quản trị khi thời hạn còn hợp lệ.',
       'Khôi phục quyền',
     ],
@@ -204,6 +215,11 @@ export function SuperAdminUserDetailPage() {
       'Thu hồi quyền quản trị',
       'Hạ về USER; quyền thay đổi dữ liệu bị mất, dữ liệu vẫn được giữ chỉ đọc 12 tháng.',
       'Thu hồi quyền',
+    ],
+    reactivateEntitlement: [
+      'Kích hoạt lại quyền ADMIN',
+      'Xác nhận cấp lại quyền ADMIN với thời hạn và giới hạn giải đấu đã nhập.',
+      'Kích hoạt lại',
     ],
   };
   return (
@@ -302,7 +318,7 @@ export function SuperAdminUserDetailPage() {
                 Bắt đầu
                 <input
                   className="mt-1 w-full rounded border p-2"
-                  defaultValue={localDateTime(entitlement?.activeFrom)}
+                  defaultValue={toLocalDateTimeInput(entitlement?.activeFrom)}
                   name="activeFrom"
                   required
                   type="datetime-local"
@@ -312,7 +328,7 @@ export function SuperAdminUserDetailPage() {
                 Hết hạn
                 <input
                   className="mt-1 w-full rounded border p-2"
-                  defaultValue={localDateTime(entitlement?.activeUntil)}
+                  defaultValue={toLocalDateTimeInput(entitlement?.activeUntil)}
                   name="activeUntil"
                   required
                   type="datetime-local"
@@ -331,11 +347,19 @@ export function SuperAdminUserDetailPage() {
               </label>
               <div className="md:col-span-3">
                 <Button disabled={busy || Boolean(user.deletedAt)} type="submit">
-                  {entitlement ? 'Lưu thời hạn và giới hạn' : 'Kích hoạt quyền ADMIN'}
+                  {entitlement?.status === 'ACTIVE'
+                    ? 'Lưu thời hạn và giới hạn'
+                    : entitlement?.status === 'SUSPENDED'
+                      ? 'Tiếp tục quyền ADMIN'
+                      : entitlement?.status === 'EXPIRED'
+                        ? 'Kích hoạt lại quyền ADMIN'
+                        : entitlement?.status === 'REVOKED'
+                          ? 'Kích hoạt lại quyền ADMIN'
+                          : 'Kích hoạt quyền ADMIN'}
                 </Button>
               </div>
             </form>
-            {entitlement ? (
+            {entitlement?.status === 'ACTIVE' || entitlement?.status === 'SUSPENDED' ? (
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button
                   disabled={busy || Boolean(user.deletedAt)}
@@ -469,6 +493,8 @@ export function SuperAdminUserDetailPage() {
                   tournamentLimit: entitlement.tournamentLimit,
                 },
               });
+            else if (confirm === 'reactivateEntitlement' && pendingActivation)
+              action.mutate({ kind: confirm, access: pendingActivation });
             else action.mutate({ kind: confirm });
           }}
           title={confirmCopy[confirm][0]}

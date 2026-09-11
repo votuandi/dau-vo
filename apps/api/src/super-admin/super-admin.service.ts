@@ -237,7 +237,7 @@ export class SuperAdminService {
       async (tx, user) => {
         if (user.deletedAt !== null)
           throw new ConflictException({ code: 'USER_DELETED' });
-        if (user.role === UserRole.SUPER_ADMIN && i.action !== 'ADJUST')
+        if (user.role === UserRole.SUPER_ADMIN)
           throw new ForbiddenException({
             code: 'CANNOT_CHANGE_SUPER_ADMIN_ENTITLEMENT',
           });
@@ -259,6 +259,8 @@ export class SuperAdminService {
             until <= from ||
             (i.tournamentLimit === undefined && !current))
         )
+          throw new BadRequestException({ code: 'INVALID_ENTITLEMENT_PERIOD' });
+        if (i.action === 'ACTIVATE' && until! <= now)
           throw new BadRequestException({ code: 'INVALID_ENTITLEMENT_PERIOD' });
         const status =
           i.action === 'ACTIVATE'
