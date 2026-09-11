@@ -50,6 +50,27 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
 
+  # Explicit one-shot production bootstrap. It is profile-gated so normal API
+  # restarts never run the seed or change the Super Admin password.
+  bootstrap:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    profiles: ['bootstrap']
+    restart: 'no'
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-martial_arts}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-martial_arts_scoring}?schema=public
+      INITIAL_SUPER_ADMIN_PASSWORD: ${INITIAL_SUPER_ADMIN_PASSWORD:?Set a non-default initial super-admin password}
+    depends_on:
+      postgres: { condition: service_healthy }
+    command:
+      [
+        'sh',
+        '-ec',
+        'pnpm --filter @martial-arts-scoring/api prisma:migrate:deploy && pnpm --filter @martial-arts-scoring/api prisma:seed && pnpm --filter @martial-arts-scoring/api prisma:verify:super-admin',
+      ]
+
   web:
     build:
       context: .

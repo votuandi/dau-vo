@@ -7,6 +7,7 @@ import {
   initialSuperAdminPassword,
   validateInitialPassword,
 } from './seed';
+import { verifyInitialSuperAdmin } from './verify-initial-super-admin';
 
 describe('initial super-admin seed', () => {
   const originalPassword = process.env.INITIAL_SUPER_ADMIN_PASSWORD;
@@ -164,5 +165,48 @@ describe('initial super-admin seed', () => {
         deletedAt: true,
       },
     });
+  });
+
+  it('verifies only an active, non-deleted SUPER_ADMIN account', async () => {
+    const { prisma } = prismaForUser({
+      id: 'verified-user-id',
+      passwordHash: 'not-used',
+      role: UserRole.SUPER_ADMIN,
+      isActive: true,
+      deletedAt: null,
+    });
+    await expect(verifyInitialSuperAdmin(prisma)).resolves.toBeUndefined();
+  });
+
+  it('rejects a missing, inactive, deleted, or non-super-admin account during verification', async () => {
+    for (const existing of [
+      null,
+      {
+        id: 'a',
+        passwordHash: 'x',
+        role: UserRole.ADMIN,
+        isActive: true,
+        deletedAt: null,
+      },
+      {
+        id: 'b',
+        passwordHash: 'x',
+        role: UserRole.SUPER_ADMIN,
+        isActive: false,
+        deletedAt: null,
+      },
+      {
+        id: 'c',
+        passwordHash: 'x',
+        role: UserRole.SUPER_ADMIN,
+        isActive: true,
+        deletedAt: new Date(),
+      },
+    ]) {
+      const { prisma } = prismaForUser(existing);
+      await expect(verifyInitialSuperAdmin(prisma)).rejects.toThrow(
+        'Initial super-admin verification failed',
+      );
+    }
   });
 });

@@ -46,7 +46,7 @@ docker compose ps
 Both services bind to the loopback interface only. The development credentials in
 `.env.example` are local-only and must not be reused in production.
 
-Apply database migrations, then create or refresh the initial super-admin:
+Apply database migrations, then run the idempotent initial super-admin seed:
 
 ```powershell
 pnpm --filter @martial-arts-scoring/api prisma:migrate
@@ -478,23 +478,85 @@ removing them is an explicit manual operation.
 Redis, NestJS, the compiled Vite static site, and an edge Nginx proxy. Copy
 `.env.example` to a separate
 `.env.production`, set non-default database credentials and independent 32+
-character session secrets, then set `WEB_ORIGIN` to the public HTTPS origin.
+character session secrets, set `WEB_ORIGIN` to the public HTTPS origin, and set
+`INITIAL_SUPER_ADMIN_PASSWORD` to a unique production secret. Never use
+`dauvo@123` outside local/staging, and never put the production password on a
+command line or in a committed file.
+
+### Initial production bootstrap (once per database)
+
+The `bootstrap` Compose service is a one-shot, profile-gated job. It waits for
+the PostgreSQL health check, runs `prisma migrate deploy`, runs the idempotent
+seed, and verifies that normalized `superadmin` is active, not deleted, and has
+role `SUPER_ADMIN`. It does not print the password or password hash. The normal
+`api` service runs migrations on startup but never runs this seed, so routine API
+restarts cannot reset the Super Admin password.
+
+Run these commands in order after storing the production secrets in
+`.env.production`:
 
 ```powershell
-docker compose --env-file .env.production up --build -d
+# 1. Start only dependencies and wait for PostgreSQL/Redis health checks.
+docker compose --env-file .env.production up --build -d postgres redis
+docker compose --env-file .env.production ps
+
+# 2. Run the explicit, one-shot database bootstrap. A non-zero exit stops at
+# the failing migration, seed, or verification step.
+docker compose --env-file .env.production --profile bootstrap run --rm bootstrap
+
+# 3. Start the application only after bootstrap succeeds.
+docker compose --env-file .env.production up --build -d api web nginx
 docker compose --env-file .env.production ps
 ```
+
+The bootstrap deliberately fails before making seed changes when
+`INITIAL_SUPER_ADMIN_PASSWORD` is missing or equals the public default in a
+production environment. It also fails clearly when migration deployment, seeding,
+or account verification fails. It is safe to run again against an already-seeded
+database with the same bootstrap secret: migrations remain applied, the seed
+retains the matching hash, and verification passes. Treat changing this bootstrap
+secret as a deliberate credential-rotation action, not a routine deployment step.
+
+### Production verification
+
+Use the following post-bootstrap checks; none display a password or hash:
+
+```powershell
+# Service status and applied-migration status.
+docker compose --env-file .env.production ps
+docker compose --env-file .env.production --profile bootstrap run --rm --no-deps bootstrap pnpm --filter @martial-arts-scoring/api prisma:migrate:status
+
+# Confirm seed completion/account state without exposing credentials.
+docker compose --env-file .env.production --profile bootstrap run --rm --no-deps bootstrap pnpm --filter @martial-arts-scoring/api prisma:verify:super-admin
+```
+
+For an authenticated API check, enter the password at the prompt (it is not
+echoed or included in shell history), then reuse the returned HTTP-only session:
+
+```powershell
+$baseUrl = 'https://score.example.com' # Replace with the deployed public origin.
+$securePassword = Read-Host 'Super Admin password' -AsSecureString
+$password = [System.Net.NetworkCredential]::new('', $securePassword).Password
+$body = @{ username = 'superadmin'; password = $password } | ConvertTo-Json
+$login = Invoke-WebRequest -Method Post -Uri "$baseUrl/api/auth/login" -ContentType 'application/json' -Body $body -SessionVariable session
+$password = $null
+Invoke-RestMethod -Uri "$baseUrl/api/auth/me" -WebSession $session
+```
+
+The final response must show `user.role` as `SUPER_ADMIN`. In a browser using the
+same production origin, sign in as `superadmin`; the role-aware landing page must
+be `/super-admin`, where the Super Admin navigation is visible. This verifies both
+the browser session and role-aware navigation. Before production rollout, rehearse
+steps 1–3 against a fresh staging database, then rerun step 2 unchanged against
+that already-seeded database; both bootstrap runs must succeed.
 
 Nginx proxies `/api` and `/api/socket.io` with HTTP upgrade headers, while the
 web container serves the immutable React build. Put an HTTPS-capable reverse
 proxy or load balancer in front of Nginx and forward `X-Forwarded-Proto: https`;
 the browser will then use HTTPS/WSS on the single public origin. Do not expose
-PostgreSQL or Redis ports in production. Run migrations as part of the API
-startup only after backing up the database and reviewing the checked-in Prisma
-migrations. Run the idempotent seed after migrations complete successfully; it
-creates or restores the normalized `superadmin` as an active, non-deleted
-`SUPER_ADMIN`, but is never a migration
-prerequisite.
+PostgreSQL or Redis ports in production. Back up the database and review the
+checked-in Prisma migrations before the one-shot bootstrap. The API's restart-safe
+migration deployment remains separate from Super Admin seeding.
 
 See [the release-readiness runbook](docs/release-readiness.md) for the permission
 matrix, complete endpoint and Socket.IO contract, retention operation, migration

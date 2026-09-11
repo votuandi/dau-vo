@@ -61,7 +61,15 @@ The PostgreSQL transaction advisory lock permits multiple API instances and manu
 
 ## Migrations and deployment
 
-Execute checked-in migrations in lexicographic order with `prisma:migrate:deploy`. Take and verify a PostgreSQL backup first. Do not use `migrate dev` in production. Only after a successful migration deployment, run the idempotent `prisma:seed`; it creates/reactivates `superadmin` with `SUPER_ADMIN` and is not a migration dependency. The API container runs `migrate deploy` before it starts; the lifecycle processor is part of the API process and uses the same database lock across replicas.
+Take and verify a PostgreSQL backup first. Do not use `migrate dev` in production.
+Use the profile-gated `bootstrap` Compose service documented in the README for a
+new production database: it waits for PostgreSQL, runs checked-in migrations,
+runs the idempotent seed, then verifies normalized `superadmin` is active,
+non-deleted, and `SUPER_ADMIN`. The API container runs `migrate deploy` before it
+starts but never runs the seed, so routine restarts cannot reset the Super Admin
+password. The bootstrap fails for a missing/default production initial password
+and for migration, seed, or verification errors. The lifecycle processor is part
+of the API process and uses the same database lock across replicas.
 
 ### Tournament ownership migration rollout
 
