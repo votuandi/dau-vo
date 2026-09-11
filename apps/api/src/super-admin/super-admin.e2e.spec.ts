@@ -118,10 +118,15 @@ describe('Super-admin management (e2e)', () => {
         fullName: 'Managed User',
         email: `${prefix}managed@example.test`,
         phone: '0900000002',
+        organization: 'Private Dojo',
       })
       .expect(201);
     expect(created.body.role).toBe(UserRole.USER);
     const id = created.body.id as string;
+    await root
+      .patch(`/api/super-admin/users/${id}`)
+      .send({ fullName: 'Changed Managed User', organization: 'Changed Dojo' })
+      .expect(200);
     await root
       .get('/api/super-admin/users?page=1&pageSize=1&role=USER')
       .expect(200)
@@ -164,15 +169,34 @@ describe('Super-admin management (e2e)', () => {
       .send({ username: `${prefix}managed`, password })
       .expect(401);
     await root.post(`/api/super-admin/users/${id}/restore`).expect(201);
-    const audit = await prisma.auditLog.findFirst({
-      where: { adminUserId: superAdmin.id },
+    const audits = await prisma.auditLog.findMany({
+      where: { adminUserId: superAdmin.id, eventType: 'ADMIN_ACTION' },
       orderBy: { createdAt: 'desc' },
     });
-    expect(JSON.stringify(audit?.metadata)).not.toContain(password);
-    expect(JSON.stringify(audit?.metadata)).not.toContain(
-      `${prefix}managed@example.test`,
+    const audit = audits.find(
+      ({ metadata }) =>
+        (metadata as { action?: string; targetUserId?: string }).action ===
+          'SUPER_ADMIN_USER_RESTORED' &&
+        (metadata as { targetUserId?: string }).targetUserId === id,
     );
-    expect(JSON.stringify(audit?.metadata)).not.toContain('0900000002');
+    expect(audit).toBeDefined();
+    const serialized = JSON.stringify(audit?.metadata);
+    expect(serialized).not.toContain(password);
+    expect(serialized).not.toContain(`${prefix}managed@example.test`);
+    expect(serialized).not.toContain('0900000002');
+    expect(serialized).not.toContain('Changed Managed User');
+    expect(serialized).not.toContain('Changed Dojo');
+    expect(serialized).not.toContain('Private Dojo');
+    expect(serialized).not.toContain('undefined');
+    const updateAudit = audits.find(
+      ({ metadata }) =>
+        (metadata as { action?: string; targetUserId?: string }).action ===
+          'SUPER_ADMIN_USER_UPDATED' &&
+        (metadata as { targetUserId?: string }).targetUserId === id,
+    );
+    expect(updateAudit?.metadata).toMatchObject({
+      after: { changedFields: ['fullName', 'organization'] },
+    });
   });
 
   it('creates ADMIN users atomically with their initial entitlement', async () => {
@@ -345,6 +369,46 @@ describe('Super-admin management (e2e)', () => {
       })
       .expect(201);
     const id = created.body.id as string;
+    const accessAudit = async (
+      status: AdminEntitlementStatus,
+      role: UserRole,
+    ) => {
+      const audits = await prisma.auditLog.findMany({
+        where: { adminUserId: superAdmin.id, eventType: 'ADMIN_ACTION' },
+        orderBy: { createdAt: 'desc' },
+      });
+      const audit = audits.find(({ metadata }) => {
+        const value = metadata as {
+          action?: string;
+          targetUserId?: string;
+        };
+        return (
+          value.action === 'SUPER_ADMIN_ADMIN_ACCESS_CHANGED' &&
+          value.targetUserId === id
+        );
+      });
+      expect(audit).toBeDefined();
+      const metadata = audit?.metadata as {
+        before: Record<string, unknown>;
+        after: Record<string, unknown>;
+      };
+      expect(metadata.after).toMatchObject({
+        userId: id,
+        role,
+        isActive: true,
+        deletedAt: null,
+        entitlement: {
+          status,
+          activeFrom: expect.any(String),
+          activeUntil: expect.any(String),
+          tournamentLimit: 4,
+        },
+      });
+      expect(Object.keys(metadata.before).sort()).toEqual(
+        Object.keys(metadata.after).sort(),
+      );
+      expect(JSON.stringify(metadata)).not.toContain('undefined');
+    };
     const activate = (action: 'ACTIVATE' | 'ADJUST') =>
       root.post(`/api/super-admin/users/${id}/admin-access`).send({
         action,
@@ -354,18 +418,22 @@ describe('Super-admin management (e2e)', () => {
       });
 
     await activate('ACTIVATE').expect(201);
+    await accessAudit(AdminEntitlementStatus.ACTIVE, UserRole.ADMIN);
     await activate('ADJUST').expect(
       ({ body }: { body: { entitlement: { status: string } } }) =>
         expect(body.entitlement.status).toBe('ACTIVE'),
     );
+    await accessAudit(AdminEntitlementStatus.ACTIVE, UserRole.ADMIN);
     await root
       .post(`/api/super-admin/users/${id}/admin-access`)
       .send({ action: 'SUSPEND' })
       .expect(201);
+    await accessAudit(AdminEntitlementStatus.SUSPENDED, UserRole.ADMIN);
     await activate('ACTIVATE').expect(
       ({ body }: { body: { entitlement: { status: string } } }) =>
         expect(body.entitlement.status).toBe('ACTIVE'),
     );
+    await accessAudit(AdminEntitlementStatus.ACTIVE, UserRole.ADMIN);
     await prisma.adminEntitlement.update({
       where: { userId: id },
       data: { status: AdminEntitlementStatus.EXPIRED },
@@ -374,10 +442,12 @@ describe('Super-admin management (e2e)', () => {
       ({ body }: { body: { entitlement: { status: string } } }) =>
         expect(body.entitlement.status).toBe('ACTIVE'),
     );
+    await accessAudit(AdminEntitlementStatus.ACTIVE, UserRole.ADMIN);
     await root
       .post(`/api/super-admin/users/${id}/admin-access`)
       .send({ action: 'REVOKE' })
       .expect(201);
+    await accessAudit(AdminEntitlementStatus.REVOKED, UserRole.USER);
     await prisma.user
       .findUniqueOrThrow({ where: { id } })
       .then((user) => expect(user.role).toBe(UserRole.USER));
@@ -385,6 +455,7 @@ describe('Super-admin management (e2e)', () => {
       ({ body }: { body: { entitlement: { status: string } } }) =>
         expect(body.entitlement.status).toBe('ACTIVE'),
     );
+    await accessAudit(AdminEntitlementStatus.ACTIVE, UserRole.ADMIN);
     await root
       .post(`/api/super-admin/users/${superAdmin.id}/admin-access`)
       .send({ action: 'ADJUST' })

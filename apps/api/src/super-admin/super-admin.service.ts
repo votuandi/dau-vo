@@ -58,6 +58,20 @@ const select = {
   },
 } satisfies Prisma.UserSelect;
 type Safe = Prisma.UserGetPayload<{ select: typeof select }>;
+type AuditSnapshot = {
+  userId: string;
+  role: UserRole;
+  isActive: boolean;
+  deletedAt: Date | null;
+  entitlement: {
+    status: AdminEntitlementStatus;
+    activeFrom: Date;
+    activeUntil: Date;
+    tournamentLimit: number;
+  } | null;
+  changedFields: string[];
+};
+type MutationResult<T> = { result: T; auditAfter: AuditSnapshot };
 @Injectable()
 export class SuperAdminService {
   constructor(
@@ -178,7 +192,7 @@ export class SuperAdminService {
           'SUPER_ADMIN_USER_CREATED',
           created.id,
           null,
-          created,
+          this.snapshot(created),
         );
         return created;
       });
@@ -199,7 +213,7 @@ export class SuperAdminService {
           throw new ForbiddenException({ code: 'CANNOT_MODIFY_SELF' });
         if (before.role === UserRole.SUPER_ADMIN && i.isActive === false)
           await this.canRemove(tx);
-        return tx.user.update({
+        const result = await tx.user.update({
           where: { id },
           data: {
             ...(i.username !== undefined
@@ -230,6 +244,10 @@ export class SuperAdminService {
           },
           select,
         });
+        return {
+          result,
+          auditAfter: this.snapshot(result, this.changedProfileFields(i)),
+        };
       },
     );
   }
@@ -250,21 +268,29 @@ export class SuperAdminService {
             adminAccessEndedAt: new Date(),
           },
         });
-        return tx.user.update({
+        const result = await tx.user.update({
           where: { id },
           data: { deletedAt: new Date(), isActive: false },
           select,
         });
+        return { result, auditAfter: this.snapshot(result) };
       },
     );
   }
   async restore(id: string, reason: string | undefined, a: AuthenticatedUser) {
-    return this.mutate(id, a, 'SUPER_ADMIN_USER_RESTORED', reason, (tx) =>
-      tx.user.update({
-        where: { id },
-        data: { deletedAt: null, isActive: false },
-        select,
-      }),
+    return this.mutate(
+      id,
+      a,
+      'SUPER_ADMIN_USER_RESTORED',
+      reason,
+      async (tx) => {
+        const result = await tx.user.update({
+          where: { id },
+          data: { deletedAt: null, isActive: false },
+          select,
+        });
+        return { result, auditAfter: this.snapshot(result) };
+      },
     );
   }
   async access(id: string, i: AdminAccessDto, a: AuthenticatedUser) {
@@ -342,9 +368,15 @@ export class SuperAdminService {
             where: { id },
             data: { role: UserRole.USER },
           });
+        const updatedUser = await tx.user.findUniqueOrThrow({
+          where: { id },
+          select,
+        });
         return {
-          user: await tx.user.findUniqueOrThrow({ where: { id }, select }),
-          entitlement,
+          result: { user: updatedUser, entitlement },
+          // Use the persisted user and entitlement explicitly; never rely on
+          // the response wrapper being interpreted as a user record.
+          auditAfter: this.snapshot(updatedUser, []),
         };
       },
     );
@@ -354,16 +386,24 @@ export class SuperAdminService {
     a: AuthenticatedUser,
     action: string,
     reason: string | undefined,
-    op: (tx: Prisma.TransactionClient, b: Safe) => Promise<T>,
+    op: (tx: Prisma.TransactionClient, b: Safe) => Promise<MutationResult<T>>,
   ): Promise<T> {
     try {
       return await this.prisma.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(731091)`;
         const before = await tx.user.findUnique({ where: { id }, select });
         if (!before) throw new NotFoundException({ code: 'USER_NOT_FOUND' });
-        const after = await op(tx, before);
-        await this.audit(tx, a.id, action, id, before, after, reason);
-        return after;
+        const mutation = await op(tx, before);
+        await this.audit(
+          tx,
+          a.id,
+          action,
+          id,
+          this.snapshot(before),
+          mutation.auditAfter,
+          reason,
+        );
+        return mutation.result;
       });
     } catch (e) {
       this.unique(e);
@@ -382,42 +422,10 @@ export class SuperAdminService {
     actor: string,
     action: string,
     target: string,
-    before: unknown,
-    after: unknown,
+    before: AuditSnapshot | null,
+    after: AuditSnapshot,
     reason?: string,
   ) {
-    // Audit the authorization-relevant change, not an entire user record.  In
-    // particular, profiles can contain contact data and must never turn into an
-    // implicit copy of PII in the audit log.
-    const safeSnapshot = (value: unknown) => {
-      if (!value || typeof value !== 'object') return value;
-      const user = value as {
-        id?: unknown;
-        role?: unknown;
-        isActive?: unknown;
-        deletedAt?: unknown;
-        adminEntitlement?: {
-          status?: unknown;
-          activeFrom?: unknown;
-          activeUntil?: unknown;
-          tournamentLimit?: unknown;
-        } | null;
-      };
-      return {
-        id: user.id,
-        role: user.role,
-        isActive: user.isActive,
-        deletedAt: user.deletedAt,
-        adminEntitlement: user.adminEntitlement
-          ? {
-              status: user.adminEntitlement.status,
-              activeFrom: user.adminEntitlement.activeFrom,
-              activeUntil: user.adminEntitlement.activeUntil,
-              tournamentLimit: user.adminEntitlement.tournamentLimit,
-            }
-          : null,
-      };
-    };
     await tx.auditLog.create({
       data: {
         adminUserId: actor,
@@ -426,11 +434,42 @@ export class SuperAdminService {
           action,
           targetUserId: target,
           reason: reason?.trim() || null,
-          before: safeSnapshot(before),
-          after: safeSnapshot(after),
+          before,
+          after,
         } as Prisma.InputJsonValue,
       },
     });
+  }
+  /** The sole audit schema: authorization state plus safe field names only. */
+  private snapshot(user: Safe, changedFields: string[] = []): AuditSnapshot {
+    const entitlement = user.adminEntitlement;
+    return {
+      userId: user.id,
+      role: user.role,
+      isActive: user.isActive,
+      deletedAt: user.deletedAt,
+      entitlement: entitlement
+        ? {
+            status: entitlement.status,
+            activeFrom: entitlement.activeFrom,
+            activeUntil: entitlement.activeUntil,
+            tournamentLimit: entitlement.tournamentLimit,
+          }
+        : null,
+      changedFields,
+    };
+  }
+  private changedProfileFields(i: UpdateSuperAdminUserDto): string[] {
+    return [
+      'username',
+      'fullName',
+      'email',
+      'phone',
+      'organization',
+      'isActive',
+    ].filter(
+      (field) => i[field as keyof UpdateSuperAdminUserDto] !== undefined,
+    );
   }
   private phone(v: string) {
     return this.identities.phone(v).length >= 6;
