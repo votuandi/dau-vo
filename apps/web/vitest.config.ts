@@ -1,15 +1,19 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, URL } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
-const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
-
 export default defineConfig({
   plugins: [react()],
-  resolve: { alias: { '@': path.resolve(currentDirectory, 'src') } },
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
   test: {
+    clearMocks: true,
     environment: 'jsdom',
+    mockReset: true,
+    restoreMocks: true,
     setupFiles: ['./src/test/setup.ts'],
   },
 });

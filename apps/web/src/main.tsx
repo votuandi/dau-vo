@@ -5,10 +5,13 @@ import { AppProviders } from '@/app/providers/app-providers';
 import { router } from '@/app/router/router';
 import '@/styles/globals.css';
 
-const root = document.getElementById('root');
-if (!root) throw new Error('Root element not found');
+const rootElement = document.getElementById('root');
 
-createRoot(root).render(
+if (!rootElement) {
+  throw new Error('Unable to find the application root element.');
+}
+
+createRoot(rootElement).render(
   <StrictMode>
     <AppProviders>
       <RouterProvider router={router} />

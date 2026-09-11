@@ -1,21 +1,118 @@
-import type { ApiErrorBody } from '@dau-vo/shared-types';
-import { useClientSessionStore } from '@/stores/client-session-store';
-export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/$/, '');
-export class ApiClientError extends Error { readonly status: number; readonly body: ApiErrorBody; constructor(status: number, body: ApiErrorBody) { super(body.message || 'Request failed'); this.name = 'ApiClientError'; this.status = status; this.body = body; } }
-type Options = Omit<RequestInit, 'body' | 'signal'> & {
-  body?: unknown | undefined;
-  signal?: AbortSignal | null | undefined;
-  matchAuthenticated?: boolean | undefined;
-};
-function isError(value: unknown): value is ApiErrorBody { return Boolean(value && typeof value === 'object' && 'code' in value && typeof (value as { code?: unknown }).code === 'string'); }
-export async function apiRequest<T>(path: string, options: Options = {}): Promise<T> {
-  const { body, matchAuthenticated, ...requestInit } = options;
-  const headers = new Headers(options.headers); headers.set('Accept', 'application/json'); if (body !== undefined) headers.set('Content-Type', 'application/json');
-  if (matchAuthenticated) { const token = useClientSessionStore.getState().matchSession?.sessionToken; if (token) headers.set('Authorization', `Bearer ${token}`); }
-  const init: RequestInit = { ...requestInit, credentials: 'include', headers };
-  if (body !== undefined) init.body = JSON.stringify(body);
-  let response: Response; try { response = await fetch(`${API_BASE_URL}${path}`, init); } catch { throw new ApiClientError(0, { code: 'INTERNAL_ERROR', message: 'Network request failed' }); }
-  if (response.status === 204) return undefined as T;
-  const raw: unknown = await response.json().catch(() => null); if (!response.ok) throw new ApiClientError(response.status, isError(raw) ? raw : { code: 'INTERNAL_ERROR', message: response.statusText || 'Request failed' }); return raw as T;
+import { appEnv } from '@/config/env';
+
+export interface ApiErrorBody {
+  readonly code?: string;
+  readonly message?: string;
+  readonly [key: string]: unknown;
 }
-export function collectionItems<T>(value: T[] | { items: T[] }): T[] { return Array.isArray(value) ? value : value.items; }
+
+export interface ApiRequestOptions<TBody = unknown> extends Omit<RequestInit, 'body'> {
+  readonly body?: TBody;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function toErrorBody(payload: unknown): ApiErrorBody {
+  if (isRecord(payload)) {
+    return payload;
+  }
+
+  return typeof payload === 'string' && payload.length > 0 ? { message: payload } : {};
+}
+
+async function readResponseBody(response: Response): Promise<unknown> {
+  if (response.status === 204) {
+    return undefined;
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    try {
+      return (await response.json()) as unknown;
+    } catch {
+      return undefined;
+    }
+  }
+
+  const text = await response.text();
+  return text || undefined;
+}
+
+function serializeBody(body: unknown, headers: Headers): BodyInit {
+  if (typeof body === 'string' || body instanceof Blob || body instanceof FormData) {
+    return body;
+  }
+
+  if (body instanceof URLSearchParams) {
+    return body;
+  }
+
+  if (!headers.has('content-type')) {
+    headers.set('content-type', 'application/json');
+  }
+
+  return JSON.stringify(body);
+}
+
+function resolveEndpoint(path: string): string {
+  if (/^https?:\/\//u.test(path)) {
+    return path;
+  }
+
+  return `${appEnv.apiBaseUrl}/${path.replace(/^\/+/, '')}`;
+}
+
+export class ApiClientError extends Error {
+  readonly status: number;
+  readonly body: ApiErrorBody;
+
+  constructor(status: number, body: ApiErrorBody) {
+    super(body.message ?? `API request failed with status ${String(status)}.`);
+    this.name = 'ApiClientError';
+    this.status = status;
+    this.body = body;
+  }
+}
+
+export async function request<TResponse, TBody = never>(
+  path: string,
+  options: ApiRequestOptions<TBody> = {},
+): Promise<TResponse> {
+  const { body, headers: headerInit, ...requestInit } = options;
+  const headers = new Headers(headerInit);
+  const init: RequestInit = {
+    ...requestInit,
+    credentials: requestInit.credentials ?? 'include',
+    headers,
+  };
+
+  if (body !== undefined) {
+    init.body = serializeBody(body, headers);
+  }
+
+  const response = await fetch(resolveEndpoint(path), init);
+  const payload = await readResponseBody(response);
+
+  if (!response.ok) {
+    throw new ApiClientError(response.status, toErrorBody(payload));
+  }
+
+  return payload as TResponse;
+}
+
+type RequestOptionsWithoutBody = Omit<ApiRequestOptions<never>, 'body' | 'method'>;
+
+export const apiClient = {
+  get: <TResponse>(path: string, options: RequestOptionsWithoutBody = {}) =>
+    request<TResponse>(path, { ...options, method: 'GET' }),
+  post: <TResponse>(path: string, body: unknown, options: RequestOptionsWithoutBody = {}) =>
+    request<TResponse, unknown>(path, { ...options, body, method: 'POST' }),
+  put: <TResponse>(path: string, body: unknown, options: RequestOptionsWithoutBody = {}) =>
+    request<TResponse, unknown>(path, { ...options, body, method: 'PUT' }),
+  patch: <TResponse>(path: string, body: unknown, options: RequestOptionsWithoutBody = {}) =>
+    request<TResponse, unknown>(path, { ...options, body, method: 'PATCH' }),
+  delete: <TResponse>(path: string, options: RequestOptionsWithoutBody = {}) =>
+    request<TResponse>(path, { ...options, method: 'DELETE' }),
+};

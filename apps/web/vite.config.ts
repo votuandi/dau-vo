@@ -1,12 +1,53 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, URL } from 'node:url';
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 
-const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
+const workspaceRoot = fileURLToPath(new URL('../..', import.meta.url));
 
-export default defineConfig({
-  plugins: [react()],
-  resolve: { alias: { '@': path.resolve(currentDirectory, 'src') } },
-  server: { port: 5173 },
+function environmentValue(value: string | undefined, fallback: string): string {
+  const normalized = value?.trim();
+
+  if (normalized === undefined || normalized.length === 0) {
+    return fallback;
+  }
+
+  return normalized;
+}
+
+export default defineConfig(({ mode }) => {
+  const environment = loadEnv(mode, workspaceRoot, '');
+  const apiPort = environmentValue(environment.API_PORT, '3000');
+  const backendTarget = environmentValue(
+    environment.VITE_DEV_SERVER_TARGET,
+    `http://localhost:${apiPort}`,
+  );
+
+  return {
+    build: {
+      commonjsOptions: {
+        include: [/node_modules/, /packages[\\/]shared-types[\\/]dist/],
+      },
+    },
+    envDir: workspaceRoot,
+    optimizeDeps: {
+      include: ['@martial-arts-scoring/shared-types'],
+    },
+    plugins: [react()],
+    resolve: {
+      alias: {
+        '@': fileURLToPath(new URL('./src', import.meta.url)),
+      },
+    },
+    server: {
+      host: '0.0.0.0',
+      port: 5173,
+      proxy: {
+        '/api': {
+          changeOrigin: true,
+          target: backendTarget,
+          ws: true,
+        },
+      },
+    },
+  };
 });
