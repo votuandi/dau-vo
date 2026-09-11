@@ -2,100 +2,98 @@ import { Buffer } from 'node:buffer';
 import { resolve } from 'node:path';
 import process from 'node:process';
 
-import { PrismaClient } from '@prisma/client';
-import { hash } from 'bcryptjs';
+import { compare, hash } from 'bcryptjs';
+import { PrismaClient, UserRole } from '@prisma/client';
 import { config as loadEnvironment } from 'dotenv';
 
 const BCRYPT_COST = 12;
-const MAX_USERNAME_LENGTH = 100;
+const DEFAULT_SUPER_ADMIN_PASSWORD = 'dauvo@123';
+const INITIAL_SUPER_ADMIN_PASSWORD = 'INITIAL_SUPER_ADMIN_PASSWORD';
 const MAX_BCRYPT_PASSWORD_BYTES = 72;
+export const INITIAL_SUPER_ADMIN_USERNAME = 'superadmin';
 
 const apiDirectory = process.cwd();
-
-// Prefer process and API-local values, then fill any missing values from the
-// monorepo root environment file used by the rest of the application.
 loadEnvironment({ path: resolve(apiDirectory, '.env') });
 loadEnvironment({ path: resolve(apiDirectory, '../../.env') });
 
-function requireEnvironmentValue(
-  name: 'SEED_ADMIN_PASSWORD' | 'SEED_ADMIN_USERNAME',
-): string {
-  const value = process.env[name];
-
-  if (!value || value.trim().length === 0) {
-    throw new Error(`${name} must be a non-empty string`);
-  }
-
-  return name === 'SEED_ADMIN_USERNAME' ? value.trim() : value;
+function nodeEnvironment(): string {
+  return process.env.NODE_ENV?.trim().toLowerCase() ?? 'development';
 }
 
-function validateUsername(username: string): void {
-  if (username.length > MAX_USERNAME_LENGTH) {
-    throw new Error(
-      `SEED_ADMIN_USERNAME must not exceed ${MAX_USERNAME_LENGTH} characters`,
-    );
-  }
-
-  if (!/^[a-zA-Z0-9._-]+$/u.test(username)) {
-    throw new Error(
-      'SEED_ADMIN_USERNAME may contain only letters, numbers, periods, underscores, and hyphens',
-    );
-  }
-}
-
-function validatePassword(password: string): void {
-  if (password.length < 8) {
-    throw new Error('SEED_ADMIN_PASSWORD must contain at least 8 characters');
-  }
-
-  if (Buffer.byteLength(password, 'utf8') > MAX_BCRYPT_PASSWORD_BYTES) {
-    throw new Error(
-      `SEED_ADMIN_PASSWORD must not exceed ${MAX_BCRYPT_PASSWORD_BYTES} UTF-8 bytes`,
-    );
-  }
-}
-
-function assertDevelopmentEnvironment(): void {
-  const environment =
-    process.env.NODE_ENV?.trim().toLowerCase() ?? 'development';
+export function initialSuperAdminPassword(environment = nodeEnvironment()): string {
+  const configured = process.env[INITIAL_SUPER_ADMIN_PASSWORD];
 
   if (environment === 'production') {
-    throw new Error(
-      'The development admin seed is disabled when NODE_ENV=production',
-    );
+    if (configured === undefined || configured.trim().length === 0) {
+      throw new Error(`${INITIAL_SUPER_ADMIN_PASSWORD} must be set in production`);
+    }
+    if (configured === DEFAULT_SUPER_ADMIN_PASSWORD) {
+      throw new Error(`${INITIAL_SUPER_ADMIN_PASSWORD} must not use the public default in production`);
+    }
+    return configured;
+  }
+
+  return configured && configured.length > 0 ? configured : DEFAULT_SUPER_ADMIN_PASSWORD;
+}
+
+export function validateInitialPassword(password: string): void {
+  if (password.length < 8) {
+    throw new Error(`${INITIAL_SUPER_ADMIN_PASSWORD} must contain at least 8 characters`);
+  }
+  if (Buffer.byteLength(password, 'utf8') > MAX_BCRYPT_PASSWORD_BYTES) {
+    throw new Error(`${INITIAL_SUPER_ADMIN_PASSWORD} must not exceed ${MAX_BCRYPT_PASSWORD_BYTES} UTF-8 bytes`);
   }
 }
 
-async function seedDevelopmentAdmin(): Promise<void> {
-  assertDevelopmentEnvironment();
+export async function ensureInitialSuperAdmin(
+  prisma: Pick<PrismaClient, 'user'>,
+  password: string,
+): Promise<void> {
+  validateInitialPassword(password);
+  const existing = await prisma.user.findUnique({
+    where: { normalizedUsername: INITIAL_SUPER_ADMIN_USERNAME },
+    select: { id: true, passwordHash: true },
+  });
 
-  const username = requireEnvironmentValue('SEED_ADMIN_USERNAME');
-  const password = requireEnvironmentValue('SEED_ADMIN_PASSWORD');
-
-  validateUsername(username);
-  validatePassword(password);
-
-  const passwordHash = await hash(password, BCRYPT_COST);
-  const prisma = new PrismaClient();
-
-  try {
-    await prisma.user.upsert({
-      where: { normalizedUsername: username.toLowerCase() },
-      update: { passwordHash, isActive: true },
-      create: { username, normalizedUsername: username.toLowerCase(), passwordHash, role: 'ADMIN' },
+  if (existing === null) {
+    await prisma.user.create({
+      data: {
+        isActive: true,
+        normalizedUsername: INITIAL_SUPER_ADMIN_USERNAME,
+        passwordHash: await hash(password, BCRYPT_COST),
+        role: UserRole.SUPER_ADMIN,
+        username: INITIAL_SUPER_ADMIN_USERNAME,
+      },
     });
+    return;
+  }
 
-    process.stdout.write(
-      `Development admin seeded for username "${username}".\n`,
-    );
+  const passwordMatches = await compare(password, existing.passwordHash);
+  await prisma.user.update({
+    where: { id: existing.id },
+    data: {
+      isActive: true,
+      role: UserRole.SUPER_ADMIN,
+      ...(passwordMatches ? {} : { passwordHash: await hash(password, BCRYPT_COST) }),
+    },
+  });
+}
+
+async function seedInitialSuperAdmin(): Promise<void> {
+  const password = initialSuperAdminPassword();
+  const prisma = new PrismaClient();
+  try {
+    await ensureInitialSuperAdmin(prisma, password);
+    process.stdout.write('Initial super admin ensured.\n');
   } finally {
     await prisma.$disconnect();
   }
 }
 
-void seedDevelopmentAdmin().catch((error: unknown) => {
-  const message =
-    error instanceof Error ? error.message : 'Unknown seed failure';
-  process.stderr.write(`Unable to seed the development admin: ${message}\n`);
-  process.exitCode = 1;
-});
+if (process.env.JEST_WORKER_ID === undefined) {
+  void seedInitialSuperAdmin().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : 'Unknown seed failure';
+    process.stderr.write(`Unable to seed initial super admin: ${message}\n`);
+    process.exitCode = 1;
+  });
+}

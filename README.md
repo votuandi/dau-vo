@@ -46,7 +46,7 @@ docker compose ps
 Both services bind to the loopback interface only. The development credentials in
 `.env.example` are local-only and must not be reused in production.
 
-Apply database migrations, then create or refresh the local development admin:
+Apply database migrations, then create or refresh the initial super-admin:
 
 ```powershell
 pnpm --filter @martial-arts-scoring/api prisma:migrate
@@ -57,11 +57,13 @@ The API's Prisma scripts load the monorepo-root `.env`. In a deployed environmen
 apply the checked-in migrations non-interactively with
 `pnpm --filter @martial-arts-scoring/api prisma:migrate:deploy`.
 
-The seed validates `SEED_ADMIN_USERNAME` and `SEED_ADMIN_PASSWORD`, hashes the
-password with bcrypt, and upserts by username, so it is safe to rerun against a
-development database. It refuses to run when `NODE_ENV=production`. The
-`change-me` password in `.env.example` is intentionally local-only and must be
-replaced before seeding.
+The seed ensures the normalized `superadmin` identity exists exactly once, is
+active, and has role `SUPER_ADMIN`. It uses bcrypt cost 12 and retains a matching
+password hash on repeated runs. `dauvo@123` is a local/staging default only; in
+production, `INITIAL_SUPER_ADMIN_PASSWORD` is required and may not use that public
+default. The system account intentionally has no email or phone under the Phase 1
+legacy/system-account compatibility policy. Password-change-on-first-login is a
+follow-up because the schema does not yet track that requirement.
 
 Start the API and web development servers together:
 
@@ -366,8 +368,7 @@ and the creation audit event in a single transaction.
 | `MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS`       | `100`                            | Attempts per client address/window              |
 | `MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS`        | `60`                             | Participant-auth throttle window                |
 | `MATCH_PUBLIC_ID_INITIAL_LENGTH`                | `6`                              | Initial human-friendly public match ID length   |
-| `SEED_ADMIN_USERNAME`                           | `admin`                          | Development admin created by `prisma:seed`      |
-| `SEED_ADMIN_PASSWORD`                           | `change-me`                      | Development admin password; change before use   |
+| `INITIAL_SUPER_ADMIN_PASSWORD`                  | `dauvo@123` (non-production only) | Required non-default secret for production seed |
 | `ROUND_DURATION_MS`                             | `120000`                         | Round duration in milliseconds                  |
 | `BREAK_DURATION_MS`                             | `60000`                          | Break duration in milliseconds                  |
 

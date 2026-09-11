@@ -43,6 +43,7 @@ services:
       WEB_ORIGIN: ${WEB_ORIGIN:?Set the public HTTPS origin in the Compose environment}
       ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:?Set a 32+ character secret}
       MATCH_SESSION_SECRET: ${MATCH_SESSION_SECRET:?Set a 32+ character secret}
+      INITIAL_SUPER_ADMIN_PASSWORD: ${INITIAL_SUPER_ADMIN_PASSWORD:?Set a non-default initial super-admin password}
       ROUND_DURATION_MS: ${ROUND_DURATION_MS:-120000}
       BREAK_DURATION_MS: ${BREAK_DURATION_MS:-60000}
     depends_on:
