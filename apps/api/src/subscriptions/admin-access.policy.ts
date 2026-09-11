@@ -59,8 +59,9 @@ export function calculateAdminAccessState(
     return 'ACTIVE_ADMIN';
   }
   if (
-    (entitlement.status === AdminEntitlementStatus.ACTIVE ||
-      entitlement.status === AdminEntitlementStatus.EXPIRED) &&
+    (entitlement.status === AdminEntitlementStatus.EXPIRED ||
+      (entitlement.status === AdminEntitlementStatus.ACTIVE &&
+        now >= entitlement.activeUntil)) &&
     now < addUtcMonths(adminAccessEndedAt(entitlement), ADMIN_GRACE_MONTHS)
   ) {
     return 'EXPIRED_READ_ONLY';

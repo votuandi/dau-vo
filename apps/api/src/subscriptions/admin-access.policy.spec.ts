@@ -1,6 +1,7 @@
 import { AdminEntitlementStatus, UserRole } from '@prisma/client';
 import { addUtcMonths, calculateAdminAccessState } from './admin-access.policy';
 
+const activeFrom = new Date('2025-01-01T00:00:00.000Z');
 const accessEndedAt = new Date('2025-01-31T10:00:00.000Z');
 const activeUntil = new Date('2026-01-31T10:00:00.000Z');
 
@@ -9,13 +10,26 @@ function entitlement(
 ) {
   return {
     adminAccessEndedAt: null,
-    activeFrom: new Date('2025-01-01T00:00:00.000Z'),
+    activeFrom,
     activeUntil,
     status,
   };
 }
 
 describe('admin entitlement access policy', () => {
+  it('hides an ACTIVE entitlement before activeFrom and activates it at activeFrom', () => {
+    expect(
+      calculateAdminAccessState(
+        UserRole.ADMIN,
+        entitlement(),
+        new Date(activeFrom.getTime() - 1),
+      ),
+    ).toBe('HIDDEN');
+    expect(
+      calculateAdminAccessState(UserRole.ADMIN, entitlement(), activeFrom),
+    ).toBe('ACTIVE_ADMIN');
+  });
+
   it('is active before activeUntil and read-only exactly at activeUntil', () => {
     expect(
       calculateAdminAccessState(
@@ -73,7 +87,7 @@ describe('admin entitlement access policy', () => {
       calculateAdminAccessState(
         UserRole.SUPER_ADMIN,
         entitlement(AdminEntitlementStatus.EXPIRED),
-        new Date('2030-01-01T00:00:00.000Z'),
+        addUtcMonths(activeUntil, 48),
       ),
     ).toBe('ACTIVE_ADMIN');
   });

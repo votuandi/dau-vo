@@ -2,6 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import {
+  AdminEntitlementStatus,
   AthleteColor,
   AuditEventType,
   MatchAccessRole,
@@ -964,5 +965,42 @@ describe('Admin tournament and match management (integration)', () => {
         },
       }),
     ).toBe(matchAuditCountBefore);
+  });
+
+  it('denies admin GET and mutation access before an ACTIVE entitlement begins', async () => {
+    const now = new Date();
+    const activeFrom = new Date(now.getTime() + 60_000);
+    const activeUntil = new Date(activeFrom.getTime() + 86_400_000);
+
+    await prisma.user.update({
+      data: { role: 'ADMIN' },
+      where: { id: testAdminId },
+    });
+    await prisma.adminEntitlement.upsert({
+      create: {
+        activeFrom,
+        activeUntil,
+        status: AdminEntitlementStatus.ACTIVE,
+        tournamentLimit: 1,
+        userId: testAdminId,
+      },
+      update: {
+        activeFrom,
+        activeUntil,
+        adminAccessEndedAt: null,
+        status: AdminEntitlementStatus.ACTIVE,
+        tournamentLimit: 1,
+      },
+      where: { userId: testAdminId },
+    });
+
+    await authenticated(
+      request(app.getHttpServer()).get('/api/admin/tournaments'),
+    ).expect(403);
+    await authenticated(
+      request(app.getHttpServer()).post('/api/admin/tournaments'),
+    )
+      .send({ name: `${TEST_PREFIX}-future-entitlement` })
+      .expect(403);
   });
 });
