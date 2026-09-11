@@ -30,7 +30,10 @@ export class PricingService {
   }
   list() {
     return this.prisma.pricingPlanVersion.findMany({
-      include: { discountTiers: true },
+      include: {
+        discountTiers: { orderBy: [{ type: 'asc' }, { quantity: 'asc' }] },
+        createdBy: { select: { id: true, username: true, fullName: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -117,5 +120,21 @@ export class PricingService {
       )
     )
       throw new BadRequestException({ code: 'INVALID_PRICING_CONFIGURATION' });
+    const required = [
+      'DURATION:6',
+      'DURATION:12',
+      'TOURNAMENT:3',
+      'TOURNAMENT:5',
+      'TOURNAMENT:10',
+    ];
+    const keys = input.discountTiers.map(
+      (tier) => `${tier.type}:${tier.quantity}`,
+    );
+    if (
+      new Set(keys).size !== keys.length ||
+      required.some((key) => !keys.includes(key))
+    ) {
+      throw new BadRequestException({ code: 'INVALID_PRICING_TIERS' });
+    }
   }
 }

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { useState, type SyntheticEvent } from 'react';
 import { superAdminApi } from '@/services/api/super-admin';
+export { SuperAdminPricingPage } from '@/features/super-admin/pricing/pricing-page';
 const message = (error: unknown) =>
   error instanceof Error ? error.message : 'Thao tác không thành công.';
 export function SuperAdminHomePage() {
@@ -187,46 +188,6 @@ export function SuperAdminUserPage() {
         <p role="alert">{message(change.error ?? access.error)}</p>
       ) : null}
       {change.isSuccess || access.isSuccess ? <p role="status">Đã cập nhật.</p> : null}
-    </section>
-  );
-}
-export function SuperAdminPricingPage() {
-  const pricing = useQuery({
-    queryKey: ['super-admin', 'pricing'],
-    queryFn: superAdminApi.pricing,
-  });
-  const create = useMutation({ mutationFn: (body: unknown) => superAdminApi.createPricing(body) });
-  function submit(e: SyntheticEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!confirm('Kích hoạt phiên bản giá mới?')) return;
-    create.mutate({
-      baseAmountVnd: 200000,
-      baseDurationMonths: 1,
-      baseTournamentLimit: 3,
-      durationAddonUnitAmountVnd: 50000,
-      tournamentAddonUnitAmountVnd: 68000,
-      discountTiers: [
-        { type: 'DURATION', quantity: 6, discountBasisPoints: 1000 },
-        { type: 'DURATION', quantity: 12, discountBasisPoints: 2500 },
-        { type: 'TOURNAMENT', quantity: 3, discountBasisPoints: 500 },
-        { type: 'TOURNAMENT', quantity: 5, discountBasisPoints: 1000 },
-        { type: 'TOURNAMENT', quantity: 10, discountBasisPoints: 2500 },
-      ],
-    });
-  }
-  if (pricing.isPending) return <p>Đang tải bảng giá…</p>;
-  if (pricing.isError) return <p role="alert">Không thể tải bảng giá.</p>;
-  return (
-    <section>
-      <h1 className="text-3xl font-black">Phiên bản bảng giá</h1>
-      <form className="mt-4" onSubmit={submit}>
-        <button type="submit">Tạo phiên bản giá mặc định mới</button>
-      </form>
-      {create.isError ? <p role="alert">{message(create.error)}</p> : null}
-      {create.isSuccess ? <p role="status">Đã kích hoạt phiên bản mới.</p> : null}
-      <pre className="mt-4 overflow-auto rounded border p-4 text-xs">
-        {JSON.stringify(pricing.data, null, 2)}
-      </pre>
     </section>
   );
 }
