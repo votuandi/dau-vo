@@ -6,7 +6,8 @@ import {
   authenticatedUserQueryKey,
   authenticatedUserQueryOptions,
 } from '@/features/auth/authenticated-user-session';
-import { getRoleLandingPath, getSafeReturnPath } from '@/features/auth/role-aware-routing';
+import { getAccessLandingPath, getSafeReturnPath } from '@/features/auth/role-aware-routing';
+import { effectiveAdminAccessState, entitlementQueryOptions } from '@/features/auth/admin-access';
 import { authApi } from '@/services/api/auth';
 import { ApiClientError } from '@/services/api/client';
 
@@ -56,11 +57,16 @@ export function AdminLoginPage() {
 
   const loginMutation = useMutation({
     mutationFn: authApi.login,
-    onSuccess: (session) => {
+    onSuccess: async (session) => {
       queryClient.setQueryData(authenticatedUserQueryKey, session);
-      void navigate(getSafeReturnPath(location.state) ?? getRoleLandingPath(session.user.role), {
-        replace: true,
-      });
+      const entitlement = await queryClient.fetchQuery(entitlementQueryOptions);
+      void navigate(
+        getSafeReturnPath(location.state) ??
+          getAccessLandingPath(effectiveAdminAccessState(session.user, entitlement)),
+        {
+          replace: true,
+        },
+      );
     },
   });
 
@@ -79,7 +85,7 @@ export function AdminLoginPage() {
   }
 
   if (sessionQuery.isSuccess && sessionQuery.data) {
-    return <Navigate replace to={getRoleLandingPath(sessionQuery.data.user.role)} />;
+    return <Navigate replace to="/" />;
   }
 
   return (

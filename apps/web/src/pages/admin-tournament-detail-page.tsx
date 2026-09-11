@@ -31,6 +31,7 @@ import {
   type UpdateTournamentInput,
 } from '@/services/api/admin-management';
 import { AthleteColor, TournamentStatus } from '@/types/shared';
+import { useAdminAccessContext } from '@/features/auth/admin-access';
 
 interface AthleteDraft {
   readonly name: string;
@@ -45,7 +46,13 @@ function athleteInput(color: AthleteColor, draft: AthleteDraft): MatchAthleteInp
   };
 }
 
-function TournamentEditor({ tournament }: { readonly tournament: AdminTournament }) {
+function TournamentEditor({
+  tournament,
+  isReadOnly,
+}: {
+  readonly tournament: AdminTournament;
+  readonly isReadOnly: boolean;
+}) {
   const queryClient = useQueryClient();
   const [name, setName] = useState(tournament.name);
   const [description, setDescription] = useState(tournament.description ?? '');
@@ -102,7 +109,7 @@ function TournamentEditor({ tournament }: { readonly tournament: AdminTournament
           </label>
           <input
             className={inputClassName}
-            disabled={updateMutation.isPending}
+            disabled={updateMutation.isPending || isReadOnly}
             id="tournament-name"
             maxLength={255}
             onChange={(event) => {
@@ -117,7 +124,7 @@ function TournamentEditor({ tournament }: { readonly tournament: AdminTournament
           </label>
           <textarea
             className={textAreaClassName}
-            disabled={updateMutation.isPending}
+            disabled={updateMutation.isPending || isReadOnly}
             id="tournament-description"
             maxLength={5000}
             onChange={(event) => {
@@ -132,7 +139,7 @@ function TournamentEditor({ tournament }: { readonly tournament: AdminTournament
           </label>
           <input
             className={inputClassName}
-            disabled={updateMutation.isPending}
+            disabled={updateMutation.isPending || isReadOnly}
             id="tournament-location"
             maxLength={255}
             onChange={(event) => {
@@ -147,7 +154,7 @@ function TournamentEditor({ tournament }: { readonly tournament: AdminTournament
           </label>
           <input
             className={inputClassName}
-            disabled={updateMutation.isPending}
+            disabled={updateMutation.isPending || isReadOnly}
             id="tournament-start-date"
             onChange={(event) => {
               setStartDate(event.target.value);
@@ -162,7 +169,7 @@ function TournamentEditor({ tournament }: { readonly tournament: AdminTournament
           </label>
           <input
             className={inputClassName}
-            disabled={updateMutation.isPending}
+            disabled={updateMutation.isPending || isReadOnly}
             id="tournament-end-date"
             onChange={(event) => {
               setEndDate(event.target.value);
@@ -177,7 +184,7 @@ function TournamentEditor({ tournament }: { readonly tournament: AdminTournament
           </label>
           <select
             className={inputClassName}
-            disabled={updateMutation.isPending}
+            disabled={updateMutation.isPending || isReadOnly}
             id="tournament-status"
             onChange={(event) => {
               setStatus(event.target.value as TournamentStatus);
@@ -212,7 +219,7 @@ function TournamentEditor({ tournament }: { readonly tournament: AdminTournament
         ) : null}
 
         <div className="sm:col-span-2">
-          <Button disabled={updateMutation.isPending} type="submit">
+          <Button disabled={updateMutation.isPending || isReadOnly} type="submit">
             {updateMutation.isPending ? 'Đang lưu…' : 'Lưu thay đổi'}
           </Button>
         </div>
@@ -262,7 +269,13 @@ function MatchCard({ match }: { readonly match: AdminMatch }) {
   );
 }
 
-function TournamentMatches({ tournament }: { readonly tournament: AdminTournament }) {
+function TournamentMatches({
+  tournament,
+  isReadOnly,
+}: {
+  readonly tournament: AdminTournament;
+  readonly isReadOnly: boolean;
+}) {
   const queryClient = useQueryClient();
   const matchesQuery = useQuery(tournamentMatchesQueryOptions(tournament.id));
   const [redAthlete, setRedAthlete] = useState<AthleteDraft>({ name: '', organization: '' });
@@ -381,7 +394,7 @@ function TournamentMatches({ tournament }: { readonly tournament: AdminTournamen
 
         <form className="rounded-xl bg-muted/60 p-4" noValidate onSubmit={handleCreate}>
           <h3 className="font-black">Tạo trận mới</h3>
-          <fieldset className="mt-4 space-y-4" disabled={createMutation.isPending}>
+          <fieldset className="mt-4 space-y-4" disabled={createMutation.isPending || isReadOnly}>
             <legend className="sr-only">Hai vận động viên</legend>
             <div className="rounded-lg border border-red-200 bg-red-50/60 p-3">
               <p className="text-sm font-bold text-red-800">Vận động viên Đỏ</p>
@@ -460,7 +473,11 @@ function TournamentMatches({ tournament }: { readonly tournament: AdminTournamen
           ) : null}
           <Button
             className="mt-4 w-full"
-            disabled={createMutation.isPending || tournament.status === TournamentStatus.ARCHIVED}
+            disabled={
+              createMutation.isPending ||
+              tournament.status === TournamentStatus.ARCHIVED ||
+              isReadOnly
+            }
             type="submit"
           >
             {createMutation.isPending
@@ -486,6 +503,7 @@ export function AdminTournamentDetailPage() {
 }
 
 function TournamentDetailContent({ tournamentId }: { readonly tournamentId: string }) {
+  const { isReadOnly } = useAdminAccessContext();
   const tournamentQuery = useQuery(tournamentQueryOptions(tournamentId));
 
   if (tournamentQuery.isPending) {
@@ -542,8 +560,12 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
         </p>
       </header>
 
-      <TournamentEditor key={tournament.updatedAt} tournament={tournament} />
-      <TournamentMatches tournament={tournament} />
+      <TournamentEditor
+        isReadOnly={isReadOnly}
+        key={tournament.updatedAt}
+        tournament={tournament}
+      />
+      <TournamentMatches isReadOnly={isReadOnly} tournament={tournament} />
     </div>
   );
 }

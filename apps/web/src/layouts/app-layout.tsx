@@ -5,7 +5,8 @@ import {
   authenticatedUserQueryKey,
   authenticatedUserQueryOptions,
 } from '@/features/auth/authenticated-user-session';
-import { getRoleLandingPath } from '@/features/auth/role-aware-routing';
+import { getAccessLandingPath } from '@/features/auth/role-aware-routing';
+import { effectiveAdminAccessState, entitlementQueryOptions } from '@/features/auth/admin-access';
 import { cn } from '@/lib/utils';
 import { authApi } from '@/services/api/auth';
 
@@ -28,6 +29,11 @@ function StandardAppLayout() {
   const queryClient = useQueryClient();
   const sessionQuery = useQuery(authenticatedUserQueryOptions);
   const user = sessionQuery.data?.user;
+  const entitlementQuery = useQuery({ ...entitlementQueryOptions, enabled: Boolean(user) });
+  const accessState =
+    user && entitlementQuery.isSuccess
+      ? effectiveAdminAccessState(user, entitlementQuery.data)
+      : undefined;
   const logoutMutation = useMutation({
     mutationFn: authApi.logout,
     onSuccess: () => {
@@ -40,7 +46,7 @@ function StandardAppLayout() {
         { to: '/tournaments', label: 'Giải đấu' },
         { to: '/account', label: 'Tài khoản' },
         ...(user.role === 'SUPER_ADMIN' ? [] : [{ to: '/subscription', label: 'Gói đăng ký' }]),
-        ...(user.role === 'ADMIN'
+        ...(accessState === 'ACTIVE_ADMIN' || accessState === 'EXPIRED_READ_ONLY'
           ? [
               { to: '/admin', label: 'Bảng điều khiển' },
               { to: '/admin/tournaments', label: 'Giải đấu quản lý' },
@@ -61,7 +67,7 @@ function StandardAppLayout() {
         <div className="container flex min-h-16 flex-col justify-center gap-3 py-3 md:flex-row md:items-center md:justify-between">
           <NavLink
             className="flex items-center gap-3"
-            to={user ? getRoleLandingPath(user.role) : '/login'}
+            to={accessState ? getAccessLandingPath(accessState) : '/login'}
           >
             <span className="grid size-10 place-items-center rounded-xl bg-gradient-to-br from-sky-700 via-blue-800 to-red-700 text-sm font-black text-white shadow-lg shadow-sky-700/25 ring-1 ring-white/70">
               ĐV

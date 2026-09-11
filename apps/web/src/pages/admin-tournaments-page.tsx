@@ -13,6 +13,7 @@ import {
 import { tournamentQueryKeys, tournamentsQueryOptions } from '@/features/admin-management/queries';
 import { adminManagementApi, type CreateTournamentInput } from '@/services/api/admin-management';
 import { TournamentStatus } from '@/types/shared';
+import { useAdminAccessContext } from '@/features/auth/admin-access';
 
 interface TournamentFormErrors {
   readonly name?: string;
@@ -52,6 +53,7 @@ function buildCreateTournamentInput(values: {
 }
 
 export function AdminTournamentsPage() {
+  const { isReadOnly } = useAdminAccessContext();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const tournamentsQuery = useQuery(tournamentsQueryOptions);
@@ -211,7 +213,9 @@ export function AdminTournamentsPage() {
                       <Button
                         disabled={
                           tournament.status === TournamentStatus.ARCHIVED ||
-                          (archiveMutation.isPending && archiveMutation.variables === tournament.id)
+                          (archiveMutation.isPending &&
+                            archiveMutation.variables === tournament.id) ||
+                          isReadOnly
                         }
                         onClick={() => {
                           archiveTournament(tournament.id, tournament.name);
@@ -238,115 +242,121 @@ export function AdminTournamentsPage() {
           ) : null}
         </section>
 
-        <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-6">
-          <h2 className="text-xl font-black tracking-tight">Tạo giải đấu</h2>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            Giải mới được tạo ở trạng thái bản nháp.
-          </p>
+        {!isReadOnly ? (
+          <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-6">
+            <h2 className="text-xl font-black tracking-tight">Tạo giải đấu</h2>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              Giải mới được tạo ở trạng thái bản nháp.
+            </p>
 
-          <form className="mt-5 space-y-4" noValidate onSubmit={handleCreate}>
-            <div>
-              <label className="text-sm font-semibold" htmlFor="new-tournament-name">
-                Tên giải đấu
-              </label>
-              <input
-                aria-invalid={Boolean(formErrors.name)}
-                className={inputClassName}
-                disabled={createMutation.isPending}
-                id="new-tournament-name"
-                maxLength={255}
-                onChange={(event) => {
-                  setName(event.target.value);
-                }}
-                value={name}
-              />
-              {formErrors.name ? (
-                <p className="mt-1 text-sm text-destructive">{formErrors.name}</p>
+            <form className="mt-5 space-y-4" noValidate onSubmit={handleCreate}>
+              <div>
+                <label className="text-sm font-semibold" htmlFor="new-tournament-name">
+                  Tên giải đấu
+                </label>
+                <input
+                  aria-invalid={Boolean(formErrors.name)}
+                  className={inputClassName}
+                  disabled={createMutation.isPending}
+                  id="new-tournament-name"
+                  maxLength={255}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                  }}
+                  value={name}
+                />
+                {formErrors.name ? (
+                  <p className="mt-1 text-sm text-destructive">{formErrors.name}</p>
+                ) : null}
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold" htmlFor="new-tournament-description">
+                  Mô tả
+                </label>
+                <textarea
+                  className={textAreaClassName}
+                  disabled={createMutation.isPending}
+                  id="new-tournament-description"
+                  maxLength={5000}
+                  onChange={(event) => {
+                    setDescription(event.target.value);
+                  }}
+                  value={description}
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold" htmlFor="new-tournament-location">
+                  Địa điểm
+                </label>
+                <input
+                  className={inputClassName}
+                  disabled={createMutation.isPending}
+                  id="new-tournament-location"
+                  maxLength={255}
+                  onChange={(event) => {
+                    setLocation(event.target.value);
+                  }}
+                  value={location}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-semibold" htmlFor="new-tournament-start-date">
+                    Bắt đầu
+                  </label>
+                  <input
+                    className={inputClassName}
+                    disabled={createMutation.isPending}
+                    id="new-tournament-start-date"
+                    onChange={(event) => {
+                      setStartDate(event.target.value);
+                    }}
+                    type="date"
+                    value={startDate}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold" htmlFor="new-tournament-end-date">
+                    Kết thúc
+                  </label>
+                  <input
+                    className={inputClassName}
+                    disabled={createMutation.isPending}
+                    id="new-tournament-end-date"
+                    onChange={(event) => {
+                      setEndDate(event.target.value);
+                    }}
+                    type="date"
+                    value={endDate}
+                  />
+                </div>
+              </div>
+              {formErrors.dates ? (
+                <p className="text-sm text-destructive">{formErrors.dates}</p>
               ) : null}
-            </div>
 
-            <div>
-              <label className="text-sm font-semibold" htmlFor="new-tournament-description">
-                Mô tả
-              </label>
-              <textarea
-                className={textAreaClassName}
-                disabled={createMutation.isPending}
-                id="new-tournament-description"
-                maxLength={5000}
-                onChange={(event) => {
-                  setDescription(event.target.value);
-                }}
-                value={description}
-              />
-            </div>
+              {createMutation.isError ? (
+                <p
+                  className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+                  role="alert"
+                >
+                  {getApiErrorMessage(createMutation.error, 'Không thể tạo giải đấu.')}
+                </p>
+              ) : null}
 
-            <div>
-              <label className="text-sm font-semibold" htmlFor="new-tournament-location">
-                Địa điểm
-              </label>
-              <input
-                className={inputClassName}
-                disabled={createMutation.isPending}
-                id="new-tournament-location"
-                maxLength={255}
-                onChange={(event) => {
-                  setLocation(event.target.value);
-                }}
-                value={location}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-semibold" htmlFor="new-tournament-start-date">
-                  Bắt đầu
-                </label>
-                <input
-                  className={inputClassName}
-                  disabled={createMutation.isPending}
-                  id="new-tournament-start-date"
-                  onChange={(event) => {
-                    setStartDate(event.target.value);
-                  }}
-                  type="date"
-                  value={startDate}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-semibold" htmlFor="new-tournament-end-date">
-                  Kết thúc
-                </label>
-                <input
-                  className={inputClassName}
-                  disabled={createMutation.isPending}
-                  id="new-tournament-end-date"
-                  onChange={(event) => {
-                    setEndDate(event.target.value);
-                  }}
-                  type="date"
-                  value={endDate}
-                />
-              </div>
-            </div>
-            {formErrors.dates ? (
-              <p className="text-sm text-destructive">{formErrors.dates}</p>
-            ) : null}
-
-            {createMutation.isError ? (
-              <p
-                className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-                role="alert"
-              >
-                {getApiErrorMessage(createMutation.error, 'Không thể tạo giải đấu.')}
-              </p>
-            ) : null}
-
-            <Button className="w-full" disabled={createMutation.isPending} type="submit">
-              {createMutation.isPending ? 'Đang tạo…' : 'Tạo giải đấu'}
-            </Button>
-          </form>
-        </section>
+              <Button className="w-full" disabled={createMutation.isPending} type="submit">
+                {createMutation.isPending ? 'Đang tạo…' : 'Tạo giải đấu'}
+              </Button>
+            </form>
+          </section>
+        ) : (
+          <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+            Chế độ chỉ xem: hãy gia hạn gói để tạo hoặc thay đổi giải đấu.
+          </section>
+        )}
       </div>
     </div>
   );

@@ -2,10 +2,19 @@ import { useQuery } from '@tanstack/react-query';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { authenticatedUserQueryOptions } from '@/features/auth/authenticated-user-session';
+import {
+  effectiveAdminAccessState,
+  entitlementQueryOptions,
+  type AdminAccessContext,
+} from '@/features/auth/admin-access';
 
 export function AdminRouteGuard() {
   const location = useLocation();
   const sessionQuery = useQuery(authenticatedUserQueryOptions);
+  const entitlementQuery = useQuery({
+    ...entitlementQueryOptions,
+    enabled: Boolean(sessionQuery.data),
+  });
 
   if (sessionQuery.isPending) {
     return (
@@ -40,16 +49,26 @@ export function AdminRouteGuard() {
     return <Navigate replace state={{ from: returnPath }} to="/login" />;
   }
 
-  if (sessionQuery.data.user.role === 'USER') {
+  if (entitlementQuery.isPending) return <p aria-live="polite">Đang kiểm tra quyền quản trị…</p>;
+  if (entitlementQuery.isError)
     return (
       <section className="mx-auto w-full max-w-lg rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
-        <h1 className="text-2xl font-black tracking-tight">Không có quyền quản trị</h1>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Tài khoản này không có quyền truy cập khu vực quản trị.
-        </p>
+        <h1 className="text-2xl font-black tracking-tight">Không thể kiểm tra quyền quản trị</h1>
+        <Button className="mt-6" onClick={() => void entitlementQuery.refetch()} type="button">
+          Thử lại
+        </Button>
       </section>
     );
-  }
 
-  return <Outlet context={sessionQuery.data.user} />;
+  const user = sessionQuery.data.user;
+  const accessState = effectiveAdminAccessState(user, entitlementQuery.data);
+  if (accessState === 'HIDDEN') return <Navigate replace to="/tournaments" />;
+
+  const context: AdminAccessContext = {
+    user,
+    entitlement: entitlementQuery.data,
+    accessState,
+    isReadOnly: accessState === 'EXPIRED_READ_ONLY',
+  };
+  return <Outlet context={context} />;
 }

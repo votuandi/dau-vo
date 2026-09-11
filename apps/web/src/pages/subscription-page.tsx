@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { subscriptionsApi } from '@/services/api/subscriptions';
 import { authenticatedUserQueryKey } from '@/features/auth/authenticated-user-session';
+import { entitlementQueryKey } from '@/features/auth/admin-access';
 
 export function SubscriptionPage() {
   const [durationBundle, setDuration] = useState<number>();
@@ -21,9 +22,16 @@ export function SubscriptionPage() {
         tournamentBundle,
         idempotencyKey: crypto.randomUUID(),
       }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: authenticatedUserQueryKey });
-      void navigate('/admin');
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: authenticatedUserQueryKey }),
+        queryClient.invalidateQueries({ queryKey: entitlementQueryKey }),
+      ]);
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: authenticatedUserQueryKey }),
+        queryClient.refetchQueries({ queryKey: entitlementQueryKey }),
+      ]);
+      void navigate('/');
     },
   });
   return (

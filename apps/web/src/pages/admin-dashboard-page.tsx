@@ -1,21 +1,16 @@
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useOutletContext } from 'react-router-dom';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { authenticatedUserQueryKey } from '@/features/auth/authenticated-user-session';
-import { authApi, type AuthenticatedUser } from '@/services/api/auth';
-import { subscriptionsApi } from '@/services/api/subscriptions';
+import { authApi } from '@/services/api/auth';
+import { useAdminAccessContext } from '@/features/auth/admin-access';
 
 export function AdminDashboardPage() {
-  const admin = useOutletContext<AuthenticatedUser>();
+  const { user: admin, entitlement, isReadOnly } = useAdminAccessContext();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [logoutError, setLogoutError] = useState<string | null>(null);
-  const entitlementQuery = useQuery({
-    queryKey: ['subscriptions', 'me'],
-    queryFn: subscriptionsApi.me,
-  });
-  const isReadOnly = entitlementQuery.data?.accessState === 'EXPIRED_READ_ONLY';
 
   const logoutMutation = useMutation({
     mutationFn: authApi.logout,
@@ -47,8 +42,10 @@ export function AdminDashboardPage() {
           </p>
           {isReadOnly ? (
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              Quyền quản trị đã hết hạn. Bạn chỉ có thể xem dữ liệu đến{' '}
-              {new Date(entitlementQuery.data?.readOnlyUntil ?? '').toLocaleDateString('vi-VN')}.{' '}
+              Quyền quản trị đã hết hạn. Bạn chỉ có thể xem dữ liệu đến Thời hạn quản trị đã kết
+              thúc ngày {new Date(entitlement?.activeUntil ?? '').toLocaleDateString('vi-VN')}; bạn
+              chỉ được xem dữ liệu do mình sở hữu đến{' '}
+              {new Date(entitlement?.readOnlyUntil ?? '').toLocaleDateString('vi-VN')}.{' '}
               <Link className="font-bold underline" to="/subscription">
                 Gia hạn ngay
               </Link>

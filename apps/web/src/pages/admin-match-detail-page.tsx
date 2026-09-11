@@ -30,6 +30,7 @@ import {
   type UpdateMatchInput,
 } from '@/services/api/admin-management';
 import { AthleteColor, type MatchAccessRole } from '@/types/shared';
+import { useAdminAccessContext } from '@/features/auth/admin-access';
 
 interface AthleteFormValue {
   readonly name: string;
@@ -51,7 +52,13 @@ function toAthleteInput(color: AthleteColor, value: AthleteFormValue): MatchAthl
   };
 }
 
-function MatchEditor({ match }: { readonly match: AdminMatch }) {
+function MatchEditor({
+  match,
+  isReadOnly,
+}: {
+  readonly match: AdminMatch;
+  readonly isReadOnly: boolean;
+}) {
   const queryClient = useQueryClient();
   const [roundDurationSeconds, setRoundDurationSeconds] = useState(
     millisecondsToSeconds(match.roundDurationMs),
@@ -128,7 +135,7 @@ function MatchEditor({ match }: { readonly match: AdminMatch }) {
             </label>
             <input
               className={inputClassName}
-              disabled={updateMutation.isPending}
+              disabled={updateMutation.isPending || isReadOnly}
               id="round-duration"
               min={1}
               onChange={(event) => {
@@ -145,7 +152,7 @@ function MatchEditor({ match }: { readonly match: AdminMatch }) {
             </label>
             <input
               className={inputClassName}
-              disabled={updateMutation.isPending}
+              disabled={updateMutation.isPending || isReadOnly}
               id="break-duration"
               min={1}
               onChange={(event) => {
@@ -158,7 +165,10 @@ function MatchEditor({ match }: { readonly match: AdminMatch }) {
           </div>
         </div>
 
-        <fieldset className="grid gap-4 md:grid-cols-2" disabled={updateMutation.isPending}>
+        <fieldset
+          className="grid gap-4 md:grid-cols-2"
+          disabled={updateMutation.isPending || isReadOnly}
+        >
           <legend className="mb-3 text-sm font-bold">Vận động viên</legend>
           <div className="rounded-xl border-2 border-red-200 bg-red-50/60 p-4">
             <h3 className="font-black text-red-800">Góc Đỏ</h3>
@@ -241,7 +251,7 @@ function MatchEditor({ match }: { readonly match: AdminMatch }) {
           </p>
         ) : null}
 
-        <Button disabled={updateMutation.isPending} type="submit">
+        <Button disabled={updateMutation.isPending || isReadOnly} type="submit">
           {updateMutation.isPending ? 'Đang lưu…' : 'Lưu thay đổi'}
         </Button>
       </form>
@@ -249,7 +259,13 @@ function MatchEditor({ match }: { readonly match: AdminMatch }) {
   );
 }
 
-function AccessCodesManager({ match }: { readonly match: AdminMatch }) {
+function AccessCodesManager({
+  match,
+  isReadOnly,
+}: {
+  readonly match: AdminMatch;
+  readonly isReadOnly: boolean;
+}) {
   const queryClient = useQueryClient();
   const [generatedCodes, setGeneratedCodes] = useState<readonly GeneratedAccessCode[]>([]);
 
@@ -289,7 +305,7 @@ function AccessCodesManager({ match }: { readonly match: AdminMatch }) {
           </p>
         </div>
         <Button
-          disabled={regenerateMutation.isPending}
+          disabled={regenerateMutation.isPending || isReadOnly}
           onClick={() => {
             regenerate('ALL');
           }}
@@ -335,7 +351,7 @@ function AccessCodesManager({ match }: { readonly match: AdminMatch }) {
                   </p>
                 </div>
                 <Button
-                  disabled={regenerateMutation.isPending}
+                  disabled={regenerateMutation.isPending || isReadOnly}
                   onClick={() => {
                     regenerate(role);
                   }}
@@ -366,6 +382,7 @@ export function AdminMatchDetailPage() {
 }
 
 function MatchDetailContent({ matchId }: { readonly matchId: string }) {
+  const { isReadOnly } = useAdminAccessContext();
   const matchQuery = useQuery(matchQueryOptions(matchId));
 
   if (matchQuery.isPending) {
@@ -427,9 +444,9 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
         </p>
       </header>
 
-      <MatchEditor key={match.updatedAt} match={match} />
+      <MatchEditor isReadOnly={isReadOnly} key={match.updatedAt} match={match} />
       <AdminMatchMonitoring matchId={match.id} />
-      <AccessCodesManager match={match} />
+      <AccessCodesManager isReadOnly={isReadOnly} match={match} />
     </div>
   );
 }

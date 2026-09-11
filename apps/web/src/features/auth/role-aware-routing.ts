@@ -1,4 +1,5 @@
 import type { AuthenticatedUser } from '@/services/api/auth';
+import type { EffectiveAdminAccessState } from './admin-access';
 
 type UserRole = AuthenticatedUser['role'];
 
@@ -20,6 +21,12 @@ export function getRoleLandingPath(role: UserRole): string {
     case 'USER':
       return '/tournaments';
   }
+}
+
+export function getAccessLandingPath(accessState: EffectiveAdminAccessState): string {
+  if (accessState === 'SUPER_ADMIN') return '/super-admin';
+  if (accessState === 'ACTIVE_ADMIN' || accessState === 'EXPIRED_READ_ONLY') return '/admin';
+  return '/tournaments';
 }
 
 function isAllowedApplicationPathname(pathname: string): boolean {
