@@ -1,15 +1,17 @@
-import { Buffer } from 'node:buffer';
 import { resolve } from 'node:path';
 import process from 'node:process';
 
 import { compare, hash } from 'bcryptjs';
 import { PrismaClient, PricingDiscountType, UserRole } from '@prisma/client';
 import { config as loadEnvironment } from 'dotenv';
+import {
+  passwordValidationCode,
+  passwordValidationMessage,
+} from '../src/auth/password-policy';
 
 const BCRYPT_COST = 12;
 const DEFAULT_SUPER_ADMIN_PASSWORD = 'dauvo@123';
 const INITIAL_SUPER_ADMIN_PASSWORD = 'INITIAL_SUPER_ADMIN_PASSWORD';
-const MAX_BCRYPT_PASSWORD_BYTES = 72;
 export const INITIAL_SUPER_ADMIN_USERNAME = 'superadmin';
 
 const apiDirectory = process.cwd();
@@ -45,16 +47,11 @@ export function initialSuperAdminPassword(
 }
 
 export function validateInitialPassword(password: string): void {
-  if (password.length < 8) {
+  const code = passwordValidationCode(password);
+  if (code !== null)
     throw new Error(
-      `${INITIAL_SUPER_ADMIN_PASSWORD} must contain at least 8 characters`,
+      `${INITIAL_SUPER_ADMIN_PASSWORD}: ${code} (${passwordValidationMessage(code)})`,
     );
-  }
-  if (Buffer.byteLength(password, 'utf8') > MAX_BCRYPT_PASSWORD_BYTES) {
-    throw new Error(
-      `${INITIAL_SUPER_ADMIN_PASSWORD} must not exceed ${MAX_BCRYPT_PASSWORD_BYTES} UTF-8 bytes`,
-    );
-  }
 }
 
 export async function ensureInitialSuperAdmin(

@@ -5,11 +5,11 @@ import {
   Injectable,
   UnauthorizedException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, UserRole } from '@prisma/client';
 import { compare, hash } from 'bcryptjs';
-import { Buffer } from 'node:buffer';
 import { createHmac, randomBytes } from 'node:crypto';
 
 import type { EnvironmentVariables } from '../config/environment';
@@ -22,12 +22,16 @@ import {
   REGISTRATION_RATE_LIMITED_ERROR,
 } from './admin-auth.constants';
 import type { AuthenticatedUser, CreatedSession } from './admin-auth.types';
+import {
+  MAX_BCRYPT_PASSWORD_BYTES,
+  passwordValidationCode,
+  passwordValidationMessage,
+} from './password-policy';
 
 const SESSION_TOKEN_BYTES = 32;
 const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const DUMMY_PASSWORD_COST = 12;
 const IP_RATE_LIMIT_MULTIPLIER = 20;
-const MAX_BCRYPT_PASSWORD_BYTES = 72;
 
 @Injectable()
 export class AuthService {
@@ -209,6 +213,7 @@ export class AuthService {
     },
     clientAddress: string,
   ): Promise<CreatedSession> {
+    this.assertPasswordIsValid(input.password);
     const registrationRateLimitKey = this.deriveRedisKey(
       'registration-rate:ip',
       clientAddress,
@@ -272,6 +277,15 @@ export class AuthService {
     );
     await this.redis.delete(registrationRateLimitKey);
     return session;
+  }
+
+  private assertPasswordIsValid(password: string): void {
+    const code = passwordValidationCode(password);
+    if (code !== null)
+      throw new BadRequestException({
+        code,
+        message: passwordValidationMessage(code),
+      });
   }
 
   private safeUser(user: {

@@ -35,7 +35,7 @@ export class CreateSuperAdminUserDto {
   @IsString() @Matches(USERNAME) @MaxLength(100) username!: string;
   @IsEmail() @MaxLength(320) email!: string;
   @IsString() @MinLength(6) @MaxLength(50) phone!: string;
-  @IsString() @MinLength(8) @MaxLength(72) password!: string;
+  @IsString() password!: string;
   @IsOptional() @IsString() @MaxLength(255) organization?: string;
   @IsOptional()
   @ValidateNested()

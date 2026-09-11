@@ -205,6 +205,26 @@ describe('Admin authentication (integration)', () => {
     });
   });
 
+  it('rejects over-byte-limit public registration without creating a user', async () => {
+    const username = 'password-policy-public';
+    await prisma.user.deleteMany({ where: { username } });
+    await request(app.getHttpServer())
+      .post('/api/auth/register')
+      .send({
+        username,
+        password: '😀'.repeat(19),
+        fullName: 'Password Policy',
+        email: 'password-policy-public@example.test',
+        phone: '0900000099',
+      })
+      .expect(400)
+      .expect({
+        code: 'PASSWORD_TOO_LONG',
+        message: 'Password must not exceed 72 UTF-8 bytes',
+      });
+    await expect(prisma.user.count({ where: { username } })).resolves.toBe(0);
+  });
+
   it('returns the authenticated admin for a valid session cookie', async () => {
     const authenticatedAgent = request.agent(app.getHttpServer());
 

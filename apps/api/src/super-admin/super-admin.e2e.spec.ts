@@ -243,6 +243,30 @@ describe('Super-admin management (e2e)', () => {
     ).resolves.toBe(0);
   });
 
+  it('rejects over-byte-limit managed-user passwords without creating a user', async () => {
+    const root = request.agent(app.getHttpServer());
+    const username = `${prefix}password-policy`;
+    await root
+      .post('/api/auth/login')
+      .send({ username: superAdmin.username, password })
+      .expect(200);
+    await root
+      .post('/api/super-admin/users')
+      .send({
+        username,
+        password: '😀'.repeat(19),
+        fullName: 'Password Policy',
+        email: `${prefix}password-policy@example.test`,
+        phone: '0900000019',
+      })
+      .expect(400)
+      .expect({
+        code: 'PASSWORD_TOO_LONG',
+        message: 'Password must not exceed 72 UTF-8 bytes',
+      });
+    await expect(prisma.user.count({ where: { username } })).resolves.toBe(0);
+  });
+
   it('rejects arbitrary roles and duplicate identities without partial users', async () => {
     const root = request.agent(app.getHttpServer());
     await root

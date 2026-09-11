@@ -44,4 +44,19 @@ describe('CreateSuperAdminUserPage', () => {
     expect(JSON.stringify(api.create.mock.calls)).toContain('"tournamentLimit":2');
     expect(api.access).not.toHaveBeenCalled();
   });
+
+  it('does not submit an over-byte-limit password', async () => {
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <CreateSuperAdminUserPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await user.type(screen.getByLabelText('Mật khẩu', { exact: true }), '😀'.repeat(19));
+    await user.click(screen.getByRole('button', { name: 'Tạo người dùng' }));
+    expect(await screen.findByText('Mật khẩu không được vượt quá 72 byte UTF-8.')).toBeVisible();
+    expect(api.create).not.toHaveBeenCalled();
+  });
 });

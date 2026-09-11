@@ -4,6 +4,7 @@ import {
   ensureInitialSuperAdmin,
   INITIAL_SUPER_ADMIN_USERNAME,
   initialSuperAdminPassword,
+  validateInitialPassword,
 } from './seed';
 
 describe('initial super-admin seed', () => {
@@ -24,6 +25,13 @@ describe('initial super-admin seed', () => {
     process.env.INITIAL_SUPER_ADMIN_PASSWORD = 'dauvo@123';
     expect(() => initialSuperAdminPassword('production')).toThrow(
       'must not use the public default',
+    );
+  });
+
+  it('applies the shared bcrypt byte limit without exposing the password', () => {
+    expect(() => validateInitialPassword('a'.repeat(72))).not.toThrow();
+    expect(() => validateInitialPassword('😀'.repeat(19))).toThrow(
+      'PASSWORD_TOO_LONG',
     );
   });
 

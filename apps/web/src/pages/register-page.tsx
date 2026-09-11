@@ -2,6 +2,7 @@ import { useState, type SyntheticEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '@/services/api/auth';
 import { ApiClientError } from '@/services/api/client';
+import { passwordValidationMessage } from '@/features/auth/password-policy';
 
 function value(data: FormData, key: string): string {
   const item = data.get(key);
@@ -17,6 +18,11 @@ export function RegisterPage() {
     setError(null);
     const data = new FormData(event.currentTarget);
     const password = value(data, 'password');
+    const passwordError = passwordValidationMessage(password);
+    if (passwordError !== null) {
+      setError(passwordError);
+      return;
+    }
     if (password !== value(data, 'passwordConfirmation')) {
       setError('Xác nhận mật khẩu không khớp.');
       return;

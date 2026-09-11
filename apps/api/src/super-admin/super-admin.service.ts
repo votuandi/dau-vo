@@ -11,6 +11,10 @@ import { hash } from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { IdentityNormalizationService } from '../auth/identity-normalization.service';
 import type { AuthenticatedUser } from '../auth/admin-auth.types';
+import {
+  passwordValidationCode,
+  passwordValidationMessage,
+} from '../auth/password-policy';
 import type {
   AdminAccessDto,
   CreateSuperAdminUserDto,
@@ -114,6 +118,12 @@ export class SuperAdminService {
     return user;
   }
   async create(i: CreateSuperAdminUserDto, a: AuthenticatedUser) {
+    const passwordCode = passwordValidationCode(i.password);
+    if (passwordCode !== null)
+      throw new BadRequestException({
+        code: passwordCode,
+        message: passwordValidationMessage(passwordCode),
+      });
     if (!this.phone(i.phone))
       throw new BadRequestException({ code: 'INVALID_PHONE' });
     const initialAccess = i.initialAdminAccess;

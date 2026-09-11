@@ -7,6 +7,7 @@ import { toast } from '@/components/ui/toast';
 import { ApiClientError } from '@/services/api/client';
 import { superAdminApi, type CreateSuperAdminUserInput } from '@/services/api/super-admin';
 import { superAdminUserKeys } from './query-keys';
+import { passwordValidationMessage } from '@/features/auth/password-policy';
 
 type AccountType = 'USER' | 'ADMIN';
 type Field =
@@ -20,6 +21,8 @@ const errorFields: Record<string, Field> = {
   PHONE_ALREADY_EXISTS: 'phone',
   INVALID_PHONE: 'phone',
   INVALID_ENTITLEMENT_PERIOD: 'adminActiveUntil',
+  PASSWORD_TOO_LONG: 'password',
+  PASSWORD_TOO_SHORT: 'password',
 };
 const initial = (): Record<Field, string> => ({
   fullName: '',
@@ -90,7 +93,8 @@ export function CreateSuperAdminUserPage() {
       next.username = 'Tên đăng nhập chỉ gồm chữ, số, dấu chấm, gạch dưới hoặc gạch ngang.';
     if (!/^\S+@\S+\.\S+$/u.test(values.email)) next.email = 'Email không hợp lệ.';
     if (values.phone.trim().length < 6) next.phone = 'Số điện thoại phải có ít nhất 6 ký tự.';
-    if (values.password.length < 8) next.password = 'Mật khẩu phải có ít nhất 8 ký tự.';
+    const passwordError = passwordValidationMessage(values.password);
+    if (passwordError !== null) next.password = passwordError;
     if (values.password !== values.passwordConfirmation)
       next.passwordConfirmation = 'Xác nhận mật khẩu không khớp.';
     if (accountType === 'ADMIN') {
