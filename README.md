@@ -56,6 +56,9 @@ pnpm --filter @martial-arts-scoring/api prisma:seed
 The API's Prisma scripts load the monorepo-root `.env`. In a deployed environment,
 apply the checked-in migrations non-interactively with
 `pnpm --filter @martial-arts-scoring/api prisma:migrate:deploy`.
+Run `pnpm --filter @martial-arts-scoring/api prisma:seed` only after a successful
+migration deployment. Migrations must be self-contained: the tournament-ownership
+migration never relies on the later `superadmin` seed.
 
 The seed ensures the normalized `superadmin` identity exists exactly once, is
 active, and has role `SUPER_ADMIN`. It uses bcrypt cost 12 and retains a matching
@@ -488,7 +491,9 @@ proxy or load balancer in front of Nginx and forward `X-Forwarded-Proto: https`;
 the browser will then use HTTPS/WSS on the single public origin. Do not expose
 PostgreSQL or Redis ports in production. Run migrations as part of the API
 startup only after backing up the database and reviewing the checked-in Prisma
-migrations.
+migrations. Run the idempotent seed after migrations complete successfully; it
+creates/reactivates `superadmin` with `SUPER_ADMIN`, but is never a migration
+prerequisite.
 
 See [the release-readiness runbook](docs/release-readiness.md) for the permission
 matrix, complete endpoint and Socket.IO contract, retention operation, migration

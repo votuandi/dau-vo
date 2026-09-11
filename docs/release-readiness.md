@@ -61,7 +61,40 @@ The PostgreSQL transaction advisory lock permits multiple API instances and manu
 
 ## Migrations and deployment
 
-Execute checked-in migrations in lexicographic order with `prisma:migrate:deploy`. Take and verify a PostgreSQL backup first. Do not use `migrate dev` in production. The API container runs `migrate deploy` before it starts; the lifecycle processor is part of the API process and uses the same database lock across replicas.
+Execute checked-in migrations in lexicographic order with `prisma:migrate:deploy`. Take and verify a PostgreSQL backup first. Do not use `migrate dev` in production. Only after a successful migration deployment, run the idempotent `prisma:seed`; it creates/reactivates `superadmin` with `SUPER_ADMIN` and is not a migration dependency. The API container runs `migrate deploy` before it starts; the lifecycle processor is part of the API process and uses the same database lock across replicas.
+
+### Tournament ownership migration rollout
+
+`20260911100000_tournament_ownership` first uses the earliest valid
+`TOURNAMENT_CREATED` audit actor (timestamp, then audit UUID), then assigns any
+remaining legacy tournaments to the oldest active, non-deleted legacy `ADMIN`
+(creation timestamp, then user UUID). It never uses `superadmin` as a fallback.
+If neither source exists, it fails before adding the `NOT NULL` owner constraint
+with an actionable error; do not delete tournaments to bypass it.
+
+This migration was found only on the untagged `feature-super-admin-power` branch
+when this correction was prepared, so its SQL was corrected in place before
+release. Before merging or deploying, confirm no environment has recorded this
+migration in `_prisma_migrations` (for example, `SELECT migration_name,
+finished_at FROM _prisma_migrations WHERE migration_name =
+'20260911100000_tournament_ownership';`). If any environment has recorded the old
+checksum, do not edit that deployed migration: restore the original file/checksum
+for that release line and ship a new, forward-compatible repair migration after
+it. An environment where the old migration failed before recording must be
+recovered according to Prisma's failed-migration procedure, then rerun using the
+corrected migration; a later migration cannot run ahead of a failed earlier one.
+
+The preceding unified-user migration preserves legacy administrators as `ADMIN`,
+but the later subscriptions migration does **not** create entitlements for them.
+They therefore remain `ADMIN` rows without entitlement-backed admin access under
+the current access policy. No grandfathering policy is implied by this migration;
+the product owner must decide whether existing administrators need entitlements.
+
+Before release, run `apps/api/prisma/verify-tournament-ownership-migration.ps1`.
+It starts and automatically removes its own PostgreSQL container; it never uses
+the configured developer database. The verification covers fresh schema, audit
+ownership, deterministic fallback selection, invalid no-user data, both seed
+executions, and `superadmin` uniqueness/role.
 
 Rollback is a database restore, not a down migration. For an application rollback, first deploy a version compatible with the migrated schema; restore only after confirming the backup point and planned data loss. Test both a clean database and a snapshot taken before the unified-user feature migration in staging.
 

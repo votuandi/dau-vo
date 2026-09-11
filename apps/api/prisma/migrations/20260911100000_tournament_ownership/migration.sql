@@ -1,29 +1,46 @@
 -- Expand: ownership is nullable while legacy rows are deterministically backfilled.
 ALTER TABLE "tournaments" ADD COLUMN "owner_user_id" UUID;
 
--- Prefer the actor recorded at tournament creation.
+-- Prefer the earliest recorded, still-referentially-valid actor at tournament
+-- creation. The audit-log UUID is a stable tie breaker for same-tick events.
 UPDATE "tournaments" tournament
 SET "owner_user_id" = source."user_id"
 FROM (
   SELECT DISTINCT ON ("metadata"->>'tournamentId')
-    "metadata"->>'tournamentId' AS tournament_id,
-    "user_id"
-  FROM "audit_logs"
-  WHERE "event_type" = 'TOURNAMENT_CREATED' AND "user_id" IS NOT NULL
-  ORDER BY "metadata"->>'tournamentId', "created_at" ASC
+    audit."metadata"->>'tournamentId' AS tournament_id,
+    audit."user_id"
+  FROM "audit_logs" audit
+  INNER JOIN "users" actor ON actor."id" = audit."user_id"
+  WHERE audit."event_type" = 'TOURNAMENT_CREATED' AND audit."user_id" IS NOT NULL
+  ORDER BY audit."metadata"->>'tournamentId', audit."created_at" ASC, audit."id" ASC
 ) source
 WHERE tournament."id"::text = source.tournament_id
   AND tournament."owner_user_id" IS NULL;
 
--- Deterministic legacy fallback: the seeded system super admin.
-UPDATE "tournaments"
-SET "owner_user_id" = (SELECT "id" FROM "users" WHERE "normalized_username" = 'superadmin' LIMIT 1)
-WHERE "owner_user_id" IS NULL;
+-- A seed runs after migrations, so it cannot be a migration prerequisite.
+-- Legacy users were normalized as active ADMINs by the preceding migration.
+-- Use the oldest active, non-deleted legacy administrator, with UUID as a
+-- stable tie breaker. This deliberately does not manufacture a user.
+WITH fallback AS (
+  SELECT "id"
+  FROM "users"
+  WHERE "role" = 'ADMIN'
+    AND "is_active" = true
+    AND "deleted_at" IS NULL
+  ORDER BY "created_at" ASC, "id" ASC
+  LIMIT 1
+)
+UPDATE "tournaments" tournament
+SET "owner_user_id" = fallback."id"
+FROM fallback
+WHERE tournament."owner_user_id" IS NULL;
 
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM "tournaments" WHERE "owner_user_id" IS NULL) THEN
-    RAISE EXCEPTION 'Cannot backfill tournament ownership: create the superadmin user before applying this migration';
+    RAISE EXCEPTION USING
+      MESSAGE = 'Cannot backfill tournament ownership: tournaments without a valid TOURNAMENT_CREATED actor require an active, non-deleted legacy ADMIN user',
+      HINT = 'Restore or add an active legacy ADMIN user, then rerun the migration. Do not rely on the post-migration superadmin seed.';
   END IF;
 END $$;
 
