@@ -30,6 +30,15 @@ export interface AdminAccessInput {
   readonly tournamentLimit?: number;
   readonly reason?: string;
 }
+export interface UpdateSuperAdminUserInput {
+  readonly username?: string;
+  readonly fullName?: string;
+  readonly email?: string;
+  readonly phone?: string;
+  readonly organization?: string;
+  readonly isActive?: boolean;
+  readonly reason?: string;
+}
 export interface ManagedUser {
   readonly id: string;
   readonly username: string;
@@ -118,10 +127,13 @@ export const superAdminApi = {
   user: (id: string) => apiClient.get<ManagedUser>(`super-admin/users/${id}`),
   create: (body: CreateSuperAdminUserInput) =>
     apiClient.post<ManagedUser>('super-admin/users', body),
-  update: (id: string, body: unknown) =>
+  update: (id: string, body: UpdateSuperAdminUserInput) =>
     apiClient.patch<ManagedUser>(`super-admin/users/${id}`, body),
   access: (id: string, body: AdminAccessInput) =>
-    apiClient.post<ManagedUser>('super-admin/users/' + id + '/admin-access', body),
+    apiClient.post<{ user: ManagedUser; entitlement: ManagedUser['adminEntitlement'] }>(
+      `super-admin/users/${id}/admin-access`,
+      body,
+    ),
   remove: (id: string, reason?: string) =>
     request<ManagedUser, { reason?: string }>(`super-admin/users/${id}`, {
       body: { ...(reason ? { reason } : {}) },

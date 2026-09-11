@@ -15,10 +15,8 @@ import { ScoreboardPage } from '@/pages/scoreboard-page';
 import { RegisterPage } from '@/pages/register-page';
 import { AccountPage, MatchPage, TournamentPage, TournamentsPage } from '@/pages/public-view-pages';
 import { SubscriptionPage } from '@/pages/subscription-page';
-import {
-  SuperAdminHomePage,
-  SuperAdminPricingPage,
-} from '@/pages/super-admin-pages';
+import { SuperAdminHomePage } from '@/features/super-admin/super-admin-home-page';
+import { SuperAdminPricingPage } from '@/features/super-admin/pricing/pricing-page';
 import { CreateSuperAdminUserPage } from '@/features/super-admin/users/create-user-page';
 import { SuperAdminUsersPage } from '@/features/super-admin/users/users-page';
 import { SuperAdminUserDetailPage } from '@/features/super-admin/users/user-detail-page';

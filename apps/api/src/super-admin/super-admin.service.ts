@@ -32,15 +32,24 @@ const select = {
   subscriptionOrders: {
     orderBy: { createdAt: 'desc' },
     select: {
-      id: true, createdAt: true, durationMonthsGranted: true,
-      tournamentLimitGranted: true, totalAmountVnd: true, paymentStatus: true,
+      id: true,
+      createdAt: true,
+      durationMonthsGranted: true,
+      tournamentLimitGranted: true,
+      totalAmountVnd: true,
+      paymentStatus: true,
     },
   },
   ownedTournaments: {
     orderBy: { createdAt: 'desc' },
     select: {
-      id: true, name: true, status: true, softDeletedAt: true,
-      purgeAfter: true, deletionReason: true, restoredAt: true,
+      id: true,
+      name: true,
+      status: true,
+      softDeletedAt: true,
+      purgeAfter: true,
+      deletionReason: true,
+      restoredAt: true,
     },
   },
 } satisfies Prisma.UserSelect;
@@ -226,6 +235,8 @@ export class SuperAdminService {
       'SUPER_ADMIN_ADMIN_ACCESS_CHANGED',
       i.reason,
       async (tx, user) => {
+        if (user.deletedAt !== null)
+          throw new ConflictException({ code: 'USER_DELETED' });
         if (user.role === UserRole.SUPER_ADMIN && i.action !== 'ADJUST')
           throw new ForbiddenException({
             code: 'CANNOT_CHANGE_SUPER_ADMIN_ENTITLEMENT',
@@ -264,7 +275,10 @@ export class SuperAdminService {
             status,
             activeFrom: from,
             activeUntil: until!,
-            tournamentLimit: i.tournamentLimit!,
+            // Prisma validates both branches of upsert.  A suspension/revocation
+            // has no quota payload, but still needs a concrete create branch even
+            // though the earlier state check guarantees an entitlement exists.
+            tournamentLimit: i.tournamentLimit ?? current?.tournamentLimit ?? 0,
             adminAccessEndedAt:
               status === AdminEntitlementStatus.ACTIVE ? null : now,
           },
@@ -331,6 +345,38 @@ export class SuperAdminService {
     after: unknown,
     reason?: string,
   ) {
+    // Audit the authorization-relevant change, not an entire user record.  In
+    // particular, profiles can contain contact data and must never turn into an
+    // implicit copy of PII in the audit log.
+    const safeSnapshot = (value: unknown) => {
+      if (!value || typeof value !== 'object') return value;
+      const user = value as {
+        id?: unknown;
+        role?: unknown;
+        isActive?: unknown;
+        deletedAt?: unknown;
+        adminEntitlement?: {
+          status?: unknown;
+          activeFrom?: unknown;
+          activeUntil?: unknown;
+          tournamentLimit?: unknown;
+        } | null;
+      };
+      return {
+        id: user.id,
+        role: user.role,
+        isActive: user.isActive,
+        deletedAt: user.deletedAt,
+        adminEntitlement: user.adminEntitlement
+          ? {
+              status: user.adminEntitlement.status,
+              activeFrom: user.adminEntitlement.activeFrom,
+              activeUntil: user.adminEntitlement.activeUntil,
+              tournamentLimit: user.adminEntitlement.tournamentLimit,
+            }
+          : null,
+      };
+    };
     await tx.auditLog.create({
       data: {
         adminUserId: actor,
@@ -339,8 +385,8 @@ export class SuperAdminService {
           action,
           targetUserId: target,
           reason: reason?.trim() || null,
-          before,
-          after,
+          before: safeSnapshot(before),
+          after: safeSnapshot(after),
         } as Prisma.InputJsonValue,
       },
     });

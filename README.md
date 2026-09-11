@@ -77,7 +77,27 @@ root development commands build `@martial-arts-scoring/shared-types` first.
 By default, the frontend is available at `http://localhost:5173`, and API health is
 available at `http://localhost:3000/api/health`.
 
-## Admin authentication
+## Login and super-admin smoke flow
+
+The single application login is `http://localhost:5173/login`; `/admin/login`
+only redirects there for old bookmarks. After the local/staging seed, sign in as
+`superadmin` with `dauvo@123`. The role-aware landing page is `/super-admin`.
+Confirm the session with:
+
+```powershell
+Invoke-RestMethod http://localhost:3000/api/auth/me
+```
+
+The response contains `user.role` equal to `SUPER_ADMIN` when called by the
+signed-in browser (the session cookie is HTTP-only). In `/super-admin`, create a
+user, open its detail page, activate admin access with dates and a tournament
+limit, suspend/resume it, soft-delete/restore it, then create a pricing version
+under `/super-admin/pricing`. Finally log out and confirm `/super-admin` sends
+you back to `/login` and `GET /api/auth/me` returns `401` without the cookie.
+
+`dauvo@123` is deliberately a local/staging default, never a production
+credential. Production seeding requires a unique, non-default
+`INITIAL_SUPER_ADMIN_PASSWORD`; rotate it through the deployment secret manager.
 
 ## Administration authorization
 
@@ -145,10 +165,9 @@ owned tournaments in the same transaction, and rejects exhausted capacity with
 Subscription orders are intentionally immutable so a future payment provider can
 attach provider transaction state without changing entitlement history.
 
-After running the development seed, open `http://localhost:5173/admin/login` and
-sign in with `SEED_ADMIN_USERNAME` and `SEED_ADMIN_PASSWORD`. The frontend restores
-the session with `GET /api/auth/me`, protects `/admin`, and invalidates the
-server-side session on logout.
+The frontend restores the session with `GET /api/auth/me`, protects role-specific
+routes, and invalidates the server-side session on logout. There are no
+`SEED_ADMIN_*` variables or legacy `admin/auth/*` endpoints.
 
 The API stores only an opaque, cryptographically random session identifier in an
 HTTP-only cookie. Session state and login-rate counters live in Redis; cookie and

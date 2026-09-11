@@ -31,6 +31,22 @@ All REST routes are prefixed with `/api`. `Auth` below means a current normal se
 | `POST /match-access/login`, `POST /match-access/takeover`, `POST /match-access/logout`, `GET /match-access/session` | Credential/session domain; login and takeover rate limited            |
 | `GET /health/live`, `GET /health/ready`                                                                             | Public infrastructure probes                                          |
 
+## Super-admin action and error matrix
+
+| Action                    | API                                                                    | Successful result                                                                 | Expected errors                                                                                                |
+| ------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| List/filter users         | `GET /super-admin/users`                                               | Deterministic `items`, `page`, `pageSize`, `total`, `totalPages`                  | `AUTH_REQUIRED`, `ADMIN_ACCESS_REQUIRED`                                                                       |
+| Create user               | `POST /super-admin/users`                                              | A new active `USER` and a redacted audit event                                    | `INVALID_PHONE`, `USERNAME_ALREADY_EXISTS`, `EMAIL_ALREADY_EXISTS`, `PHONE_ALREADY_EXISTS`                     |
+| Read/update account state | `GET`/`PATCH /super-admin/users/:id`                                   | Safe user projection and redacted audit event                                     | `USER_NOT_FOUND`, `CANNOT_MODIFY_SELF`, `LAST_SUPER_ADMIN`                                                     |
+| Soft-delete/restore       | `DELETE /super-admin/users/:id`, `POST /super-admin/users/:id/restore` | Deleted users are inactive; restore leaves them inactive until explicitly enabled | `USER_NOT_FOUND`, `CANNOT_MODIFY_SELF`, `LAST_SUPER_ADMIN`                                                     |
+| Change admin access       | `POST /super-admin/users/:id/admin-access`                             | Entitlement and role transition atomically audited                                | `USER_DELETED`, `ENTITLEMENT_NOT_FOUND`, `INVALID_ENTITLEMENT_PERIOD`, `CANNOT_CHANGE_SUPER_ADMIN_ENTITLEMENT` |
+| List/activate pricing     | `GET`/`PUT /super-admin/pricing`                                       | Immutable version; exactly the newly created version is active                    | `INVALID_PRICING_CONFIGURATION`, `INVALID_PRICING_TIERS`                                                       |
+
+All super-admin mutations require a current `SUPER_ADMIN` session. Audit metadata
+contains identifiers, role/status, entitlement timing/quota, and an optional
+reason; it deliberately excludes passwords, password hashes, session data and
+contact-profile PII.
+
 Socket.IO uses `/api/socket.io`. `public-match-state:request` is limited to a scoreboard socket authenticated by a valid public match ID. `match-state:request` requires a current participant session. `round:start`, `round:pause`, `round:resume`, `round:cancel`, `match:reset`, `result-cancellation:undo`, and `penalty:add` require the current inspector session for its server-derived match; `vote:submit` requires the current referee session and server-derived referee slot. Every participant command revalidates the persisted session before use.
 
 ## Retention and recovery

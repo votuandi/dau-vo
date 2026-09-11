@@ -95,7 +95,11 @@ export class PricingService {
     baseTournamentLimit: number;
     durationAddonUnitAmountVnd: number;
     tournamentAddonUnitAmountVnd: number;
-    discountTiers: Array<{ quantity: number; discountBasisPoints: number }>;
+    discountTiers: Array<{
+      type: PricingDiscountType;
+      quantity: number;
+      discountBasisPoints: number;
+    }>;
   }) {
     if (
       ![
