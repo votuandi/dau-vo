@@ -29,6 +29,20 @@ const select = {
   deletedAt: true,
   createdAt: true,
   adminEntitlement: true,
+  subscriptionOrders: {
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true, createdAt: true, durationMonthsGranted: true,
+      tournamentLimitGranted: true, totalAmountVnd: true, paymentStatus: true,
+    },
+  },
+  ownedTournaments: {
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true, name: true, status: true, softDeletedAt: true,
+      purgeAfter: true, deletionReason: true, restoredAt: true,
+    },
+  },
 } satisfies Prisma.UserSelect;
 type Safe = Prisma.UserGetPayload<{ select: typeof select }>;
 @Injectable()

@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, request } from './client';
 export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'USER';
 export type ActiveStatus = 'ACTIVE' | 'INACTIVE';
 export type EntitlementStatus = 'ACTIVE' | 'SUSPENDED' | 'EXPIRED' | 'REVOKED' | 'NONE';
@@ -43,9 +43,18 @@ export interface ManagedUser {
   readonly createdAt: string;
   readonly adminEntitlement?: {
     readonly status: string;
+    readonly activeFrom: string;
     readonly activeUntil: string;
     readonly tournamentLimit: number;
   } | null;
+  readonly subscriptionOrders?: readonly {
+    readonly id: string; readonly createdAt: string; readonly durationMonthsGranted: number;
+    readonly tournamentLimitGranted: number; readonly totalAmountVnd: number; readonly paymentStatus: string;
+  }[];
+  readonly ownedTournaments?: readonly {
+    readonly id: string; readonly name: string; readonly status: string; readonly softDeletedAt: string | null;
+    readonly purgeAfter: string | null; readonly deletionReason: string | null; readonly restoredAt: string | null;
+  }[];
 }
 export interface ManagedUsersPage {
   readonly items: readonly ManagedUser[];
@@ -72,6 +81,12 @@ export const superAdminApi = {
     apiClient.patch<ManagedUser>(`super-admin/users/${id}`, body),
   access: (id: string, body: AdminAccessInput) =>
     apiClient.post<ManagedUser>('super-admin/users/' + id + '/admin-access', body),
+  remove: (id: string, reason?: string) =>
+    request<ManagedUser, { reason?: string }>(`super-admin/users/${id}`, {
+      body: { ...(reason ? { reason } : {}) }, method: 'DELETE',
+    }),
+  restore: (id: string, reason?: string) =>
+    apiClient.post<ManagedUser>(`super-admin/users/${id}/restore`, { ...(reason ? { reason } : {}) }),
   pricing: () => apiClient.get<readonly unknown[]>('super-admin/pricing'),
   createPricing: (body: unknown) => apiClient.put('super-admin/pricing', body),
 };

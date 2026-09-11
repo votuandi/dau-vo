@@ -18,10 +18,10 @@ import { SubscriptionPage } from '@/pages/subscription-page';
 import {
   SuperAdminHomePage,
   SuperAdminPricingPage,
-  SuperAdminUserPage,
 } from '@/pages/super-admin-pages';
 import { CreateSuperAdminUserPage } from '@/features/super-admin/users/create-user-page';
 import { SuperAdminUsersPage } from '@/features/super-admin/users/users-page';
+import { SuperAdminUserDetailPage } from '@/features/super-admin/users/user-detail-page';
 import { MatchRole } from '@/types/shared';
 import { RoleAwareIndexRedirect } from './role-aware-index-redirect';
 
@@ -85,7 +85,7 @@ export const router = createBrowserRouter([
               { index: true, element: <SuperAdminHomePage /> },
               { path: 'users', element: <SuperAdminUsersPage /> },
               { path: 'users/new', element: <CreateSuperAdminUserPage /> },
-              { path: 'users/:id', element: <SuperAdminUserPage /> },
+              { path: 'users/:id', element: <SuperAdminUserDetailPage /> },
               { path: 'pricing', element: <SuperAdminPricingPage /> },
             ],
           },
