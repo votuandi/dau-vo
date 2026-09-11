@@ -12,7 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
 const TEST_DATABASE_URL =
   process.env.DATABASE_URL ??
   'postgresql://martial_arts:martial_arts@localhost:5432/martial_arts_scoring?schema=public';
-const TEST_REDIS_URL = 'redis://localhost:6379/15';
+const TEST_REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379/15';
 const TEST_ADMIN_USERNAME = 'admin-auth-e2e';
 const TEST_ADMIN_PASSWORD = 'Aa1!'.repeat(18);
 

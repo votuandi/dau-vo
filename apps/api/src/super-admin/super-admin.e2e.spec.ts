@@ -14,7 +14,7 @@ const password = 'Aa1!'.repeat(18);
 const databaseUrl =
   process.env.DATABASE_URL ??
   'postgresql://martial_arts:martial_arts@localhost:5432/martial_arts_scoring?schema=public';
-const redisUrl = 'redis://localhost:6379/14';
+const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379/14';
 
 describe('Super-admin management (e2e)', () => {
   jest.setTimeout(30_000);

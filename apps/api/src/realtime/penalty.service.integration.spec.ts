@@ -152,7 +152,7 @@ describe('PenaltyService (PostgreSQL integration)', () => {
       MATCH_SESSION_SECRET:
         'penalty-match-session-secret-with-at-least-thirty-two-characters',
       NODE_ENV: 'test',
-      REDIS_URL: 'redis://localhost:6379/11',
+      REDIS_URL: process.env.REDIS_URL ?? 'redis://localhost:6379/11',
       ROUND_DURATION_MS: '120000',
       WEB_ORIGIN: 'http://localhost:5173',
     });
@@ -163,6 +163,16 @@ describe('PenaltyService (PostgreSQL integration)', () => {
     penaltyService = module.get(PenaltyService);
     prisma = module.get(PrismaService);
     matchState = module.get(RealtimeMatchStateService);
+    await prisma.user.upsert({
+      where: { id: '00000000-0000-4000-8000-000000000001' },
+      update: {},
+      create: {
+        id: '00000000-0000-4000-8000-000000000001',
+        username: 'realtime-fixture-owner',
+        normalizedUsername: 'realtime-fixture-owner',
+        passwordHash: 'not-a-real-login-hash',
+      },
+    });
   });
 
   afterAll(async () => {

@@ -21,7 +21,7 @@ import { MatchCredentialGeneratorService } from './match-credential-generator.se
 const TEST_DATABASE_URL =
   process.env.DATABASE_URL ??
   'postgresql://martial_arts:martial_arts@localhost:5432/martial_arts_scoring?schema=public';
-const TEST_REDIS_URL = 'redis://localhost:6379/14';
+const TEST_REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379/14';
 const TEST_RUN_ID = `${process.pid}-${Date.now().toString(36)}`;
 const TEST_PREFIX = `admin-management-e2e-${TEST_RUN_ID}`;
 const TEST_ADMIN_USERNAME = `${TEST_PREFIX}-admin`;

@@ -161,7 +161,7 @@ describe('ScoringService (PostgreSQL integration)', () => {
         'scoring-match-session-secret-with-at-least-thirty-two-characters',
       MATCH_SESSION_TTL_SECONDS: '3600',
       NODE_ENV: 'test',
-      REDIS_URL: 'redis://localhost:6379/11',
+      REDIS_URL: process.env.REDIS_URL ?? 'redis://localhost:6379/11',
       ROUND_DURATION_MS: '120000',
       WEB_ORIGIN: 'http://localhost:5173',
     });
@@ -171,6 +171,16 @@ describe('ScoringService (PostgreSQL integration)', () => {
     }).compile();
     prisma = module.get(PrismaService);
     scoring = module.get(ScoringService);
+    await prisma.user.upsert({
+      where: { id: '00000000-0000-4000-8000-000000000001' },
+      update: {},
+      create: {
+        id: '00000000-0000-4000-8000-000000000001',
+        username: 'realtime-fixture-owner',
+        normalizedUsername: 'realtime-fixture-owner',
+        passwordHash: 'not-a-real-login-hash',
+      },
+    });
   });
 
   afterAll(async () => {

@@ -59,7 +59,10 @@ export function AdminLoginPage() {
     mutationFn: authApi.login,
     onSuccess: async (session) => {
       queryClient.setQueryData(authenticatedUserQueryKey, session);
-      const entitlement = await queryClient.fetchQuery(entitlementQueryOptions);
+      const entitlement = await queryClient.query({
+        ...entitlementQueryOptions,
+        staleTime: 'static',
+      });
       void navigate(
         getSafeReturnPath(location.state) ??
           getAccessLandingPath(effectiveAdminAccessState(session.user, entitlement)),

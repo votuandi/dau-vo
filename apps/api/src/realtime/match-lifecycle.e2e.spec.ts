@@ -31,7 +31,7 @@ import { PrismaService } from '../prisma/prisma.service';
 const TEST_DATABASE_URL =
   process.env.DATABASE_URL ??
   'postgresql://martial_arts:martial_arts@localhost:5432/martial_arts_scoring?schema=public';
-const TEST_REDIS_URL = 'redis://localhost:6379/10';
+const TEST_REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379/10';
 const SOCKET_PATH = '/api/socket.io';
 const EVENT_TIMEOUT_MS = 7_500;
 const TEST_RUN_ID = `${process.pid}-${Date.now().toString(36)}`;
@@ -435,6 +435,16 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     await setupPrisma.$connect();
 
     try {
+      await setupPrisma.user.upsert({
+        where: { id: '00000000-0000-4000-8000-000000000001' },
+        update: {},
+        create: {
+          id: '00000000-0000-4000-8000-000000000001',
+          username: 'realtime-fixture-owner',
+          normalizedUsername: 'realtime-fixture-owner',
+          passwordHash: 'not-a-real-login-hash',
+        },
+      });
       const tournament = await setupPrisma.tournament.create({
         data: {
           name: `${TEST_PREFIX}-tournament`,
