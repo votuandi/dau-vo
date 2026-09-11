@@ -7,10 +7,9 @@ import {
   TournamentDeletionReason,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { addUtcMonths } from './subscriptions.service';
+import { addUtcMonths, ADMIN_GRACE_MONTHS } from './admin-access.policy';
 
 const RECOVERY_DAYS = 60;
-const GRACE_MONTHS = 12;
 
 /** Idempotent lifecycle processor. Request-time authorization remains authoritative. */
 @Injectable()
@@ -61,6 +60,14 @@ export class TournamentLifecycleService
           data: { status: AdminEntitlementStatus.EXPIRED },
         });
         await tx.$executeRaw`UPDATE admin_entitlements SET admin_access_ended_at = active_until WHERE status = 'EXPIRED' AND admin_access_ended_at IS NULL`;
+        // Never touch SUPER_ADMIN; only stale persisted ADMIN roles are downgraded.
+        await tx.user.updateMany({
+          where: {
+            role: 'ADMIN',
+            adminEntitlement: { status: AdminEntitlementStatus.EXPIRED },
+          },
+          data: { role: 'USER' },
+        });
         const restored = await tx.tournament.updateMany({
           where: {
             deletionReason: TournamentDeletionReason.ADMIN_SUBSCRIPTION_LAPSED,
@@ -83,11 +90,7 @@ export class TournamentLifecycleService
         const owners = await tx.adminEntitlement.findMany({
           where: {
             status: {
-              in: [
-                AdminEntitlementStatus.EXPIRED,
-                AdminEntitlementStatus.SUSPENDED,
-                AdminEntitlementStatus.REVOKED,
-              ],
+              in: [AdminEntitlementStatus.EXPIRED],
             },
             adminAccessEndedAt: { not: null },
           },
@@ -97,7 +100,7 @@ export class TournamentLifecycleService
         for (const owner of owners) {
           if (
             owner.adminAccessEndedAt === null ||
-            addUtcMonths(owner.adminAccessEndedAt, GRACE_MONTHS) > now
+            addUtcMonths(owner.adminAccessEndedAt, ADMIN_GRACE_MONTHS) > now
           )
             continue;
           const changed = await tx.tournament.updateMany({

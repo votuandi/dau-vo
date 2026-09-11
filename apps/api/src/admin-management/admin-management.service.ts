@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -18,6 +19,10 @@ import { hash } from 'bcryptjs';
 
 import type { EnvironmentVariables } from '../config/environment';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  calculateAdminAccessState,
+  isActiveAdminState,
+} from '../subscriptions/admin-access.policy';
 import type { AuthenticatedUser } from '../auth/admin-auth.types';
 import { RealtimeSessionRegistryService } from '../realtime/realtime-session-registry.service';
 import { RealtimeMatchStateService } from '../realtime/realtime-match-state.service';
@@ -169,13 +174,13 @@ export class AdminManagementService {
   async listTournamentsFor(
     actor: AuthenticatedUser,
   ): Promise<TournamentView[]> {
+    const isSuperAdmin = await this.assertAdminAccess(actor, false);
     return this.prisma.tournament.findMany({
       orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       select: tournamentSelect,
-      where:
-        actor.role === UserRole.SUPER_ADMIN
-          ? { softDeletedAt: null }
-          : { ownerUserId: actor.id, softDeletedAt: null },
+      where: isSuperAdmin
+        ? { softDeletedAt: null }
+        : { ownerUserId: actor.id, softDeletedAt: null },
     });
   }
 
@@ -184,16 +189,15 @@ export class AdminManagementService {
     actor: AuthenticatedUser,
     mutation = false,
   ): Promise<void> {
+    const isSuperAdmin = await this.assertAdminAccess(actor, mutation);
     const tournament = await this.prisma.tournament.findFirst({
-      where:
-        actor.role === UserRole.SUPER_ADMIN
-          ? { id, softDeletedAt: null }
-          : { id, ownerUserId: actor.id, softDeletedAt: null },
+      where: isSuperAdmin
+        ? { id, softDeletedAt: null }
+        : { id, ownerUserId: actor.id, softDeletedAt: null },
       select: { id: true },
     });
     if (tournament === null)
       throw new NotFoundException(TOURNAMENT_NOT_FOUND_ERROR);
-    if (mutation) await this.requireActiveAdmin(actor);
   }
 
   async assertMatchAccess(
@@ -201,35 +205,39 @@ export class AdminManagementService {
     actor: AuthenticatedUser,
     mutation = false,
   ): Promise<void> {
+    const isSuperAdmin = await this.assertAdminAccess(actor, mutation);
     const match = await this.prisma.match.findFirst({
-      where:
-        actor.role === UserRole.SUPER_ADMIN
-          ? { id, tournament: { softDeletedAt: null } }
-          : { id, tournament: { ownerUserId: actor.id, softDeletedAt: null } },
+      where: isSuperAdmin
+        ? { id, tournament: { softDeletedAt: null } }
+        : { id, tournament: { ownerUserId: actor.id, softDeletedAt: null } },
       select: { id: true },
     });
     if (match === null) throw new NotFoundException(MATCH_NOT_FOUND_ERROR);
-    if (mutation) await this.requireActiveAdmin(actor);
   }
 
-  private async requireActiveAdmin(actor: AuthenticatedUser): Promise<void> {
-    if (actor.role === UserRole.SUPER_ADMIN) return;
-    const entitlement = await this.prisma.adminEntitlement.findUnique({
-      where: { userId: actor.id },
+  private async assertAdminAccess(
+    actor: AuthenticatedUser,
+    mutation: boolean,
+  ): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: actor.id },
+      include: { adminEntitlement: true },
     });
-    const now = new Date();
-    if (
-      entitlement?.status !== 'ACTIVE' ||
-      entitlement.activeFrom > now ||
-      entitlement.activeUntil <= now
-    ) {
-      throw new ConflictException({
-        code:
-          entitlement === null
-            ? 'ADMIN_SUBSCRIPTION_REQUIRED'
-            : 'ADMIN_SUBSCRIPTION_EXPIRED',
-      });
-    }
+    if (user === null) throw new ForbiddenException();
+    if (user.role === UserRole.SUPER_ADMIN) return true;
+    const state = calculateAdminAccessState(
+      user.role,
+      user.adminEntitlement,
+      new Date(),
+    );
+    if (!mutation && state === 'EXPIRED_READ_ONLY') return false;
+    if (isActiveAdminState(state)) return false;
+    throw new ConflictException({
+      code:
+        user.adminEntitlement === null
+          ? 'ADMIN_SUBSCRIPTION_REQUIRED'
+          : 'ADMIN_SUBSCRIPTION_EXPIRED',
+    });
   }
 
   async createTournament(
@@ -254,9 +262,9 @@ export class AdminManagementService {
         const now = new Date();
         if (
           entitlement === null ||
-          entitlement.status !== 'ACTIVE' ||
-          entitlement.activeFrom > now ||
-          entitlement.activeUntil <= now
+          !isActiveAdminState(
+            calculateAdminAccessState(actor.role, entitlement, now),
+          )
         ) {
           throw new ConflictException({
             code:

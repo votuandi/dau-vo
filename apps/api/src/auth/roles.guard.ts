@@ -6,7 +6,10 @@ import type { UserRole } from '@prisma/client';
 import { REQUIRED_ROLES } from './roles.decorator';
 import type { AuthenticatedUserRequest } from './admin-auth.types';
 import { PrismaService } from '../prisma/prisma.service';
-import { addUtcMonths } from '../subscriptions/subscriptions.service';
+import {
+  calculateAdminAccessState,
+  isActiveAdminState,
+} from '../subscriptions/admin-access.policy';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -24,33 +27,35 @@ export class RolesGuard implements CanActivate {
     const user = context
       .switchToHttp()
       .getRequest<AuthenticatedUserRequest>().user;
-    if (!required.includes(user.role))
-      throw new ForbiddenException({
-        code: 'ADMIN_ACCESS_REQUIRED',
-        message: 'Administrator access required',
-      });
-    if (user.role === 'SUPER_ADMIN') return true;
-    const entitlement = await this.prisma.adminEntitlement.findUnique({
-      where: { userId: user.id },
+    const databaseUser = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      include: { adminEntitlement: true },
     });
+    if (databaseUser === null) throw new ForbiddenException();
+    if (
+      databaseUser.role === 'SUPER_ADMIN' &&
+      required.includes(databaseUser.role)
+    ) {
+      return true;
+    }
     const now = new Date();
-    if (
-      entitlement?.status === 'ACTIVE' &&
-      entitlement.activeFrom <= now &&
-      now < entitlement.activeUntil
-    )
+    const state = calculateAdminAccessState(
+      databaseUser.role,
+      databaseUser.adminEntitlement,
+      now,
+    );
+    if (required.includes('ADMIN') && isActiveAdminState(state)) {
       return true;
-    // Former administrators retain owner-only GET access through their calendar grace period.
-    const endedAt = entitlement?.adminAccessEndedAt ?? entitlement?.activeUntil;
+    }
     if (
+      required.includes('ADMIN') &&
       context.switchToHttp().getRequest().method === 'GET' &&
-      endedAt !== undefined &&
-      endedAt !== null &&
-      now < addUtcMonths(endedAt, 12)
-    )
+      state === 'EXPIRED_READ_ONLY'
+    ) {
       return true;
+    }
     throw new ForbiddenException({
-      code: entitlement
+      code: databaseUser.adminEntitlement
         ? 'ADMIN_SUBSCRIPTION_EXPIRED'
         : 'ADMIN_SUBSCRIPTION_REQUIRED',
     });

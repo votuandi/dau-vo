@@ -13,23 +13,13 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import type { AuthenticatedUser } from '../auth/admin-auth.types';
+import {
+  addUtcMonths,
+  adminAccessEndedAt,
+  calculateAdminAccessState,
+} from './admin-access.policy';
 
-export function addUtcMonths(value: Date, months: number): Date {
-  const lastDay = new Date(
-    Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + months + 1, 0),
-  );
-  return new Date(
-    Date.UTC(
-      lastDay.getUTCFullYear(),
-      lastDay.getUTCMonth(),
-      Math.min(value.getUTCDate(), lastDay.getUTCDate()),
-      value.getUTCHours(),
-      value.getUTCMinutes(),
-      value.getUTCSeconds(),
-      value.getUTCMilliseconds(),
-    ),
-  );
-}
+export { addUtcMonths } from './admin-access.policy';
 @Injectable()
 export class SubscriptionsService {
   constructor(
@@ -112,6 +102,20 @@ export class SubscriptionsService {
               adminAccessEndedAt: null,
             },
           });
+          // Only subscription-lapsed records are recoverable on renewal.
+          await tx.tournament.updateMany({
+            where: {
+              deletionReason: 'ADMIN_SUBSCRIPTION_LAPSED',
+              ownerUserId: actor.id,
+              softDeletedAt: { not: null },
+            },
+            data: {
+              deletionReason: null,
+              purgeAfter: null,
+              restoredAt: now,
+              softDeletedAt: null,
+            },
+          });
           const updatedUser = await tx.user.updateMany({
             where: { id: actor.id, role: { not: UserRole.SUPER_ADMIN } },
             data: { role: UserRole.ADMIN },
@@ -155,23 +159,24 @@ export class SubscriptionsService {
     }
   }
   async me(userId: string) {
-    const [entitlement, used] = await Promise.all([
-      this.prisma.adminEntitlement.findUnique({ where: { userId } }),
+    const [user, used] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        include: { adminEntitlement: true },
+      }),
       this.prisma.tournament.count({
         where: { ownerUserId: userId, softDeletedAt: null },
       }),
     ]);
     const now = new Date();
-    const endedAt = entitlement?.adminAccessEndedAt ?? entitlement?.activeUntil;
+    const entitlement = user?.adminEntitlement ?? null;
+    const endedAt = entitlement ? adminAccessEndedAt(entitlement) : null;
     const readOnlyUntil = endedAt ? addUtcMonths(endedAt, 12) : null;
-    const accessState =
-      entitlement?.status === AdminEntitlementStatus.ACTIVE &&
-      entitlement.activeFrom <= now &&
-      entitlement.activeUntil > now
-        ? 'ACTIVE_ADMIN'
-        : readOnlyUntil !== null && now < readOnlyUntil
-          ? 'EXPIRED_READ_ONLY'
-          : 'HIDDEN';
+    const accessState = calculateAdminAccessState(
+      user?.role ?? UserRole.USER,
+      entitlement,
+      now,
+    );
     return entitlement === null
       ? null
       : {
