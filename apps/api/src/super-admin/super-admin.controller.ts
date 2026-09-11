@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Inject,
   Param,
@@ -10,46 +11,22 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import {
-  IsBoolean,
-  IsEnum,
-  IsInt,
-  IsOptional,
-  IsString,
-} from 'class-validator';
 import { UserRole } from '@prisma/client';
 import { AuthGuard } from '../auth/admin-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import type { AuthenticatedUserRequest } from '../auth/admin-auth.types';
 import { SuperAdminService } from './super-admin.service';
-class UserPatch {
-  @IsOptional() @IsString() fullName?: string;
-  @IsOptional() @IsString() email?: string;
-  @IsOptional() @IsString() phone?: string;
-  @IsOptional() @IsString() organization?: string;
-  @IsOptional() @IsEnum(UserRole) role?: UserRole;
-  @IsOptional() @IsBoolean() isActive?: boolean;
-  @IsOptional() @IsBoolean() deleted?: boolean;
-  @IsOptional() @IsString() reason?: string;
-}
-class CreateUserDto {
-  @IsString() username!: string;
-  @IsString() fullName!: string;
-  @IsString() email!: string;
-  @IsString() phone!: string;
-  @IsString() password!: string;
-  @IsOptional() @IsString() organization?: string;
-  @IsOptional() @IsEnum(UserRole) role?: UserRole;
-}
-class AccessDto {
-  @IsEnum(['ACTIVATE', 'SUSPEND', 'REVOKE']) action!:
-    'ACTIVATE' | 'SUSPEND' | 'REVOKE';
-  @IsOptional() @IsString() activeFrom?: string;
-  @IsOptional() @IsString() activeUntil?: string;
-  @IsOptional() @IsInt() tournamentLimit?: number;
-  @IsOptional() @IsString() reason?: string;
-}
+// Runtime imports are required for Nest's validation metadata.
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+import {
+  AdminAccessDto,
+  CreateSuperAdminUserDto,
+  ListSuperAdminUsersDto,
+  ReasonDto,
+  UpdateSuperAdminUserDto,
+  UserIdParamDto,
+} from './dto/user-management.dto';
 @Controller('super-admin/users')
 @UseGuards(AuthGuard, RolesGuard)
 @Roles(UserRole.SUPER_ADMIN)
@@ -58,37 +35,46 @@ export class SuperAdminController {
     @Inject(SuperAdminService) private readonly users: SuperAdminService,
   ) {}
   @Post() create(
-    @Body() body: CreateUserDto,
+    @Body() body: CreateSuperAdminUserDto,
     @Req() request: AuthenticatedUserRequest,
   ) {
     return this.users.create(body, request.user);
   }
   @Get() list(
     @Query()
-    q: {
-      page?: number;
-      search?: string;
-      role?: UserRole;
-      active?: string;
-    },
+    q: ListSuperAdminUsersDto,
   ) {
     return this.users.list(q);
   }
-  @Get(':id') detail(@Param('id') id: string) {
-    return this.users.detail(id);
+  @Get(':id') detail(@Param() params: UserIdParamDto) {
+    return this.users.detail(params.id);
   }
   @Patch(':id') update(
-    @Param('id') id: string,
-    @Body() body: UserPatch,
+    @Param() params: UserIdParamDto,
+    @Body() body: UpdateSuperAdminUserDto,
     @Req() r: AuthenticatedUserRequest,
   ) {
-    return this.users.update(id, body, r.user);
+    return this.users.update(params.id, body, r.user);
+  }
+  @Delete(':id') remove(
+    @Param() params: UserIdParamDto,
+    @Body() body: ReasonDto,
+    @Req() r: AuthenticatedUserRequest,
+  ) {
+    return this.users.remove(params.id, body.reason, r.user);
+  }
+  @Post(':id/restore') restore(
+    @Param() params: UserIdParamDto,
+    @Body() body: ReasonDto,
+    @Req() r: AuthenticatedUserRequest,
+  ) {
+    return this.users.restore(params.id, body.reason, r.user);
   }
   @Post(':id/admin-access') access(
-    @Param('id') id: string,
-    @Body() body: AccessDto,
+    @Param() params: UserIdParamDto,
+    @Body() body: AdminAccessDto,
     @Req() r: AuthenticatedUserRequest,
   ) {
-    return this.users.access(id, body, r.user);
+    return this.users.access(params.id, body, r.user);
   }
 }

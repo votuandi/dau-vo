@@ -6,11 +6,31 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, UserRole } from '@prisma/client';
+import { AdminEntitlementStatus, Prisma, UserRole } from '@prisma/client';
 import { hash } from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { IdentityNormalizationService } from '../auth/identity-normalization.service';
 import type { AuthenticatedUser } from '../auth/admin-auth.types';
+import type {
+  AdminAccessDto,
+  CreateSuperAdminUserDto,
+  ListSuperAdminUsersDto,
+  UpdateSuperAdminUserDto,
+} from './dto/user-management.dto';
+const select = {
+  id: true,
+  username: true,
+  fullName: true,
+  email: true,
+  phone: true,
+  organization: true,
+  role: true,
+  isActive: true,
+  deletedAt: true,
+  createdAt: true,
+  adminEntitlement: true,
+} satisfies Prisma.UserSelect;
+type Safe = Prisma.UserGetPayload<{ select: typeof select }>;
 @Injectable()
 export class SuperAdminService {
   constructor(
@@ -18,303 +38,316 @@ export class SuperAdminService {
     @Inject(IdentityNormalizationService)
     private readonly identities: IdentityNormalizationService,
   ) {}
-  async list(query: {
-    page?: number;
-    search?: string;
-    role?: UserRole;
-    active?: string;
-  }) {
-    const page = Math.max(1, query.page ?? 1),
-      take = 25;
-    const search = query.search?.trim();
+  async list(q: ListSuperAdminUsersDto) {
+    const page = q.page ?? 1,
+      pageSize = q.pageSize ?? 25,
+      s = q.search?.trim();
     const where: Prisma.UserWhereInput = {
-      ...(query.role ? { role: query.role } : {}),
-      ...(query.active === undefined
-        ? {}
-        : { isActive: query.active === 'true' }),
-      ...(search
+      ...(q.role ? { role: q.role } : {}),
+      ...(q.activeStatus ? { isActive: q.activeStatus === 'ACTIVE' } : {}),
+      ...(q.deletedStatus === 'ONLY'
+        ? { deletedAt: { not: null } }
+        : q.deletedStatus === 'INCLUDE'
+          ? {}
+          : { deletedAt: null }),
+      ...(q.entitlementStatus === 'NONE'
+        ? { adminEntitlement: null }
+        : q.entitlementStatus
+          ? {
+              adminEntitlement: {
+                is: { status: q.entitlementStatus as AdminEntitlementStatus },
+              },
+            }
+          : {}),
+      ...(s
         ? {
-            OR: [
-              { username: { contains: search, mode: 'insensitive' } },
-              { fullName: { contains: search, mode: 'insensitive' } },
-              { email: { contains: search, mode: 'insensitive' } },
-              { phone: { contains: search, mode: 'insensitive' } },
-            ],
+            OR: ['username', 'fullName', 'email', 'phone'].map((field) => ({
+              [field]: { contains: s, mode: 'insensitive' },
+            })),
           }
         : {}),
     };
     const [items, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
-        skip: (page - 1) * take,
-        take,
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          username: true,
-          fullName: true,
-          email: true,
-          phone: true,
-          organization: true,
-          role: true,
-          isActive: true,
-          deletedAt: true,
-          createdAt: true,
-          adminEntitlement: true,
-        },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        select,
       }),
       this.prisma.user.count({ where }),
     ]);
-    return { items, page, pageSize: take, total };
+    return {
+      items,
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+    };
   }
-  async detail(id: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        username: true,
-        fullName: true,
-        email: true,
-        phone: true,
-        organization: true,
-        role: true,
-        isActive: true,
-        deletedAt: true,
-        createdAt: true,
-        adminEntitlement: true,
-        ownedTournaments: {
-          select: {
-            id: true,
-            name: true,
-            softDeletedAt: true,
-            purgeAfter: true,
-            deletionReason: true,
-            restoredAt: true,
-          },
-          orderBy: { createdAt: 'desc' },
-        },
-        subscriptionOrders: { orderBy: { createdAt: 'desc' } },
-      },
-    });
-    if (!user) throw new NotFoundException();
+  async detail(id: string): Promise<Safe> {
+    const user = await this.prisma.user.findUnique({ where: { id }, select });
+    if (!user) throw new NotFoundException({ code: 'USER_NOT_FOUND' });
     return user;
   }
-  async create(
-    input: {
-      username: string;
-      fullName: string;
-      email: string;
-      phone: string;
-      password: string;
-      organization?: string;
-      role?: UserRole;
-    },
-    actor: AuthenticatedUser,
-  ) {
+  async create(i: CreateSuperAdminUserDto, a: AuthenticatedUser) {
+    if (!this.phone(i.phone))
+      throw new BadRequestException({ code: 'INVALID_PHONE' });
     try {
       return await this.prisma.$transaction(async (tx) => {
         const user = await tx.user.create({
           data: {
-            username: input.username.trim(),
-            normalizedUsername: this.identities.username(input.username),
-            fullName: input.fullName.trim(),
-            email: input.email.trim(),
-            normalizedEmail: this.identities.email(input.email),
-            phone: input.phone.trim(),
-            normalizedPhone: this.identities.phone(input.phone),
-            organization: input.organization?.trim() || null,
-            passwordHash: await hash(input.password, 12),
-            role: input.role ?? UserRole.USER,
-            isActive: true,
+            username: i.username.trim(),
+            normalizedUsername: this.identities.username(i.username),
+            fullName: i.fullName.trim(),
+            email: i.email.trim(),
+            normalizedEmail: this.identities.email(i.email),
+            phone: i.phone.trim(),
+            normalizedPhone: this.identities.phone(i.phone),
+            organization: i.organization?.trim() || null,
+            passwordHash: await hash(i.password, 12),
+            role: UserRole.USER,
           },
-          select: {
-            id: true,
-            username: true,
-            fullName: true,
-            role: true,
-            isActive: true,
-          },
+          select,
         });
-        await tx.auditLog.create({
-          data: {
-            adminUserId: actor.id,
-            eventType: 'ADMIN_ACTION',
-            metadata: {
-              action: 'SUPER_ADMIN_USER_CREATED',
-              targetUserId: user.id,
-            },
-          },
-        });
+        await this.audit(
+          tx,
+          a.id,
+          'SUPER_ADMIN_USER_CREATED',
+          user.id,
+          null,
+          user,
+        );
         return user;
       });
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      )
-        throw new ConflictException({ code: 'DUPLICATE_IDENTITY' });
-      throw error;
-    }
-  }
-  async update(
-    id: string,
-    input: {
-      fullName?: string;
-      email?: string;
-      phone?: string;
-      organization?: string;
-      role?: UserRole;
-      isActive?: boolean;
-      deleted?: boolean;
-      reason?: string;
-    },
-    actor: AuthenticatedUser,
-  ) {
-    const before = await this.detail(id);
-    if (
-      id === actor.id &&
-      (input.isActive === false ||
-        input.deleted ||
-        (input.role !== undefined && input.role !== UserRole.SUPER_ADMIN))
-    )
-      throw new ForbiddenException({ code: 'CANNOT_MODIFY_SELF' });
-    if (
-      before.role === UserRole.SUPER_ADMIN &&
-      ((input.role !== undefined && input.role !== UserRole.SUPER_ADMIN) ||
-        input.isActive === false ||
-        input.deleted)
-    ) {
-      const count = await this.prisma.user.count({
-        where: { role: UserRole.SUPER_ADMIN, isActive: true, deletedAt: null },
-      });
-      if (count <= 1) throw new ConflictException({ code: 'LAST_SUPER_ADMIN' });
-    }
-    const data: Prisma.UserUpdateInput = {
-      ...(input.fullName !== undefined
-        ? { fullName: input.fullName.trim() }
-        : {}),
-      ...(input.organization !== undefined
-        ? { organization: input.organization.trim() || null }
-        : {}),
-      ...(input.email !== undefined
-        ? {
-            email: input.email.trim(),
-            normalizedEmail: this.identities.email(input.email),
-          }
-        : {}),
-      ...(input.phone !== undefined
-        ? {
-            phone: input.phone.trim(),
-            normalizedPhone: this.identities.phone(input.phone),
-          }
-        : {}),
-      ...(input.role !== undefined ? { role: input.role } : {}),
-      ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
-      ...(input.deleted ? { deletedAt: new Date(), isActive: false } : {}),
-    };
-    try {
-      const result = await this.prisma.$transaction(async (tx) => {
-        const user = await tx.user.update({
-          where: { id },
-          data,
-          select: {
-            id: true,
-            username: true,
-            fullName: true,
-            email: true,
-            phone: true,
-            role: true,
-            isActive: true,
-            deletedAt: true,
-          },
-        });
-        await tx.auditLog.create({
-          data: {
-            adminUserId: actor.id,
-            eventType: 'ADMIN_ACTION',
-            metadata: {
-              action: 'SUPER_ADMIN_USER_UPDATED',
-              targetUserId: id,
-              reason: input.reason ?? null,
-              before,
-              after: user,
-            },
-          },
-        });
-        return user;
-      });
-      return result;
     } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2002'
-      )
-        throw new ConflictException({ code: 'DUPLICATE_IDENTITY' });
-      throw e;
+      this.unique(e);
     }
   }
-  async access(
-    id: string,
-    input: {
-      action: 'ACTIVATE' | 'SUSPEND' | 'REVOKE';
-      activeFrom?: string;
-      activeUntil?: string;
-      tournamentLimit?: number;
-      reason?: string;
-    },
-    actor: AuthenticatedUser,
-  ) {
-    const current = await this.prisma.adminEntitlement.findUnique({
-      where: { userId: id },
-    });
-    const now = new Date();
-    const status =
-      input.action === 'ACTIVATE'
-        ? 'ACTIVE'
-        : input.action === 'SUSPEND'
-          ? 'SUSPENDED'
-          : 'REVOKED';
-    const from = input.activeFrom
-      ? new Date(input.activeFrom)
-      : (current?.activeFrom ?? now);
-    const until = input.activeUntil
-      ? new Date(input.activeUntil)
-      : (current?.activeUntil ?? now);
-    if (status === 'ACTIVE' && until <= from)
-      throw new BadRequestException({ code: 'INVALID_ENTITLEMENT_PERIOD' });
-    return this.prisma.$transaction(async (tx) => {
-      const entitlement = await tx.adminEntitlement.upsert({
-        where: { userId: id },
-        create: {
-          userId: id,
-          status,
-          activeFrom: from,
-          activeUntil: until,
-          tournamentLimit: input.tournamentLimit ?? 0,
-        },
-        update: {
-          status,
-          activeFrom: from,
-          activeUntil: until,
-          tournamentLimit:
-            input.tournamentLimit ?? current?.tournamentLimit ?? 0,
-          adminAccessEndedAt: status === 'ACTIVE' ? null : now,
-        },
-      });
-      await tx.auditLog.create({
-        data: {
-          adminUserId: actor.id,
-          eventType: 'ADMIN_ACTION',
-          metadata: {
-            action: 'SUPER_ADMIN_ENTITLEMENT',
-            targetUserId: id,
-            reason: input.reason ?? null,
-            before: current,
-            after: entitlement,
+  async update(id: string, i: UpdateSuperAdminUserDto, a: AuthenticatedUser) {
+    if (i.phone !== undefined && !this.phone(i.phone))
+      throw new BadRequestException({ code: 'INVALID_PHONE' });
+    return this.mutate(
+      id,
+      a,
+      'SUPER_ADMIN_USER_UPDATED',
+      i.reason,
+      async (tx, before) => {
+        if (id === a.id && i.isActive === false)
+          throw new ForbiddenException({ code: 'CANNOT_MODIFY_SELF' });
+        if (before.role === UserRole.SUPER_ADMIN && i.isActive === false)
+          await this.canRemove(tx);
+        return tx.user.update({
+          where: { id },
+          data: {
+            ...(i.username !== undefined
+              ? {
+                  username: i.username.trim(),
+                  normalizedUsername: this.identities.username(i.username),
+                }
+              : {}),
+            ...(i.fullName !== undefined
+              ? { fullName: i.fullName.trim() }
+              : {}),
+            ...(i.email !== undefined
+              ? {
+                  email: i.email.trim(),
+                  normalizedEmail: this.identities.email(i.email),
+                }
+              : {}),
+            ...(i.phone !== undefined
+              ? {
+                  phone: i.phone.trim(),
+                  normalizedPhone: this.identities.phone(i.phone),
+                }
+              : {}),
+            ...(i.organization !== undefined
+              ? { organization: i.organization.trim() || null }
+              : {}),
+            ...(i.isActive !== undefined ? { isActive: i.isActive } : {}),
           },
-        },
+          select,
+        });
+      },
+    );
+  }
+  async remove(id: string, reason: string | undefined, a: AuthenticatedUser) {
+    return this.mutate(
+      id,
+      a,
+      'SUPER_ADMIN_USER_SOFT_DELETED',
+      reason,
+      async (tx, before) => {
+        if (id === a.id)
+          throw new ForbiddenException({ code: 'CANNOT_MODIFY_SELF' });
+        if (before.role === UserRole.SUPER_ADMIN) await this.canRemove(tx);
+        await tx.adminEntitlement.updateMany({
+          where: { userId: id, status: AdminEntitlementStatus.ACTIVE },
+          data: {
+            status: AdminEntitlementStatus.REVOKED,
+            adminAccessEndedAt: new Date(),
+          },
+        });
+        return tx.user.update({
+          where: { id },
+          data: { deletedAt: new Date(), isActive: false },
+          select,
+        });
+      },
+    );
+  }
+  async restore(id: string, reason: string | undefined, a: AuthenticatedUser) {
+    return this.mutate(id, a, 'SUPER_ADMIN_USER_RESTORED', reason, (tx) =>
+      tx.user.update({
+        where: { id },
+        data: { deletedAt: null, isActive: false },
+        select,
+      }),
+    );
+  }
+  async access(id: string, i: AdminAccessDto, a: AuthenticatedUser) {
+    return this.mutate(
+      id,
+      a,
+      'SUPER_ADMIN_ADMIN_ACCESS_CHANGED',
+      i.reason,
+      async (tx, user) => {
+        if (user.role === UserRole.SUPER_ADMIN && i.action !== 'ADJUST')
+          throw new ForbiddenException({
+            code: 'CANNOT_CHANGE_SUPER_ADMIN_ENTITLEMENT',
+          });
+        const current = await tx.adminEntitlement.findUnique({
+            where: { userId: id },
+          }),
+          now = new Date();
+        if (!current && i.action !== 'ACTIVATE')
+          throw new BadRequestException({ code: 'ENTITLEMENT_NOT_FOUND' });
+        const from = i.activeFrom
+            ? new Date(i.activeFrom)
+            : (current?.activeFrom ?? now),
+          until = i.activeUntil
+            ? new Date(i.activeUntil)
+            : current?.activeUntil;
+        if (
+          (i.action === 'ACTIVATE' || i.action === 'ADJUST') &&
+          (!until ||
+            until <= from ||
+            (i.tournamentLimit === undefined && !current))
+        )
+          throw new BadRequestException({ code: 'INVALID_ENTITLEMENT_PERIOD' });
+        const status =
+          i.action === 'ACTIVATE'
+            ? AdminEntitlementStatus.ACTIVE
+            : i.action === 'SUSPEND'
+              ? AdminEntitlementStatus.SUSPENDED
+              : i.action === 'REVOKE'
+                ? AdminEntitlementStatus.REVOKED
+                : current!.status;
+        const entitlement = await tx.adminEntitlement.upsert({
+          where: { userId: id },
+          create: {
+            userId: id,
+            status,
+            activeFrom: from,
+            activeUntil: until!,
+            tournamentLimit: i.tournamentLimit!,
+            adminAccessEndedAt:
+              status === AdminEntitlementStatus.ACTIVE ? null : now,
+          },
+          update: {
+            status,
+            activeFrom: from,
+            activeUntil: until,
+            tournamentLimit: i.tournamentLimit ?? current!.tournamentLimit,
+            adminAccessEndedAt:
+              status === AdminEntitlementStatus.ACTIVE ? null : now,
+          },
+        });
+        if (i.action === 'ACTIVATE')
+          await tx.user.update({
+            where: { id },
+            data: { role: UserRole.ADMIN, isActive: true },
+          });
+        if (i.action === 'REVOKE' && user.role === UserRole.ADMIN)
+          await tx.user.update({
+            where: { id },
+            data: { role: UserRole.USER },
+          });
+        return {
+          user: await tx.user.findUniqueOrThrow({ where: { id }, select }),
+          entitlement,
+        };
+      },
+    );
+  }
+  private async mutate<T>(
+    id: string,
+    a: AuthenticatedUser,
+    action: string,
+    reason: string | undefined,
+    op: (tx: Prisma.TransactionClient, b: Safe) => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(731091)`;
+        const before = await tx.user.findUnique({ where: { id }, select });
+        if (!before) throw new NotFoundException({ code: 'USER_NOT_FOUND' });
+        const after = await op(tx, before);
+        await this.audit(tx, a.id, action, id, before, after, reason);
+        return after;
       });
-      return entitlement;
+    } catch (e) {
+      this.unique(e);
+    }
+  }
+  private async canRemove(tx: Prisma.TransactionClient) {
+    if (
+      (await tx.user.count({
+        where: { role: UserRole.SUPER_ADMIN, isActive: true, deletedAt: null },
+      })) <= 1
+    )
+      throw new ConflictException({ code: 'LAST_SUPER_ADMIN' });
+  }
+  private async audit(
+    tx: Prisma.TransactionClient,
+    actor: string,
+    action: string,
+    target: string,
+    before: unknown,
+    after: unknown,
+    reason?: string,
+  ) {
+    await tx.auditLog.create({
+      data: {
+        adminUserId: actor,
+        eventType: 'ADMIN_ACTION',
+        metadata: {
+          action,
+          targetUserId: target,
+          reason: reason?.trim() || null,
+          before,
+          after,
+        } as Prisma.InputJsonValue,
+      },
     });
+  }
+  private phone(v: string) {
+    return this.identities.phone(v).length >= 6;
+  }
+  private unique(e: unknown): never {
+    if (
+      e instanceof Prisma.PrismaClientKnownRequestError &&
+      e.code === 'P2002'
+    ) {
+      const t = String(e.meta?.target ?? '');
+      throw new ConflictException({
+        code: t.includes('normalized_email')
+          ? 'EMAIL_ALREADY_EXISTS'
+          : t.includes('normalized_phone')
+            ? 'PHONE_ALREADY_EXISTS'
+            : 'USERNAME_ALREADY_EXISTS',
+      });
+    }
+    throw e;
   }
 }

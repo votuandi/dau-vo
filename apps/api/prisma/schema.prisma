@@ -154,7 +154,7 @@ model User {
   normalizedPhone    String?    @unique(map: "users_normalized_phone_key") @map("normalized_phone") @db.VarChar(50)
   organization       String?    @db.VarChar(255)
   passwordHash       String     @map("password_hash") @db.VarChar(255)
-  role               UserRole   @default(ADMIN)
+  role               UserRole   @default(USER)
   isActive           Boolean    @default(true) @map("is_active")
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
