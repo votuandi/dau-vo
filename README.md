@@ -102,6 +102,35 @@ you back to `/login` and `GET /api/auth/me` returns `401` without the cookie.
 credential. Production seeding requires a unique, non-default
 `INITIAL_SUPER_ADMIN_PASSWORD`; rotate it through the deployment secret manager.
 
+### Legacy ADMIN transitional entitlement migration
+
+Before deploying the migration that introduces this policy, run the read-only
+preflight from `apps/api`:
+
+```powershell
+pnpm prisma:report:legacy-admin-entitlements
+```
+
+The forward-only `20260911150000_legacy_admin_transitional_entitlements`
+migration creates one transitional entitlement for each existing active,
+non-deleted `ADMIN` user without one. It does not change `SUPER_ADMIN`, `USER`,
+inactive, soft-deleted, or already-entitled accounts. Each entitlement begins at
+the migration execution time, ends exactly twelve calendar months later, and
+has a tournament limit of `max(3, currently owned non-soft-deleted tournaments)`.
+
+At the twelve-month boundary, write access ends. The established entitlement
+lifecycle then provides the normal twelve-month owner read-only grace period;
+unless an administrator is renewed or adjusted by a super-admin, their owned
+tournaments are subsequently soft-deleted by that lifecycle. This is a
+one-time compatibility bridge, not an automatically renewing subscription.
+
+To exercise the migration against disposable PostgreSQL databases (a fresh
+database and a pre-feature `admin_users` snapshot), run:
+
+```powershell
+pnpm prisma:verify:legacy-admin-entitlements
+```
+
 ## Administration authorization
 
 `USER` accounts cannot access tournament administration. `ADMIN` accounts see

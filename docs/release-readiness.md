@@ -92,11 +92,28 @@ it. An environment where the old migration failed before recording must be
 recovered according to Prisma's failed-migration procedure, then rerun using the
 corrected migration; a later migration cannot run ahead of a failed earlier one.
 
-The preceding unified-user migration preserves legacy administrators as `ADMIN`,
-but the later subscriptions migration does **not** create entitlements for them.
-They therefore remain `ADMIN` rows without entitlement-backed admin access under
-the current access policy. No grandfathering policy is implied by this migration;
-the product owner must decide whether existing administrators need entitlements.
+The forward-only `20260911150000_legacy_admin_transitional_entitlements`
+migration bridges legacy access without rewriting any previously deployed
+migration. Before production deployment, run the read-only
+`pnpm --filter @martial-arts-scoring/api prisma:report:legacy-admin-entitlements`
+and review every listed account and proposed quota. During deployment,
+`prisma migrate deploy` creates an `ACTIVE` entitlement only for each active,
+non-deleted `ADMIN` with no existing entitlement. Its start is the migration
+execution time, its end is exactly twelve calendar months later, and its quota
+is `max(3, owned non-soft-deleted tournaments)`. Existing entitlements are never
+overwritten; `SUPER_ADMIN`, `USER`, inactive, and soft-deleted users are ignored.
+
+The authorization guard reads the entitlement on every request, so eligible
+legacy administrators regain normal administrative access as soon as the
+migration commits. At the twelve-month boundary they lose write access and enter
+the normal twelve-month owner read-only grace; without renewal or a super-admin
+adjustment, the lifecycle subsequently soft-deletes their owned tournaments.
+
+Run `apps/api/prisma/verify-legacy-admin-entitlements-migration.ps1` before
+release. It starts and removes disposable PostgreSQL containers, verifies a
+fresh schema and a representative pre-feature `admin_users` snapshot, and covers
+eligible, existing-entitlement, inactive, soft-deleted, and `SUPER_ADMIN`
+accounts, quota preservation, twelve-calendar-month timing, and replay safety.
 
 Before release, run `apps/api/prisma/verify-tournament-ownership-migration.ps1`.
 It starts and automatically removes its own PostgreSQL container; it never uses
@@ -104,6 +121,13 @@ the configured developer database. The verification covers fresh schema, audit
 ownership, deterministic fallback selection, invalid no-user data, both seed
 executions, and `superadmin` uniqueness/role.
 
-Rollback is a database restore, not a down migration. For an application rollback, first deploy a version compatible with the migrated schema; restore only after confirming the backup point and planned data loss. Test both a clean database and a snapshot taken before the unified-user feature migration in staging.
+Rollback is a database restore, not a down migration. The migration only inserts
+new entitlement rows, so an emergency logical rollback can delete only the
+identified transitional rows after taking a backup and confirming no subsequent
+renewal/adjustment has changed them. Prefer restoring a verified pre-deployment
+backup when certainty is required. For an application rollback, first deploy a
+version compatible with the migrated schema; restore only after confirming the
+backup point and planned data loss. Test both a clean database and a snapshot
+taken before the unified-user feature migration in staging.
 
 Production requirements: HTTPS at the edge, a single explicit HTTPS `WEB_ORIGIN`, independent 32+ character session secrets, non-default database credentials, and a non-default `INITIAL_SUPER_ADMIN_PASSWORD`. The seed is intentionally idempotent; it creates or reactivates only the normalized `superadmin` system identity and must not be treated as a general user bootstrap tool.

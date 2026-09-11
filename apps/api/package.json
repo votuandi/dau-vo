@@ -16,7 +16,7 @@
     "lint": "eslint \"src/**/*.ts\" \"prisma/**/*.ts\" \"prisma.config.ts\" --max-warnings=0",
     "format": "prettier --write \"src/**/*.ts\" \"prisma/**/*.ts\" \"prisma.config.ts\" \"*.json\" \"*.mjs\" \"*.cjs\"",
     "typecheck": "prisma generate && tsc --noEmit && pnpm run typecheck:tools",
-    "typecheck:tools": "tsc --noEmit --strict --esModuleInterop --module commonjs --moduleResolution node --target ES2022 --types node --skipLibCheck prisma/seed.ts prisma/verify-initial-super-admin.ts prisma.config.ts",
+    "typecheck:tools": "tsc --noEmit --strict --esModuleInterop --module commonjs --moduleResolution node --target ES2022 --types node --skipLibCheck prisma/seed.ts prisma/verify-initial-super-admin.ts prisma/report-legacy-admin-entitlements.ts prisma.config.ts",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "prisma:generate": "prisma generate",
@@ -26,6 +26,8 @@
     "prisma:migrate:status": "node --env-file-if-exists=../../.env ./node_modules/prisma/build/index.js migrate status",
     "prisma:seed": "node --env-file-if-exists=../../.env ./node_modules/prisma/build/index.js db seed",
     "prisma:verify:super-admin": "tsx prisma/verify-initial-super-admin.ts",
+    "prisma:report:legacy-admin-entitlements": "tsx prisma/report-legacy-admin-entitlements.ts",
+    "prisma:verify:legacy-admin-entitlements": "powershell -ExecutionPolicy Bypass -File prisma/verify-legacy-admin-entitlements-migration.ps1",
     "prisma:studio": "node --env-file-if-exists=../../.env ./node_modules/prisma/build/index.js studio",
     "postinstall": "prisma generate"
   },
