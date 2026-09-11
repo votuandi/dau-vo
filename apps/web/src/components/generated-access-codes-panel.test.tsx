@@ -42,11 +42,9 @@ describe('GeneratedAccessCodesPanel', () => {
     await user.click(inspectorCopyButton);
 
     expect(await navigator.clipboard.readText()).toBe(
-      [
-        'Mã trận đấu: A72K9P',
-        'Vai trò: Giám định viên',
-        'Mã truy cập: INSP-ABCD-EFGH-JKLM',
-      ].join('\n'),
+      ['Mã trận đấu: A72K9P', 'Vai trò: Giám định viên', 'Mã truy cập: INSP-ABCD-EFGH-JKLM'].join(
+        '\n',
+      ),
     );
     expect(within(inspectorCopyButton).getByText('Đã sao chép')).toBeVisible();
   });

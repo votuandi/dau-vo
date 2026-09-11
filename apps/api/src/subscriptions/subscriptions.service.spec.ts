@@ -1,2 +1,10 @@
 import { addUtcMonths } from './subscriptions.service';
-describe('addUtcMonths', () => { it.each([['2024-01-31T10:00:00.000Z', 1, '2024-02-29T10:00:00.000Z'], ['2023-01-31T10:00:00.000Z', 1, '2023-02-28T10:00:00.000Z'], ['2024-02-29T10:00:00.000Z', 12, '2025-02-28T10:00:00.000Z']])('uses UTC calendar dates', (from, months, expected) => expect(addUtcMonths(new Date(from), months).toISOString()).toBe(expected)); });
+describe('addUtcMonths', () => {
+  it.each([
+    ['2024-01-31T10:00:00.000Z', 1, '2024-02-29T10:00:00.000Z'],
+    ['2023-01-31T10:00:00.000Z', 1, '2023-02-28T10:00:00.000Z'],
+    ['2024-02-29T10:00:00.000Z', 12, '2025-02-28T10:00:00.000Z'],
+  ])('uses UTC calendar dates', (from, months, expected) =>
+    expect(addUtcMonths(new Date(from), months).toISOString()).toBe(expected),
+  );
+});

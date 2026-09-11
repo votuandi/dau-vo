@@ -410,26 +410,26 @@ and the creation audit event in a single transaction.
 
 ## Environment variables
 
-| Variable                                        | Example/default                  | Purpose                                         |
-| ----------------------------------------------- | -------------------------------- | ----------------------------------------------- |
-| `DATABASE_URL`                                  | PostgreSQL URL in `.env.example` | Prisma database connection                      |
-| `REDIS_URL`                                     | `redis://localhost:6379`         | Redis connection and admin-session storage      |
-| `API_PORT`                                      | `3000`                           | API listen port                                 |
-| `WEB_ORIGIN`                                    | `http://localhost:5173`          | Allowed credentialed browser origin             |
-| `VITE_SOCKET_PATH`                              | `/api/socket.io`                 | Browser and server Socket.IO handshake path     |
-| `ADMIN_SESSION_SECRET`                          | Development placeholder          | HMAC secret for admin-session identifiers       |
-| `ADMIN_SESSION_TTL_SECONDS`                     | `28800`                          | Fixed Redis lifetime for admin sessions         |
-| `ADMIN_LOGIN_RATE_LIMIT_MAX_ATTEMPTS`           | `5`                              | Login attempts allowed per window               |
-| `ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS`         | `900`                            | Login throttle window in seconds                |
-| `MATCH_SESSION_SECRET`                          | Development placeholder          | HMAC secret for match-session tokens/challenges |
-| `MATCH_SESSION_TTL_SECONDS`                     | `28800`                          | Persisted match-session lifetime                |
-| `MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS` | `10`                             | Attempts per match credential/window            |
-| `MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS`       | `100`                            | Attempts per client address/window              |
-| `MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS`        | `60`                             | Participant-auth throttle window                |
-| `MATCH_PUBLIC_ID_INITIAL_LENGTH`                | `6`                              | Initial human-friendly public match ID length   |
+| Variable                                        | Example/default                   | Purpose                                         |
+| ----------------------------------------------- | --------------------------------- | ----------------------------------------------- |
+| `DATABASE_URL`                                  | PostgreSQL URL in `.env.example`  | Prisma database connection                      |
+| `REDIS_URL`                                     | `redis://localhost:6379`          | Redis connection and admin-session storage      |
+| `API_PORT`                                      | `3000`                            | API listen port                                 |
+| `WEB_ORIGIN`                                    | `http://localhost:5173`           | Allowed credentialed browser origin             |
+| `VITE_SOCKET_PATH`                              | `/api/socket.io`                  | Browser and server Socket.IO handshake path     |
+| `ADMIN_SESSION_SECRET`                          | Development placeholder           | HMAC secret for admin-session identifiers       |
+| `ADMIN_SESSION_TTL_SECONDS`                     | `28800`                           | Fixed Redis lifetime for admin sessions         |
+| `ADMIN_LOGIN_RATE_LIMIT_MAX_ATTEMPTS`           | `5`                               | Login attempts allowed per window               |
+| `ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS`         | `900`                             | Login throttle window in seconds                |
+| `MATCH_SESSION_SECRET`                          | Development placeholder           | HMAC secret for match-session tokens/challenges |
+| `MATCH_SESSION_TTL_SECONDS`                     | `28800`                           | Persisted match-session lifetime                |
+| `MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS` | `10`                              | Attempts per match credential/window            |
+| `MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS`       | `100`                             | Attempts per client address/window              |
+| `MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS`        | `60`                              | Participant-auth throttle window                |
+| `MATCH_PUBLIC_ID_INITIAL_LENGTH`                | `6`                               | Initial human-friendly public match ID length   |
 | `INITIAL_SUPER_ADMIN_PASSWORD`                  | `dauvo@123` (non-production only) | Required non-default secret for production seed |
-| `ROUND_DURATION_MS`                             | `120000`                         | Round duration in milliseconds                  |
-| `BREAK_DURATION_MS`                             | `60000`                          | Break duration in milliseconds                  |
+| `ROUND_DURATION_MS`                             | `120000`                          | Round duration in milliseconds                  |
+| `BREAK_DURATION_MS`                             | `60000`                           | Break duration in milliseconds                  |
 
 Use independent, randomly generated session secrets outside local development.
 Match timing has one configuration source: change `BREAK_DURATION_MS` rather than
@@ -470,6 +470,10 @@ the browser will then use HTTPS/WSS on the single public origin. Do not expose
 PostgreSQL or Redis ports in production. Run migrations as part of the API
 startup only after backing up the database and reviewing the checked-in Prisma
 migrations.
+
+See [the release-readiness runbook](docs/release-readiness.md) for the permission
+matrix, complete endpoint and Socket.IO contract, retention operation, migration
+restore policy, and production checklist.
 
 Architecture decisions: React + Vite keeps the operator UI a small static
 client rather than requiring a Next.js server; NestJS owns every authorization

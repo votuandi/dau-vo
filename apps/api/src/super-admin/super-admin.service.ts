@@ -82,7 +82,17 @@ export class SuperAdminService {
         deletedAt: true,
         createdAt: true,
         adminEntitlement: true,
-        ownedTournaments: { select: { id: true, name: true, softDeletedAt: true, purgeAfter: true, deletionReason: true, restoredAt: true }, orderBy: { createdAt: 'desc' } },
+        ownedTournaments: {
+          select: {
+            id: true,
+            name: true,
+            softDeletedAt: true,
+            purgeAfter: true,
+            deletionReason: true,
+            restoredAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        },
         subscriptionOrders: { orderBy: { createdAt: 'desc' } },
       },
     });

@@ -17,7 +17,12 @@ export interface LoginRequest {
   readonly password: string;
 }
 
-export interface RegisterRequest extends LoginRequest { readonly fullName: string; readonly email: string; readonly phone: string; readonly organization?: string; }
+export interface RegisterRequest extends LoginRequest {
+  readonly fullName: string;
+  readonly email: string;
+  readonly phone: string;
+  readonly organization?: string;
+}
 
 export const authApi = {
   login: (credentials: LoginRequest) => apiClient.post<AuthResponse>('auth/login', credentials),

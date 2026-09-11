@@ -11,7 +11,10 @@ export function AdminDashboardPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [logoutError, setLogoutError] = useState<string | null>(null);
-  const entitlementQuery = useQuery({ queryKey: ['subscriptions', 'me'], queryFn: subscriptionsApi.me });
+  const entitlementQuery = useQuery({
+    queryKey: ['subscriptions', 'me'],
+    queryFn: subscriptionsApi.me,
+  });
   const isReadOnly = entitlementQuery.data?.accessState === 'EXPIRED_READ_ONLY';
 
   const logoutMutation = useMutation({
@@ -42,7 +45,16 @@ export function AdminDashboardPage() {
             Xin chào, <span className="font-semibold text-foreground">{admin.username}</span>. Nền
             tảng quản trị đã sẵn sàng để quản lý giải đấu và trận đấu.
           </p>
-          {isReadOnly ? <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Quyền quản trị đã hết hạn. Bạn chỉ có thể xem dữ liệu đến {new Date(entitlementQuery.data?.readOnlyUntil ?? '').toLocaleDateString('vi-VN')}. <Link className="font-bold underline" to="/subscriptions">Gia hạn ngay</Link>.</div> : null}
+          {isReadOnly ? (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Quyền quản trị đã hết hạn. Bạn chỉ có thể xem dữ liệu đến{' '}
+              {new Date(entitlementQuery.data?.readOnlyUntil ?? '').toLocaleDateString('vi-VN')}.{' '}
+              <Link className="font-bold underline" to="/subscriptions">
+                Gia hạn ngay
+              </Link>
+              .
+            </div>
+          ) : null}
           <Button asChild className="mt-6" size="lg">
             <Link to="/admin/tournaments">Quản lý giải đấu</Link>
           </Button>

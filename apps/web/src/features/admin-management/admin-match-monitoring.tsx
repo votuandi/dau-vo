@@ -269,21 +269,19 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                 key={event.id}
               >
                 {scoreEventTypeLabel(event.type)} · Hiệp {event.roundNumber ?? '—'} ·{' '}
-                {colorLabel(event.athlete.color)} ·{' '}
-                {event.athlete.name} ·{' '}
+                {colorLabel(event.athlete.color)} · {event.athlete.name} ·{' '}
                 <strong>
                   {event.value > 0 ? '+' : ''}
                   {event.value}
-                </strong> ·{' '}
+                </strong>{' '}
+                ·{' '}
                 <time className="text-xs opacity-80">
                   {formatDateTimeWithSeconds(event.occurredAt)}
                 </time>{' '}
                 <span className="text-xs opacity-80">
                   · {formatRoundElapsedTime(event.roundElapsedMs, event.roundNumber)}
                 </span>
-                {event.revertedAt ? (
-                  <span className="ml-2 font-bold">Đã hoàn tác</span>
-                ) : null}
+                {event.revertedAt ? <span className="ml-2 font-bold">Đã hoàn tác</span> : null}
               </li>
             )) ?? <li>Chưa có score event.</li>}
           </ul>

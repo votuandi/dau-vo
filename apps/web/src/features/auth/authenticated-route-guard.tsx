@@ -7,6 +7,13 @@ export function AuthenticatedRouteGuard() {
   const session = useQuery(authenticatedUserQueryOptions);
 
   if (session.isPending) return <p aria-live="polite">Đang kiểm tra phiên đăng nhập…</p>;
-  if (!session.data) return <Navigate replace state={{ from: `${location.pathname}${location.search}${location.hash}` }} to="/login" />;
+  if (!session.data)
+    return (
+      <Navigate
+        replace
+        state={{ from: `${location.pathname}${location.search}${location.hash}` }}
+        to="/login"
+      />
+    );
   return <Outlet context={session.data.user} />;
 }

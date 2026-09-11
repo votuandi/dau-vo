@@ -39,7 +39,10 @@ export class RealtimeSocketIoAdapter extends IoAdapter {
         callback: (error: string | null | undefined, success: boolean) => void,
       ) => {
         const origin = request.headers.origin;
-        callback(null, origin === undefined || this.webOrigins.includes(origin));
+        callback(
+          null,
+          origin === undefined || this.webOrigins.includes(origin),
+        );
       },
       cors: {
         credentials: true,

@@ -47,7 +47,10 @@ describe('ScoringService (PostgreSQL integration)', () => {
   }): Promise<Fixture> {
     const now = new Date();
     const tournament = await prisma.tournament.create({
-      data: { name: `${TEST_PREFIX}-${randomBytes(5).toString('hex')}`, ownerUserId: '00000000-0000-4000-8000-000000000001' },
+      data: {
+        name: `${TEST_PREFIX}-${randomBytes(5).toString('hex')}`,
+        ownerUserId: '00000000-0000-4000-8000-000000000001',
+      },
       select: { id: true },
     });
     tournamentIds.add(tournament.id);

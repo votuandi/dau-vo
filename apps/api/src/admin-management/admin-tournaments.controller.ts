@@ -58,8 +58,12 @@ export class AdminTournamentsController {
   ) {}
 
   @Get()
-  async list(@Req() request: AuthenticatedUserRequest): Promise<TournamentListResponse> {
-    return { tournaments: await this.management.listTournamentsFor(request.user) };
+  async list(
+    @Req() request: AuthenticatedUserRequest,
+  ): Promise<TournamentListResponse> {
+    return {
+      tournaments: await this.management.listTournamentsFor(request.user),
+    };
   }
 
   @Post()
@@ -76,7 +80,10 @@ export class AdminTournamentsController {
   }
 
   @Get(':id')
-  async get(@Param('id', uuidPipe) id: string, @Req() request: AuthenticatedUserRequest): Promise<TournamentResponse> {
+  async get(
+    @Param('id', uuidPipe) id: string,
+    @Req() request: AuthenticatedUserRequest,
+  ): Promise<TournamentResponse> {
     await this.management.assertTournamentAccess(id, request.user);
     return { tournament: await this.management.getTournament(id) };
   }
@@ -124,7 +131,11 @@ export class AdminTournamentsController {
     @Body() input: CreateMatchDto,
     @Req() request: AuthenticatedUserRequest,
   ): Promise<CreatedMatchResult> {
-    await this.management.assertTournamentAccess(tournamentId, request.user, true);
+    await this.management.assertTournamentAccess(
+      tournamentId,
+      request.user,
+      true,
+    );
     return this.management.createMatch(tournamentId, input, request.user.id);
   }
 }

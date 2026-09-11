@@ -55,13 +55,19 @@ export class AdminMatchesController {
   ) {}
 
   @Get(':id/monitoring')
-  async monitoring(@Param('id', uuidPipe) id: string, @Req() request: AuthenticatedUserRequest) {
+  async monitoring(
+    @Param('id', uuidPipe) id: string,
+    @Req() request: AuthenticatedUserRequest,
+  ) {
     await this.management.assertMatchAccess(id, request.user);
     return this.management.getMatchMonitoring(id);
   }
 
   @Get(':id')
-  async get(@Param('id', uuidPipe) id: string, @Req() request: AuthenticatedUserRequest): Promise<MatchResponse> {
+  async get(
+    @Param('id', uuidPipe) id: string,
+    @Req() request: AuthenticatedUserRequest,
+  ): Promise<MatchResponse> {
     await this.management.assertMatchAccess(id, request.user);
     return { match: await this.management.getMatch(id) };
   }

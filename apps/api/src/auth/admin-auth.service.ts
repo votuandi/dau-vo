@@ -101,7 +101,15 @@ export class AuthService {
     }
 
     const user = await this.prisma.user.findUnique({
-      select: { id: true, passwordHash: true, username: true, isActive: true, deletedAt: true, fullName: true, role: true },
+      select: {
+        id: true,
+        passwordHash: true,
+        username: true,
+        isActive: true,
+        deletedAt: true,
+        fullName: true,
+        role: true,
+      },
       where: { normalizedUsername },
     });
     const passwordHash = user?.passwordHash ?? (await this.dummyPasswordHash);
@@ -109,7 +117,13 @@ export class AuthService {
     const passwordFitsBcrypt =
       Buffer.byteLength(password, 'utf8') <= MAX_BCRYPT_PASSWORD_BYTES;
 
-    if (user === null || !user.isActive || user.deletedAt !== null || !passwordMatches || !passwordFitsBcrypt) {
+    if (
+      user === null ||
+      !user.isActive ||
+      user.deletedAt !== null ||
+      !passwordMatches ||
+      !passwordFitsBcrypt
+    ) {
       throw new UnauthorizedException(INVALID_CREDENTIALS_ERROR);
     }
 
@@ -128,7 +142,9 @@ export class AuthService {
     };
   }
 
-  async resolveSession(sessionToken: string): Promise<AuthenticatedUser | null> {
+  async resolveSession(
+    sessionToken: string,
+  ): Promise<AuthenticatedUser | null> {
     if (!SESSION_TOKEN_PATTERN.test(sessionToken)) {
       return null;
     }
@@ -141,7 +157,14 @@ export class AuthService {
     }
 
     const user = await this.prisma.user.findUnique({
-      select: { id: true, username: true, fullName: true, role: true, isActive: true, deletedAt: true },
+      select: {
+        id: true,
+        username: true,
+        fullName: true,
+        role: true,
+        isActive: true,
+        deletedAt: true,
+      },
       where: { id: userId },
     });
 
@@ -175,32 +198,95 @@ export class AuthService {
     return `auth:${namespace}:${digest}`;
   }
 
-  async register(input: { fullName: string; username: string; email: string; phone: string; organization?: string; password: string }, clientAddress: string): Promise<CreatedSession> {
-    const registrationRateLimitKey = this.deriveRedisKey('registration-rate:ip', clientAddress);
-    const attempts = await this.redis.incrementWithExpiry(registrationRateLimitKey, this.loginRateLimitWindowSeconds);
+  async register(
+    input: {
+      fullName: string;
+      username: string;
+      email: string;
+      phone: string;
+      organization?: string;
+      password: string;
+    },
+    clientAddress: string,
+  ): Promise<CreatedSession> {
+    const registrationRateLimitKey = this.deriveRedisKey(
+      'registration-rate:ip',
+      clientAddress,
+    );
+    const attempts = await this.redis.incrementWithExpiry(
+      registrationRateLimitKey,
+      this.loginRateLimitWindowSeconds,
+    );
     if (attempts > this.loginRateLimitMaxAttempts) {
-      throw new HttpException(REGISTRATION_RATE_LIMITED_ERROR, HttpStatus.TOO_MANY_REQUESTS);
+      throw new HttpException(
+        REGISTRATION_RATE_LIMITED_ERROR,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
     const normalizedUsername = this.normalizer.username(input.username);
     const normalizedEmail = this.normalizer.email(input.email);
     const normalizedPhone = this.normalizer.phone(input.phone);
-    if (normalizedPhone.length < 6) throw new HttpException({ code: 'INVALID_PHONE', message: 'Phone number is invalid' }, HttpStatus.BAD_REQUEST);
+    if (normalizedPhone.length < 6)
+      throw new HttpException(
+        { code: 'INVALID_PHONE', message: 'Phone number is invalid' },
+        HttpStatus.BAD_REQUEST,
+      );
     try {
-      await this.prisma.user.create({ data: { fullName: input.fullName.trim(), username: input.username.trim(), normalizedUsername, email: input.email.trim(), normalizedEmail, phone: input.phone.trim(), normalizedPhone, organization: input.organization?.trim() || null, passwordHash: await hash(input.password, DUMMY_PASSWORD_COST), role: UserRole.USER, isActive: true } });
+      await this.prisma.user.create({
+        data: {
+          fullName: input.fullName.trim(),
+          username: input.username.trim(),
+          normalizedUsername,
+          email: input.email.trim(),
+          normalizedEmail,
+          phone: input.phone.trim(),
+          normalizedPhone,
+          organization: input.organization?.trim() || null,
+          passwordHash: await hash(input.password, DUMMY_PASSWORD_COST),
+          role: UserRole.USER,
+          isActive: true,
+        },
+      });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
         const target = String(error.meta?.target ?? '');
-        const code = target.includes('normalized_email') ? 'EMAIL_ALREADY_EXISTS' : target.includes('normalized_phone') ? 'PHONE_ALREADY_EXISTS' : 'USERNAME_ALREADY_EXISTS';
-        throw new ConflictException({ code, message: 'An account with this identity already exists' });
+        const code = target.includes('normalized_email')
+          ? 'EMAIL_ALREADY_EXISTS'
+          : target.includes('normalized_phone')
+            ? 'PHONE_ALREADY_EXISTS'
+            : 'USERNAME_ALREADY_EXISTS';
+        throw new ConflictException({
+          code,
+          message: 'An account with this identity already exists',
+        });
       }
       throw error;
     }
-    const session = await this.login(input.username, input.password, clientAddress);
+    const session = await this.login(
+      input.username,
+      input.password,
+      clientAddress,
+    );
     await this.redis.delete(registrationRateLimitKey);
     return session;
   }
 
-  private safeUser(user: { id: string; username: string; fullName: string | null; role: UserRole; isActive: boolean }): AuthenticatedUser {
-    return { id: user.id, username: user.username, fullName: user.fullName, role: user.role, isActive: user.isActive };
+  private safeUser(user: {
+    id: string;
+    username: string;
+    fullName: string | null;
+    role: UserRole;
+    isActive: boolean;
+  }): AuthenticatedUser {
+    return {
+      id: user.id,
+      username: user.username,
+      fullName: user.fullName,
+      role: user.role,
+      isActive: user.isActive,
+    };
   }
 }

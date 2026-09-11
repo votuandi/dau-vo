@@ -46,7 +46,13 @@ describe('Admin authentication (integration)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let redis: Redis;
-  let testAdmin: { id: string; username: string; fullName: string | null; role: UserRole; isActive: boolean };
+  let testAdmin: {
+    id: string;
+    username: string;
+    fullName: string | null;
+    role: UserRole;
+    isActive: boolean;
+  };
 
   beforeAll(async () => {
     configureTestEnvironment();
@@ -81,7 +87,13 @@ describe('Admin authentication (integration)', () => {
         passwordHash,
         username: TEST_ADMIN_USERNAME,
       },
-      select: { id: true, username: true, fullName: true, role: true, isActive: true },
+      select: {
+        id: true,
+        username: true,
+        fullName: true,
+        role: true,
+        isActive: true,
+      },
       update: { passwordHash },
       where: { normalizedUsername: TEST_ADMIN_USERNAME },
     });
@@ -187,13 +199,10 @@ describe('Admin authentication (integration)', () => {
   });
 
   it('rejects the protected session endpoint without a login cookie', async () => {
-    await request(app.getHttpServer())
-      .get('/api/auth/me')
-      .expect(401)
-      .expect({
-        code: 'AUTH_REQUIRED',
-        message: 'Authentication required',
-      });
+    await request(app.getHttpServer()).get('/api/auth/me').expect(401).expect({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
   });
 
   it('returns the authenticated admin for a valid session cookie', async () => {
@@ -234,19 +243,48 @@ describe('Admin authentication (integration)', () => {
 
   it('rejects an inactive or soft-deleted user even when a Redis session exists', async () => {
     const authenticatedAgent = request.agent(app.getHttpServer());
-    await authenticatedAgent.post('/api/auth/login').send({ password: TEST_ADMIN_PASSWORD, username: TEST_ADMIN_USERNAME }).expect(200);
-    await prisma.user.update({ where: { id: testAdmin.id }, data: { isActive: false } });
+    await authenticatedAgent
+      .post('/api/auth/login')
+      .send({ password: TEST_ADMIN_PASSWORD, username: TEST_ADMIN_USERNAME })
+      .expect(200);
+    await prisma.user.update({
+      where: { id: testAdmin.id },
+      data: { isActive: false },
+    });
     await authenticatedAgent.get('/api/auth/me').expect(401);
-    await prisma.user.update({ where: { id: testAdmin.id }, data: { isActive: true, deletedAt: new Date() } });
-    await request(app.getHttpServer()).post('/api/auth/login').send({ password: TEST_ADMIN_PASSWORD, username: TEST_ADMIN_USERNAME }).expect(401);
-    await prisma.user.update({ where: { id: testAdmin.id }, data: { deletedAt: null } });
+    await prisma.user.update({
+      where: { id: testAdmin.id },
+      data: { isActive: true, deletedAt: new Date() },
+    });
+    await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ password: TEST_ADMIN_PASSWORD, username: TEST_ADMIN_USERNAME })
+      .expect(401);
+    await prisma.user.update({
+      where: { id: testAdmin.id },
+      data: { deletedAt: null },
+    });
   });
 
   it('returns a changed role on the next authenticated request', async () => {
     const authenticatedAgent = request.agent(app.getHttpServer());
-    await authenticatedAgent.post('/api/auth/login').send({ password: TEST_ADMIN_PASSWORD, username: TEST_ADMIN_USERNAME }).expect(200);
-    await prisma.user.update({ where: { id: testAdmin.id }, data: { role: 'SUPER_ADMIN' } });
-    await authenticatedAgent.get('/api/auth/me').expect(200).expect(({ body }: { body: { user: { role: string } } }) => expect(body.user.role).toBe('SUPER_ADMIN'));
-    await prisma.user.update({ where: { id: testAdmin.id }, data: { role: 'ADMIN' } });
+    await authenticatedAgent
+      .post('/api/auth/login')
+      .send({ password: TEST_ADMIN_PASSWORD, username: TEST_ADMIN_USERNAME })
+      .expect(200);
+    await prisma.user.update({
+      where: { id: testAdmin.id },
+      data: { role: 'SUPER_ADMIN' },
+    });
+    await authenticatedAgent
+      .get('/api/auth/me')
+      .expect(200)
+      .expect(({ body }: { body: { user: { role: string } } }) =>
+        expect(body.user.role).toBe('SUPER_ADMIN'),
+      );
+    await prisma.user.update({
+      where: { id: testAdmin.id },
+      data: { role: 'ADMIN' },
+    });
   });
 });

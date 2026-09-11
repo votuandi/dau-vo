@@ -93,9 +93,20 @@ export class AuthController {
   @Post('register')
   @HttpCode(201)
   @Header('Cache-Control', 'no-store')
-  async register(@Body() input: RegisterDto, @Req() request: Request, @Res({ passthrough: true }) response: Response): Promise<AuthResponse> {
-    const session = await this.authService.register(input, getClientAddress(request));
-    response.cookie(AUTH_SESSION_COOKIE, session.sessionToken, this.cookieOptions);
+  async register(
+    @Body() input: RegisterDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<AuthResponse> {
+    const session = await this.authService.register(
+      input,
+      getClientAddress(request),
+    );
+    response.cookie(
+      AUTH_SESSION_COOKIE,
+      session.sessionToken,
+      this.cookieOptions,
+    );
     return { user: session.user };
   }
 

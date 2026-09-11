@@ -455,7 +455,10 @@ describe('Realtime match infrastructure (integration)', () => {
     await redis.flushdb();
 
     const tournament = await prisma.tournament.create({
-      data: { name: `${TEST_PREFIX}-tournament`, ownerUserId: '00000000-0000-4000-8000-000000000001' },
+      data: {
+        name: `${TEST_PREFIX}-tournament`,
+        ownerUserId: '00000000-0000-4000-8000-000000000001',
+      },
       select: { id: true },
     });
     tournamentId = tournament.id;

@@ -565,7 +565,13 @@ export class MatchAccessService {
       select: {
         codeHash: true,
         id: true,
-        match: { select: { id: true, publicId: true, tournament: { select: { softDeletedAt: true } } } },
+        match: {
+          select: {
+            id: true,
+            publicId: true,
+            tournament: { select: { softDeletedAt: true } },
+          },
+        },
         role: true,
       },
       where: { id: credential.accessCodeId },

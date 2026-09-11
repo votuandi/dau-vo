@@ -2,7 +2,10 @@ import { useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { authenticatedUserQueryKey, authenticatedUserQueryOptions } from '@/features/auth/authenticated-user-session';
+import {
+  authenticatedUserQueryKey,
+  authenticatedUserQueryOptions,
+} from '@/features/auth/authenticated-user-session';
 import { authApi } from '@/services/api/auth';
 import { ApiClientError } from '@/services/api/client';
 

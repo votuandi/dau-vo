@@ -4,8 +4,10 @@ import { cn } from '@/lib/utils';
 
 type CopyStatus = 'idle' | 'copied' | 'error';
 
-interface ClipboardCopyButtonProps
-  extends Omit<ButtonProps, 'aria-label' | 'children' | 'onClick' | 'type'> {
+interface ClipboardCopyButtonProps extends Omit<
+  ButtonProps,
+  'aria-label' | 'children' | 'onClick' | 'type'
+> {
   readonly accessibleLabel: string;
   readonly copiedLabel?: string;
   readonly errorLabel?: string;
@@ -44,15 +46,7 @@ function CopyIcon({ status }: { readonly status: CopyStatus }) {
 
   return (
     <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24">
-      <rect
-        height="13"
-        rx="2"
-        stroke="currentColor"
-        strokeWidth="2"
-        width="13"
-        x="8"
-        y="8"
-      />
+      <rect height="13" rx="2" stroke="currentColor" strokeWidth="2" width="13" x="8" y="8" />
       <path
         d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"
         stroke="currentColor"
@@ -107,8 +101,7 @@ export function ClipboardCopyButton({
     }, 2_500);
   }
 
-  const statusLabel =
-    status === 'copied' ? copiedLabel : status === 'error' ? errorLabel : label;
+  const statusLabel = status === 'copied' ? copiedLabel : status === 'error' ? errorLabel : label;
 
   return (
     <>

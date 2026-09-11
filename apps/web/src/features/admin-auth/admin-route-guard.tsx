@@ -44,7 +44,9 @@ export function AdminRouteGuard() {
     return (
       <section className="mx-auto w-full max-w-lg rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
         <h1 className="text-2xl font-black tracking-tight">Không có quyền quản trị</h1>
-        <p className="mt-3 text-sm text-muted-foreground">Tài khoản này không có quyền truy cập khu vực quản trị.</p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          Tài khoản này không có quyền truy cập khu vực quản trị.
+        </p>
       </section>
     );
   }

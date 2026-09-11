@@ -1,4 +1,37 @@
 import { calculateQuote } from './pricing-calculator';
 
-const plan = { id: 'plan', baseAmountVnd: 200000, baseDurationMonths: 1, baseTournamentLimit: 3, durationAddonUnitAmountVnd: 50000, tournamentAddonUnitAmountVnd: 68000, discountTiers: [{ type: 'DURATION' as const, quantity: 6, discountBasisPoints: 1000 }, { type: 'DURATION' as const, quantity: 12, discountBasisPoints: 2500 }, { type: 'TOURNAMENT' as const, quantity: 3, discountBasisPoints: 500 }, { type: 'TOURNAMENT' as const, quantity: 5, discountBasisPoints: 1000 }, { type: 'TOURNAMENT' as const, quantity: 10, discountBasisPoints: 2500 }] };
-describe('calculateQuote', () => { it.each([[{}, 200000], [{ durationBundle: 6 }, 470000], [{ durationBundle: 12 }, 650000], [{ tournamentBundle: 3 }, 393800], [{ tournamentBundle: 5 }, 506000], [{ tournamentBundle: 10 }, 710000], [{ durationBundle: 6, tournamentBundle: 3 }, 663800]])('calculates integer VND for %j', (selection, total) => expect(calculateQuote(plan, selection).totalPayableVnd).toBe(total)); it.each([{ durationBundle: -1 }, { durationBundle: 3 }, { tournamentBundle: 1 }])('rejects unsupported selections', (selection) => expect(() => calculateQuote(plan, selection)).toThrow()); });
+const plan = {
+  id: 'plan',
+  baseAmountVnd: 200000,
+  baseDurationMonths: 1,
+  baseTournamentLimit: 3,
+  durationAddonUnitAmountVnd: 50000,
+  tournamentAddonUnitAmountVnd: 68000,
+  discountTiers: [
+    { type: 'DURATION' as const, quantity: 6, discountBasisPoints: 1000 },
+    { type: 'DURATION' as const, quantity: 12, discountBasisPoints: 2500 },
+    { type: 'TOURNAMENT' as const, quantity: 3, discountBasisPoints: 500 },
+    { type: 'TOURNAMENT' as const, quantity: 5, discountBasisPoints: 1000 },
+    { type: 'TOURNAMENT' as const, quantity: 10, discountBasisPoints: 2500 },
+  ],
+};
+describe('calculateQuote', () => {
+  it.each([
+    [{}, 200000],
+    [{ durationBundle: 6 }, 470000],
+    [{ durationBundle: 12 }, 650000],
+    [{ tournamentBundle: 3 }, 393800],
+    [{ tournamentBundle: 5 }, 506000],
+    [{ tournamentBundle: 10 }, 710000],
+    [{ durationBundle: 6, tournamentBundle: 3 }, 663800],
+  ])('calculates integer VND for %j', (selection, total) =>
+    expect(calculateQuote(plan, selection).totalPayableVnd).toBe(total),
+  );
+  it.each([
+    { durationBundle: -1 },
+    { durationBundle: 3 },
+    { tournamentBundle: 1 },
+  ])('rejects unsupported selections', (selection) =>
+    expect(() => calculateQuote(plan, selection)).toThrow(),
+  );
+});

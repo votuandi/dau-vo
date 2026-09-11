@@ -166,26 +166,46 @@ export class AdminManagementService {
     });
   }
 
-  async listTournamentsFor(actor: AuthenticatedUser): Promise<TournamentView[]> {
+  async listTournamentsFor(
+    actor: AuthenticatedUser,
+  ): Promise<TournamentView[]> {
     return this.prisma.tournament.findMany({
       orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       select: tournamentSelect,
-      where: actor.role === UserRole.SUPER_ADMIN ? { softDeletedAt: null } : { ownerUserId: actor.id, softDeletedAt: null },
+      where:
+        actor.role === UserRole.SUPER_ADMIN
+          ? { softDeletedAt: null }
+          : { ownerUserId: actor.id, softDeletedAt: null },
     });
   }
 
-  async assertTournamentAccess(id: string, actor: AuthenticatedUser, mutation = false): Promise<void> {
+  async assertTournamentAccess(
+    id: string,
+    actor: AuthenticatedUser,
+    mutation = false,
+  ): Promise<void> {
     const tournament = await this.prisma.tournament.findFirst({
-      where: actor.role === UserRole.SUPER_ADMIN ? { id, softDeletedAt: null } : { id, ownerUserId: actor.id, softDeletedAt: null },
+      where:
+        actor.role === UserRole.SUPER_ADMIN
+          ? { id, softDeletedAt: null }
+          : { id, ownerUserId: actor.id, softDeletedAt: null },
       select: { id: true },
     });
-    if (tournament === null) throw new NotFoundException(TOURNAMENT_NOT_FOUND_ERROR);
+    if (tournament === null)
+      throw new NotFoundException(TOURNAMENT_NOT_FOUND_ERROR);
     if (mutation) await this.requireActiveAdmin(actor);
   }
 
-  async assertMatchAccess(id: string, actor: AuthenticatedUser, mutation = false): Promise<void> {
+  async assertMatchAccess(
+    id: string,
+    actor: AuthenticatedUser,
+    mutation = false,
+  ): Promise<void> {
     const match = await this.prisma.match.findFirst({
-      where: actor.role === UserRole.SUPER_ADMIN ? { id, tournament: { softDeletedAt: null } } : { id, tournament: { ownerUserId: actor.id, softDeletedAt: null } },
+      where:
+        actor.role === UserRole.SUPER_ADMIN
+          ? { id, tournament: { softDeletedAt: null } }
+          : { id, tournament: { ownerUserId: actor.id, softDeletedAt: null } },
       select: { id: true },
     });
     if (match === null) throw new NotFoundException(MATCH_NOT_FOUND_ERROR);
@@ -194,10 +214,21 @@ export class AdminManagementService {
 
   private async requireActiveAdmin(actor: AuthenticatedUser): Promise<void> {
     if (actor.role === UserRole.SUPER_ADMIN) return;
-    const entitlement = await this.prisma.adminEntitlement.findUnique({ where: { userId: actor.id } });
+    const entitlement = await this.prisma.adminEntitlement.findUnique({
+      where: { userId: actor.id },
+    });
     const now = new Date();
-    if (entitlement?.status !== 'ACTIVE' || entitlement.activeFrom > now || entitlement.activeUntil <= now) {
-      throw new ConflictException({ code: entitlement === null ? 'ADMIN_SUBSCRIPTION_REQUIRED' : 'ADMIN_SUBSCRIPTION_EXPIRED' });
+    if (
+      entitlement?.status !== 'ACTIVE' ||
+      entitlement.activeFrom > now ||
+      entitlement.activeUntil <= now
+    ) {
+      throw new ConflictException({
+        code:
+          entitlement === null
+            ? 'ADMIN_SUBSCRIPTION_REQUIRED'
+            : 'ADMIN_SUBSCRIPTION_EXPIRED',
+      });
     }
   }
 
@@ -217,13 +248,28 @@ export class AdminManagementService {
       });
       if (actor.role !== UserRole.SUPER_ADMIN) {
         await transaction.$queryRaw`SELECT id FROM admin_entitlements WHERE user_id = ${adminUserId}::uuid FOR UPDATE`;
-        const entitlement = await transaction.adminEntitlement.findUnique({ where: { userId: adminUserId } });
+        const entitlement = await transaction.adminEntitlement.findUnique({
+          where: { userId: adminUserId },
+        });
         const now = new Date();
-        if (entitlement === null || entitlement.status !== 'ACTIVE' || entitlement.activeFrom > now || entitlement.activeUntil <= now) {
-          throw new ConflictException({ code: entitlement === null ? 'ADMIN_SUBSCRIPTION_REQUIRED' : 'ADMIN_SUBSCRIPTION_EXPIRED' });
+        if (
+          entitlement === null ||
+          entitlement.status !== 'ACTIVE' ||
+          entitlement.activeFrom > now ||
+          entitlement.activeUntil <= now
+        ) {
+          throw new ConflictException({
+            code:
+              entitlement === null
+                ? 'ADMIN_SUBSCRIPTION_REQUIRED'
+                : 'ADMIN_SUBSCRIPTION_EXPIRED',
+          });
         }
-        const used = await transaction.tournament.count({ where: { ownerUserId: adminUserId } });
-        if (used >= entitlement.tournamentLimit) throw new ConflictException({ code: 'TOURNAMENT_LIMIT_REACHED' });
+        const used = await transaction.tournament.count({
+          where: { ownerUserId: adminUserId },
+        });
+        if (used >= entitlement.tournamentLimit)
+          throw new ConflictException({ code: 'TOURNAMENT_LIMIT_REACHED' });
       }
       const tournament = await transaction.tournament.create({
         data: {
