@@ -56,18 +56,33 @@ function scoringWindowHistoryClassName(
   winningColor: AthleteColor | null,
 ): string {
   if (scoreAwarded && winningColor === AthleteColor.RED) {
-    return 'border border-red-200 bg-red-50';
+    return 'border border-red-200 bg-red-50 text-red-800';
   }
   if (scoreAwarded && winningColor === AthleteColor.BLUE) {
-    return 'border border-blue-200 bg-blue-50';
+    return 'border border-blue-200 bg-blue-50 text-blue-800';
   }
-  return 'border border-slate-200 bg-slate-100';
+  return 'border border-slate-200 bg-slate-100 text-slate-800';
 }
 
 function scoreEventHistoryClassName(color: AthleteColor | null): string {
-  if (color === AthleteColor.RED) return 'border border-red-200 bg-red-50';
-  if (color === AthleteColor.BLUE) return 'border border-blue-200 bg-blue-50';
-  return 'border border-slate-200 bg-slate-100';
+  if (color === AthleteColor.RED) {
+    return 'border border-red-200 bg-red-50 text-red-800';
+  }
+  if (color === AthleteColor.BLUE) {
+    return 'border border-blue-200 bg-blue-50 text-blue-800';
+  }
+  return 'border border-slate-200 bg-slate-100 text-slate-800';
+}
+
+function scoreEventTypeLabel(type: string): string {
+  switch (type) {
+    case 'REFEREE_POINT':
+      return 'Điểm trọng tài';
+    case 'PENALTY':
+      return 'Phạt';
+    default:
+      return type;
+  }
 }
 
 function metadataText(value: unknown): string {
@@ -198,7 +213,7 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                       : 'Không tính điểm'}
                     {window.invalidatedAt ? ' · Đã hủy kết quả' : ''}
                   </p>
-                  <div className="text-right text-xs text-muted-foreground">
+                  <div className="text-right text-xs opacity-80">
                     <time className="block">{formatDateTimeWithSeconds(window.occurredAt)}</time>
                     <p className="mt-1">
                       {formatRoundElapsedTime(window.roundElapsedMs, window.roundNumber)}
@@ -210,11 +225,11 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                     <li key={vote.refereeSlot}>
                       {roleLabels[vote.refereeSlot as MatchAccessRole]} →{' '}
                       <strong>{colorLabel(vote.athleteColor)}</strong>{' '}
-                      <span className="text-muted-foreground">
+                      <span className="opacity-80">
                         {formatDateTimeWithSeconds(vote.serverReceivedAt)}
                       </span>
                       {vote.invalidatedAt ? (
-                        <span className="ml-2 font-bold text-amber-700">Đã vô hiệu</span>
+                        <span className="ml-2 font-bold">Đã vô hiệu</span>
                       ) : null}
                     </li>
                   ))}
@@ -247,24 +262,27 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
           <ul className="mt-4 space-y-2 text-sm">
             {monitoring.data?.scoreEvents.map((event) => (
               <li
-                className={`rounded-lg p-3 ${scoreEventHistoryClassName(event.athlete.color)}`}
+                className={`overflow-x-auto whitespace-nowrap rounded-lg p-3 ${scoreEventHistoryClassName(
+                  event.athlete.color,
+                )}`}
                 data-testid={`score-event-${event.id}`}
                 key={event.id}
               >
-                {event.type} · Hiệp {event.roundNumber ?? '—'} · {colorLabel(event.athlete.color)} ·{' '}
+                {scoreEventTypeLabel(event.type)} · Hiệp {event.roundNumber ?? '—'} ·{' '}
+                {colorLabel(event.athlete.color)} ·{' '}
                 {event.athlete.name} ·{' '}
                 <strong>
                   {event.value > 0 ? '+' : ''}
                   {event.value}
-                </strong>{' '}
-                <div className="mt-1 text-xs text-muted-foreground">
-                  <time className="block">{formatDateTimeWithSeconds(event.occurredAt)}</time>
-                  <p className="mt-1">
-                    {formatRoundElapsedTime(event.roundElapsedMs, event.roundNumber)}
-                  </p>
-                </div>
+                </strong> ·{' '}
+                <time className="text-xs opacity-80">
+                  {formatDateTimeWithSeconds(event.occurredAt)}
+                </time>{' '}
+                <span className="text-xs opacity-80">
+                  · {formatRoundElapsedTime(event.roundElapsedMs, event.roundNumber)}
+                </span>
                 {event.revertedAt ? (
-                  <span className="ml-2 font-bold text-amber-700">Đã hoàn tác</span>
+                  <span className="ml-2 font-bold">Đã hoàn tác</span>
                 ) : null}
               </li>
             )) ?? <li>Chưa có score event.</li>}

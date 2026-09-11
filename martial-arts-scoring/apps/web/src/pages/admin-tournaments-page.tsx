@@ -19,6 +19,21 @@ interface TournamentFormErrors {
   readonly dates?: string;
 }
 
+function tournamentStatusTagClassName(status: TournamentStatus): string {
+  switch (status) {
+    case TournamentStatus.DRAFT:
+      return 'border border-slate-200 bg-slate-100 text-slate-700';
+    case TournamentStatus.ACTIVE:
+      return 'border border-emerald-200 bg-emerald-50 text-emerald-800';
+    case TournamentStatus.FINISHED:
+      return 'border border-blue-200 bg-blue-50 text-blue-800';
+    case TournamentStatus.ARCHIVED:
+      return 'border border-amber-200 bg-amber-50 text-amber-800';
+    default:
+      return 'border border-slate-200 bg-slate-100 text-slate-700';
+  }
+}
+
 function buildCreateTournamentInput(values: {
   readonly name: string;
   readonly description: string;
@@ -179,7 +194,9 @@ export function AdminTournamentsPage() {
                         >
                           {tournament.name}
                         </Link>
-                        <span className="rounded-full border border-primary/10 bg-accent px-2.5 py-1 text-xs font-bold text-accent-foreground">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-bold ${tournamentStatusTagClassName(tournament.status)}`}
+                        >
                           {tournamentStatusLabels[tournament.status]}
                         </span>
                       </div>

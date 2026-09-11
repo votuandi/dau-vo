@@ -137,24 +137,35 @@ describe('AdminMatchMonitoring', () => {
     expect(screen.getByTestId('scoring-window-window-red')).toHaveClass(
       'border-red-200',
       'bg-red-50',
+      'text-red-800',
     );
     expect(screen.getByTestId('scoring-window-window-blue')).toHaveClass(
       'border-blue-200',
       'bg-blue-50',
+      'text-blue-800',
     );
     expect(screen.getByTestId('scoring-window-window-neutral')).toHaveClass(
       'border-slate-200',
       'bg-slate-100',
+      'text-slate-800',
     );
   });
 
   it('styles score events by athlete and retains reverted status', async () => {
     renderMonitoring();
-    await screen.findByText('REFEREE_POINT', { exact: false });
-    expect(screen.getByTestId('score-event-event-red')).toHaveClass('border-red-200', 'bg-red-50');
+    await screen.findByText('Điểm trọng tài', { exact: false });
+    expect(screen.getByTestId('score-event-event-blue')).toHaveTextContent('Phạt');
+    expect(screen.getByTestId('score-event-event-red')).toHaveClass(
+      'border-red-200',
+      'bg-red-50',
+      'text-red-800',
+      'overflow-x-auto',
+      'whitespace-nowrap',
+    );
     expect(screen.getByTestId('score-event-event-blue')).toHaveClass(
       'border-blue-200',
       'bg-blue-50',
+      'text-blue-800',
     );
     expect(screen.getByText('Đã hoàn tác')).toBeInTheDocument();
   });
