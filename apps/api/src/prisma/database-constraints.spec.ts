@@ -62,6 +62,7 @@ async function createMatchFixture(): Promise<void> {
     data: {
       id: fixture.tournamentId,
       name: 'Database constraint test tournament',
+      ownerUserId: fixture.tournamentId,
     },
   });
 

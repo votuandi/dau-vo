@@ -12,11 +12,13 @@ import {
   MatchAccessRole,
   Prisma,
   TournamentStatus,
+  UserRole,
 } from '@prisma/client';
 import { hash } from 'bcryptjs';
 
 import type { EnvironmentVariables } from '../config/environment';
 import { PrismaService } from '../prisma/prisma.service';
+import type { AuthenticatedUser } from '../auth/admin-auth.types';
 import { RealtimeSessionRegistryService } from '../realtime/realtime-session-registry.service';
 import { RealtimeMatchStateService } from '../realtime/realtime-match-state.service';
 import {
@@ -164,11 +166,28 @@ export class AdminManagementService {
     });
   }
 
-  async listTournaments(): Promise<TournamentView[]> {
+  async listTournamentsFor(actor: AuthenticatedUser): Promise<TournamentView[]> {
     return this.prisma.tournament.findMany({
       orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       select: tournamentSelect,
+      where: actor.role === UserRole.SUPER_ADMIN ? undefined : { ownerUserId: actor.id },
     });
+  }
+
+  async assertTournamentAccess(id: string, actor: AuthenticatedUser): Promise<void> {
+    const tournament = await this.prisma.tournament.findFirst({
+      where: actor.role === UserRole.SUPER_ADMIN ? { id } : { id, ownerUserId: actor.id },
+      select: { id: true },
+    });
+    if (tournament === null) throw new NotFoundException(TOURNAMENT_NOT_FOUND_ERROR);
+  }
+
+  async assertMatchAccess(id: string, actor: AuthenticatedUser): Promise<void> {
+    const match = await this.prisma.match.findFirst({
+      where: actor.role === UserRole.SUPER_ADMIN ? { id } : { id, tournament: { ownerUserId: actor.id } },
+      select: { id: true },
+    });
+    if (match === null) throw new NotFoundException(MATCH_NOT_FOUND_ERROR);
   }
 
   async createTournament(
@@ -187,6 +206,7 @@ export class AdminManagementService {
           endDate,
           location: this.optionalTrimmedText(input.location),
           name,
+          ownerUserId: adminUserId,
           startDate,
           status: input.status,
         },

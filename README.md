@@ -79,6 +79,15 @@ available at `http://localhost:3000/api/health`.
 
 ## Admin authentication
 
+## Administration authorization
+
+`USER` accounts cannot access tournament administration. `ADMIN` accounts see
+and mutate only tournaments where they are the server-assigned owner; match
+administration derives ownership through the tournament. `SUPER_ADMIN` accounts
+may access all administration resources. Ownership misses return the same `404`
+response used for absent tournaments or matches, preventing existence disclosure.
+Referee and inspector match sessions are not part of this authorization policy.
+
 Normal application identities use the unified `User` model and `POST /api/auth/login`,
 `POST /api/auth/logout`, and `GET /api/auth/me`. Existing administrator rows are
 migrated in place with their IDs, password hashes, timestamps, and audit attribution

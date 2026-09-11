@@ -131,6 +131,7 @@ model User {
   updatedAt          DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt          DateTime?  @map("deleted_at") @db.Timestamptz(3)
   auditLogs          AuditLog[]
+  ownedTournaments   Tournament[] @relation("TournamentOwner")
 
   @@map("users")
 }
@@ -143,10 +144,14 @@ model Tournament {
   startDate   DateTime?        @map("start_date") @db.Date
   endDate     DateTime?        @map("end_date") @db.Date
   status      TournamentStatus @default(DRAFT)
+  ownerUserId String           @map("owner_user_id") @db.Uuid
   createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   matches     Match[]
+  owner       User             @relation("TournamentOwner", fields: [ownerUserId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "tournaments_owner_user_id_fkey")
 
+  @@index([ownerUserId, status], map: "tournaments_owner_user_id_status_idx")
+  @@index([ownerUserId, createdAt], map: "tournaments_owner_user_id_created_at_idx")
   @@map("tournaments")
 }
 

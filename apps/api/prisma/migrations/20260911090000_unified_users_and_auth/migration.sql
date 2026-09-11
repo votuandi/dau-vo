@@ -1,7 +1,7 @@
 -- Preserve legacy administrator IDs, password hashes, timestamps, and audit attribution.
 ALTER TABLE "admin_users" RENAME TO "users";
 ALTER TABLE "users" RENAME CONSTRAINT "admin_users_pkey" TO "users_pkey";
-ALTER TABLE "users" DROP CONSTRAINT "admin_users_username_key";
+DROP INDEX IF EXISTS "admin_users_username_key";
 
 CREATE TYPE "user_role" AS ENUM ('SUPER_ADMIN', 'ADMIN', 'USER');
 
