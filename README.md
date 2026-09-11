@@ -95,6 +95,22 @@ preserved. Legacy rows intentionally retain nullable profile fields during this
 compatibility phase; registration and profile-completeness rules are deferred.
 Referee and inspector match-access sessions remain a separate security domain.
 
+## User registration and read-only viewing
+
+`POST /api/auth/register` creates an active `USER` account and, on success,
+establishes the same HTTP-only normal-user session as login. The server ignores
+any client-supplied role, activation, ownership, or subscription fields. Usernames
+and emails are trimmed and lower-cased for unique normalized database columns;
+phone numbers remove formatting characters and convert a leading `00` to `+`.
+
+Authenticated normal users can use `/tournaments`, `/tournaments/:id`,
+`/matches/:id`, and `/account`. The read-only API exposes only `ACTIVE` and
+`FINISHED` tournaments and deliberately omits owner information, access codes,
+participant sessions, monitoring history, and audit records. The list is
+deterministically ordered by start date, creation time, and ID, and accepts
+`page` and `pageSize` (maximum 50). Protected browser routes retain the requested
+return path when redirecting to `/login`.
+
 After running the development seed, open `http://localhost:5173/admin/login` and
 sign in with `SEED_ADMIN_USERNAME` and `SEED_ADMIN_PASSWORD`. The frontend restores
 the session with `GET /api/auth/me`, protects `/admin`, and invalidates the

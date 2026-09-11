@@ -19,6 +19,7 @@ import { IdentityNormalizationService } from './identity-normalization.service';
 import {
   INVALID_CREDENTIALS_ERROR,
   LOGIN_RATE_LIMITED_ERROR,
+  REGISTRATION_RATE_LIMITED_ERROR,
 } from './admin-auth.constants';
 import type { AuthenticatedUser, CreatedSession } from './admin-auth.types';
 
@@ -175,6 +176,11 @@ export class AuthService {
   }
 
   async register(input: { fullName: string; username: string; email: string; phone: string; organization?: string; password: string }, clientAddress: string): Promise<CreatedSession> {
+    const registrationRateLimitKey = this.deriveRedisKey('registration-rate:ip', clientAddress);
+    const attempts = await this.redis.incrementWithExpiry(registrationRateLimitKey, this.loginRateLimitWindowSeconds);
+    if (attempts > this.loginRateLimitMaxAttempts) {
+      throw new HttpException(REGISTRATION_RATE_LIMITED_ERROR, HttpStatus.TOO_MANY_REQUESTS);
+    }
     const normalizedUsername = this.normalizer.username(input.username);
     const normalizedEmail = this.normalizer.email(input.email);
     const normalizedPhone = this.normalizer.phone(input.phone);
@@ -189,7 +195,9 @@ export class AuthService {
       }
       throw error;
     }
-    return this.login(input.username, input.password, clientAddress);
+    const session = await this.login(input.username, input.password, clientAddress);
+    await this.redis.delete(registrationRateLimitKey);
+    return session;
   }
 
   private safeUser(user: { id: string; username: string; fullName: string | null; role: UserRole; isActive: boolean }): AuthenticatedUser {

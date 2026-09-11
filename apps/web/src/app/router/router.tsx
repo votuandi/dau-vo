@@ -1,5 +1,6 @@
 import { Navigate, createBrowserRouter } from 'react-router-dom';
 import { AdminRouteGuard } from '@/features/admin-auth/admin-route-guard';
+import { AuthenticatedRouteGuard } from '@/features/auth/authenticated-route-guard';
 import { AppLayout } from '@/layouts/app-layout';
 import { AdminDashboardPage } from '@/pages/admin-dashboard-page';
 import { AdminLoginPage } from '@/pages/admin-login-page';
@@ -10,6 +11,7 @@ import { MatchAccessPage } from '@/pages/match-access-page';
 import { NotFoundPage } from '@/pages/not-found-page';
 import { ScoreboardPage } from '@/pages/scoreboard-page';
 import { RegisterPage } from '@/pages/register-page';
+import { AccountPage, MatchPage, TournamentPage, TournamentsPage } from '@/pages/public-view-pages';
 import { MatchRole } from '@/types/shared';
 
 export const router = createBrowserRouter([
@@ -26,6 +28,15 @@ export const router = createBrowserRouter([
         element: <AdminLoginPage />,
       },
       { path: 'register', element: <RegisterPage /> },
+      {
+        element: <AuthenticatedRouteGuard />,
+        children: [
+          { path: 'tournaments', element: <TournamentsPage /> },
+          { path: 'tournaments/:id', element: <TournamentPage /> },
+          { path: 'matches/:id', element: <MatchPage /> },
+          { path: 'account', element: <AccountPage /> },
+        ],
+      },
       {
         path: 'admin/login',
         element: <Navigate replace to="/login" />,

@@ -1,4 +1,4 @@
-import { Controller, Get, NotFoundException, Param, ParseIntPipe, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Inject, NotFoundException, Param, ParseIntPipe, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
 import { MatchStatus, TournamentStatus } from '@prisma/client';
 
 import { AuthGuard } from '../auth/admin-auth.guard';
@@ -9,7 +9,7 @@ const visibleStatuses = [TournamentStatus.ACTIVE, TournamentStatus.FINISHED];
 @Controller()
 @UseGuards(AuthGuard)
 export class PublicViewController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   @Get('tournaments')
   async tournaments(@Query('page', new ParseIntPipe({ optional: true })) page = 1, @Query('pageSize', new ParseIntPipe({ optional: true })) pageSize = 20) {

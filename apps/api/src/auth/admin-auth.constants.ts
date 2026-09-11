@@ -14,3 +14,8 @@ export const LOGIN_RATE_LIMITED_ERROR = {
   code: 'LOGIN_RATE_LIMITED',
   message: 'Too many login attempts. Try again later.',
 } as const;
+
+export const REGISTRATION_RATE_LIMITED_ERROR = {
+  code: 'REGISTRATION_RATE_LIMITED',
+  message: 'Too many registration attempts. Try again later.',
+} as const;
