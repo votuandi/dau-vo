@@ -126,6 +126,25 @@ tournament capacity, and total. Only `SUPER_ADMIN` may list or create versions a
 `GET`/`PUT /api/super-admin/pricing`; a new version atomically supersedes the old
 one and adds an audit record. Published versions are never edited.
 
+## MVP subscriptions and quotas
+
+`POST /api/subscriptions/activate` is a simulated-success MVP operation, not a
+payment-provider confirmation. The request includes an idempotency key; retries
+with the same key return the original immutable order and never extend access or
+quota twice. The server recalculates the active pricing version and records its
+complete quote snapshot. A successful activation grants `ADMIN` role and an
+entitlement. Active renewals extend from `activeUntil`; expired renewals start at
+activation time. Month arithmetic uses UTC calendar months, including end-of-month
+clamping.
+
+The entitlement's tournament limit is the total capacity purchased in its current
+active cycle. Each base purchase adds three, and selected tournament bundles add
+their purchased capacity. Tournament creation locks the entitlement row, counts
+owned tournaments in the same transaction, and rejects exhausted capacity with
+`TOURNAMENT_LIMIT_REACHED`; this prevents concurrent last-slot oversubscription.
+Subscription orders are intentionally immutable so a future payment provider can
+attach provider transaction state without changing entitlement history.
+
 After running the development seed, open `http://localhost:5173/admin/login` and
 sign in with `SEED_ADMIN_USERNAME` and `SEED_ADMIN_PASSWORD`. The frontend restores
 the session with `GET /api/auth/me`, protects `/admin`, and invalidates the

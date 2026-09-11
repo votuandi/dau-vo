@@ -200,6 +200,20 @@ export class AdminManagementService {
     this.assertDateRange(startDate, endDate);
 
     return this.prisma.$transaction(async (transaction) => {
+      const actor = await transaction.user.findUniqueOrThrow({
+        where: { id: adminUserId },
+        select: { role: true },
+      });
+      if (actor.role !== UserRole.SUPER_ADMIN) {
+        await transaction.$queryRaw`SELECT id FROM admin_entitlements WHERE user_id = ${adminUserId}::uuid FOR UPDATE`;
+        const entitlement = await transaction.adminEntitlement.findUnique({ where: { userId: adminUserId } });
+        const now = new Date();
+        if (entitlement === null || entitlement.status !== 'ACTIVE' || entitlement.activeFrom > now || entitlement.activeUntil <= now) {
+          throw new ConflictException({ code: entitlement === null ? 'ADMIN_SUBSCRIPTION_REQUIRED' : 'ADMIN_SUBSCRIPTION_EXPIRED' });
+        }
+        const used = await transaction.tournament.count({ where: { ownerUserId: adminUserId } });
+        if (used >= entitlement.tournamentLimit) throw new ConflictException({ code: 'TOURNAMENT_LIMIT_REACHED' });
+      }
       const tournament = await transaction.tournament.create({
         data: {
           description: this.optionalTrimmedText(input.description),

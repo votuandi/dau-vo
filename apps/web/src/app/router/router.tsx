@@ -12,6 +12,7 @@ import { NotFoundPage } from '@/pages/not-found-page';
 import { ScoreboardPage } from '@/pages/scoreboard-page';
 import { RegisterPage } from '@/pages/register-page';
 import { AccountPage, MatchPage, TournamentPage, TournamentsPage } from '@/pages/public-view-pages';
+import { SubscriptionPage } from '@/pages/subscription-page';
 import { MatchRole } from '@/types/shared';
 
 export const router = createBrowserRouter([
@@ -35,6 +36,7 @@ export const router = createBrowserRouter([
           { path: 'tournaments/:id', element: <TournamentPage /> },
           { path: 'matches/:id', element: <MatchPage /> },
           { path: 'account', element: <AccountPage /> },
+          { path: 'subscription', element: <SubscriptionPage /> },
         ],
       },
       {

@@ -114,6 +114,21 @@ enum PricingDiscountType {
   @@map("pricing_discount_type")
 }
 
+enum AdminEntitlementStatus {
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  REVOKED
+
+  @@map("admin_entitlement_status")
+}
+
+enum SubscriptionPaymentStatus {
+  SIMULATED_SUCCESS
+
+  @@map("subscription_payment_status")
+}
+
 enum UserRole {
   SUPER_ADMIN
   ADMIN
@@ -141,6 +156,8 @@ model User {
   auditLogs          AuditLog[]
   ownedTournaments   Tournament[] @relation("TournamentOwner")
   createdPricingPlanVersions PricingPlanVersion[] @relation("PricingPlanVersionCreator")
+  adminEntitlement AdminEntitlement?
+  subscriptionOrders SubscriptionOrder[]
 
   @@map("users")
 }
@@ -164,6 +181,40 @@ model Tournament {
   @@map("tournaments")
 }
 
+model AdminEntitlement {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @unique @map("user_id") @db.Uuid
+  status AdminEntitlementStatus @default(ACTIVE)
+  activeFrom DateTime @map("active_from") @db.Timestamptz(3)
+  activeUntil DateTime @map("active_until") @db.Timestamptz(3)
+  tournamentLimit Int @map("tournament_limit")
+  adminAccessEndedAt DateTime? @map("admin_access_ended_at") @db.Timestamptz(3)
+  manualAdjustmentMetadata Json? @map("manual_adjustment_metadata") @db.JsonB
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user User @relation(fields:[userId], references:[id], onDelete: Cascade)
+  @@map("admin_entitlements")
+}
+
+model SubscriptionOrder {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  pricingPlanVersionId String @map("pricing_plan_version_id") @db.Uuid
+  idempotencyKey String @unique @map("idempotency_key") @db.VarChar(255)
+  durationBundle Int @default(0) @map("duration_bundle")
+  tournamentBundle Int @default(0) @map("tournament_bundle")
+  durationMonthsGranted Int @map("duration_months_granted")
+  tournamentLimitGranted Int @map("tournament_limit_granted")
+  priceSnapshot Json @map("price_snapshot") @db.JsonB
+  totalAmountVnd Int @map("total_amount_vnd")
+  paymentStatus SubscriptionPaymentStatus @default(SIMULATED_SUCCESS) @map("payment_status")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user User @relation(fields:[userId], references:[id], onDelete: Restrict)
+  pricingPlanVersion PricingPlanVersion @relation(fields:[pricingPlanVersionId], references:[id], onDelete: Restrict)
+  @@index([userId, createdAt])
+  @@map("subscription_orders")
+}
+
 model PricingPlanVersion {
   id                         String                @id(map: "pricing_plan_versions_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   baseAmountVnd              Int                   @map("base_amount_vnd")
@@ -178,6 +229,7 @@ model PricingPlanVersion {
   updatedAt                  DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   discountTiers              PricingDiscountTier[]
   createdBy                  User?                 @relation("PricingPlanVersionCreator", fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  subscriptionOrders         SubscriptionOrder[]
 
   @@index([active], map: "pricing_plan_versions_active_idx")
   @@map("pricing_plan_versions")

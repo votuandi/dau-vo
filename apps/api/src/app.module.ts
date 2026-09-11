@@ -17,6 +17,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 import { RedisModule } from './redis/redis.module';
 import { PublicViewModule } from './public-view/public-view.module';
 import { PricingModule } from './pricing/pricing.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { PricingModule } from './pricing/pricing.module';
     HealthModule,
     PublicViewModule,
     PricingModule,
+    SubscriptionsModule,
   ],
 })
 export class AppModule {}
