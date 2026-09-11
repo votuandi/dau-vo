@@ -26,10 +26,19 @@ export function SuperAdminUsersPage() {
   const cache = useQueryClient();
   const users = useQuery({
     queryKey: ['super-admin', 'users', search, page],
-    queryFn: () => superAdminApi.users(search),
+    queryFn: () => superAdminApi.users({ page, pageSize: 25, ...(search ? { search } : {}) }),
   });
   const create = useMutation({
-    mutationFn: (body: unknown) => superAdminApi.update('new', body),
+    mutationFn: (body: unknown) =>
+      superAdminApi.create(
+        body as {
+          fullName: string;
+          username: string;
+          email: string;
+          phone: string;
+          password: string;
+        },
+      ),
     onSuccess: () => {
       void cache.invalidateQueries({ queryKey: ['super-admin', 'users'] });
     },
@@ -126,7 +135,8 @@ export function SuperAdminUserPage() {
     },
   });
   const access = useMutation({
-    mutationFn: (body: unknown) => superAdminApi.access(id, body),
+    mutationFn: (body: unknown) =>
+      superAdminApi.access(id, body as { action: 'SUSPEND'; reason?: string }),
     onSuccess: () => {
       void cache.invalidateQueries({ queryKey: ['super-admin'] });
     },
