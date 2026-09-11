@@ -25,6 +25,8 @@ import { getClientAddress, readAuthSessionToken } from './admin-auth.utils';
 // This class must remain a runtime import for Nest's emitted validation metadata.
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { AdminLoginDto } from './dto/admin-login.dto';
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+import { RegisterDto } from './dto/register.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -86,6 +88,15 @@ export class AuthController {
     }
 
     response.clearCookie(AUTH_SESSION_COOKIE, this.cookieOptions);
+  }
+
+  @Post('register')
+  @HttpCode(201)
+  @Header('Cache-Control', 'no-store')
+  async register(@Body() input: RegisterDto, @Req() request: Request, @Res({ passthrough: true }) response: Response): Promise<AuthResponse> {
+    const session = await this.authService.register(input, getClientAddress(request));
+    response.cookie(AUTH_SESSION_COOKIE, session.sessionToken, this.cookieOptions);
+    return { user: session.user };
   }
 
   @Get('me')

@@ -4,9 +4,10 @@ import {
   Inject,
   Injectable,
   UnauthorizedException,
+  ConflictException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { UserRole } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 import { compare, hash } from 'bcryptjs';
 import { Buffer } from 'node:buffer';
 import { createHmac, randomBytes } from 'node:crypto';
@@ -14,6 +15,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 import type { EnvironmentVariables } from '../config/environment';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { IdentityNormalizationService } from './identity-normalization.service';
 import {
   INVALID_CREDENTIALS_ERROR,
   LOGIN_RATE_LIMITED_ERROR,
@@ -41,6 +43,8 @@ export class AuthService {
     private readonly prisma: PrismaService,
     @Inject(RedisService)
     private readonly redis: RedisService,
+    @Inject(IdentityNormalizationService)
+    private readonly normalizer: IdentityNormalizationService,
   ) {
     this.adminSessionSecret = config.getOrThrow('ADMIN_SESSION_SECRET', {
       infer: true,
@@ -67,7 +71,7 @@ export class AuthService {
     password: string,
     clientAddress: string,
   ): Promise<CreatedSession> {
-    const normalizedUsername = username.trim().toLocaleLowerCase();
+    const normalizedUsername = this.normalizer.username(username);
     const identityRateLimitKey = this.deriveRedisKey(
       'login-rate:identity',
       normalizedUsername,
@@ -168,6 +172,24 @@ export class AuthService {
       .digest('base64url');
 
     return `auth:${namespace}:${digest}`;
+  }
+
+  async register(input: { fullName: string; username: string; email: string; phone: string; organization?: string; password: string }, clientAddress: string): Promise<CreatedSession> {
+    const normalizedUsername = this.normalizer.username(input.username);
+    const normalizedEmail = this.normalizer.email(input.email);
+    const normalizedPhone = this.normalizer.phone(input.phone);
+    if (normalizedPhone.length < 6) throw new HttpException({ code: 'INVALID_PHONE', message: 'Phone number is invalid' }, HttpStatus.BAD_REQUEST);
+    try {
+      await this.prisma.user.create({ data: { fullName: input.fullName.trim(), username: input.username.trim(), normalizedUsername, email: input.email.trim(), normalizedEmail, phone: input.phone.trim(), normalizedPhone, organization: input.organization?.trim() || null, passwordHash: await hash(input.password, DUMMY_PASSWORD_COST), role: UserRole.USER, isActive: true } });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const target = String(error.meta?.target ?? '');
+        const code = target.includes('normalized_email') ? 'EMAIL_ALREADY_EXISTS' : target.includes('normalized_phone') ? 'PHONE_ALREADY_EXISTS' : 'USERNAME_ALREADY_EXISTS';
+        throw new ConflictException({ code, message: 'An account with this identity already exists' });
+      }
+      throw error;
+    }
+    return this.login(input.username, input.password, clientAddress);
   }
 
   private safeUser(user: { id: string; username: string; fullName: string | null; role: UserRole; isActive: boolean }): AuthenticatedUser {

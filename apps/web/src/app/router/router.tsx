@@ -9,6 +9,7 @@ import { AdminTournamentsPage } from '@/pages/admin-tournaments-page';
 import { MatchAccessPage } from '@/pages/match-access-page';
 import { NotFoundPage } from '@/pages/not-found-page';
 import { ScoreboardPage } from '@/pages/scoreboard-page';
+import { RegisterPage } from '@/pages/register-page';
 import { MatchRole } from '@/types/shared';
 
 export const router = createBrowserRouter([
@@ -24,6 +25,7 @@ export const router = createBrowserRouter([
         path: 'login',
         element: <AdminLoginPage />,
       },
+      { path: 'register', element: <RegisterPage /> },
       {
         path: 'admin/login',
         element: <Navigate replace to="/login" />,

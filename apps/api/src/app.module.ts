@@ -15,6 +15,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RealtimeCoreModule } from './realtime/realtime-core.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RedisModule } from './redis/redis.module';
+import { PublicViewModule } from './public-view/public-view.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { RedisModule } from './redis/redis.module';
     MatchAccessModule,
     RealtimeModule,
     HealthModule,
+    PublicViewModule,
   ],
 })
 export class AppModule {}
