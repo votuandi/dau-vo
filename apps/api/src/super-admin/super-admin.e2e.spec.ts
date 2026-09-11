@@ -267,6 +267,165 @@ describe('Super-admin management (e2e)', () => {
     ).resolves.toBe(0);
   });
 
+  it('restores only soft-deleted users, preserves their state, and audits only successful restores', async () => {
+    const root = request.agent(app.getHttpServer());
+    await root
+      .post('/api/auth/login')
+      .send({ username: superAdmin.username, password })
+      .expect(200);
+
+    const createUser = (suffix: string, initialAdminAccess?: object) =>
+      root.post('/api/super-admin/users').send({
+        username: `${prefix}restore-${suffix}`,
+        password,
+        fullName: `Restore ${suffix}`,
+        email: `${prefix}restore-${suffix}@example.test`,
+        phone: `09000000${suffix === 'user' ? '21' : suffix === 'admin' ? '22' : suffix === 'active' ? '23' : '24'}`,
+        ...(initialAdminAccess ? { initialAdminAccess } : {}),
+      });
+
+    const user = await createUser('user').expect(201);
+    const admin = await createUser('admin', {
+      activeFrom: '2030-01-01T00:00:00.000Z',
+      activeUntil: '2030-12-31T00:00:00.000Z',
+      tournamentLimit: 3,
+    }).expect(201);
+    const active = await createUser('active').expect(201);
+    const inactive = await createUser('inactive').expect(201);
+    const userId = user.body.id as string;
+    const adminId = admin.body.id as string;
+    const activeId = active.body.id as string;
+    const inactiveId = inactive.body.id as string;
+
+    await root
+      .patch(`/api/super-admin/users/${inactiveId}`)
+      .send({ isActive: false })
+      .expect(200);
+    await root.delete(`/api/super-admin/users/${userId}`).expect(200);
+    await root.delete(`/api/super-admin/users/${adminId}`).expect(200);
+
+    const beforeUser = await prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+    });
+    const beforeAdmin = await prisma.user.findUniqueOrThrow({
+      where: { id: adminId },
+    });
+    const restoreAuditCountBefore = await prisma.auditLog.count({
+      where: {
+        adminUserId: superAdmin.id,
+        eventType: 'ADMIN_ACTION',
+        metadata: { path: ['action'], equals: 'SUPER_ADMIN_USER_RESTORED' },
+      },
+    });
+    await root.post(`/api/super-admin/users/${userId}/restore`).expect(201);
+    await root.post(`/api/super-admin/users/${adminId}/restore`).expect(201);
+    await root
+      .post(`/api/super-admin/users/${activeId}/restore`)
+      .expect(409)
+      .expect(({ body }: { body: { code: string } }) =>
+        expect(body.code).toBe('USER_NOT_DELETED'),
+      );
+    await root
+      .post(`/api/super-admin/users/${inactiveId}/restore`)
+      .expect(409)
+      .expect(({ body }: { body: { code: string } }) =>
+        expect(body.code).toBe('USER_NOT_DELETED'),
+      );
+    await root
+      .post(
+        '/api/super-admin/users/00000000-0000-0000-0000-000000000000/restore',
+      )
+      .expect(404)
+      .expect(({ body }: { body: { code: string } }) =>
+        expect(body.code).toBe('USER_NOT_FOUND'),
+      );
+
+    await expect(
+      prisma.user.findUniqueOrThrow({ where: { id: userId } }),
+    ).resolves.toMatchObject({
+      id: beforeUser.id,
+      role: UserRole.USER,
+      isActive: false,
+      deletedAt: null,
+      fullName: beforeUser.fullName,
+      email: beforeUser.email,
+      phone: beforeUser.phone,
+      organization: beforeUser.organization,
+    });
+    await expect(
+      prisma.user.findUniqueOrThrow({ where: { id: adminId } }),
+    ).resolves.toMatchObject({
+      id: beforeAdmin.id,
+      role: UserRole.ADMIN,
+      isActive: false,
+      deletedAt: null,
+      fullName: beforeAdmin.fullName,
+      email: beforeAdmin.email,
+      phone: beforeAdmin.phone,
+      organization: beforeAdmin.organization,
+    });
+    await expect(
+      prisma.user.findUniqueOrThrow({ where: { id: activeId } }),
+    ).resolves.toMatchObject({
+      id: activeId,
+      isActive: true,
+      deletedAt: null,
+    });
+    await expect(
+      prisma.user.findUniqueOrThrow({ where: { id: inactiveId } }),
+    ).resolves.toMatchObject({
+      id: inactiveId,
+      isActive: false,
+      deletedAt: null,
+    });
+    const restoreAudits = await prisma.auditLog.findMany({
+      where: {
+        adminUserId: superAdmin.id,
+        eventType: 'ADMIN_ACTION',
+        metadata: { path: ['action'], equals: 'SUPER_ADMIN_USER_RESTORED' },
+      },
+    });
+    expect(restoreAudits).toHaveLength(restoreAuditCountBefore + 2);
+    expect(
+      restoreAudits.filter(
+        ({ metadata }) =>
+          (metadata as { targetUserId?: string }).targetUserId === userId,
+      ),
+    ).toHaveLength(1);
+    expect(
+      restoreAudits.filter(
+        ({ metadata }) =>
+          (metadata as { targetUserId?: string }).targetUserId === adminId,
+      ),
+    ).toHaveLength(1);
+    expect(
+      restoreAudits.filter(
+        ({ metadata }) =>
+          (metadata as { targetUserId?: string }).targetUserId === activeId,
+      ),
+    ).toHaveLength(0);
+    expect(
+      restoreAudits.filter(
+        ({ metadata }) =>
+          (metadata as { targetUserId?: string }).targetUserId === inactiveId,
+      ),
+    ).toHaveLength(0);
+    expect(restoreAudits.map(({ metadata }) => metadata)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetUserId: userId,
+          before: expect.objectContaining({ deletedAt: expect.any(String) }),
+          after: expect.objectContaining({ deletedAt: null, isActive: false }),
+        }),
+        expect.objectContaining({
+          targetUserId: adminId,
+          before: expect.objectContaining({ deletedAt: expect.any(String) }),
+          after: expect.objectContaining({ deletedAt: null, isActive: false }),
+        }),
+      ]),
+    );
+  });
+
   it('rejects over-byte-limit managed-user passwords without creating a user', async () => {
     const root = request.agent(app.getHttpServer());
     const username = `${prefix}password-policy`;

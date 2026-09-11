@@ -283,7 +283,9 @@ export class SuperAdminService {
       a,
       'SUPER_ADMIN_USER_RESTORED',
       reason,
-      async (tx) => {
+      async (tx, before) => {
+        if (before.deletedAt === null)
+          throw new ConflictException({ code: 'USER_NOT_DELETED' });
         const result = await tx.user.update({
           where: { id },
           data: { deletedAt: null, isActive: false },

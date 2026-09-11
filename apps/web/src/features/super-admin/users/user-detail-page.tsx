@@ -36,6 +36,7 @@ const codeText: Record<string, string> = {
   INVALID_ENTITLEMENT_PERIOD: 'Thời hạn quyền quản trị không hợp lệ.',
   ENTITLEMENT_NOT_FOUND: 'Không tìm thấy quyền quản trị để thực hiện thao tác này.',
   USER_DELETED: 'Hãy khôi phục người dùng trước khi thay đổi quyền quản trị.',
+  USER_NOT_DELETED: 'Người dùng này chưa bị xóa mềm nên không thể khôi phục.',
   CANNOT_CHANGE_SUPER_ADMIN_ENTITLEMENT:
     'Không thể thay đổi quyền quản trị của siêu quản trị viên.',
   USERNAME_ALREADY_EXISTS: 'Tên đăng nhập đã được sử dụng.',
