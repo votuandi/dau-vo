@@ -3,6 +3,7 @@ import { AdminRouteGuard } from '@/features/admin-auth/admin-route-guard';
 import { AuthenticatedRouteGuard } from '@/features/auth/authenticated-route-guard';
 import { SuperAdminRouteGuard } from '@/features/auth/super-admin-route-guard';
 import { AppLayout } from '@/layouts/app-layout';
+import { SuperAdminLayout } from '@/layouts/super-admin-layout';
 import { AdminDashboardPage } from '@/pages/admin-dashboard-page';
 import { AdminLoginPage } from '@/pages/admin-login-page';
 import { AdminMatchDetailPage } from '@/pages/admin-match-detail-page';
@@ -21,6 +22,7 @@ import {
   SuperAdminUsersPage,
 } from '@/pages/super-admin-pages';
 import { MatchRole } from '@/types/shared';
+import { RoleAwareIndexRedirect } from './role-aware-index-redirect';
 
 export const router = createBrowserRouter([
   {
@@ -29,7 +31,7 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <Navigate replace to="/admin" />,
+        element: <RoleAwareIndexRedirect />,
       },
       {
         path: 'login',
@@ -76,10 +78,15 @@ export const router = createBrowserRouter([
         path: 'super-admin',
         element: <SuperAdminRouteGuard />,
         children: [
-          { index: true, element: <SuperAdminHomePage /> },
-          { path: 'users', element: <SuperAdminUsersPage /> },
-          { path: 'users/:id', element: <SuperAdminUserPage /> },
-          { path: 'pricing', element: <SuperAdminPricingPage /> },
+          {
+            element: <SuperAdminLayout />,
+            children: [
+              { index: true, element: <SuperAdminHomePage /> },
+              { path: 'users', element: <SuperAdminUsersPage /> },
+              { path: 'users/:id', element: <SuperAdminUserPage /> },
+              { path: 'pricing', element: <SuperAdminPricingPage /> },
+            ],
+          },
         ],
       },
       {

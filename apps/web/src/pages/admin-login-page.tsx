@@ -6,6 +6,7 @@ import {
   authenticatedUserQueryKey,
   authenticatedUserQueryOptions,
 } from '@/features/auth/authenticated-user-session';
+import { getRoleLandingPath, getSafeReturnPath } from '@/features/auth/role-aware-routing';
 import { authApi } from '@/services/api/auth';
 import { ApiClientError } from '@/services/api/client';
 
@@ -26,19 +27,6 @@ function validateLoginForm(username: string, password: string): LoginFormErrors 
   }
 
   return errors;
-}
-
-function getReturnPath(state: unknown): string {
-  if (typeof state !== 'object' || state === null || !('from' in state)) {
-    return '/admin';
-  }
-
-  const { from } = state;
-  if (typeof from !== 'string' || !from.startsWith('/admin') || from === '/admin/login') {
-    return '/admin';
-  }
-
-  return from;
 }
 
 function getLoginErrorMessage(error: unknown): string {
@@ -70,7 +58,9 @@ export function AdminLoginPage() {
     mutationFn: authApi.login,
     onSuccess: (session) => {
       queryClient.setQueryData(authenticatedUserQueryKey, session);
-      void navigate(getReturnPath(location.state), { replace: true });
+      void navigate(getSafeReturnPath(location.state) ?? getRoleLandingPath(session.user.role), {
+        replace: true,
+      });
     },
   });
 
@@ -89,7 +79,7 @@ export function AdminLoginPage() {
   }
 
   if (sessionQuery.isSuccess && sessionQuery.data) {
-    return <Navigate replace to="/admin" />;
+    return <Navigate replace to={getRoleLandingPath(sessionQuery.data.user.role)} />;
   }
 
   return (

@@ -49,7 +49,7 @@ export function AdminDashboardPage() {
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               Quyền quản trị đã hết hạn. Bạn chỉ có thể xem dữ liệu đến{' '}
               {new Date(entitlementQuery.data?.readOnlyUntil ?? '').toLocaleDateString('vi-VN')}.{' '}
-              <Link className="font-bold underline" to="/subscriptions">
+              <Link className="font-bold underline" to="/subscription">
                 Gia hạn ngay
               </Link>
               .
