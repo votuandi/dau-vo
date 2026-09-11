@@ -102,8 +102,16 @@ enum AuditEventType {
   MATCH_RESULT_RESET_UNDONE
   ROUND_ENDED
   MATCH_FINISHED
+  PRICING_VERSION_CREATED
 
   @@map("audit_event_type")
+}
+
+enum PricingDiscountType {
+  DURATION
+  TOURNAMENT
+
+  @@map("pricing_discount_type")
 }
 
 enum UserRole {
@@ -132,6 +140,7 @@ model User {
   deletedAt          DateTime?  @map("deleted_at") @db.Timestamptz(3)
   auditLogs          AuditLog[]
   ownedTournaments   Tournament[] @relation("TournamentOwner")
+  createdPricingPlanVersions PricingPlanVersion[] @relation("PricingPlanVersionCreator")
 
   @@map("users")
 }
@@ -153,6 +162,38 @@ model Tournament {
   @@index([ownerUserId, status], map: "tournaments_owner_user_id_status_idx")
   @@index([ownerUserId, createdAt], map: "tournaments_owner_user_id_created_at_idx")
   @@map("tournaments")
+}
+
+model PricingPlanVersion {
+  id                         String                @id(map: "pricing_plan_versions_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  baseAmountVnd              Int                   @map("base_amount_vnd")
+  baseDurationMonths         Int                   @map("base_duration_months")
+  baseTournamentLimit        Int                   @map("base_tournament_limit")
+  durationAddonUnitAmountVnd Int                   @map("duration_addon_unit_amount_vnd")
+  tournamentAddonUnitAmountVnd Int                 @map("tournament_addon_unit_amount_vnd")
+  active                     Boolean               @default(false)
+  activatedAt                DateTime?             @map("activated_at") @db.Timestamptz(3)
+  createdByUserId            String?               @map("created_by_user_id") @db.Uuid
+  createdAt                  DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                  DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  discountTiers              PricingDiscountTier[]
+  createdBy                  User?                 @relation("PricingPlanVersionCreator", fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([active], map: "pricing_plan_versions_active_idx")
+  @@map("pricing_plan_versions")
+}
+
+model PricingDiscountTier {
+  id                   String              @id(map: "pricing_discount_tiers_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pricingPlanVersionId String              @map("pricing_plan_version_id") @db.Uuid
+  type                 PricingDiscountType
+  quantity             Int
+  discountBasisPoints  Int                 @map("discount_basis_points")
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  pricingPlanVersion   PricingPlanVersion  @relation(fields: [pricingPlanVersionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([pricingPlanVersionId, type, quantity], map: "pricing_discount_tiers_version_type_quantity_key")
+  @@map("pricing_discount_tiers")
 }
 
 model Match {

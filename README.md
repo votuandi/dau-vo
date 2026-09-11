@@ -111,6 +111,21 @@ deterministically ordered by start date, creation time, and ID, and accepts
 `page` and `pageSize` (maximum 50). Protected browser routes retain the requested
 return path when redirecting to `/login`.
 
+## Versioned pricing
+
+Pricing is server-owned and does not activate subscriptions or payments. The active
+version starts at 200,000 VND for one month and three tournaments. Exact optional
+bundles are: 6/12 months at 50,000 VND per month less 10%/25%, and 3/5/10
+tournaments at 68,000 VND each less 5%/10%/25%. Amounts are integer VND and
+discounts use basis points, so no floating-point money calculation is used.
+
+Authenticated clients request a quote with `POST /api/subscriptions/quote`, for
+example `{ "durationBundle": 6, "tournamentBundle": 3 }`. It returns the active
+pricing version ID, base/add-on subtotals, discounts, resulting duration and
+tournament capacity, and total. Only `SUPER_ADMIN` may list or create versions at
+`GET`/`PUT /api/super-admin/pricing`; a new version atomically supersedes the old
+one and adds an audit record. Published versions are never edited.
+
 After running the development seed, open `http://localhost:5173/admin/login` and
 sign in with `SEED_ADMIN_USERNAME` and `SEED_ADMIN_PASSWORD`. The frontend restores
 the session with `GET /api/auth/me`, protects `/admin`, and invalidates the

@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import process from 'node:process';
 
 import { compare, hash } from 'bcryptjs';
-import { PrismaClient, UserRole } from '@prisma/client';
+import { PrismaClient, PricingDiscountType, UserRole } from '@prisma/client';
 import { config as loadEnvironment } from 'dotenv';
 
 const BCRYPT_COST = 12;
@@ -79,11 +79,21 @@ export async function ensureInitialSuperAdmin(
   });
 }
 
+export async function ensureInitialPricing(prisma: Pick<PrismaClient, 'pricingPlanVersion'>): Promise<void> {
+  const active = await prisma.pricingPlanVersion.findFirst({ where: { active: true }, select: { id: true } });
+  if (active) return;
+  await prisma.pricingPlanVersion.create({ data: { baseAmountVnd: 200000, baseDurationMonths: 1, baseTournamentLimit: 3, durationAddonUnitAmountVnd: 50000, tournamentAddonUnitAmountVnd: 68000, active: true, activatedAt: new Date(), discountTiers: { create: [
+    { type: PricingDiscountType.DURATION, quantity: 6, discountBasisPoints: 1000 }, { type: PricingDiscountType.DURATION, quantity: 12, discountBasisPoints: 2500 },
+    { type: PricingDiscountType.TOURNAMENT, quantity: 3, discountBasisPoints: 500 }, { type: PricingDiscountType.TOURNAMENT, quantity: 5, discountBasisPoints: 1000 }, { type: PricingDiscountType.TOURNAMENT, quantity: 10, discountBasisPoints: 2500 },
+  ] } } });
+}
+
 async function seedInitialSuperAdmin(): Promise<void> {
   const password = initialSuperAdminPassword();
   const prisma = new PrismaClient();
   try {
     await ensureInitialSuperAdmin(prisma, password);
+    await ensureInitialPricing(prisma);
     process.stdout.write('Initial super admin ensured.\n');
   } finally {
     await prisma.$disconnect();

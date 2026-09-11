@@ -16,6 +16,7 @@ import { RealtimeCoreModule } from './realtime/realtime-core.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RedisModule } from './redis/redis.module';
 import { PublicViewModule } from './public-view/public-view.module';
+import { PricingModule } from './pricing/pricing.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { PublicViewModule } from './public-view/public-view.module';
     RealtimeModule,
     HealthModule,
     PublicViewModule,
+    PricingModule,
   ],
 })
 export class AppModule {}
