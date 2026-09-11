@@ -280,6 +280,14 @@ describe('Admin tournament and match management (integration)', () => {
 
     const testAdmin = await prisma.user.create({
       data: {
+        adminEntitlement: {
+          create: {
+            activeFrom: new Date(Date.now() - 60_000),
+            activeUntil: new Date(Date.now() + 86_400_000),
+            status: AdminEntitlementStatus.ACTIVE,
+            tournamentLimit: 100,
+          },
+        },
         normalizedUsername: TEST_ADMIN_USERNAME,
         passwordHash: await hash(TEST_ADMIN_PASSWORD, 10),
         username: TEST_ADMIN_USERNAME,
@@ -321,7 +329,7 @@ describe('Admin tournament and match management (integration)', () => {
       .get('/api/admin/tournaments')
       .expect(401)
       .expect({
-        code: 'ADMIN_AUTH_REQUIRED',
+        code: 'AUTH_REQUIRED',
         message: 'Authentication required',
       });
   });

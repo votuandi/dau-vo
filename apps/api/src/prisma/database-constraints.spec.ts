@@ -55,9 +55,18 @@ async function cleanFixtures(): Promise<void> {
   });
   await prisma.match.deleteMany({ where: { id: { in: matchIds } } });
   await prisma.tournament.deleteMany({ where: { id: fixture.tournamentId } });
+  await prisma.user.deleteMany({ where: { id: fixture.tournamentId } });
 }
 
 async function createMatchFixture(): Promise<void> {
+  await prisma.user.create({
+    data: {
+      id: fixture.tournamentId,
+      normalizedUsername: 'database-constraint-owner',
+      passwordHash: 'database-constraint-test-password-hash',
+      username: 'database-constraint-owner',
+    },
+  });
   await prisma.tournament.create({
     data: {
       id: fixture.tournamentId,
