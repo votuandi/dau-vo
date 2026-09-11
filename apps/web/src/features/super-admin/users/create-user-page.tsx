@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type SyntheticEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { DateInput } from '@/components/ui/date-input';
 import { toast } from '@/components/ui/toast';
 import { ApiClientError } from '@/services/api/client';
 import { superAdminApi, type CreateSuperAdminUserInput } from '@/services/api/super-admin';
@@ -231,17 +232,27 @@ function FieldInput({
   return (
     <label className="block" htmlFor={id}>
       {label}
-      <input
-        aria-describedby={error ? `${id}-error` : undefined}
-        aria-invalid={Boolean(error)}
-        className="mt-1 w-full rounded border p-2"
-        id={id}
-        min={type === 'number' ? 0 : undefined}
-        onChange={(e) => onChange(field, e.target.value)}
-        required={field !== 'organization'}
-        type={type}
-        value={value}
-      />
+      {type === 'date' ? (
+        <DateInput
+          className="mt-1 w-full rounded border p-2"
+          id={id}
+          onChange={(next) => onChange(field, next)}
+          required={field !== 'organization'}
+          value={value}
+        />
+      ) : (
+        <input
+          aria-describedby={error ? `${id}-error` : undefined}
+          aria-invalid={Boolean(error)}
+          className="mt-1 w-full rounded border p-2"
+          id={id}
+          min={type === 'number' ? 0 : undefined}
+          onChange={(e) => onChange(field, e.target.value)}
+          required={field !== 'organization'}
+          type={type}
+          value={value}
+        />
+      )}
       {error ? (
         <span className="mt-1 block text-sm text-destructive" id={`${id}-error`} role="alert">
           {error}

@@ -6,8 +6,19 @@ export const money = (amount: number) =>
   }).format(amount);
 
 export const date = (value: string | null) =>
-  value
-    ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium', timeStyle: 'short' }).format(
-        new Date(value),
-      )
-    : 'Chưa có';
+  value ? formatDateTime(new Date(value)) : 'Chưa có';
+
+function formatDateTime(value: Date): string {
+  if (Number.isNaN(value.getTime())) {
+    return 'Chưa có';
+  }
+
+  const date = [value.getDate(), value.getMonth() + 1, value.getFullYear()]
+    .map((part, index) => (index < 2 ? part.toString().padStart(2, '0') : String(part)))
+    .join('/');
+  const time = [value.getHours(), value.getMinutes()]
+    .map((part) => part.toString().padStart(2, '0'))
+    .join(':');
+
+  return `${date} ${time}`;
+}

@@ -110,7 +110,7 @@ export function formatDate(value: string | null): string {
     return value;
   }
 
-  return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium' }).format(date);
+  return formatDateParts(date);
 }
 
 export function formatDateTime(value: string): string {
@@ -119,10 +119,7 @@ export function formatDateTime(value: string): string {
     return value;
   }
 
-  return new Intl.DateTimeFormat('vi-VN', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  }).format(date);
+  return `${formatDateParts(date)} ${formatTimeParts(date)}`;
 }
 
 export function formatDateTimeWithSeconds(value: string): string {
@@ -131,15 +128,22 @@ export function formatDateTimeWithSeconds(value: string): string {
     return value;
   }
 
-  return new Intl.DateTimeFormat('vi-VN', {
-    day: '2-digit',
-    hour: '2-digit',
-    hourCycle: 'h23',
-    minute: '2-digit',
-    month: '2-digit',
-    second: '2-digit',
-    year: 'numeric',
-  }).format(date);
+  return `${formatDateParts(date)} ${formatTimeParts(date, true)}`;
+}
+
+function formatDateParts(date: Date): string {
+  return [date.getDate(), date.getMonth() + 1, date.getFullYear()]
+    .map((part, index) => (index < 2 ? part.toString().padStart(2, '0') : String(part)))
+    .join('/');
+}
+
+function formatTimeParts(date: Date, includeSeconds = false): string {
+  const parts = [date.getHours(), date.getMinutes()];
+  if (includeSeconds) {
+    parts.push(date.getSeconds());
+  }
+
+  return parts.map((part) => part.toString().padStart(2, '0')).join(':');
 }
 
 export function toDateInputValue(value: string | null): string {

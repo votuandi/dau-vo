@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { useState, type SyntheticEvent } from 'react';
 import { Button } from '@/components/ui/button';
+import { DateTimeInput } from '@/components/ui/date-input';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { toast } from '@/components/ui/toast';
 import { authenticatedUserQueryKey } from '@/features/auth/authenticated-user-session';
@@ -239,7 +240,7 @@ export function SuperAdminUserDetailPage() {
             {fields.map((field) => (
               <label key={field}>
                 {labels[field]}
-                <input
+                <DateTimeInput
                   className="mt-1 w-full rounded border p-2"
                   disabled={!editing || busy}
                   value={draft[field]}
@@ -322,17 +323,15 @@ export function SuperAdminUserDetailPage() {
                   defaultValue={toLocalDateTimeInput(entitlement?.activeFrom)}
                   name="activeFrom"
                   required
-                  type="datetime-local"
                 />
               </label>
               <label>
                 Hết hạn
-                <input
+                <DateTimeInput
                   className="mt-1 w-full rounded border p-2"
                   defaultValue={toLocalDateTimeInput(entitlement?.activeUntil)}
                   name="activeUntil"
                   required
-                  type="datetime-local"
                 />
               </label>
               <label>

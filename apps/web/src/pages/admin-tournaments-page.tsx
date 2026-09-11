@@ -2,6 +2,7 @@ import { useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { DateInput } from '@/components/ui/date-input';
 import {
   getApiErrorMessage,
   inputClassName,
@@ -307,14 +308,13 @@ export function AdminTournamentsPage() {
                   <label className="text-sm font-semibold" htmlFor="new-tournament-start-date">
                     Bắt đầu
                   </label>
-                  <input
+                  <DateInput
                     className={inputClassName}
                     disabled={createMutation.isPending}
                     id="new-tournament-start-date"
                     onChange={(event) => {
                       setStartDate(event.target.value);
                     }}
-                    type="date"
                     value={startDate}
                   />
                 </div>
@@ -322,14 +322,13 @@ export function AdminTournamentsPage() {
                   <label className="text-sm font-semibold" htmlFor="new-tournament-end-date">
                     Kết thúc
                   </label>
-                  <input
+                  <DateInput
                     className={inputClassName}
                     disabled={createMutation.isPending}
                     id="new-tournament-end-date"
                     onChange={(event) => {
                       setEndDate(event.target.value);
                     }}
-                    type="date"
                     value={endDate}
                   />
                 </div>

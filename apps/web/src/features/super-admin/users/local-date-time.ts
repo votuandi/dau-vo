@@ -11,6 +11,11 @@ export function toLocalDateTimeInput(value?: string | null): string {
 
 /** Converts a datetime-local wall-clock value to one UTC ISO instant, exactly once. */
 export function localDateTimeInputToIso(value: string): string | null {
+  const displayMatch = /^(\d{2})\/(\d{2})\/(\d{4})\s(\d{2}):(\d{2})$/u.exec(value);
+  if (displayMatch) {
+    const [, day, month, year, hours, minutes] = displayMatch;
+    value = `${year}-${month}-${day}T${hours}:${minutes}`;
+  }
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/u.test(value)) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();

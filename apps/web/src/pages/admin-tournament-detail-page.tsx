@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { GeneratedAccessCodesPanel } from '@/components/generated-access-codes-panel';
 import { Button } from '@/components/ui/button';
+import { DateInput } from '@/components/ui/date-input';
 import {
   athleteColorLabels,
   formatDate,
@@ -107,7 +108,7 @@ function TournamentEditor({
           <label className="text-sm font-semibold" htmlFor="tournament-name">
             Tên giải đấu
           </label>
-          <input
+          <DateInput
             className={inputClassName}
             disabled={updateMutation.isPending || isReadOnly}
             id="tournament-name"
@@ -159,7 +160,6 @@ function TournamentEditor({
             onChange={(event) => {
               setStartDate(event.target.value);
             }}
-            type="date"
             value={startDate}
           />
         </div>
@@ -167,14 +167,13 @@ function TournamentEditor({
           <label className="text-sm font-semibold" htmlFor="tournament-end-date">
             Ngày kết thúc
           </label>
-          <input
+          <DateInput
             className={inputClassName}
             disabled={updateMutation.isPending || isReadOnly}
             id="tournament-end-date"
             onChange={(event) => {
               setEndDate(event.target.value);
             }}
-            type="date"
             value={endDate}
           />
         </div>
