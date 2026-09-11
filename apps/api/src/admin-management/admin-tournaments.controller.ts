@@ -87,7 +87,7 @@ export class AdminTournamentsController {
     @Body() input: UpdateTournamentDto,
     @Req() request: AuthenticatedUserRequest,
   ): Promise<TournamentResponse> {
-    await this.management.assertTournamentAccess(id, request.user);
+    await this.management.assertTournamentAccess(id, request.user, true);
     return {
       tournament: await this.management.updateTournament(
         id,
@@ -102,7 +102,7 @@ export class AdminTournamentsController {
     @Param('id', uuidPipe) id: string,
     @Req() request: AuthenticatedUserRequest,
   ): Promise<TournamentResponse> {
-    await this.management.assertTournamentAccess(id, request.user);
+    await this.management.assertTournamentAccess(id, request.user, true);
     return {
       tournament: await this.management.archiveTournament(id, request.user.id),
     };
@@ -124,7 +124,7 @@ export class AdminTournamentsController {
     @Body() input: CreateMatchDto,
     @Req() request: AuthenticatedUserRequest,
   ): Promise<CreatedMatchResult> {
-    await this.management.assertTournamentAccess(tournamentId, request.user);
+    await this.management.assertTournamentAccess(tournamentId, request.user, true);
     return this.management.createMatch(tournamentId, input, request.user.id);
   }
 }

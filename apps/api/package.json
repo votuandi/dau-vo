@@ -20,6 +20,7 @@
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "prisma:generate": "prisma generate",
+    "lifecycle:run": "tsx src/subscriptions/run-lifecycle.ts",
     "prisma:migrate": "node --env-file-if-exists=../../.env ./node_modules/prisma/build/index.js migrate dev",
     "prisma:migrate:deploy": "node --env-file-if-exists=../../.env ./node_modules/prisma/build/index.js migrate deploy",
     "prisma:seed": "node --env-file-if-exists=../../.env ./node_modules/prisma/build/index.js db seed",

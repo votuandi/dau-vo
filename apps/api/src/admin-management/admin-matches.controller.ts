@@ -72,7 +72,7 @@ export class AdminMatchesController {
     @Body() input: UpdateMatchDto,
     @Req() request: AuthenticatedUserRequest,
   ): Promise<MatchResponse> {
-    await this.management.assertMatchAccess(id, request.user);
+    await this.management.assertMatchAccess(id, request.user, true);
     return {
       match: await this.management.updateMatch(id, input, request.user.id),
     };
@@ -85,7 +85,7 @@ export class AdminMatchesController {
     @Param('id', uuidPipe) id: string,
     @Req() request: AuthenticatedUserRequest,
   ): Promise<RegeneratedAccessCodesResult> {
-    await this.management.assertMatchAccess(id, request.user);
+    await this.management.assertMatchAccess(id, request.user, true);
     return this.management.regenerateAllAccessCodes(id, request.user.id);
   }
 
@@ -97,7 +97,7 @@ export class AdminMatchesController {
     @Param('role', accessRolePipe) role: MatchAccessRole,
     @Req() request: AuthenticatedUserRequest,
   ): Promise<RegeneratedAccessCodesResult> {
-    await this.management.assertMatchAccess(id, request.user);
+    await this.management.assertMatchAccess(id, request.user, true);
     return this.management.regenerateAccessCode(id, role, request.user.id);
   }
 }

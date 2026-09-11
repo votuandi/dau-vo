@@ -502,7 +502,7 @@ export class MatchAccessService {
     matchPublicId: string,
     securityCode: string,
   ): Promise<VerifiedCredential> {
-    const match = await this.prisma.match.findUnique({
+    const match = await this.prisma.match.findFirst({
       select: {
         accessCodes: {
           select: { codeHash: true, id: true, role: true },
@@ -510,7 +510,7 @@ export class MatchAccessService {
         id: true,
         publicId: true,
       },
-      where: { publicId: matchPublicId },
+      where: { publicId: matchPublicId, tournament: { softDeletedAt: null } },
     });
     const codeFitsBcrypt =
       Buffer.byteLength(securityCode, 'utf8') <= BCRYPT_MAX_INPUT_BYTES;
@@ -565,7 +565,7 @@ export class MatchAccessService {
       select: {
         codeHash: true,
         id: true,
-        match: { select: { id: true, publicId: true } },
+        match: { select: { id: true, publicId: true, tournament: { select: { softDeletedAt: true } } } },
         role: true,
       },
       where: { id: credential.accessCodeId },
@@ -575,6 +575,7 @@ export class MatchAccessService {
       accessCode === null ||
       accessCode.match.id !== credential.matchId ||
       accessCode.match.publicId !== credential.matchPublicId ||
+      accessCode.match.tournament.softDeletedAt !== null ||
       !(await compare(securityCode, accessCode.codeHash))
     ) {
       throw new UnauthorizedException(INVALID_MATCH_CREDENTIALS_ERROR);

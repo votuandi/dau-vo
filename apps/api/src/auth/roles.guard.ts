@@ -6,6 +6,7 @@ import type { UserRole } from '@prisma/client';
 import { REQUIRED_ROLES } from './roles.decorator';
 import type { AuthenticatedUserRequest } from './admin-auth.types';
 import { PrismaService } from '../prisma/prisma.service';
+import { addUtcMonths } from '../subscriptions/subscriptions.service';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -20,6 +21,9 @@ export class RolesGuard implements CanActivate {
     const entitlement = await this.prisma.adminEntitlement.findUnique({ where: { userId: user.id } });
     const now = new Date();
     if (entitlement?.status === 'ACTIVE' && entitlement.activeFrom <= now && now < entitlement.activeUntil) return true;
+    // Former administrators retain owner-only GET access through their calendar grace period.
+    const endedAt = entitlement?.adminAccessEndedAt ?? entitlement?.activeUntil;
+    if (context.switchToHttp().getRequest().method === 'GET' && endedAt !== undefined && endedAt !== null && now < addUtcMonths(endedAt, 12)) return true;
     throw new ForbiddenException({ code: entitlement ? 'ADMIN_SUBSCRIPTION_EXPIRED' : 'ADMIN_SUBSCRIPTION_REQUIRED' });
   }
 }

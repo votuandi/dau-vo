@@ -23,6 +23,12 @@ enum TournamentStatus {
   @@map("tournament_status")
 }
 
+enum TournamentDeletionReason {
+  ADMIN_SUBSCRIPTION_LAPSED
+
+  @@map("tournament_deletion_reason")
+}
+
 enum MatchStatus {
   WAITING
   ROUND_1_RUNNING
@@ -171,6 +177,10 @@ model Tournament {
   endDate     DateTime?        @map("end_date") @db.Date
   status      TournamentStatus @default(DRAFT)
   ownerUserId String           @map("owner_user_id") @db.Uuid
+  softDeletedAt DateTime?      @map("soft_deleted_at") @db.Timestamptz(3)
+  purgeAfter DateTime?         @map("purge_after") @db.Timestamptz(3)
+  deletionReason TournamentDeletionReason? @map("deletion_reason")
+  restoredAt DateTime?         @map("restored_at") @db.Timestamptz(3)
   createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   matches     Match[]
@@ -178,6 +188,8 @@ model Tournament {
 
   @@index([ownerUserId, status], map: "tournaments_owner_user_id_status_idx")
   @@index([ownerUserId, createdAt], map: "tournaments_owner_user_id_created_at_idx")
+  @@index([ownerUserId, softDeletedAt], map: "tournaments_owner_soft_deleted_at_idx")
+  @@index([purgeAfter], map: "tournaments_purge_after_idx")
   @@map("tournaments")
 }
 
