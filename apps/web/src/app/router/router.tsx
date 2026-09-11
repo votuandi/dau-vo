@@ -2,6 +2,7 @@ import { Navigate, createBrowserRouter } from 'react-router-dom';
 import { AdminRouteGuard } from '@/features/admin-auth/admin-route-guard';
 import { AuthenticatedRouteGuard } from '@/features/auth/authenticated-route-guard';
 import { SuperAdminRouteGuard } from '@/features/auth/super-admin-route-guard';
+import { SubscriptionRouteGuard } from '@/features/auth/subscription-route-guard';
 import { AppLayout } from '@/layouts/app-layout';
 import { SuperAdminLayout } from '@/layouts/super-admin-layout';
 import { AdminDashboardPage } from '@/pages/admin-dashboard-page';
@@ -44,7 +45,10 @@ export const router = createBrowserRouter([
           { path: 'tournaments/:id', element: <TournamentPage /> },
           { path: 'matches/:id', element: <MatchPage /> },
           { path: 'account', element: <AccountPage /> },
-          { path: 'subscription', element: <SubscriptionPage /> },
+          {
+            element: <SubscriptionRouteGuard />,
+            children: [{ path: 'subscription', element: <SubscriptionPage /> }],
+          },
         ],
       },
       {

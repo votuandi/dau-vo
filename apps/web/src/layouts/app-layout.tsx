@@ -39,7 +39,7 @@ function StandardAppLayout() {
     ? [
         { to: '/tournaments', label: 'Giải đấu' },
         { to: '/account', label: 'Tài khoản' },
-        { to: '/subscription', label: 'Gói đăng ký' },
+        ...(user.role === 'SUPER_ADMIN' ? [] : [{ to: '/subscription', label: 'Gói đăng ký' }]),
         ...(user.role === 'ADMIN'
           ? [
               { to: '/admin', label: 'Bảng điều khiển' },

@@ -44,6 +44,7 @@ export class SubscriptionsService {
       idempotencyKey: string;
     },
   ) {
+    this.assertSubscriptionAllowed(actor.role);
     if (!input.idempotencyKey.trim())
       throw new ConflictException({ code: 'INVALID_IDEMPOTENCY_KEY' });
     const old = await this.prisma.subscriptionOrder.findUnique({
@@ -58,6 +59,11 @@ export class SubscriptionsService {
     try {
       return await this.prisma.$transaction(
         async (tx) => {
+          const user = await tx.user.findUnique({
+            where: { id: actor.id },
+            select: { role: true },
+          });
+          this.assertSubscriptionAllowed(user?.role);
           const duplicate = await tx.subscriptionOrder.findUnique({
             where: { idempotencyKey: input.idempotencyKey },
           });
@@ -106,10 +112,15 @@ export class SubscriptionsService {
               adminAccessEndedAt: null,
             },
           });
-          await tx.user.update({
-            where: { id: actor.id },
+          const updatedUser = await tx.user.updateMany({
+            where: { id: actor.id, role: { not: UserRole.SUPER_ADMIN } },
             data: { role: UserRole.ADMIN },
           });
+          if (updatedUser.count !== 1) {
+            throw new ForbiddenException({
+              code: 'SUPER_ADMIN_SUBSCRIPTION_NOT_ALLOWED',
+            });
+          }
           await tx.auditLog.create({
             data: {
               adminUserId: actor.id,
@@ -179,5 +190,13 @@ export class SubscriptionsService {
       where: { userId },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  private assertSubscriptionAllowed(role: UserRole | undefined): void {
+    if (role === UserRole.SUPER_ADMIN) {
+      throw new ForbiddenException({
+        code: 'SUPER_ADMIN_SUBSCRIPTION_NOT_ALLOWED',
+      });
+    }
   }
 }

@@ -1,12 +1,14 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { subscriptionsApi } from '@/services/api/subscriptions';
+import { authenticatedUserQueryKey } from '@/features/auth/authenticated-user-session';
 
 export function SubscriptionPage() {
   const [durationBundle, setDuration] = useState<number>();
   const [tournamentBundle, setTournament] = useState<number>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const quote = useQuery({
     queryKey: ['subscription', 'quote', durationBundle, tournamentBundle],
     queryFn: () => subscriptionsApi.quote({ durationBundle, tournamentBundle }),
@@ -20,6 +22,7 @@ export function SubscriptionPage() {
         idempotencyKey: crypto.randomUUID(),
       }),
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: authenticatedUserQueryKey });
       void navigate('/admin');
     },
   });
