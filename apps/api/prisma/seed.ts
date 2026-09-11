@@ -61,7 +61,13 @@ export async function ensureInitialSuperAdmin(
   validateInitialPassword(password);
   const existing = await prisma.user.findUnique({
     where: { normalizedUsername: INITIAL_SUPER_ADMIN_USERNAME },
-    select: { id: true, passwordHash: true },
+    select: {
+      id: true,
+      passwordHash: true,
+      role: true,
+      isActive: true,
+      deletedAt: true,
+    },
   });
 
   if (existing === null) {
@@ -78,9 +84,19 @@ export async function ensureInitialSuperAdmin(
   }
 
   const passwordMatches = await compare(password, existing.passwordHash);
+  if (
+    passwordMatches &&
+    existing.role === UserRole.SUPER_ADMIN &&
+    existing.isActive &&
+    existing.deletedAt === null
+  ) {
+    return;
+  }
+
   await prisma.user.update({
     where: { id: existing.id },
     data: {
+      deletedAt: null,
       isActive: true,
       role: UserRole.SUPER_ADMIN,
       ...(passwordMatches

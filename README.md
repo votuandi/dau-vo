@@ -492,7 +492,8 @@ the browser will then use HTTPS/WSS on the single public origin. Do not expose
 PostgreSQL or Redis ports in production. Run migrations as part of the API
 startup only after backing up the database and reviewing the checked-in Prisma
 migrations. Run the idempotent seed after migrations complete successfully; it
-creates/reactivates `superadmin` with `SUPER_ADMIN`, but is never a migration
+creates or restores the normalized `superadmin` as an active, non-deleted
+`SUPER_ADMIN`, but is never a migration
 prerequisite.
 
 See [the release-readiness runbook](docs/release-readiness.md) for the permission
