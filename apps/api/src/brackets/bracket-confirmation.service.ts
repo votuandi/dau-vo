@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  AuditEventType,
   AthleteColor,
   BracketFixtureStatus,
   BracketStatus,
@@ -201,6 +202,20 @@ export class BracketConfirmationService {
           });
           fixtureIds.set(f.id, row.id);
         }
+        await tx.auditLog.create({
+          data: {
+            adminUserId: userId,
+            eventType: AuditEventType.BRACKET_CONFIRMED,
+            metadata: {
+              athleteCount: athletes.length,
+              bracketId: bracket.id,
+              bracketSize: claims.placements.length,
+              roundCount: graph.roundCount,
+              tournamentId,
+              weightClassId,
+            },
+          },
+        });
         return this.get(tx, bracket.id);
       });
     } catch (e) {

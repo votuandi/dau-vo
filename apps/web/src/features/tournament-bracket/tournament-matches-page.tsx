@@ -82,7 +82,9 @@ export function TournamentMatchesPage({
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [generatedCodes, setGeneratedCodes] = useState<readonly GeneratedAccessCode[]>([]);
   const [preparedMatch, setPreparedMatch] = useState<AdminMatch | null>(null);
-  const [decisionFixture, setDecisionFixture] = useState<ActiveBracket['fixtures'][number] | null>(null);
+  const [decisionFixture, setDecisionFixture] = useState<ActiveBracket['fixtures'][number] | null>(
+    null,
+  );
   const [decisionReason, setDecisionReason] = useState('');
   const draw = useMutation({
     mutationFn: () => adminManagementApi.previewBracket(tournament.id, selectedId ?? ''),
@@ -90,7 +92,9 @@ export function TournamentMatchesPage({
       setDialogError(null);
       setPreview(value);
     },
-    onError: (error) => notifyMutationError(error, 'Không thể bốc thăm.'),
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể bốc thăm.');
+    },
   });
   const confirm = useMutation({
     mutationFn: () =>
@@ -146,10 +150,25 @@ export function TournamentMatchesPage({
   const decide = useMutation({
     mutationFn: async (entrantId: string) => {
       if (!bracket.data || !decisionFixture) throw new Error('Fixture is unavailable');
-      return adminManagementApi.decideBracketFixtureWinner(tournament.id, bracket.data.bracket.id, decisionFixture.id, { entrantId, reason: decisionReason.trim(), idempotencyKey: crypto.randomUUID() });
+      return adminManagementApi.decideBracketFixtureWinner(
+        tournament.id,
+        bracket.data.bracket.id,
+        decisionFixture.id,
+        { entrantId, reason: decisionReason.trim(), idempotencyKey: crypto.randomUUID() },
+      );
     },
-    onSuccess: () => { setDecisionFixture(null); setDecisionReason(''); notifyMutationSuccess('Đã xác định người thắng.'); void Promise.all([qc.invalidateQueries({ queryKey: bracketQueryKeys.all }), qc.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournament.id) })]); },
-    onError: (error) => notifyMutationError(error, 'Không thể xác định người thắng. Trạng thái có thể đã thay đổi.'),
+    onSuccess: () => {
+      setDecisionFixture(null);
+      setDecisionReason('');
+      notifyMutationSuccess('Đã xác định người thắng.');
+      void Promise.all([
+        qc.invalidateQueries({ queryKey: bracketQueryKeys.all }),
+        qc.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournament.id) }),
+      ]);
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể xác định người thắng. Trạng thái có thể đã thay đổi.');
+    },
   });
   const counts = useMemo(
     () =>
@@ -192,14 +211,14 @@ export function TournamentMatchesPage({
       <WeightClassMatchTabs
         classes={active}
         counts={counts}
-        onSelect={(id) =>
+        onSelect={(id) => {
           setParams((old) => {
             const next = new URLSearchParams(old);
             if (id) next.set('weightClassId', id);
             else next.set('weightClassId', '__unassigned');
             return next;
-          })
-        }
+          });
+        }}
         selectedId={selectedId}
         unassignedCount={unassigned}
       />
@@ -212,7 +231,9 @@ export function TournamentMatchesPage({
               </div>
               <Button
                 disabled={blocked || draw.isPending}
-                onClick={() => draw.mutate()}
+                onClick={() => {
+                  draw.mutate();
+                }}
                 type="button"
               >
                 {draw.isPending ? 'Đang bốc thăm…' : 'Bốc thăm, chia nhánh đấu'}
@@ -229,7 +250,9 @@ export function TournamentMatchesPage({
                   onPrepare={(id) => {
                     prepare.mutate(id);
                   }}
-                  onDecide={(fixture) => setDecisionFixture(fixture)}
+                  onDecide={(fixture) => {
+                    setDecisionFixture(fixture);
+                  }}
                 />
               </>
             ) : bracket.isPending ? (
@@ -254,7 +277,62 @@ export function TournamentMatchesPage({
           title={`Mã truy cập trận ${preparedMatch.publicId}`}
         />
       ) : null}
-      {decisionFixture ? <div aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-4" role="dialog" aria-labelledby="winner-decision-title"><div className="w-full max-w-md rounded-xl bg-card p-5 shadow-xl"><h3 className="font-black" id="winner-decision-title">Chọn người thắng</h3><p className="mt-1 text-sm text-muted-foreground">Xác nhận quyết định hòa này và ghi rõ lý do.</p><label className="mt-4 block text-sm font-bold" htmlFor="winner-reason">Lý do</label><textarea className="mt-1 w-full rounded border p-2" id="winner-reason" maxLength={500} onChange={(e) => setDecisionReason(e.target.value)} value={decisionReason} /><div className="mt-4 flex flex-wrap gap-2">{decisionFixture.slots.filter((s) => s.resolvedEntrant).map((s) => <Button disabled={decide.isPending || !decisionReason.trim()} key={s.side} onClick={() => decide.mutate(s.resolvedEntrant!.id)} type="button">Chọn {s.resolvedEntrant!.snapshotName}</Button>)}<Button disabled={decide.isPending} onClick={() => setDecisionFixture(null)} type="button" variant="outline">Hủy</Button></div></div></div> : null}
+      {decisionFixture ? (
+        <div
+          aria-modal="true"
+          className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-4"
+          role="dialog"
+          aria-labelledby="winner-decision-title"
+        >
+          <div className="w-full max-w-md rounded-xl bg-card p-5 shadow-xl">
+            <h3 className="font-black" id="winner-decision-title">
+              Chọn người thắng
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Xác nhận quyết định hòa này và ghi rõ lý do.
+            </p>
+            <label className="mt-4 block text-sm font-bold" htmlFor="winner-reason">
+              Lý do
+            </label>
+            <textarea
+              className="mt-1 w-full rounded border p-2"
+              id="winner-reason"
+              maxLength={500}
+              onChange={(e) => {
+                setDecisionReason(e.target.value);
+              }}
+              value={decisionReason}
+            />
+            <div className="mt-4 flex flex-wrap gap-2">
+              {decisionFixture.slots.map((slot) => {
+                const entrant = slot.resolvedEntrant;
+                return entrant ? (
+                  <Button
+                    disabled={decide.isPending || !decisionReason.trim()}
+                    key={slot.side}
+                    onClick={() => {
+                      decide.mutate(entrant.id);
+                    }}
+                    type="button"
+                  >
+                    Chọn {entrant.snapshotName}
+                  </Button>
+                ) : null;
+              })}
+              <Button
+                disabled={decide.isPending}
+                onClick={() => {
+                  setDecisionFixture(null);
+                }}
+                type="button"
+                variant="outline"
+              >
+                Hủy
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="border-t pt-5">
         <h3 className="font-black">Trận riêng lẻ</h3>
         {matches.data?.matches
@@ -281,8 +359,12 @@ export function TournamentMatchesPage({
               setDialogError(null);
             }
           }}
-          onConfirm={() => confirm.mutate()}
-          onRedraw={() => draw.mutate()}
+          onConfirm={() => {
+            confirm.mutate();
+          }}
+          onRedraw={() => {
+            draw.mutate();
+          }}
           pending={draw.isPending || confirm.isPending}
           preview={preview}
         />
@@ -335,7 +417,11 @@ function FixtureList({
                   {f.winnerEntrant ? (
                     <p className="text-sm">Người thắng: {f.winnerEntrant.snapshotName}</p>
                   ) : null}
-                  {f.roundNumber === data.bracket.roundCount && data.bracket.championEntrant ? <p className="text-sm font-bold">Vô địch: {data.bracket.championEntrant.snapshotName}</p> : null}
+                  {f.roundNumber === data.bracket.roundCount && data.bracket.championEntrant ? (
+                    <p className="text-sm font-bold">
+                      Vô địch: {data.bracket.championEntrant.snapshotName}
+                    </p>
+                  ) : null}
                   {f.status === 'PENDING_PARTICIPANTS' ? (
                     <p className="text-sm text-muted-foreground">
                       Đang chờ kết quả các trận trước.
@@ -363,7 +449,20 @@ function FixtureList({
                     </Link>
                   ) : null}
                   {f.status === 'AWAITING_WINNER' ? (
-                    <><p className="text-sm text-muted-foreground">Chờ xác định người thắng.</p><Button className="mt-2" disabled={disabled} onClick={() => onDecide(f)} size="sm" type="button">Chọn người thắng</Button></>
+                    <>
+                      <p className="text-sm text-muted-foreground">Chờ xác định người thắng.</p>
+                      <Button
+                        className="mt-2"
+                        disabled={disabled}
+                        onClick={() => {
+                          onDecide(f);
+                        }}
+                        size="sm"
+                        type="button"
+                      >
+                        Chọn người thắng
+                      </Button>
+                    </>
                   ) : null}
                 </li>
               );
