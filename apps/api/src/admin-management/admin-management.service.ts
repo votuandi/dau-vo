@@ -58,6 +58,7 @@ import type {
   MatchAthleteDto,
   UpdateMatchDto,
 } from './dto/match.dto';
+import type { MatchListQueryDto } from './dto/match-list-query.dto';
 import type {
   CreateTournamentDto,
   UpdateTournamentDto,
@@ -509,13 +510,36 @@ export class AdminManagementService {
     });
   }
 
-  async listMatches(tournamentId: string): Promise<MatchView[]> {
+  async listMatches(
+    tournamentId: string,
+    query: MatchListQueryDto = {},
+  ): Promise<MatchView[]> {
     await this.requireTournament(tournamentId);
+    if (query.weightClassId && query.unassigned === 'true')
+      throw new BadRequestException({
+        code: 'INVALID_MATCH_FILTER',
+        message: 'weightClassId and unassigned cannot be combined',
+      });
+    if (query.weightClassId) {
+      const weight = await this.prisma.tournamentWeightClass.findFirst({
+        where: { id: query.weightClassId, tournamentId },
+        select: { id: true },
+      });
+      if (!weight)
+        throw new NotFoundException({
+          code: 'WEIGHT_CLASS_NOT_FOUND',
+          message: 'Weight class not found',
+        });
+    }
 
     return this.prisma.match.findMany({
       orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       select: matchSelect,
-      where: { tournamentId },
+      where: {
+        tournamentId,
+        ...(query.weightClassId ? { weightClassId: query.weightClassId } : {}),
+        ...(query.unassigned === 'true' ? { weightClassId: null } : {}),
+      },
     });
   }
 

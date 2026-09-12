@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  Body,
   Controller,
+  Get,
   Header,
   Inject,
   Param,
@@ -17,6 +19,8 @@ import { RolesGuard } from '../auth/roles.guard';
 import { AdminManagementService } from '../admin-management/admin-management.service';
 import { INVALID_ID_ERROR } from '../admin-management/admin-management.errors';
 import { BracketPreviewService } from './bracket-preview.service';
+import { BracketConfirmationService } from './bracket-confirmation.service';
+import type { ConfirmBracketDto } from './dto/confirm-bracket.dto';
 
 const uuid = new ParseUUIDPipe({
   exceptionFactory: () => new BadRequestException(INVALID_ID_ERROR),
@@ -33,6 +37,8 @@ export class BracketPreviewController {
     private readonly access: AdminManagementService,
     @Inject(BracketPreviewService)
     private readonly previews: BracketPreviewService,
+    @Inject(BracketConfirmationService)
+    private readonly confirmations: BracketConfirmationService,
   ) {}
 
   @Post('preview')
@@ -44,5 +50,32 @@ export class BracketPreviewController {
   ) {
     await this.access.assertTournamentAccess(tournamentId, request.user, true);
     return this.previews.preview(tournamentId, weightClassId);
+  }
+
+  @Post('confirm')
+  @Header('Cache-Control', 'no-store')
+  async confirm(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Param('weightClassId', uuid) weightClassId: string,
+    @Body() input: ConfirmBracketDto,
+    @Req() request: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, request.user, true);
+    return this.confirmations.confirm(
+      tournamentId,
+      weightClassId,
+      input,
+      request.user.id,
+    );
+  }
+
+  @Get()
+  async get(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Param('weightClassId', uuid) weightClassId: string,
+    @Req() request: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, request.user);
+    return this.confirmations.find(tournamentId, weightClassId);
   }
 }
