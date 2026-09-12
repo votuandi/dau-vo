@@ -108,7 +108,7 @@ function TournamentEditor({
           <label className="text-sm font-semibold" htmlFor="tournament-name">
             Tên giải đấu
           </label>
-          <DateInput
+          <input
             className={inputClassName}
             disabled={updateMutation.isPending || isReadOnly}
             id="tournament-name"
@@ -153,13 +153,11 @@ function TournamentEditor({
           <label className="text-sm font-semibold" htmlFor="tournament-start-date">
             Ngày bắt đầu
           </label>
-          <input
+          <DateInput
             className={inputClassName}
             disabled={updateMutation.isPending || isReadOnly}
             id="tournament-start-date"
-            onChange={(event) => {
-              setStartDate(event.target.value);
-            }}
+            onChange={setStartDate}
             value={startDate}
           />
         </div>
@@ -171,9 +169,7 @@ function TournamentEditor({
             className={inputClassName}
             disabled={updateMutation.isPending || isReadOnly}
             id="tournament-end-date"
-            onChange={(event) => {
-              setEndDate(event.target.value);
-            }}
+            onChange={setEndDate}
             value={endDate}
           />
         </div>

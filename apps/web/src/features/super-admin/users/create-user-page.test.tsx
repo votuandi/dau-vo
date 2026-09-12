@@ -33,7 +33,7 @@ describe('CreateSuperAdminUserPage', () => {
     await user.type(screen.getByLabelText('Mật khẩu', { exact: true }), 'Aa1!Aa1!');
     await user.type(screen.getByLabelText('Xác nhận mật khẩu'), 'Aa1!Aa1!');
     await user.click(screen.getByLabelText('ADMIN'));
-    await user.type(screen.getByLabelText('Hết hạn quyền quản trị'), '2030-12-31');
+    await user.type(screen.getByLabelText('Hết hạn quyền quản trị'), '31/12/2030');
     await user.type(screen.getByLabelText('Giới hạn giải đấu'), '2');
     await user.click(screen.getByRole('button', { name: 'Tạo người dùng' }));
 

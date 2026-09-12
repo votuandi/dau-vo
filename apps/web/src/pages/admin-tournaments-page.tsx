@@ -312,8 +312,8 @@ export function AdminTournamentsPage() {
                     className={inputClassName}
                     disabled={createMutation.isPending}
                     id="new-tournament-start-date"
-                    onChange={(event) => {
-                      setStartDate(event.target.value);
+                    onChange={(value) => {
+                      setStartDate(value);
                     }}
                     value={startDate}
                   />
@@ -326,8 +326,8 @@ export function AdminTournamentsPage() {
                     className={inputClassName}
                     disabled={createMutation.isPending}
                     id="new-tournament-end-date"
-                    onChange={(event) => {
-                      setEndDate(event.target.value);
+                    onChange={(value) => {
+                      setEndDate(value);
                     }}
                     value={endDate}
                   />

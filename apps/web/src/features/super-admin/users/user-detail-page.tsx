@@ -79,6 +79,8 @@ export function SuperAdminUserDetailPage() {
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<ProfileField, string>>>({});
   const [confirm, setConfirm] = useState<ConfirmAction>(null);
   const [pendingActivation, setPendingActivation] = useState<AdminAccessInput | null>(null);
+  const [activeFrom, setActiveFrom] = useState<string | undefined>();
+  const [activeUntil, setActiveUntil] = useState<string | undefined>();
   const invalidate = async () => {
     await cache.invalidateQueries({ queryKey: superAdminUserKeys.all });
     await cache.invalidateQueries({ queryKey: ['super-admin', 'users'] });
@@ -240,13 +242,13 @@ export function SuperAdminUserDetailPage() {
             {fields.map((field) => (
               <label key={field}>
                 {labels[field]}
-                <DateTimeInput
+                <input
                   className="mt-1 w-full rounded border p-2"
                   disabled={!editing || busy}
                   value={draft[field]}
                   type={field === 'email' ? 'email' : 'text'}
-                  onChange={(e) => {
-                    setValues({ ...draft, [field]: e.target.value });
+                  onChange={(event) => {
+                    setValues({ ...draft, [field]: event.target.value });
                     setFieldErrors({ ...fieldErrors, [field]: undefined });
                   }}
                 />
@@ -318,20 +320,23 @@ export function SuperAdminUserDetailPage() {
             <form className="mt-4 grid gap-4 md:grid-cols-3" onSubmit={submitAccess}>
               <label>
                 Bắt đầu
-                <input
+                <DateTimeInput
                   className="mt-1 w-full rounded border p-2"
-                  defaultValue={toLocalDateTimeInput(entitlement?.activeFrom)}
+                  onChange={setActiveFrom}
                   name="activeFrom"
                   required
+                  value={activeFrom ?? toLocalDateTimeInput(entitlement?.activeFrom)}
                 />
               </label>
               <label>
                 Hết hạn
                 <DateTimeInput
                   className="mt-1 w-full rounded border p-2"
-                  defaultValue={toLocalDateTimeInput(entitlement?.activeUntil)}
+                  disabled={busy || Boolean(user.deletedAt)}
                   name="activeUntil"
+                  onChange={setActiveUntil}
                   required
+                  value={activeUntil ?? toLocalDateTimeInput(entitlement?.activeUntil)}
                 />
               </label>
               <label>
