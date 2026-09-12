@@ -9,10 +9,13 @@ import type { Express } from 'express';
 import { IMAGE_STORAGE, type ImageStorage } from '../media/image-storage';
 import { IMAGE_FILE_REQUIRED } from '../media/media.errors';
 import { PrismaService } from '../prisma/prisma.service';
+import { enqueueMediaDeletion } from '../media/media-deletion.outbox';
+import { Logger } from '@nestjs/common';
 import { TOURNAMENT_NOT_FOUND_ERROR } from './admin-management.errors';
 
 @Injectable()
 export class TournamentImageService {
+  private readonly logger = new Logger(TournamentImageService.name);
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(IMAGE_STORAGE) private readonly storage: ImageStorage,
@@ -29,7 +32,8 @@ export class TournamentImageService {
       resource: 'tournaments',
     });
     try {
-      const prior = await this.prisma.$transaction(async (tx) => {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId}::uuid FOR UPDATE`;
         const tournament = await tx.tournament.findFirst({
           where: { id: tournamentId, softDeletedAt: null },
           select: { imagePath: true },
@@ -51,17 +55,18 @@ export class TournamentImageService {
             },
           },
         });
+        await enqueueMediaDeletion(tx, tournament.imagePath);
         return tournament.imagePath;
       });
-      if (prior !== null) await this.scheduleDeletion(prior);
       return { imagePath: stored.key };
     } catch (error) {
-      await this.scheduleDeletion(stored.key);
+      await this.compensateSavedImage(stored.key);
       throw error;
     }
   }
   async remove(tournamentId: string, actorId: string): Promise<void> {
-    const prior = await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId}::uuid FOR UPDATE`;
       const tournament = await tx.tournament.findFirst({
         where: { id: tournamentId, softDeletedAt: null },
         select: { imagePath: true },
@@ -83,15 +88,19 @@ export class TournamentImageService {
           },
         },
       });
+      await enqueueMediaDeletion(tx, tournament.imagePath);
       return tournament.imagePath;
     });
-    if (prior !== null) await this.scheduleDeletion(prior);
   }
-  private async scheduleDeletion(key: string): Promise<void> {
-    await this.prisma.mediaDeletion.upsert({
-      where: { storageKey: key },
-      create: { storageKey: key, reason: 'IMAGE_REPLACED_OR_REMOVED' },
-      update: {},
-    });
+  private async compensateSavedImage(key: string): Promise<void> {
+    try {
+      await this.storage.delete(key);
+    } catch (error) {
+      this.logger.warn({
+        event: 'media_compensation_failed',
+        storageKey: key,
+        error,
+      });
+    }
   }
 }

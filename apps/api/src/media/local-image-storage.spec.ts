@@ -1,59 +1,68 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
-import { LocalImageStorage } from './local-image-storage';
+import sharp from 'sharp';
 import { IMAGE_MAX_BYTES } from './image-storage';
-
-const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
-const png = Buffer.concat([
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-  Buffer.alloc(8),
-  Buffer.from('IEND'),
-  Buffer.alloc(4),
-]);
-const webp = Buffer.from([
-  0x52, 0x49, 0x46, 0x46, 0x04, 0, 0, 0, 0x57, 0x45, 0x42, 0x50,
-]);
+import { LocalImageStorage } from './local-image-storage';
 
 describe('LocalImageStorage', () => {
   let root: string;
   let storage: LocalImageStorage;
+  let jpeg: Buffer;
+  let png: Buffer;
+  let webp: Buffer;
+
   beforeEach(async () => {
     root = await mkdtemp(path.join(os.tmpdir(), 'dau-vo-media-'));
     storage = new LocalImageStorage(root);
+    [jpeg, png, webp] = await Promise.all([
+      sharp({ create: { width: 2, height: 2, channels: 3, background: 'red' } })
+        .jpeg()
+        .toBuffer(),
+      sharp({
+        create: { width: 2, height: 2, channels: 4, background: 'blue' },
+      })
+        .png()
+        .toBuffer(),
+      sharp({
+        create: { width: 2, height: 2, channels: 3, background: 'green' },
+      })
+        .webp()
+        .toBuffer(),
+    ]);
   });
-  afterEach(async () => {
-    await rm(root, { force: true, recursive: true });
-  });
+  afterEach(async () => rm(root, { force: true, recursive: true }));
+
   it.each([
-    [jpeg, 'image/jpeg'],
-    [png, 'image/png'],
-    [webp, 'image/webp'],
+    [() => jpeg, 'image/jpeg'],
+    [() => png, 'image/png'],
+    [() => webp, 'image/webp'],
   ] as const)(
-    'stores and opens a valid %s image',
-    async (buffer, declaredContentType) => {
+    'decodes and canonicalizes valid %s input',
+    async (fixture, declaredContentType) => {
       const stored = await storage.save({
-        buffer,
+        buffer: fixture(),
         declaredContentType,
         resource: 'tournaments',
       });
-      expect(stored.key).toMatch(
-        /^tournaments\/[0-9a-f-]{36}\.(jpg|png|webp)$/,
-      );
+      expect(stored).toMatchObject({ contentType: 'image/webp' });
+      expect(stored.key).toMatch(/^tournaments\/[0-9a-f-]{36}\.webp$/);
+      const disk = await readFile(path.join(root, stored.key));
+      expect((await sharp(disk).metadata()).format).toBe('webp');
       const opened = await storage.open(stored.key);
       expect(opened).toMatchObject({
-        contentLength: buffer.length,
-        contentType: declaredContentType,
+        contentLength: disk.length,
+        contentType: 'image/webp',
       });
       opened?.stream.destroy();
     },
   );
-  it('enforces exactly the 2 MiB boundary', async () => {
+
+  it('enforces its exact 2 MiB input boundary', async () => {
     const atLimit = Buffer.concat([
       jpeg,
-      Buffer.alloc(IMAGE_MAX_BYTES - jpeg.length - 2),
-      Buffer.from([0xff, 0xd9]),
+      Buffer.alloc(IMAGE_MAX_BYTES - jpeg.length),
     ]);
     await expect(
       storage.save({
@@ -70,7 +79,21 @@ describe('LocalImageStorage', () => {
       }),
     ).rejects.toBeInstanceOf(PayloadTooLargeException);
   });
-  it('rejects MIME/signature mismatches, SVG, malformed files, and traversal', async () => {
+
+  it('rejects fake, corrupt, mismatched, polyglot, oversized-pixel, and traversal input', async () => {
+    for (const buffer of [
+      Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
+      jpeg.subarray(0, 10),
+      Buffer.concat([jpeg, Buffer.from('<script>alert(1)</script>')]),
+    ]) {
+      await expect(
+        storage.save({
+          buffer,
+          declaredContentType: 'image/jpeg',
+          resource: 'tournaments',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    }
     await expect(
       storage.save({
         buffer: png,
@@ -85,18 +108,21 @@ describe('LocalImageStorage', () => {
         resource: 'tournaments',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+    const huge = await sharp({
+      create: { width: 4001, height: 4000, channels: 3, background: 'black' },
+    })
+      .png()
+      .toBuffer();
     await expect(
       storage.save({
-        buffer: Buffer.from([0xff, 0xd8, 0xff]),
-        declaredContentType: 'image/jpeg',
+        buffer: huge,
+        declaredContentType: 'image/png',
         resource: 'tournaments',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
     await expect(storage.open('../secret.jpg')).resolves.toBeNull();
-    await expect(
-      storage.delete('tournaments/does-not-exist.jpg'),
-    ).rejects.toBeDefined();
   });
+
   it('deletes idempotently', async () => {
     const stored = await storage.save({
       buffer: jpeg,

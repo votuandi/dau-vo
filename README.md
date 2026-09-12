@@ -676,9 +676,25 @@ named `api_uploads` volume. Free-platform ephemeral disks can lose uploads; a
 horizontally scaled production deployment must replace the local adapter with
 shared object storage such as S3.
 
-Images accept JPEG, PNG, or WebP only (2 MiB maximum). Public responses expose
+Images accept JPEG, PNG, or WebP only (2 MiB maximum input and canonical-output
+limit). `sharp` fully decodes each upload with a 16-megapixel limit, verifies its
+decoded type matches the declared MIME type, and re-encodes it as metadata-free
+WebP. Stored keys therefore always end in `.webp` and are served as `image/webp`;
+active HTML/script/SVG polyglot payloads are rejected. Public responses expose
 only a tournament `imageUrl`, plus match snapshot name, nullable organization,
 optional athlete `imageUrl`, and optional weight-class name—never birth year,
 roster IDs, owner/access/session/monitoring, or audit data. Legacy values are
 null. Media cleanup is post-commit and retryable with
 `pnpm --filter @martial-arts-scoring/api media:reconcile`.
+
+Replacing or removing an image updates the aggregate pointer, writes its audit
+record, and upserts the previous key into `media_deletions` in one database
+transaction. Physical deletion occurs only after commit; reconciliation deletes
+successes idempotently and retains failures with incremented attempts, last error,
+and last-tried time for monitoring. Run the reconcile command periodically (and
+alert on old rows or repeated attempts). If a transaction fails after a new object
+is saved, the API attempts to delete that new object, logs a cleanup failure, and
+rethrows the original error. The `ImageStorage` port remains object-key based
+(`save`, `open`, `delete`), so an S3 implementation can replace the local adapter
+without changing controllers or domain DTOs; AWS concepts must stay in that
+adapter/configuration layer.

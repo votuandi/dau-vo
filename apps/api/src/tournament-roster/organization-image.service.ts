@@ -11,11 +11,14 @@ import type { Express } from 'express';
 import { IMAGE_STORAGE, type ImageStorage } from '../media/image-storage';
 import { IMAGE_FILE_REQUIRED } from '../media/media.errors';
 import { PrismaService } from '../prisma/prisma.service';
+import { enqueueMediaDeletion } from '../media/media-deletion.outbox';
+import { Logger } from '@nestjs/common';
 import { ORGANIZATION_NOT_FOUND } from './tournament-roster.errors';
 import { ROSTER_TOURNAMENT_ARCHIVED } from './tournament-roster.errors';
 
 @Injectable()
 export class OrganizationImageService {
+  private readonly logger = new Logger(OrganizationImageService.name);
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(IMAGE_STORAGE) private readonly storage: ImageStorage,
@@ -33,8 +36,9 @@ export class OrganizationImageService {
       resource: 'organizations',
     });
     try {
-      const prior = await this.prisma.$transaction(async (tx) => {
+      await this.prisma.$transaction(async (tx) => {
         await this.assertMutableTournament(tx, tournamentId);
+        await tx.$queryRaw`SELECT id FROM tournament_organizations WHERE id = ${organizationId}::uuid AND tournament_id = ${tournamentId}::uuid FOR UPDATE`;
         const organization = await tx.tournamentOrganization.findFirst({
           where: { id: organizationId, tournamentId },
           select: { imagePath: true },
@@ -56,12 +60,12 @@ export class OrganizationImageService {
             },
           },
         });
+        await enqueueMediaDeletion(tx, organization.imagePath);
         return organization.imagePath;
       });
-      if (prior) await this.scheduleDeletion(prior);
       return { imagePath: stored.key, imageUrl: `/api/media/${stored.key}` };
     } catch (error) {
-      await this.scheduleDeletion(stored.key);
+      await this.compensateSavedImage(stored.key);
       throw error;
     }
   }
@@ -70,8 +74,9 @@ export class OrganizationImageService {
     organizationId: string,
     actorId: string,
   ): Promise<void> {
-    const prior = await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       await this.assertMutableTournament(tx, tournamentId);
+      await tx.$queryRaw`SELECT id FROM tournament_organizations WHERE id = ${organizationId}::uuid AND tournament_id = ${tournamentId}::uuid FOR UPDATE`;
       const organization = await tx.tournamentOrganization.findFirst({
         where: { id: organizationId, tournamentId },
         select: { imagePath: true },
@@ -93,16 +98,20 @@ export class OrganizationImageService {
           },
         },
       });
+      await enqueueMediaDeletion(tx, organization.imagePath);
       return organization.imagePath;
     });
-    if (prior) await this.scheduleDeletion(prior);
   }
-  private async scheduleDeletion(key: string): Promise<void> {
-    await this.prisma.mediaDeletion.upsert({
-      where: { storageKey: key },
-      create: { storageKey: key, reason: 'IMAGE_REPLACED_OR_REMOVED' },
-      update: {},
-    });
+  private async compensateSavedImage(key: string): Promise<void> {
+    try {
+      await this.storage.delete(key);
+    } catch (error) {
+      this.logger.warn({
+        event: 'media_compensation_failed',
+        storageKey: key,
+        error,
+      });
+    }
   }
   private async assertMutableTournament(
     tx: Prisma.TransactionClient,

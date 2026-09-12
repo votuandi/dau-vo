@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdir, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import sharp from 'sharp';
 
 import type {
   ImageContentType,
@@ -24,39 +25,11 @@ import {
 } from './media.errors';
 import { IMAGE_MAX_BYTES } from './image-storage';
 
-const TYPES: Record<
-  ImageContentType,
-  { extension: string; valid: (b: Buffer) => boolean }
-> = {
-  'image/jpeg': {
-    extension: 'jpg',
-    valid: (b) =>
-      b.length >= 4 &&
-      b[0] === 0xff &&
-      b[1] === 0xd8 &&
-      b[2] === 0xff &&
-      b[b.length - 2] === 0xff &&
-      b[b.length - 1] === 0xd9,
-  },
-  'image/png': {
-    extension: 'png',
-    valid: (b) =>
-      b.length >= 20 &&
-      b
-        .subarray(0, 8)
-        .equals(
-          Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-        ) &&
-      b.subarray(b.length - 8, b.length - 4).toString('ascii') === 'IEND',
-  },
-  'image/webp': {
-    extension: 'webp',
-    valid: (b) =>
-      b.length >= 12 &&
-      b.subarray(0, 4).toString('ascii') === 'RIFF' &&
-      b.subarray(8, 12).toString('ascii') === 'WEBP' &&
-      b.readUInt32LE(4) + 8 === b.length,
-  },
+const MAX_PIXELS = 16_000_000;
+const TYPES: Record<ImageContentType, string> = {
+  'image/jpeg': 'jpeg',
+  'image/png': 'png',
+  'image/webp': 'webp',
 };
 const RESOURCES = new Set<ImageResource>([
   'tournaments',
@@ -74,19 +47,46 @@ export class LocalImageStorage implements ImageStorage {
       throw new PayloadTooLargeException(IMAGE_TOO_LARGE);
     const contentType =
       input.declaredContentType.toLowerCase() as ImageContentType;
-    const format = TYPES[contentType];
-    if (format === undefined)
+    const expectedFormat = TYPES[contentType];
+    if (expectedFormat === undefined)
       throw new BadRequestException(IMAGE_UNSUPPORTED_TYPE);
-    if (!format.valid(input.buffer))
-      throw new BadRequestException(IMAGE_INVALID_CONTENT);
     if (!RESOURCES.has(input.resource))
       throw new BadRequestException(IMAGE_INVALID_CONTENT);
-    const key = `${input.resource}/${randomUUID()}.${format.extension}`;
+    let canonical: Buffer;
+    try {
+      // Decode pixels (not just headers), cap decompression work at 16 MP, and
+      // re-encode to a single safe representation that strips metadata/tails.
+      const metadata = await sharp(input.buffer, {
+        limitInputPixels: MAX_PIXELS,
+        failOn: 'error',
+      }).metadata();
+      if (
+        metadata.format !== expectedFormat ||
+        containsActivePayload(input.buffer)
+      )
+        throw new Error('invalid image');
+      canonical = await sharp(input.buffer, {
+        limitInputPixels: MAX_PIXELS,
+        failOn: 'error',
+      })
+        .rotate()
+        .webp({ quality: 85, effort: 4 })
+        .toBuffer();
+    } catch {
+      throw new BadRequestException(IMAGE_INVALID_CONTENT);
+    }
+    if (canonical.length > IMAGE_MAX_BYTES)
+      throw new PayloadTooLargeException(IMAGE_TOO_LARGE);
+    const key = `${input.resource}/${randomUUID()}.webp`;
     try {
       const destination = this.resolve(key);
       await mkdir(path.dirname(destination), { recursive: true });
-      await writeFile(destination, input.buffer, { flag: 'wx', mode: 0o644 });
-      return { contentLength: input.buffer.length, contentType, key };
+      await writeFile(destination, canonical, { flag: 'wx', mode: 0o644 });
+      return {
+        contentLength: canonical.length,
+        contentType: 'image/webp',
+        key,
+      };
     } catch (error) {
       if (
         error instanceof BadRequestException ||
@@ -142,4 +142,10 @@ export class LocalImageStorage implements ImageStorage {
       throw new InternalServerErrorException(IMAGE_STORAGE_FAILURE);
     return resolved;
   }
+}
+
+function containsActivePayload(buffer: Buffer): boolean {
+  // Canonicalization removes benign metadata. Reject unmistakable executable
+  // markup explicitly so an image-plus-HTML/script polyglot is never accepted.
+  return /<(?:script|html|svg)\b|<\?php/i.test(buffer.toString('latin1'));
 }
