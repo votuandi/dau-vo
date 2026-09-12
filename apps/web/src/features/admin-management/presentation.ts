@@ -17,6 +17,10 @@ const apiErrorMessages: Readonly<Record<string, string>> = {
   PUBLIC_MATCH_ID_COLLISION: 'Không thể tạo mã trận đấu duy nhất. Vui lòng thử lại.',
   TOURNAMENT_ARCHIVED: 'Không thể tạo trận trong giải đấu đã lưu trữ.',
   TOURNAMENT_NOT_FOUND: 'Không tìm thấy giải đấu.',
+  SPORT_NOT_FOUND: 'Không tìm thấy môn thể thao đã chọn.',
+  SPORT_INACTIVE: 'Môn thể thao đã chọn hiện không còn hoạt động.',
+  TOURNAMENT_SPORT_CHANGE_NOT_ALLOWED:
+    'Không thể đổi môn thể thao sau khi giải đấu đã có trận đấu.',
 };
 
 export const tournamentStatuses = [

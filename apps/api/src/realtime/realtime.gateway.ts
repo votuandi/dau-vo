@@ -612,7 +612,11 @@ export class RealtimeGateway
       return { ok: true, vote: transition.accepted };
     } catch (error: unknown) {
       if (error instanceof SportGroupRulesNotImplementedError)
-        return this.rejectVote(client, identity.publicMatchId, SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR);
+        return this.rejectVote(
+          client,
+          identity.publicMatchId,
+          SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR,
+        );
       if (error instanceof InactiveVoteSessionError) {
         this.sessionRegistry.revokeSessions([identity.sessionId]);
         return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };

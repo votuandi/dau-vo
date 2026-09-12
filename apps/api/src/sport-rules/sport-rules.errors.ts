@@ -2,7 +2,9 @@ export class SportGroupRulesNotImplementedError extends Error {
   readonly code = 'SPORT_GROUP_RULES_NOT_IMPLEMENTED';
 
   constructor(readonly sportGroupCode: string) {
-    super(`No executable rules are registered for sport group ${sportGroupCode}`);
+    super(
+      `No executable rules are registered for sport group ${sportGroupCode}`,
+    );
     this.name = SportGroupRulesNotImplementedError.name;
   }
 }

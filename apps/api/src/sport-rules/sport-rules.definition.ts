@@ -1,8 +1,4 @@
-import {
-  AthleteColor,
-  MatchAccessRole,
-  RefereeSlot,
-} from '@prisma/client';
+import { AthleteColor, MatchAccessRole, RefereeSlot } from '@prisma/client';
 
 export interface SportRulesDefinition {
   readonly code: string;

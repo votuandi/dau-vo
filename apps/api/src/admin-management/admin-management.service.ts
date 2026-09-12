@@ -127,6 +127,18 @@ export type TournamentView = Prisma.TournamentGetPayload<{
   select: typeof tournamentSelect;
 }>;
 
+const sportCatalogSelect = {
+  code: true,
+  id: true,
+  isActive: true,
+  name: true,
+  sportGroup: { select: { id: true, code: true, name: true } },
+} satisfies Prisma.SportSelect;
+
+export type SportCatalogView = Prisma.SportGetPayload<{
+  select: typeof sportCatalogSelect;
+}>;
+
 export type MatchView = Prisma.MatchGetPayload<{
   select: typeof matchSelect;
 }>;
@@ -192,6 +204,14 @@ export class AdminManagementService {
       where: isSuperAdmin
         ? { softDeletedAt: null }
         : { ownerUserId: actor.id, softDeletedAt: null },
+    });
+  }
+
+  async listActiveSports(): Promise<SportCatalogView[]> {
+    return this.prisma.sport.findMany({
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      select: sportCatalogSelect,
+      where: { isActive: true },
     });
   }
 
@@ -504,7 +524,11 @@ export class AdminManagementService {
         const match = await this.prisma.$transaction(async (transaction) => {
           await transaction.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId}::uuid FOR UPDATE`;
           const tournament = await transaction.tournament.findUnique({
-            select: { id: true, status: true, sport: { select: { sportGroup: { select: { code: true } } } } },
+            select: {
+              id: true,
+              status: true,
+              sport: { select: { sportGroup: { select: { code: true } } } },
+            },
             where: { id: tournamentId },
           });
 
@@ -516,7 +540,10 @@ export class AdminManagementService {
             throw new ConflictException(TOURNAMENT_ARCHIVED_ERROR);
           }
           const rules = this.resolveRules(tournament.sport.sportGroup.code);
-          const athletes = this.prepareAthletes(input.athletes, rules.athleteColors);
+          const athletes = this.prepareAthletes(
+            input.athletes,
+            rules.athleteColors,
+          );
           const accessCodes = await this.prepareAccessCodes(rules.accessRoles);
 
           const created = await transaction.match.create({
@@ -549,7 +576,13 @@ export class AdminManagementService {
           return { accessCodes, created };
         });
 
-        return { accessCodes: match.accessCodes.map(({ code, role }) => ({ code, role })), match: match.created };
+        return {
+          accessCodes: match.accessCodes.map(({ code, role }) => ({
+            code,
+            role,
+          })),
+          match: match.created,
+        };
       } catch (error: unknown) {
         if (!this.isPublicIdCollision(error)) {
           throw error;
@@ -654,14 +687,28 @@ export class AdminManagementService {
     this.assertNonemptyUpdate(input, INVALID_MATCH_ERROR);
     return this.prisma.$transaction(async (transaction) => {
       const existing = await transaction.match.findUnique({
-        select: { id: true, tournament: { select: { sport: { select: { sportGroup: { select: { code: true } } } } } } },
+        select: {
+          id: true,
+          tournament: {
+            select: {
+              sport: { select: { sportGroup: { select: { code: true } } } },
+            },
+          },
+        },
         where: { id },
       });
 
       if (existing === null) {
         throw new NotFoundException(MATCH_NOT_FOUND_ERROR);
       }
-      const athletes = input.athletes === undefined ? undefined : this.prepareAthletes(input.athletes, this.resolveRules(existing.tournament.sport.sportGroup.code).athleteColors);
+      const athletes =
+        input.athletes === undefined
+          ? undefined
+          : this.prepareAthletes(
+              input.athletes,
+              this.resolveRules(existing.tournament.sport.sportGroup.code)
+                .athleteColors,
+            );
 
       const data: Prisma.MatchUpdateInput = {};
 
@@ -731,7 +778,10 @@ export class AdminManagementService {
       await this.requireMatch(matchId);
     }
     const firstCode = existingCodes[0];
-    const rules = firstCode === undefined ? undefined : this.resolveRules(firstCode.match.tournament.sport.sportGroup.code);
+    const rules =
+      firstCode === undefined
+        ? undefined
+        : this.resolveRules(firstCode.match.tournament.sport.sportGroup.code);
 
     if (
       rules === undefined ||
@@ -868,8 +918,11 @@ export class AdminManagementService {
   }
 
   private resolveRules(sportGroupCode: string) {
-    try { return this.sportRules.resolve(sportGroupCode); } catch (error: unknown) {
-      if (error instanceof SportGroupRulesNotImplementedError) throw new ConflictException(SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR);
+    try {
+      return this.sportRules.resolve(sportGroupCode);
+    } catch (error: unknown) {
+      if (error instanceof SportGroupRulesNotImplementedError)
+        throw new ConflictException(SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR);
       throw error;
     }
   }

@@ -220,9 +220,18 @@ export class PenaltyService {
     }
   }
 
-  private async rulesForMatch(transaction: Prisma.TransactionClient, matchId: string) {
+  private async rulesForMatch(
+    transaction: Prisma.TransactionClient,
+    matchId: string,
+  ) {
     const match = await transaction.match.findUniqueOrThrow({
-      select: { tournament: { select: { sport: { select: { sportGroup: { select: { code: true } } } } } } },
+      select: {
+        tournament: {
+          select: {
+            sport: { select: { sportGroup: { select: { code: true } } } },
+          },
+        },
+      },
       where: { id: matchId },
     });
     return this.sportRules.resolve(match.tournament.sport.sportGroup.code);

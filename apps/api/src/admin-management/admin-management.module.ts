@@ -7,13 +7,24 @@ import { RealtimeModule } from '../realtime/realtime.module';
 import { SportRulesModule } from '../sport-rules/sport-rules.module';
 import { AdminManagementService } from './admin-management.service';
 import { AdminMatchesController } from './admin-matches.controller';
+import { AdminSportsController } from './admin-sports.controller';
 import { AdminTournamentsController } from './admin-tournaments.controller';
 import { MatchCredentialGeneratorService } from './match-credential-generator.service';
 
 @Module({
-  controllers: [AdminTournamentsController, AdminMatchesController],
+  controllers: [
+    AdminTournamentsController,
+    AdminMatchesController,
+    AdminSportsController,
+  ],
   exports: [AdminManagementService, MatchCredentialGeneratorService],
-  imports: [AuthModule, PrismaModule, RealtimeCoreModule, RealtimeModule, SportRulesModule],
+  imports: [
+    AuthModule,
+    PrismaModule,
+    RealtimeCoreModule,
+    RealtimeModule,
+    SportRulesModule,
+  ],
   providers: [AdminManagementService, MatchCredentialGeneratorService],
 })
 export class AdminManagementModule {}

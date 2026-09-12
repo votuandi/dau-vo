@@ -21,13 +21,15 @@ export interface AdminTournament {
   readonly updatedAt: string;
 }
 
-export interface AdminSport {
+export interface SportSummary {
   readonly id: string;
   readonly code: string;
   readonly name: string;
   readonly isActive: boolean;
   readonly sportGroup: { readonly id: string; readonly code: string; readonly name: string };
 }
+
+export type AdminSport = SportSummary;
 
 export interface AdminMatchAthlete {
   readonly id: string;
@@ -182,6 +184,7 @@ function encodePathSegment(value: string): string {
 }
 
 export const adminManagementApi = {
+  listSports: () => apiClient.get<readonly SportSummary[]>('admin/sports'),
   listTournaments: () => apiClient.get<TournamentsResponse>('admin/tournaments'),
   createTournament: (input: CreateTournamentInput) =>
     apiClient.post<TournamentResponse>('admin/tournaments', input),

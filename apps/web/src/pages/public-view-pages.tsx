@@ -30,7 +30,7 @@ export function TournamentsPage() {
               {tournament.name}
             </Link>
             <p className="text-sm text-muted-foreground">
-              {tournament.location ?? 'Chưa cập nhật địa điểm'}
+              {tournament.sport.name} · {tournament.location ?? 'Chưa cập nhật địa điểm'}
             </p>
           </li>
         ))}
@@ -51,6 +51,9 @@ export function TournamentPage() {
   return (
     <section className="mx-auto w-full max-w-3xl">
       <h1 className="text-3xl font-black">{query.data.tournament.name}</h1>
+      <p className="mt-2 text-sm font-semibold text-muted-foreground">
+        {query.data.tournament.sport.name} · {query.data.tournament.sport.sportGroup.name}
+      </p>
       <p className="mt-2 text-muted-foreground">{query.data.tournament.description}</p>
       <h2 className="mt-6 text-xl font-bold">Trận đấu</h2>
       <ul className="mt-3 space-y-2">

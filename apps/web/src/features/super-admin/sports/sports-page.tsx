@@ -116,7 +116,9 @@ export function SuperAdminSportsPage() {
           <input
             aria-label="Tìm kiếm môn thể thao"
             className="mt-1 w-full rounded border p-2"
-            onChange={(e) => { setSearch(e.target.value); }}
+            onChange={(e) => {
+              setSearch(e.target.value);
+            }}
             value={search}
           />
         </label>
@@ -124,7 +126,9 @@ export function SuperAdminSportsPage() {
           Trạng thái
           <select
             className="mt-1 w-full rounded border p-2"
-            onChange={(e) => { setStatus(e.target.value); }}
+            onChange={(e) => {
+              setStatus(e.target.value);
+            }}
             value={status}
           >
             <option value="">Tất cả</option>
@@ -136,7 +140,9 @@ export function SuperAdminSportsPage() {
           Nhóm môn thể thao
           <select
             className="mt-1 w-full rounded border p-2"
-            onChange={(e) => { setGroupId(e.target.value); }}
+            onChange={(e) => {
+              setGroupId(e.target.value);
+            }}
             value={groupId}
           >
             <option value="">Tất cả</option>
@@ -211,7 +217,9 @@ export function SuperAdminSportsPage() {
                             disabled={
                               sport.tournamentCount > 0 || sport.canDisable === false || pending
                             }
-                            onClick={() => { setDisableTarget(sport); }}
+                            onClick={() => {
+                              setDisableTarget(sport);
+                            }}
                             size="sm"
                             type="button"
                             variant="outline"
@@ -221,8 +229,9 @@ export function SuperAdminSportsPage() {
                         ) : (
                           <Button
                             disabled={pending}
-                            onClick={() => { update.mutate({ id: sport.id, body: { isActive: true } }); }
-                            }
+                            onClick={() => {
+                              update.mutate({ id: sport.id, body: { isActive: true } });
+                            }}
                             size="sm"
                             type="button"
                           >
@@ -253,8 +262,12 @@ export function SuperAdminSportsPage() {
           actionLabel="Vô hiệu hóa"
           busy={update.isPending}
           description={`Bạn có chắc muốn vô hiệu hóa môn ${disableTarget.name}?`}
-          onCancel={() => { setDisableTarget(undefined); }}
-          onConfirm={() => { update.mutate({ id: disableTarget.id, body: { isActive: false } }); }}
+          onCancel={() => {
+            setDisableTarget(undefined);
+          }}
+          onConfirm={() => {
+            update.mutate({ id: disableTarget.id, body: { isActive: false } });
+          }}
           title="Vô hiệu hóa môn thể thao"
           warning="Môn thể thao này sẽ không còn được dùng cho dữ liệu mới."
         />

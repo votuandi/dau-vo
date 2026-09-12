@@ -94,7 +94,13 @@ function parseDateTime(value: string): string | null {
   if (!match) return null;
   const [, day, month, year, hours, minutes] = match;
   if (!day || !month || !year || !hours || !minutes) return null;
-  const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hours), Number(minutes));
+  const date = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hours),
+    Number(minutes),
+  );
   if (
     date.getFullYear() !== Number(year) ||
     date.getMonth() !== Number(month) - 1 ||

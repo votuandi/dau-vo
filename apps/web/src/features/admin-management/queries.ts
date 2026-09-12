@@ -7,6 +7,10 @@ export const tournamentQueryKeys = {
   matches: (id: string) => ['admin', 'tournaments', id, 'matches'] as const,
 };
 
+export const sportQueryKeys = {
+  all: ['admin', 'sports'] as const,
+};
+
 export const matchQueryKeys = {
   detail: (id: string) => ['admin', 'matches', id] as const,
   monitoring: (id: string) => ['admin', 'matches', id, 'monitoring'] as const,
@@ -15,6 +19,11 @@ export const matchQueryKeys = {
 export const tournamentsQueryOptions = queryOptions({
   queryKey: tournamentQueryKeys.all,
   queryFn: adminManagementApi.listTournaments,
+});
+
+export const activeSportsQueryOptions = queryOptions({
+  queryKey: sportQueryKeys.all,
+  queryFn: adminManagementApi.listSports,
 });
 
 export function tournamentQueryOptions(id: string) {

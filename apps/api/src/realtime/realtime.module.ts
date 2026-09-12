@@ -12,7 +12,12 @@ import { ScoringService } from './scoring.service';
 
 @Module({
   exports: [RealtimeMatchStateService],
-  imports: [MatchAccessModule, PrismaModule, RealtimeCoreModule, SportRulesModule],
+  imports: [
+    MatchAccessModule,
+    PrismaModule,
+    RealtimeCoreModule,
+    SportRulesModule,
+  ],
   providers: [
     MatchLifecycleService,
     PenaltyService,

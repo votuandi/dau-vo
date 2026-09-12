@@ -8,7 +8,12 @@ import type {
   UpdateSportInput,
 } from '@/services/api/super-admin';
 
-interface Values { name: string; code: string; sportGroupId: string; isActive: boolean }
+interface Values {
+  name: string;
+  code: string;
+  sportGroupId: string;
+  isActive: boolean;
+}
 const empty = (): Values => ({ name: '', code: '', sportGroupId: '', isActive: true });
 
 export function SportForm({
@@ -77,7 +82,9 @@ export function SportForm({
         <input
           className={inputClassName}
           disabled={pending}
-          onChange={(e) => { setValues((v) => ({ ...v, name: e.target.value })); }}
+          onChange={(e) => {
+            setValues((v) => ({ ...v, name: e.target.value }));
+          }}
           required
           value={values.name}
         />
@@ -87,7 +94,9 @@ export function SportForm({
         <input
           className={inputClassName}
           disabled={pending || Boolean(sport)}
-          onChange={(e) => { setValues((v) => ({ ...v, code: e.target.value.toUpperCase() })); }}
+          onChange={(e) => {
+            setValues((v) => ({ ...v, code: e.target.value.toUpperCase() }));
+          }}
           readOnly={Boolean(sport)}
           required
           value={values.code}
@@ -103,7 +112,9 @@ export function SportForm({
         <select
           className={inputClassName}
           disabled={pending || groupLocked}
-          onChange={(e) => { setValues((v) => ({ ...v, sportGroupId: e.target.value })); }}
+          onChange={(e) => {
+            setValues((v) => ({ ...v, sportGroupId: e.target.value }));
+          }}
           required
           value={values.sportGroupId}
         >
@@ -126,7 +137,9 @@ export function SportForm({
           <input
             checked={values.isActive}
             disabled={pending}
-            onChange={() => { setValues((v) => ({ ...v, isActive: true })); }}
+            onChange={() => {
+              setValues((v) => ({ ...v, isActive: true }));
+            }}
             name="sport-status"
             type="radio"
           />{' '}
@@ -136,7 +149,9 @@ export function SportForm({
           <input
             checked={!values.isActive}
             disabled={pending || (sport?.isActive === true && (used || sport.canDisable === false))}
-            onChange={() => { setValues((v) => ({ ...v, isActive: false })); }}
+            onChange={() => {
+              setValues((v) => ({ ...v, isActive: false }));
+            }}
             name="sport-status"
             type="radio"
           />{' '}

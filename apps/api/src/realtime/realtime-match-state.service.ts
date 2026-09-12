@@ -340,9 +340,15 @@ export class RealtimeMatchStateService {
       presence.some((entry) => entry.accessRole === role && entry.connected);
 
     return {
-      referee1Connected: rules.requiredRefereeSlots.includes(RefereeSlot.REFEREE_1) && isConnected(SharedMatchAccessRole.REFEREE_1),
-      referee2Connected: rules.requiredRefereeSlots.includes(RefereeSlot.REFEREE_2) && isConnected(SharedMatchAccessRole.REFEREE_2),
-      referee3Connected: rules.requiredRefereeSlots.includes(RefereeSlot.REFEREE_3) && isConnected(SharedMatchAccessRole.REFEREE_3),
+      referee1Connected:
+        rules.requiredRefereeSlots.includes(RefereeSlot.REFEREE_1) &&
+        isConnected(SharedMatchAccessRole.REFEREE_1),
+      referee2Connected:
+        rules.requiredRefereeSlots.includes(RefereeSlot.REFEREE_2) &&
+        isConnected(SharedMatchAccessRole.REFEREE_2),
+      referee3Connected:
+        rules.requiredRefereeSlots.includes(RefereeSlot.REFEREE_3) &&
+        isConnected(SharedMatchAccessRole.REFEREE_3),
       scoreboardConnectedCount,
     };
   }
@@ -377,7 +383,13 @@ export class RealtimeMatchStateService {
 
   private async rulesForMatch(matchId: string) {
     const match = await this.prisma.match.findUniqueOrThrow({
-      select: { tournament: { select: { sport: { select: { sportGroup: { select: { code: true } } } } } } },
+      select: {
+        tournament: {
+          select: {
+            sport: { select: { sportGroup: { select: { code: true } } } },
+          },
+        },
+      },
       where: { id: matchId },
     });
     return this.sportRules.resolve(match.tournament.sport.sportGroup.code);

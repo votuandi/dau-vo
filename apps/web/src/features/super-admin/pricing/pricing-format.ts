@@ -5,8 +5,7 @@ export const money = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
-export const date = (value: string | null) =>
-  value ? formatDateTime(new Date(value)) : 'Chưa có';
+export const date = (value: string | null) => (value ? formatDateTime(new Date(value)) : 'Chưa có');
 
 function formatDateTime(value: Date): string {
   if (Number.isNaN(value.getTime())) {

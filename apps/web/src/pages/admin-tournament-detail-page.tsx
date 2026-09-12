@@ -20,6 +20,7 @@ import {
 import {
   matchQueryKeys,
   tournamentMatchesQueryOptions,
+  activeSportsQueryOptions,
   tournamentQueryKeys,
   tournamentQueryOptions,
 } from '@/features/admin-management/queries';
@@ -61,6 +62,9 @@ function TournamentEditor({
   const [startDate, setStartDate] = useState(toDateInputValue(tournament.startDate));
   const [endDate, setEndDate] = useState(toDateInputValue(tournament.endDate));
   const [status, setStatus] = useState(tournament.status);
+  const [sportId, setSportId] = useState(tournament.sportId);
+  const sportsQuery = useQuery(activeSportsQueryOptions);
+  const matchesQuery = useQuery(tournamentMatchesQueryOptions(tournament.id));
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const updateMutation = useMutation({
@@ -91,6 +95,7 @@ function TournamentEditor({
 
     setValidationError(null);
     updateMutation.mutate({
+      ...(sportId !== tournament.sportId ? { sportId } : {}),
       name: name.trim(),
       description: description.trim() || null,
       location: location.trim() || null,
@@ -104,6 +109,44 @@ function TournamentEditor({
     <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
       <h2 className="text-xl font-black tracking-tight">Thông tin giải đấu</h2>
       <form className="mt-5 grid gap-4 sm:grid-cols-2" noValidate onSubmit={handleSubmit}>
+        <div className="sm:col-span-2">
+          <label className="text-sm font-semibold" htmlFor="tournament-sport">
+            Môn thể thao
+          </label>
+          <select
+            className={inputClassName}
+            disabled={
+              updateMutation.isPending || isReadOnly || matchesQuery.data?.matches.length !== 0
+            }
+            id="tournament-sport"
+            onChange={(event) => {
+              setSportId(event.target.value);
+            }}
+            value={sportId}
+          >
+            <option value={tournament.sport.id}>
+              {tournament.sport.name} — {tournament.sport.sportGroup.name}
+              {tournament.sport.isActive ? '' : ' (ngừng hoạt động)'}
+            </option>
+            {sportsQuery.data
+              ?.filter((sport) => sport.id !== tournament.sport.id)
+              .map((sport) => (
+                <option key={sport.id} value={sport.id}>
+                  {sport.name} — {sport.sportGroup.name}
+                </option>
+              ))}
+          </select>
+          {matchesQuery.isSuccess && matchesQuery.data.matches.length > 0 ? (
+            <p className="mt-1 text-sm text-muted-foreground">
+              Không thể đổi môn thể thao sau khi đã tạo trận đấu.
+            </p>
+          ) : null}
+          {matchesQuery.isError ? (
+            <p className="mt-1 text-sm text-muted-foreground">
+              Việc đổi môn thể thao sẽ được máy chủ kiểm tra khi lưu.
+            </p>
+          ) : null}
+        </div>
         <div className="sm:col-span-2">
           <label className="text-sm font-semibold" htmlFor="tournament-name">
             Tên giải đấu
@@ -550,6 +593,7 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
           </span>
         </div>
         <p className="mt-2 text-sm text-muted-foreground">
+          {tournament.sport.name} · {tournament.sport.sportGroup.name} ·{' '}
           {tournament.location ?? 'Chưa có địa điểm'} · {formatDate(tournament.startDate)} –{' '}
           {formatDate(tournament.endDate)}
         </p>

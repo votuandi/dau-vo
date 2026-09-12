@@ -11,20 +11,20 @@ import {
   textAreaClassName,
   tournamentStatusLabels,
 } from '@/features/admin-management/presentation';
-import { tournamentQueryKeys, tournamentsQueryOptions } from '@/features/admin-management/queries';
+import {
+  activeSportsQueryOptions,
+  tournamentQueryKeys,
+  tournamentsQueryOptions,
+} from '@/features/admin-management/queries';
 import { adminManagementApi, type CreateTournamentInput } from '@/services/api/admin-management';
 import { TournamentStatus } from '@/types/shared';
 import { useAdminAccessContext } from '@/features/auth/admin-access';
 
 interface TournamentFormErrors {
   readonly name?: string;
+  readonly sportId?: string;
   readonly dates?: string;
 }
-
-// The Sport picker is introduced in the following UI phase. Until then, the
-// existing form submits its explicit Võ Gậy catalog ID; the API never applies
-// this value as a server-side fallback.
-const TRANSITIONAL_DEFAULT_SPORT_ID = 'd91e1cf7-89a7-4475-bd93-6b5f35a14574';
 
 function tournamentStatusTagClassName(status: TournamentStatus): string {
   switch (status) {
@@ -47,10 +47,11 @@ function buildCreateTournamentInput(values: {
   readonly location: string;
   readonly startDate: string;
   readonly endDate: string;
+  readonly sportId: string;
 }): CreateTournamentInput {
   return {
     name: values.name.trim(),
-    sportId: TRANSITIONAL_DEFAULT_SPORT_ID,
+    sportId: values.sportId,
     status: TournamentStatus.DRAFT,
     ...(values.description.trim() ? { description: values.description.trim() } : {}),
     ...(values.location.trim() ? { location: values.location.trim() } : {}),
@@ -64,11 +65,13 @@ export function AdminTournamentsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const tournamentsQuery = useQuery(tournamentsQueryOptions);
+  const sportsQuery = useQuery(activeSportsQueryOptions);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [sportId, setSportId] = useState('');
   const [formErrors, setFormErrors] = useState<TournamentFormErrors>({});
 
   const createMutation = useMutation({
@@ -99,21 +102,24 @@ export function AdminTournamentsPage() {
     event.preventDefault();
     createMutation.reset();
 
-    const errors: { name?: string; dates?: string } = {};
+    const errors: { name?: string; dates?: string; sportId?: string } = {};
     if (!name.trim()) {
       errors.name = 'Vui lòng nhập tên giải đấu.';
     }
     if (startDate && endDate && endDate < startDate) {
       errors.dates = 'Ngày kết thúc không thể trước ngày bắt đầu.';
     }
+    if (!sportId) {
+      errors.sportId = 'Vui lòng chọn môn thể thao.';
+    }
     setFormErrors(errors);
 
-    if (errors.name || errors.dates) {
+    if (errors.name || errors.dates || errors.sportId || !sportsQuery.data?.length) {
       return;
     }
 
     createMutation.mutate(
-      buildCreateTournamentInput({ name, description, location, startDate, endDate }),
+      buildCreateTournamentInput({ name, description, location, startDate, endDate, sportId }),
     );
   }
 
@@ -210,7 +216,7 @@ export function AdminTournamentsPage() {
                         </span>
                       </div>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        {tournament.location ?? 'Chưa có địa điểm'}
+                        {tournament.sport.name} · {tournament.location ?? 'Chưa có địa điểm'}
                       </p>
                     </div>
                     <div className="flex shrink-0 gap-2">
@@ -257,6 +263,71 @@ export function AdminTournamentsPage() {
             </p>
 
             <form className="mt-5 space-y-4" noValidate onSubmit={handleCreate}>
+              <div>
+                <label className="text-sm font-semibold" htmlFor="new-tournament-sport">
+                  Môn thể thao
+                </label>
+                {sportsQuery.isPending ? (
+                  <p aria-live="polite" className="mt-2 text-sm text-muted-foreground">
+                    Đang tải môn thể thao…
+                  </p>
+                ) : null}
+                {sportsQuery.isError ? (
+                  <div className="mt-2 text-sm text-destructive" role="alert">
+                    <p>
+                      {getApiErrorMessage(
+                        sportsQuery.error,
+                        'Không thể tải danh mục môn thể thao.',
+                      )}
+                    </p>
+                    <Button
+                      className="mt-2"
+                      onClick={() => void sportsQuery.refetch()}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Thử lại
+                    </Button>
+                  </div>
+                ) : null}
+                {sportsQuery.isSuccess && sportsQuery.data.length === 0 ? (
+                  <p className="mt-2 text-sm text-destructive" role="alert">
+                    Chưa có môn thể thao đang hoạt động. Không thể tạo giải đấu cho đến khi danh mục
+                    được cập nhật.
+                  </p>
+                ) : null}
+                {sportsQuery.isSuccess && sportsQuery.data.length > 0 ? (
+                  <select
+                    aria-describedby={formErrors.sportId ? 'new-tournament-sport-error' : undefined}
+                    aria-invalid={Boolean(formErrors.sportId)}
+                    className={inputClassName}
+                    disabled={createMutation.isPending}
+                    id="new-tournament-sport"
+                    onChange={(event) => {
+                      setSportId(event.target.value);
+                    }}
+                    required
+                    value={sportId}
+                  >
+                    <option value="">Chọn môn thể thao</option>
+                    {sportsQuery.data.map((sport) => (
+                      <option key={sport.id} value={sport.id}>
+                        {sport.name} — {sport.sportGroup.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                {formErrors.sportId ? (
+                  <p
+                    className="mt-1 text-sm text-destructive"
+                    id="new-tournament-sport-error"
+                    role="alert"
+                  >
+                    {formErrors.sportId}
+                  </p>
+                ) : null}
+              </div>
               <div>
                 <label className="text-sm font-semibold" htmlFor="new-tournament-name">
                   Tên giải đấu
@@ -352,7 +423,15 @@ export function AdminTournamentsPage() {
                 </p>
               ) : null}
 
-              <Button className="w-full" disabled={createMutation.isPending} type="submit">
+              <Button
+                className="w-full"
+                disabled={
+                  createMutation.isPending ||
+                  !sportsQuery.isSuccess ||
+                  sportsQuery.data.length === 0
+                }
+                type="submit"
+              >
                 {createMutation.isPending ? 'Đang tạo…' : 'Tạo giải đấu'}
               </Button>
             </form>
