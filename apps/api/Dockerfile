@@ -17,12 +17,13 @@ FROM node:20-alpine AS runtime
 
 WORKDIR /workspace
 ENV NODE_ENV=production
-RUN corepack enable
+RUN corepack enable && apk add --no-cache su-exec
 
 COPY --from=build /workspace/package.json /workspace/pnpm-lock.yaml /workspace/pnpm-workspace.yaml ./
 COPY --from=build /workspace/node_modules ./node_modules
 COPY --from=build /workspace/apps/api ./apps/api
 COPY --from=build /workspace/packages/shared-types ./packages/shared-types
+RUN mkdir -p /workspace/apps/api/public/uploads && chown -R node:node /workspace/apps/api/public
 
 EXPOSE 3000
-CMD ["sh", "-c", "pnpm --filter @martial-arts-scoring/api prisma:migrate:deploy && node apps/api/dist/main.js"]
+CMD ["sh", "-c", "mkdir -p /workspace/apps/api/public/uploads && chown -R node:node /workspace/apps/api/public/uploads && pnpm --filter @martial-arts-scoring/api prisma:migrate:deploy && exec su-exec node node apps/api/dist/main.js"]

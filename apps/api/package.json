@@ -21,6 +21,7 @@
     "test:watch": "jest --watch",
     "prisma:generate": "prisma generate",
     "lifecycle:run": "tsx src/subscriptions/run-lifecycle.ts",
+    "media:reconcile": "tsx src/media/run-media-reconciliation.ts",
     "prisma:migrate": "node --env-file-if-exists=../../.env ./node_modules/prisma/build/index.js migrate dev",
     "prisma:migrate:deploy": "node --env-file-if-exists=../../.env ./node_modules/prisma/build/index.js migrate deploy",
     "prisma:migrate:status": "node --env-file-if-exists=../../.env ./node_modules/prisma/build/index.js migrate status",

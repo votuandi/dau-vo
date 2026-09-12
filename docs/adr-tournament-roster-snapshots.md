@@ -17,3 +17,7 @@ snapshot is restricted from physical deletion.
 Tournament boundaries are database-enforced with composite foreign keys. The
 only legacy backfill is `MatchAthlete.tournamentId`, derived losslessly from its
 existing match. No roster data is inferred from legacy snapshot strings.
+
+Images are storage keys behind the `ImageStorage` port. A durable deletion
+outbox is written with the permanent-purge transaction and processed after
+commit, enabling a future verified S3 adapter without domain-service changes.

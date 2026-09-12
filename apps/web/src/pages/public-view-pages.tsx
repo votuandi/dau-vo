@@ -4,6 +4,22 @@ import type { ReactNode } from 'react';
 import { publicViewApi } from '@/services/api/public-view';
 import { authenticatedUserQueryOptions } from '@/features/auth/authenticated-user-session';
 
+function TournamentLogo({ name, src }: { readonly name: string; readonly src: string | null }) {
+  if (!src)
+    return (
+      <div
+        aria-label={`Chưa có logo cho ${name}`}
+        className="grid size-14 shrink-0 place-items-center rounded-lg bg-muted text-xs text-muted-foreground"
+        role="img"
+      >
+        Logo
+      </div>
+    );
+  return (
+    <img alt={`Logo ${name}`} className="size-14 shrink-0 rounded-lg object-contain" src={src} />
+  );
+}
+
 function Notice({ children }: { readonly children: ReactNode }) {
   return (
     <section className="mx-auto w-full max-w-3xl rounded-2xl border border-border bg-card p-8 shadow-sm">
@@ -25,13 +41,19 @@ export function TournamentsPage() {
       <h1 className="text-3xl font-black">Giải đấu</h1>
       <ul className="mt-6 space-y-3">
         {query.data.items.map((tournament) => (
-          <li className="rounded-xl border border-border bg-card p-4" key={tournament.id}>
-            <Link className="font-bold text-primary" to={`/tournaments/${tournament.id}`}>
-              {tournament.name}
-            </Link>
-            <p className="text-sm text-muted-foreground">
-              {tournament.sport.name} · {tournament.location ?? 'Chưa cập nhật địa điểm'}
-            </p>
+          <li
+            className="flex gap-3 rounded-xl border border-border bg-card p-4"
+            key={tournament.id}
+          >
+            <TournamentLogo name={tournament.name} src={tournament.imageUrl} />
+            <div className="min-w-0">
+              <Link className="font-bold text-primary" to={`/tournaments/${tournament.id}`}>
+                {tournament.name}
+              </Link>
+              <p className="text-sm text-muted-foreground">
+                {tournament.sport.name} · {tournament.location ?? 'Chưa cập nhật địa điểm'}
+              </p>
+            </div>
           </li>
         ))}
       </ul>
@@ -50,7 +72,10 @@ export function TournamentPage() {
   if (query.isError) return <Notice>Không tìm thấy giải đấu.</Notice>;
   return (
     <section className="mx-auto w-full max-w-3xl">
-      <h1 className="text-3xl font-black">{query.data.tournament.name}</h1>
+      <div className="flex items-center gap-4">
+        <TournamentLogo name={query.data.tournament.name} src={query.data.tournament.imageUrl} />
+        <h1 className="text-3xl font-black">{query.data.tournament.name}</h1>
+      </div>
       <p className="mt-2 text-sm font-semibold text-muted-foreground">
         {query.data.tournament.sport.name} · {query.data.tournament.sport.sportGroup.name}
       </p>
@@ -61,6 +86,7 @@ export function TournamentPage() {
           <li key={match.id}>
             <Link className="text-primary underline" to={`/matches/${match.id}`}>
               {match.publicId}
+              {match.weightClass ? ` · ${match.weightClass.name}` : ''}
             </Link>
           </li>
         ))}
@@ -82,9 +108,19 @@ export function MatchPage() {
     <Notice>
       <h1 className="text-2xl font-black">Trận {query.data.match.publicId}</h1>
       <p className="mt-2">{query.data.match.tournament.name}</p>
+      <p className="text-sm text-muted-foreground">
+        {query.data.match.weightClass?.name ?? 'Hạng cân chưa cập nhật'}
+      </p>
       <ul className="mt-4">
         {query.data.match.athletes.map((athlete) => (
-          <li key={`${athlete.color}-${athlete.name}`}>
+          <li className="flex items-center gap-3" key={`${athlete.color}-${athlete.name}`}>
+            {athlete.imageUrl ? (
+              <img
+                alt={athlete.name}
+                className="size-10 rounded-full object-cover"
+                src={athlete.imageUrl}
+              />
+            ) : null}
             {athlete.name} — {athlete.organization ?? 'Chưa cập nhật'}
           </li>
         ))}

@@ -200,6 +200,22 @@ model Tournament {
   @@map("tournaments")
 }
 
+// Durable outbox for storage cleanup. Rows are written in the same transaction
+// that makes an image unreachable, then deleted only after an idempotent storage
+// delete succeeds. This keeps object I/O outside database transactions.
+model MediaDeletion {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  storageKey  String   @unique(map: "media_deletions_storage_key_key") @map("storage_key") @db.VarChar(1024)
+  reason      String   @db.VarChar(100)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  attempts    Int      @default(0)
+  lastError   String?  @map("last_error") @db.Text
+  lastTriedAt DateTime? @map("last_tried_at") @db.Timestamptz(3)
+
+  @@index([createdAt], map: "media_deletions_created_at_idx")
+  @@map("media_deletions")
+}
+
 model SportGroup {
   id        String   @id(map: "sport_groups_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code      String   @unique(map: "sport_groups_code_key") @db.VarChar(100)

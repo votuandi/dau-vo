@@ -8,6 +8,7 @@ export interface PublicTournament {
   readonly startDate: string;
   readonly endDate: string | null;
   readonly status: 'ACTIVE' | 'FINISHED';
+  readonly imageUrl: string | null;
   readonly sport: {
     readonly id: string;
     readonly code: string;
@@ -20,10 +21,12 @@ export interface PublicMatch {
   readonly publicId: string;
   readonly status: string;
   readonly currentRound: number;
+  readonly weightClass: { readonly name: string } | null;
   readonly athletes: readonly {
     readonly name: string;
     readonly organization: string | null;
     readonly color: string;
+    readonly imageUrl: string | null;
   }[];
 }
 export interface PublicTournamentDetail extends PublicTournament {

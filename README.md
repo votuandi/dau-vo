@@ -675,3 +675,10 @@ is run from its package directory). Docker Compose mounts this directory as the
 named `api_uploads` volume. Free-platform ephemeral disks can lose uploads; a
 horizontally scaled production deployment must replace the local adapter with
 shared object storage such as S3.
+
+Images accept JPEG, PNG, or WebP only (2 MiB maximum). Public responses expose
+only a tournament `imageUrl`, plus match snapshot name, nullable organization,
+optional athlete `imageUrl`, and optional weight-class name—never birth year,
+roster IDs, owner/access/session/monitoring, or audit data. Legacy values are
+null. Media cleanup is post-commit and retryable with
+`pnpm --filter @martial-arts-scoring/api media:reconcile`.

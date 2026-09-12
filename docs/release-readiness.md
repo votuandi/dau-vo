@@ -199,3 +199,14 @@ pnpm lint
 pnpm test
 pnpm build
 ```
+
+### Roster/media release checks
+
+Create a Tournament/logo, classes, units, and athletes/images; create a
+same-weight-class Match and score it; edit/deactivate roster records and verify
+snapshot history. Verify public image/missing-media fallbacks and legacy null
+weight classes. In isolated staging, soft-delete/restore then purge, rerun the
+lifecycle and `media:reconcile`, and verify Match/roster cascade and media queue.
+Verify the Compose `api_uploads` volume survives API restart and Nginx serves
+`/api/media/*` without listings. Free staging disks are ephemeral; replica
+deployments require shared storage and a verified `ImageStorage` S3 adapter.
