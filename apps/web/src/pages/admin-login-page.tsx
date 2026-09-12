@@ -10,6 +10,7 @@ import { getAccessLandingPath, getSafeReturnPath } from '@/features/auth/role-aw
 import { effectiveAdminAccessState, entitlementQueryOptions } from '@/features/auth/admin-access';
 import { authApi } from '@/services/api/auth';
 import { ApiClientError } from '@/services/api/client';
+import { inputClassName } from '@/features/admin-management/presentation';
 
 interface LoginFormErrors {
   readonly username?: string;
@@ -135,8 +136,8 @@ export function AdminLoginPage() {
         ) : null}
 
         <form className="mt-7 space-y-5" noValidate onSubmit={handleSubmit}>
-          <div>
-            <label className="text-sm font-semibold" htmlFor="admin-username">
+          <div className="form-field">
+            <label className="form-label" htmlFor="admin-username">
               Tên đăng nhập
             </label>
             <input
@@ -144,7 +145,7 @@ export function AdminLoginPage() {
               aria-invalid={Boolean(formErrors.username)}
               autoCapitalize="none"
               autoComplete="username"
-              className="mt-2 h-11 w-full rounded-lg border border-input bg-white/80 px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
+              className={inputClassName}
               disabled={loginMutation.isPending}
               id="admin-username"
               maxLength={100}
@@ -157,21 +158,21 @@ export function AdminLoginPage() {
               value={username}
             />
             {formErrors.username ? (
-              <p className="mt-1.5 text-sm text-destructive" id="admin-username-error">
+              <p className="form-error" id="admin-username-error">
                 {formErrors.username}
               </p>
             ) : null}
           </div>
 
-          <div>
-            <label className="text-sm font-semibold" htmlFor="admin-password">
+          <div className="form-field">
+            <label className="form-label" htmlFor="admin-password">
               Mật khẩu
             </label>
             <input
               aria-describedby={formErrors.password ? 'admin-password-error' : undefined}
               aria-invalid={Boolean(formErrors.password)}
               autoComplete="current-password"
-              className="mt-2 h-11 w-full rounded-lg border border-input bg-white/80 px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
+              className={inputClassName}
               disabled={loginMutation.isPending}
               id="admin-password"
               maxLength={256}
@@ -183,7 +184,7 @@ export function AdminLoginPage() {
               value={password}
             />
             {formErrors.password ? (
-              <p className="mt-1.5 text-sm text-destructive" id="admin-password-error">
+              <p className="form-error" id="admin-password-error">
                 {formErrors.password}
               </p>
             ) : null}

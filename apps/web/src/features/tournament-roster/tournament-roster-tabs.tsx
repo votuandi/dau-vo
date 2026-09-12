@@ -110,7 +110,9 @@ function RosterForm({
   return (
     <form
       aria-label={mode === 'edit' ? 'Chỉnh sửa danh mục' : 'Tạo danh mục mới'}
-      className="grid gap-3 rounded-xl border bg-muted/30 p-4 sm:grid-cols-[1fr_2fr_auto]"
+      className={`grid gap-4 rounded-xl border bg-muted/30 p-4 ${
+        organization ? 'grid-cols-1' : 'sm:grid-cols-[1fr_2fr_auto]'
+      }`}
       onSubmit={(e) => {
         e.preventDefault();
         if (!busy && values.name.trim()) {
@@ -123,10 +125,13 @@ function RosterForm({
         }
       }}
     >
-      <p aria-live="polite" className="sm:col-span-3 text-sm font-semibold">
+      <p
+        aria-live="polite"
+        className={`text-sm font-semibold ${organization ? '' : 'sm:col-span-3'}`}
+      >
         {mode === 'edit' ? 'Đang chỉnh sửa danh mục' : 'Tạo danh mục mới'}
       </p>
-      <label className="text-sm font-semibold">
+      <label className="form-field">
         Tên
         <input
           className={inputClassName}
@@ -139,7 +144,7 @@ function RosterForm({
         />
       </label>
       {organization ? (
-        <label className="text-sm font-semibold">
+        <label className="form-field">
           Địa phương
           <input
             className={inputClassName}
@@ -152,7 +157,7 @@ function RosterForm({
         </label>
       ) : null}
       {organization ? (
-        <label className="text-sm font-semibold">
+        <label className="form-field">
           Logo đơn vị (JPEG, PNG hoặc WebP, tối đa 2 MiB)
           <input
             accept="image/jpeg,image/png,image/webp"
@@ -188,7 +193,7 @@ function RosterForm({
           ) : null}
         </label>
       ) : null}
-      <label className="text-sm font-semibold">
+      <label className="form-field">
         Chi tiết
         <textarea
           className={textAreaClassName}
@@ -199,7 +204,7 @@ function RosterForm({
           value={values.details}
         />
       </label>
-      <div className="flex self-end gap-2">
+      <div className="flex flex-wrap self-end gap-2">
         <Button disabled={busy} type="submit">
           {busy ? 'Đang lưu…' : mode === 'edit' ? 'Lưu' : 'Thêm mới'}
         </Button>

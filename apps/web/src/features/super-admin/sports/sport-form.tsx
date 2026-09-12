@@ -77,7 +77,7 @@ export function SportForm({
       <h2 className="text-xl font-bold">
         {sport ? 'Chỉnh sửa môn thể thao' : 'Thêm môn thể thao'}
       </h2>
-      <label className="block">
+      <label className="form-field">
         Tên môn thể thao
         <input
           className={inputClassName}
@@ -89,7 +89,7 @@ export function SportForm({
           value={values.name}
         />
       </label>
-      <label className="block">
+      <label className="form-field">
         Mã
         <input
           className={inputClassName}
@@ -102,12 +102,10 @@ export function SportForm({
           value={values.code}
         />
         {sport ? (
-          <span className="mt-1 block text-sm text-muted-foreground">
-            Mã môn thể thao không thể thay đổi.
-          </span>
+          <span className="form-hint block">Mã môn thể thao không thể thay đổi.</span>
         ) : null}
       </label>
-      <label className="block">
+      <label className="form-field">
         Nhóm môn thể thao
         <select
           className={inputClassName}
@@ -131,32 +129,36 @@ export function SportForm({
           </span>
         ) : null}
       </label>
-      <fieldset>
-        <legend className="font-semibold">Trạng thái</legend>
-        <label className="mr-5">
-          <input
-            checked={values.isActive}
-            disabled={pending}
-            onChange={() => {
-              setValues((v) => ({ ...v, isActive: true }));
-            }}
-            name="sport-status"
-            type="radio"
-          />{' '}
-          Đang hoạt động
-        </label>
-        <label>
-          <input
-            checked={!values.isActive}
-            disabled={pending || (sport?.isActive === true && (used || sport.canDisable === false))}
-            onChange={() => {
-              setValues((v) => ({ ...v, isActive: false }));
-            }}
-            name="sport-status"
-            type="radio"
-          />{' '}
-          Đã vô hiệu hóa
-        </label>
+      <fieldset className="space-y-2">
+        <legend className="form-label">Trạng thái</legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm font-medium transition hover:border-primary/30 has-[:checked]:border-primary has-[:checked]:bg-primary/5">
+            <input
+              checked={values.isActive}
+              disabled={pending}
+              onChange={() => {
+                setValues((v) => ({ ...v, isActive: true }));
+              }}
+              name="sport-status"
+              type="radio"
+            />{' '}
+            Đang hoạt động
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm font-medium transition hover:border-primary/30 has-[:checked]:border-primary has-[:checked]:bg-primary/5">
+            <input
+              checked={!values.isActive}
+              disabled={
+                pending || (sport?.isActive === true && (used || sport.canDisable === false))
+              }
+              onChange={() => {
+                setValues((v) => ({ ...v, isActive: false }));
+              }}
+              name="sport-status"
+              type="radio"
+            />{' '}
+            Đã vô hiệu hóa
+          </label>
+        </div>
         {sport?.isActive && used ? (
           <span className="mt-1 block text-sm text-destructive">
             Không thể vô hiệu hóa vì môn thể thao đã được sử dụng bởi giải đấu.

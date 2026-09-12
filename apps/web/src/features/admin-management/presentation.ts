@@ -85,10 +85,10 @@ export const athleteColorLabels: Record<AthleteColor, string> = {
 };
 
 export const inputClassName =
-  'mt-2 h-11 w-full rounded-lg border border-input bg-white/80 px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60';
+  'mt-1.5 h-11 w-full rounded-lg border border-input bg-white/80 px-3 text-sm text-foreground shadow-sm outline-none transition-[border-color,box-shadow,background-color] placeholder:text-muted-foreground/70 hover:border-primary/35 focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10 aria-[invalid=true]:border-destructive aria-[invalid=true]:bg-red-50/50 aria-[invalid=true]:focus:ring-destructive/10 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-70';
 
 export const textAreaClassName =
-  'mt-2 min-h-24 w-full resize-y rounded-lg border border-input bg-white/80 px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60';
+  'mt-1.5 min-h-28 w-full resize-y rounded-lg border border-input bg-white/80 px-3 py-2.5 text-sm leading-6 text-foreground shadow-sm outline-none transition-[border-color,box-shadow,background-color] placeholder:text-muted-foreground/70 hover:border-primary/35 focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10 aria-[invalid=true]:border-destructive aria-[invalid=true]:bg-red-50/50 aria-[invalid=true]:focus:ring-destructive/10 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-70';
 
 export function getApiErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiClientError) {
