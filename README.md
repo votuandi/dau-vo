@@ -662,3 +662,12 @@ and match decision; PostgreSQL is durable truth; Redis provides rate limiting,
 shared presence and Socket.IO distribution; Socket.IO distributes snapshots and
 events; `serverReceivedAt` defines official vote time; immutable score events
 provide history; and one persisted active session owns each credential.
+
+### Image storage
+
+Tournament images are served through `/api/media/...` and stored as UUID object
+keys below `IMAGE_UPLOAD_ROOT` (default `apps/api/public/uploads` when the API
+is run from its package directory). Docker Compose mounts this directory as the
+named `api_uploads` volume. Free-platform ephemeral disks can lose uploads; a
+horizontally scaled production deployment must replace the local adapter with
+shared object storage such as S3.

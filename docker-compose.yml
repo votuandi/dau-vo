@@ -46,9 +46,11 @@ services:
       INITIAL_SUPER_ADMIN_PASSWORD: ${INITIAL_SUPER_ADMIN_PASSWORD:?Set a non-default initial super-admin password}
       ROUND_DURATION_MS: ${ROUND_DURATION_MS:-120000}
       BREAK_DURATION_MS: ${BREAK_DURATION_MS:-60000}
+      IMAGE_UPLOAD_ROOT: /workspace/apps/api/public/uploads
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    volumes: [api_uploads:/workspace/apps/api/public/uploads]
 
   # Explicit one-shot production bootstrap. It is profile-gated so normal API
   # restarts never run the seed or change the Super Admin password.
@@ -90,3 +92,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  api_uploads:

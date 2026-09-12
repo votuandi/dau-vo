@@ -47,6 +47,7 @@
     "class-validator": "^0.14.2",
     "cookie-parser": "^1.4.7",
     "ioredis": "^5.7.0",
+    "multer": "^2.3.0",
     "nestjs-pino": "^4.4.1",
     "pino": "^9.9.4",
     "pino-http": "^10.5.0",

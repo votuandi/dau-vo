@@ -10,9 +10,15 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Req,
+  UploadedFile,
+  UseFilters,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 
 import { AuthGuard } from '../auth/admin-auth.guard';
 import type { AuthenticatedUserRequest } from '../auth/admin-auth.types';
@@ -31,6 +37,9 @@ import {
 import { CreateMatchDto } from './dto/match.dto';
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { CreateTournamentDto, UpdateTournamentDto } from './dto/tournament.dto';
+import { IMAGE_MAX_BYTES } from '../media/image-storage';
+import { TournamentImageService } from './tournament-image.service';
+import { MulterErrorFilter } from '../media/multer-error.filter';
 
 const uuidPipe = new ParseUUIDPipe({
   exceptionFactory: () => new BadRequestException(INVALID_ID_ERROR),
@@ -55,6 +64,8 @@ export class AdminTournamentsController {
   constructor(
     @Inject(AdminManagementService)
     private readonly management: AdminManagementService,
+    @Inject(TournamentImageService)
+    private readonly images: TournamentImageService,
   ) {}
 
   @Get()
@@ -77,6 +88,32 @@ export class AdminTournamentsController {
         request.user.id,
       ),
     };
+  }
+
+  @Put(':id/image')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: IMAGE_MAX_BYTES, files: 1 },
+    }),
+  )
+  @UseFilters(MulterErrorFilter)
+  async replaceImage(
+    @Param('id', uuidPipe) id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() request: AuthenticatedUserRequest,
+  ): Promise<{ imagePath: string }> {
+    await this.management.assertTournamentAccess(id, request.user, true);
+    return this.images.replace(id, request.user.id, file);
+  }
+
+  @Delete(':id/image')
+  async removeImage(
+    @Param('id', uuidPipe) id: string,
+    @Req() request: AuthenticatedUserRequest,
+  ): Promise<void> {
+    await this.management.assertTournamentAccess(id, request.user, true);
+    await this.images.remove(id, request.user.id);
   }
 
   @Get(':id')
