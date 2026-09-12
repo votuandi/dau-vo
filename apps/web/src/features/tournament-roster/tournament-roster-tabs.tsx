@@ -123,7 +123,9 @@ export function RosterItemsPage({
 }) {
   const qc = useQueryClient();
   const query = useQuery({
-    queryKey: ['admin', 'tournaments', tournamentId, kind],
+    // Keep the array projection separate from the full endpoint response cached by
+    // tournamentUnitsQueryOptions/tournamentWeightClassesQueryOptions.
+    queryKey: ['admin', 'tournaments', tournamentId, kind, 'roster-items'],
     queryFn: async (): Promise<readonly TournamentRosterItem[]> =>
       kind === 'units'
         ? (await adminManagementApi.listUnits(tournamentId)).units
@@ -325,7 +327,11 @@ export function AthletesPage({
       notifyMutationError(e, 'Không thể thêm vận động viên.');
     },
   });
-  const activeWeights = weights.data?.weightClasses.filter((x) => x.isActive) ?? [];
+  // The roster endpoints are independently loaded. Treat a response without either
+  // collection as an empty roster while it is refreshed instead of crashing the tab.
+  const weightClasses = weights.data?.weightClasses ?? [];
+  const unitsList = units.data?.units ?? [];
+  const activeWeights = weightClasses.filter((x) => x.isActive);
   function updateParam(key: string, value: string) {
     setParams((old) => {
       const n = new URLSearchParams(old);
@@ -363,7 +369,7 @@ export function AthletesPage({
             value={params.get('weightClassId') ?? ''}
           >
             <option value="">Tất cả</option>
-            {weights.data?.weightClasses.map((x) => (
+            {weightClasses.map((x) => (
               <option key={x.id} value={x.id}>
                 {x.name}
               </option>
@@ -383,7 +389,7 @@ export function AthletesPage({
           >
             <option value="">Tất cả</option>
             <option value="__none">Không đơn vị</option>
-            {units.data?.units
+            {unitsList
               .filter((x) => x.isActive)
               .map((x) => (
                 <option key={x.id} value={x.id}>
@@ -486,7 +492,7 @@ export function AthletesPage({
               value={draft.unitId ?? ''}
             >
               <option value="">Không đơn vị</option>
-              {units.data?.units
+              {unitsList
                 .filter((x) => x.isActive)
                 .map((x) => (
                   <option key={x.id} value={x.id}>
