@@ -84,6 +84,11 @@ export const MATCH_ATHLETE_REPLACEMENT_UNSAFE_ERROR: AdminManagementErrorBody =
     code: 'MATCH_ATHLETE_REPLACEMENT_UNSAFE',
     message: 'Athletes can only be replaced before match activity begins',
   };
+export const BRACKET_MATCH_PARTICIPANTS_IMMUTABLE_ERROR: AdminManagementErrorBody =
+  {
+    code: 'BRACKET_MATCH_PARTICIPANTS_IMMUTABLE',
+    message: 'Participants of a bracket-linked match cannot be replaced',
+  };
 export const MATCH_ATHLETE_LEGACY_ONLY_ERROR: AdminManagementErrorBody = {
   code: 'MATCH_ATHLETE_LEGACY_ONLY',
   message: 'Free-text athlete editing is limited to legacy matches',

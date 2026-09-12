@@ -30,6 +30,7 @@ export class BracketConfirmationService {
     private readonly prisma: PrismaService,
     @Inject(BracketPreviewService)
     private readonly previews: BracketPreviewService,
+    @Inject(BracketPreviewTokenService)
     private readonly tokens: BracketPreviewTokenService,
   ) {}
 

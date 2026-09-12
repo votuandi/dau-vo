@@ -52,6 +52,7 @@ export interface AdminMatch {
   readonly publicId: string;
   readonly tournamentId: string;
   readonly weightClassId: string | null;
+  readonly bracketFixtureId: string | null;
   readonly weightClass: {
     readonly id: string;
     readonly name: string;
@@ -269,20 +270,85 @@ export interface GeneratedCodesResponse {
 export interface BracketPreview {
   readonly previewToken: string;
   readonly expiresAt: string;
-  readonly summary: { readonly athleteCount: number; readonly bracketSize: number; readonly byeCount: number; readonly roundCount: number; readonly totalFixtureCount: number };
-  readonly initialEntrants: readonly { readonly drawPosition: number; readonly athleteId: string | null; readonly athlete: { readonly id: string; readonly name: string; readonly organizationName: string | null; readonly imageUrl: string | null } | null; readonly isBye: boolean }[];
-  readonly rounds: readonly { readonly roundNumber: number; readonly label: string; readonly fixtures: readonly BracketFixture[] }[];
+  readonly summary: {
+    readonly athleteCount: number;
+    readonly bracketSize: number;
+    readonly byeCount: number;
+    readonly roundCount: number;
+    readonly totalFixtureCount: number;
+  };
+  readonly initialEntrants: readonly {
+    readonly drawPosition: number;
+    readonly athleteId: string | null;
+    readonly athlete: {
+      readonly id: string;
+      readonly name: string;
+      readonly organizationName: string | null;
+      readonly imageUrl: string | null;
+    } | null;
+    readonly isBye: boolean;
+  }[];
+  readonly rounds: readonly {
+    readonly roundNumber: number;
+    readonly label: string;
+    readonly fixtures: readonly BracketFixture[];
+  }[];
 }
 export interface BracketFixture {
   readonly id: string;
   readonly displayReference: string;
   readonly position: number;
-  readonly slots: readonly { readonly side: 'RED' | 'BLUE'; readonly source: { readonly kind: 'ENTRANT' | 'FIXTURE_WINNER'; readonly entrantId?: string; readonly fixtureId?: string }; readonly resolvedEntrantId: string | null }[];
+  readonly slots: readonly {
+    readonly side: 'RED' | 'BLUE';
+    readonly source: {
+      readonly kind: 'ENTRANT' | 'FIXTURE_WINNER';
+      readonly entrantId?: string;
+      readonly fixtureId?: string;
+    };
+    readonly resolvedEntrantId: string | null;
+  }[];
 }
 export interface ActiveBracket {
-  readonly bracket: { readonly id: string; readonly status: string; readonly athleteCount: number; readonly bracketSize: number; readonly roundCount: number; readonly confirmedAt: string };
-  readonly entrants: readonly { readonly id: string; readonly athleteId: string | null; readonly snapshotName: string; readonly snapshotOrganization: string | null; readonly snapshotImagePath: string | null }[];
-  readonly fixtures: readonly { readonly id: string; readonly displayReference: string; readonly roundNumber: number; readonly position: number; readonly status: string; readonly slots: readonly { readonly side: 'RED' | 'BLUE'; readonly resolvedEntrant: { readonly id: string; readonly snapshotName: string; readonly snapshotOrganization: string | null; readonly snapshotImagePath: string | null } | null; readonly directEntrant: { readonly id: string; readonly snapshotName: string; readonly snapshotOrganization: string | null; readonly snapshotImagePath: string | null } | null; readonly sourceFixtureId: string | null }[] }[];
+  readonly bracket: {
+    readonly id: string;
+    readonly status: string;
+    readonly athleteCount: number;
+    readonly bracketSize: number;
+    readonly roundCount: number;
+    readonly confirmedAt: string;
+  };
+  readonly entrants: readonly {
+    readonly id: string;
+    readonly athleteId: string | null;
+    readonly snapshotName: string;
+    readonly snapshotOrganization: string | null;
+    readonly snapshotImagePath: string | null;
+  }[];
+  readonly fixtures: readonly {
+    readonly id: string;
+    readonly displayReference: string;
+    readonly roundNumber: number;
+    readonly position: number;
+    readonly status: string;
+    readonly match: { readonly id: string; readonly publicId: string } | null;
+    readonly winnerEntrant: { readonly id: string; readonly snapshotName: string } | null;
+    readonly slots: readonly {
+      readonly side: 'RED' | 'BLUE';
+      readonly resolvedEntrant: {
+        readonly id: string;
+        readonly snapshotName: string;
+        readonly snapshotOrganization: string | null;
+        readonly snapshotImagePath: string | null;
+      } | null;
+      readonly directEntrant: {
+        readonly id: string;
+        readonly snapshotName: string;
+        readonly snapshotOrganization: string | null;
+        readonly snapshotImagePath: string | null;
+      } | null;
+      readonly sourceFixtureId: string | null;
+    }[];
+  }[];
 }
 
 function encodePathSegment(value: string): string {
@@ -318,11 +384,28 @@ export const adminManagementApi = {
       input,
     ),
   previewBracket: (tournamentId: string, weightClassId: string) =>
-    apiClient.post<BracketPreview>(`admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/preview`, {}),
-  confirmBracket: (tournamentId: string, weightClassId: string, input: { readonly previewToken: string; readonly idempotencyKey: string }) =>
-    apiClient.post<ActiveBracket>(`admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/confirm`, input),
+    apiClient.post<BracketPreview>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/preview`,
+      {},
+    ),
+  confirmBracket: (
+    tournamentId: string,
+    weightClassId: string,
+    input: { readonly previewToken: string; readonly idempotencyKey: string },
+  ) =>
+    apiClient.post<ActiveBracket>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/confirm`,
+      input,
+    ),
   getBracket: (tournamentId: string, weightClassId: string) =>
-    apiClient.get<ActiveBracket>(`admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket`),
+    apiClient.get<ActiveBracket>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket`,
+    ),
+  prepareBracketFixtureMatch: (tournamentId: string, bracketId: string, fixtureId: string) =>
+    apiClient.post<MatchWithGeneratedCodesResponse>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/brackets/${encodePathSegment(bracketId)}/fixtures/${encodePathSegment(fixtureId)}/prepare-match`,
+      {},
+    ),
   getMatch: (id: string) => apiClient.get<MatchResponse>(`admin/matches/${encodePathSegment(id)}`),
   getMatchMonitoring: (id: string) =>
     apiClient.get<AdminMatchMonitoring>(`admin/matches/${encodePathSegment(id)}/monitoring`),

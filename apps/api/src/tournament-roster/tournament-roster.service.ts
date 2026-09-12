@@ -240,11 +240,13 @@ export class OrganizationService {
         const row =
           kind === 'organization'
             ? await tx.tournamentOrganization.create({
-                data: data as Prisma.TournamentOrganizationCreateInput,
+                // The transaction stores the scalar tournament foreign key directly.
+                data: data as Prisma.TournamentOrganizationUncheckedCreateInput,
                 select: organizationSelect,
               })
             : await tx.tournamentWeightClass.create({
-                data: data as Prisma.TournamentWeightClassCreateInput,
+                // The transaction stores the scalar tournament foreign key directly.
+                data: data as Prisma.TournamentWeightClassUncheckedCreateInput,
                 select: weightClassSelect,
               });
         await this.audit(
