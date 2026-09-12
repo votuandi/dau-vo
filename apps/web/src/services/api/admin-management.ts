@@ -155,6 +155,13 @@ export interface UpdateMatchInput {
   readonly athletes?: readonly [MatchAthleteInput, MatchAthleteInput];
 }
 
+export interface TournamentRosterItem { readonly id: string; readonly tournamentId: string; readonly name: string; readonly details: string | null; readonly isActive: boolean; readonly createdAt: string; readonly updatedAt: string; }
+export interface TournamentUnit extends TournamentRosterItem { readonly imagePath: string | null; }
+export interface TournamentAthlete { readonly id: string; readonly tournamentId: string; readonly name: string; readonly birthYear: number; readonly details: string | null; readonly imagePath: string | null; readonly imageUrl: string | null; readonly isActive: boolean; readonly unitId: string | null; readonly weightClassId: string; readonly unit: { readonly id: string; readonly name: string; readonly isActive: boolean } | null; readonly weightClass: { readonly id: string; readonly name: string; readonly isActive: boolean }; }
+export interface RosterItemInput { readonly name?: string; readonly details?: string | null; readonly isActive?: boolean; }
+export interface AthleteInput { readonly name: string; readonly birthYear: number; readonly weightClassId: string; readonly unitId?: string | null; readonly details?: string | null; readonly isActive?: boolean; }
+export interface AthleteListInput { readonly page?: number; readonly pageSize?: number; readonly search?: string; readonly weightClassId?: string; readonly unitId?: string; readonly noUnit?: boolean; readonly isActive?: boolean; }
+
 interface TournamentsResponse {
   readonly tournaments: readonly AdminTournament[];
 }
@@ -170,6 +177,10 @@ interface MatchesResponse {
 interface MatchResponse {
   readonly match: AdminMatch;
 }
+interface UnitsResponse { readonly units: readonly TournamentUnit[]; }
+interface WeightClassesResponse { readonly weightClasses: readonly TournamentRosterItem[]; }
+interface AthleteResponse { readonly athlete: TournamentAthlete; }
+interface AthletesResponse { readonly items: readonly TournamentAthlete[]; readonly page: number; readonly pageSize: number; readonly total: number; readonly totalPages: number; }
 
 export interface MatchWithGeneratedCodesResponse extends MatchResponse {
   readonly accessCodes: readonly GeneratedAccessCode[];
@@ -227,4 +238,18 @@ export const adminManagementApi = {
       `admin/matches/${encodePathSegment(id)}/access-codes/${encodePathSegment(role)}/regenerate`,
       {},
     ),
+  listUnits: (tournamentId: string, includeInactive = true) => apiClient.get<UnitsResponse>(`admin/tournaments/${encodePathSegment(tournamentId)}/units?includeInactive=${String(includeInactive)}`),
+  createUnit: (tournamentId: string, input: RosterItemInput) => apiClient.post<{ readonly unit: TournamentUnit }>(`admin/tournaments/${encodePathSegment(tournamentId)}/units`, input),
+  updateUnit: (tournamentId: string, id: string, input: RosterItemInput) => apiClient.patch<{ readonly unit: TournamentUnit }>(`admin/tournaments/${encodePathSegment(tournamentId)}/units/${encodePathSegment(id)}`, input),
+  deleteUnit: (tournamentId: string, id: string) => apiClient.delete<{ readonly unit: TournamentUnit }>(`admin/tournaments/${encodePathSegment(tournamentId)}/units/${encodePathSegment(id)}`),
+  replaceUnitImage: (tournamentId: string, id: string, file: File) => { const body = new FormData(); body.append('file', file); return apiClient.put<{ readonly imagePath: string }>(`admin/tournaments/${encodePathSegment(tournamentId)}/units/${encodePathSegment(id)}/image`, body); },
+  removeUnitImage: (tournamentId: string, id: string) => apiClient.delete<undefined>(`admin/tournaments/${encodePathSegment(tournamentId)}/units/${encodePathSegment(id)}/image`),
+  listWeightClasses: (tournamentId: string, includeInactive = true) => apiClient.get<WeightClassesResponse>(`admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes?includeInactive=${String(includeInactive)}`),
+  createWeightClass: (tournamentId: string, input: RosterItemInput) => apiClient.post<{ readonly weightClass: TournamentRosterItem }>(`admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes`, input),
+  updateWeightClass: (tournamentId: string, id: string, input: RosterItemInput) => apiClient.patch<{ readonly weightClass: TournamentRosterItem }>(`admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(id)}`, input),
+  deleteWeightClass: (tournamentId: string, id: string) => apiClient.delete<{ readonly weightClass: TournamentRosterItem }>(`admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(id)}`),
+  listAthletes: (tournamentId: string, input: AthleteListInput) => { const q = new URLSearchParams(); Object.entries(input).forEach(([key, value]) => { if (value !== undefined && value !== '') q.set(key, String(value)); }); return apiClient.get<AthletesResponse>(`admin/tournaments/${encodePathSegment(tournamentId)}/athletes?${q.toString()}`); },
+  createAthlete: (tournamentId: string, input: AthleteInput) => apiClient.post<AthleteResponse>(`admin/tournaments/${encodePathSegment(tournamentId)}/athletes`, input),
+  updateAthlete: (tournamentId: string, id: string, input: AthleteInput) => apiClient.patch<AthleteResponse>(`admin/tournaments/${encodePathSegment(tournamentId)}/athletes/${encodePathSegment(id)}`, input),
+  deleteAthlete: (tournamentId: string, id: string) => apiClient.delete<AthleteResponse>(`admin/tournaments/${encodePathSegment(tournamentId)}/athletes/${encodePathSegment(id)}`),
 };

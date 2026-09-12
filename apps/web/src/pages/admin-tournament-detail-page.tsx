@@ -1,6 +1,6 @@
 import { useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { GeneratedAccessCodesPanel } from '@/components/generated-access-codes-panel';
 import { Button } from '@/components/ui/button';
 import { DateInput } from '@/components/ui/date-input';
@@ -35,6 +35,7 @@ import {
 } from '@/services/api/admin-management';
 import { AthleteColor, TournamentStatus } from '@/types/shared';
 import { useAdminAccessContext } from '@/features/auth/admin-access';
+import { AthletesPage, RosterItemsPage, TournamentTabs } from '@/features/tournament-roster/tournament-roster-tabs';
 
 interface AthleteDraft {
   readonly name: string;
@@ -584,6 +585,7 @@ export function AdminTournamentDetailPage() {
 
 function TournamentDetailContent({ tournamentId }: { readonly tournamentId: string }) {
   const { isReadOnly } = useAdminAccessContext();
+  const location = useLocation();
   const tournamentQuery = useQuery(tournamentQueryOptions(tournamentId));
 
   if (tournamentQuery.isPending) {
@@ -618,6 +620,8 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
   }
 
   const tournament = tournamentQuery.data.tournament;
+  const tail = location.pathname.split('/').at(-1);
+  const active = tail === tournamentId ? 'info' : tail === 'weight-classes' || tail === 'units' || tail === 'athletes' || tail === 'matches' ? tail : 'info';
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8">
@@ -646,12 +650,12 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
         </p>
       </header>
 
-      <TournamentEditor
-        isReadOnly={isReadOnly}
-        key={tournament.updatedAt}
-        tournament={tournament}
-      />
-      <TournamentMatches isReadOnly={isReadOnly} tournament={tournament} />
+      <TournamentTabs active={active} tournamentId={tournamentId} />
+      {active === 'info' ? <TournamentEditor isReadOnly={isReadOnly} key={tournament.updatedAt} tournament={tournament} /> : null}
+      {active === 'matches' ? <TournamentMatches isReadOnly={isReadOnly} tournament={tournament} /> : null}
+      {active === 'weight-classes' ? <RosterItemsPage kind="weight-classes" readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED} tournamentId={tournamentId} /> : null}
+      {active === 'units' ? <RosterItemsPage kind="units" readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED} tournamentId={tournamentId} /> : null}
+      {active === 'athletes' ? <AthletesPage readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED} tournamentId={tournamentId} /> : null}
     </div>
   );
 }
