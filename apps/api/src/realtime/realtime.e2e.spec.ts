@@ -28,6 +28,7 @@ import type { AddressInfo } from 'node:net';
 import { io, type Socket } from 'socket.io-client';
 import request from 'supertest';
 
+import { DEFAULT_SPORT } from '../../prisma/default-sport';
 import type { EnvironmentVariables } from '../config/environment';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -469,6 +470,7 @@ describe('Realtime match infrastructure (integration)', () => {
       data: {
         name: `${TEST_PREFIX}-tournament`,
         ownerUserId: '00000000-0000-4000-8000-000000000001',
+        sportId: DEFAULT_SPORT.id,
       },
       select: { id: true },
     });

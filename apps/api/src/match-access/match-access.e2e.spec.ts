@@ -12,6 +12,7 @@ import Redis from 'ioredis';
 import { randomBytes } from 'node:crypto';
 import request from 'supertest';
 
+import { DEFAULT_SPORT } from '../../prisma/default-sport';
 import type { EnvironmentVariables } from '../config/environment';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -201,6 +202,7 @@ describe('Match participant authentication (integration)', () => {
       data: {
         name: `${TEST_PREFIX}-tournament`,
         ownerUserId: '00000000-0000-4000-8000-000000000001',
+        sportId: DEFAULT_SPORT.id,
       },
       select: { id: true },
     });

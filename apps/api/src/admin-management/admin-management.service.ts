@@ -17,6 +17,7 @@ import {
 } from '@prisma/client';
 import { hash } from 'bcryptjs';
 
+import { DEFAULT_SPORT } from '../../prisma/default-sport';
 import type { EnvironmentVariables } from '../config/environment';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -279,6 +280,12 @@ export class AdminManagementService {
         if (used >= entitlement.tournamentLimit)
           throw new ConflictException({ code: 'TOURNAMENT_LIMIT_REACHED' });
       }
+      const defaultSport = await transaction.sport.findUnique({
+        where: { code: DEFAULT_SPORT.code },
+        select: { id: true },
+      });
+      if (defaultSport === null)
+        throw new ConflictException({ code: 'DEFAULT_SPORT_NOT_CONFIGURED' });
       const tournament = await transaction.tournament.create({
         data: {
           description: this.optionalTrimmedText(input.description),
@@ -286,6 +293,7 @@ export class AdminManagementService {
           location: this.optionalTrimmedText(input.location),
           name,
           ownerUserId: adminUserId,
+          sportId: defaultSport.id,
           startDate,
           status: input.status,
         },

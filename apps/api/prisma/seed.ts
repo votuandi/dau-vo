@@ -8,6 +8,7 @@ import {
   passwordValidationCode,
   passwordValidationMessage,
 } from '../src/auth/password-policy';
+import { DEFAULT_SPORT, DEFAULT_SPORT_GROUP } from './default-sport';
 
 const BCRYPT_COST = 12;
 const DEFAULT_SUPER_ADMIN_PASSWORD = 'dauvo@123';
@@ -156,13 +157,40 @@ export async function ensureInitialPricing(
   });
 }
 
+/** Ensures the system-owned default sport catalog without touching other sports. */
+export async function ensureDefaultSportCatalog(
+  prisma: Pick<PrismaClient, 'sportGroup' | 'sport'>,
+): Promise<void> {
+  const sportGroup = await prisma.sportGroup.upsert({
+    where: { code: DEFAULT_SPORT_GROUP.code },
+    create: DEFAULT_SPORT_GROUP,
+    update: { name: DEFAULT_SPORT_GROUP.name },
+    select: { id: true },
+  });
+
+  await prisma.sport.upsert({
+    where: { code: DEFAULT_SPORT.code },
+    create: {
+      ...DEFAULT_SPORT,
+      sportGroupId: sportGroup.id,
+    },
+    update: {
+      isActive: DEFAULT_SPORT.isActive,
+      name: DEFAULT_SPORT.name,
+      normalizedName: DEFAULT_SPORT.normalizedName,
+      sportGroupId: sportGroup.id,
+    },
+  });
+}
+
 async function seedInitialSuperAdmin(): Promise<void> {
   const password = initialSuperAdminPassword();
   const prisma = new PrismaClient();
   try {
     await ensureInitialSuperAdmin(prisma, password);
     await ensureInitialPricing(prisma);
-    process.stdout.write('Initial super admin ensured.\n');
+    await ensureDefaultSportCatalog(prisma);
+    process.stdout.write('Initial catalog and super admin ensured.\n');
   } finally {
     await prisma.$disconnect();
   }

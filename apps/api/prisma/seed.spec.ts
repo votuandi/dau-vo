@@ -1,7 +1,9 @@
 import { compare, hash } from 'bcryptjs';
 import { UserRole, type PrismaClient } from '@prisma/client';
 
+import { DEFAULT_SPORT, DEFAULT_SPORT_GROUP } from './default-sport';
 import {
+  ensureDefaultSportCatalog,
   ensureInitialSuperAdmin,
   INITIAL_SUPER_ADMIN_USERNAME,
   initialSuperAdminPassword,
@@ -208,5 +210,64 @@ describe('initial super-admin seed', () => {
         'Initial super-admin verification failed',
       );
     }
+  });
+});
+
+describe('default sport catalog seed', () => {
+  function prismaForCatalog(groupId: string = DEFAULT_SPORT_GROUP.id) {
+    const sportGroupUpsert = jest.fn().mockResolvedValue({ id: groupId });
+    const sportUpsert = jest.fn().mockResolvedValue({});
+    return {
+      prisma: {
+        sportGroup: { upsert: sportGroupUpsert },
+        sport: { upsert: sportUpsert },
+      } as unknown as Pick<PrismaClient, 'sportGroup' | 'sport'>,
+      sportGroupUpsert,
+      sportUpsert,
+    };
+  }
+
+  it('creates the canonical group and sport when missing', async () => {
+    const { prisma, sportGroupUpsert, sportUpsert } = prismaForCatalog();
+    await ensureDefaultSportCatalog(prisma);
+
+    expect(sportGroupUpsert).toHaveBeenCalledWith({
+      where: { code: DEFAULT_SPORT_GROUP.code },
+      create: DEFAULT_SPORT_GROUP,
+      update: { name: DEFAULT_SPORT_GROUP.name },
+      select: { id: true },
+    });
+    expect(sportUpsert).toHaveBeenCalledWith({
+      where: { code: DEFAULT_SPORT.code },
+      create: {
+        ...DEFAULT_SPORT,
+        sportGroupId: DEFAULT_SPORT_GROUP.id,
+      },
+      update: {
+        isActive: true,
+        name: DEFAULT_SPORT.name,
+        normalizedName: DEFAULT_SPORT.normalizedName,
+        sportGroupId: DEFAULT_SPORT_GROUP.id,
+      },
+    });
+  });
+
+  it('is idempotent and repairs a partially existing canonical catalog', async () => {
+    const { prisma, sportGroupUpsert, sportUpsert } =
+      prismaForCatalog('repaired-group-id');
+    await ensureDefaultSportCatalog(prisma);
+    await ensureDefaultSportCatalog(prisma);
+
+    expect(sportGroupUpsert).toHaveBeenCalledTimes(2);
+    expect(sportUpsert).toHaveBeenCalledTimes(2);
+    expect(sportUpsert).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ sportGroupId: 'repaired-group-id' }),
+        update: expect.objectContaining({
+          isActive: true,
+          sportGroupId: 'repaired-group-id',
+        }),
+      }),
+    );
   });
 });

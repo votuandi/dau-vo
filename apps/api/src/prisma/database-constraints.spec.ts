@@ -9,6 +9,8 @@ import {
 } from '@prisma/client';
 import { config as loadEnvironment } from 'dotenv';
 
+import { DEFAULT_SPORT, DEFAULT_SPORT_GROUP } from '../../prisma/default-sport';
+
 loadEnvironment({ path: resolve(process.cwd(), '.env') });
 loadEnvironment({ path: resolve(process.cwd(), '../../.env') });
 
@@ -72,6 +74,7 @@ async function createMatchFixture(): Promise<void> {
       id: fixture.tournamentId,
       name: 'Database constraint test tournament',
       ownerUserId: fixture.tournamentId,
+      sportId: DEFAULT_SPORT.id,
     },
   });
 
@@ -117,6 +120,49 @@ describe('database unique constraints', () => {
           publicId: fixture.publicId,
           roundDurationMs: 120_000,
           tournamentId: fixture.tournamentId,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2002' });
+  });
+
+  it('rejects deleting a Sport referenced by a Tournament', async () => {
+    await expect(
+      prisma.sport.delete({ where: { id: DEFAULT_SPORT.id } }),
+    ).rejects.toMatchObject({ code: 'P2003' });
+  });
+
+  it('rejects deleting a Sport Group referenced by a Sport', async () => {
+    await expect(
+      prisma.sportGroup.delete({ where: { id: DEFAULT_SPORT_GROUP.id } }),
+    ).rejects.toMatchObject({ code: 'P2003' });
+  });
+
+  it('enforces Sport and Sport Group catalog uniqueness', async () => {
+    await expect(
+      prisma.sportGroup.create({
+        data: {
+          code: DEFAULT_SPORT_GROUP.code,
+          name: 'Duplicate catalog group',
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2002' });
+    await expect(
+      prisma.sport.create({
+        data: {
+          code: DEFAULT_SPORT.code,
+          name: 'Duplicate code sport',
+          normalizedName: 'duplicate code sport',
+          sportGroupId: DEFAULT_SPORT_GROUP.id,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2002' });
+    await expect(
+      prisma.sport.create({
+        data: {
+          code: 'UNIQUE_CODE_BUT_DUPLICATE_NORMALIZED_NAME',
+          name: 'Duplicate normalized name sport',
+          normalizedName: DEFAULT_SPORT.normalizedName,
+          sportGroupId: DEFAULT_SPORT_GROUP.id,
         },
       }),
     ).rejects.toMatchObject({ code: 'P2002' });

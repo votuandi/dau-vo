@@ -21,6 +21,8 @@ import {
 import { hash } from 'bcryptjs';
 import Redis from 'ioredis';
 import { randomBytes } from 'node:crypto';
+
+import { DEFAULT_SPORT } from '../../prisma/default-sport';
 import type { AddressInfo } from 'node:net';
 import { io, type Socket } from 'socket.io-client';
 import request from 'supertest';
@@ -449,6 +451,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
         data: {
           name: `${TEST_PREFIX}-tournament`,
           ownerUserId: '00000000-0000-4000-8000-000000000001',
+          sportId: DEFAULT_SPORT.id,
         },
         select: { id: true },
       });

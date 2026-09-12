@@ -8,6 +8,7 @@ import {
 } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 
+import { DEFAULT_SPORT } from '../../prisma/default-sport';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   InactivePenaltySessionError,
@@ -44,6 +45,7 @@ describe('PenaltyService (PostgreSQL integration)', () => {
       data: {
         name: `${TEST_PREFIX}-${randomBytes(5).toString('hex')}`,
         ownerUserId: '00000000-0000-4000-8000-000000000001',
+        sportId: DEFAULT_SPORT.id,
       },
       select: { id: true },
     });

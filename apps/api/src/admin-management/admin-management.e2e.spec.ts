@@ -15,6 +15,7 @@ import { compare, hash } from 'bcryptjs';
 import Redis from 'ioredis';
 import request, { type Test as SupertestRequest } from 'supertest';
 
+import { DEFAULT_SPORT } from '../../prisma/default-sport';
 import type { EnvironmentVariables } from '../config/environment';
 import { PrismaService } from '../prisma/prisma.service';
 import { MatchCredentialGeneratorService } from './match-credential-generator.service';
@@ -347,6 +348,12 @@ describe('Admin tournament and match management (integration)', () => {
       location: 'Initial venue',
       status: TournamentStatus.DRAFT,
     });
+    await expect(
+      prisma.tournament.findUniqueOrThrow({
+        where: { id: tournament.id },
+        select: { sport: { select: { code: true } } },
+      }),
+    ).resolves.toEqual({ sport: { code: DEFAULT_SPORT.code } });
 
     const listResponse = await authenticated(
       request(app.getHttpServer()).get('/api/admin/tournaments'),

@@ -144,104 +144,135 @@ enum UserRole {
 }
 
 model User {
-  id                 String     @id(map: "users_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  fullName           String?    @map("full_name") @db.VarChar(255)
-  username           String     @db.VarChar(100)
-  normalizedUsername String     @unique(map: "users_normalized_username_key") @map("normalized_username") @db.VarChar(100)
-  email              String?    @db.VarChar(320)
-  normalizedEmail    String?    @unique(map: "users_normalized_email_key") @map("normalized_email") @db.VarChar(320)
-  phone              String?    @db.VarChar(50)
-  normalizedPhone    String?    @unique(map: "users_normalized_phone_key") @map("normalized_phone") @db.VarChar(50)
-  organization       String?    @db.VarChar(255)
-  passwordHash       String     @map("password_hash") @db.VarChar(255)
-  role               UserRole   @default(USER)
-  isActive           Boolean    @default(true) @map("is_active")
-  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  deletedAt          DateTime?  @map("deleted_at") @db.Timestamptz(3)
-  auditLogs          AuditLog[]
-  ownedTournaments   Tournament[] @relation("TournamentOwner")
+  id                         String               @id(map: "users_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fullName                   String?              @map("full_name") @db.VarChar(255)
+  username                   String               @db.VarChar(100)
+  normalizedUsername         String               @unique(map: "users_normalized_username_key") @map("normalized_username") @db.VarChar(100)
+  email                      String?              @db.VarChar(320)
+  normalizedEmail            String?              @unique(map: "users_normalized_email_key") @map("normalized_email") @db.VarChar(320)
+  phone                      String?              @db.VarChar(50)
+  normalizedPhone            String?              @unique(map: "users_normalized_phone_key") @map("normalized_phone") @db.VarChar(50)
+  organization               String?              @db.VarChar(255)
+  passwordHash               String               @map("password_hash") @db.VarChar(255)
+  role                       UserRole             @default(USER)
+  isActive                   Boolean              @default(true) @map("is_active")
+  createdAt                  DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                  DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt                  DateTime?            @map("deleted_at") @db.Timestamptz(3)
+  auditLogs                  AuditLog[]
+  ownedTournaments           Tournament[]         @relation("TournamentOwner")
   createdPricingPlanVersions PricingPlanVersion[] @relation("PricingPlanVersionCreator")
-  adminEntitlement AdminEntitlement?
-  subscriptionOrders SubscriptionOrder[]
+  adminEntitlement           AdminEntitlement?
+  subscriptionOrders         SubscriptionOrder[]
 
   @@map("users")
 }
 
 model Tournament {
-  id          String           @id(map: "tournaments_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name        String           @db.VarChar(255)
-  description String?          @db.Text
-  location    String?          @db.VarChar(255)
-  startDate   DateTime?        @map("start_date") @db.Date
-  endDate     DateTime?        @map("end_date") @db.Date
-  status      TournamentStatus @default(DRAFT)
-  ownerUserId String           @map("owner_user_id") @db.Uuid
-  softDeletedAt DateTime?      @map("soft_deleted_at") @db.Timestamptz(3)
-  purgeAfter DateTime?         @map("purge_after") @db.Timestamptz(3)
+  id             String                    @id(map: "tournaments_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String                    @db.VarChar(255)
+  description    String?                   @db.Text
+  location       String?                   @db.VarChar(255)
+  startDate      DateTime?                 @map("start_date") @db.Date
+  endDate        DateTime?                 @map("end_date") @db.Date
+  status         TournamentStatus          @default(DRAFT)
+  ownerUserId    String                    @map("owner_user_id") @db.Uuid
+  sportId        String                    @map("sport_id") @db.Uuid
+  softDeletedAt  DateTime?                 @map("soft_deleted_at") @db.Timestamptz(3)
+  purgeAfter     DateTime?                 @map("purge_after") @db.Timestamptz(3)
   deletionReason TournamentDeletionReason? @map("deletion_reason")
-  restoredAt DateTime?         @map("restored_at") @db.Timestamptz(3)
-  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  matches     Match[]
-  owner       User             @relation("TournamentOwner", fields: [ownerUserId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "tournaments_owner_user_id_fkey")
+  restoredAt     DateTime?                 @map("restored_at") @db.Timestamptz(3)
+  createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  matches        Match[]
+  owner          User                      @relation("TournamentOwner", fields: [ownerUserId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "tournaments_owner_user_id_fkey")
+  sport          Sport                     @relation(fields: [sportId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "tournaments_sport_id_fkey")
 
   @@index([ownerUserId, status], map: "tournaments_owner_user_id_status_idx")
   @@index([ownerUserId, createdAt], map: "tournaments_owner_user_id_created_at_idx")
   @@index([ownerUserId, softDeletedAt], map: "tournaments_owner_soft_deleted_at_idx")
   @@index([purgeAfter], map: "tournaments_purge_after_idx")
+  @@index([sportId], map: "tournaments_sport_id_idx")
   @@map("tournaments")
 }
 
-model AdminEntitlement {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId String @unique @map("user_id") @db.Uuid
-  status AdminEntitlementStatus @default(ACTIVE)
-  activeFrom DateTime @map("active_from") @db.Timestamptz(3)
-  activeUntil DateTime @map("active_until") @db.Timestamptz(3)
-  tournamentLimit Int @map("tournament_limit")
-  adminAccessEndedAt DateTime? @map("admin_access_ended_at") @db.Timestamptz(3)
-  manualAdjustmentMetadata Json? @map("manual_adjustment_metadata") @db.JsonB
+model SportGroup {
+  id        String   @id(map: "sport_groups_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String   @unique(map: "sport_groups_code_key") @db.VarChar(100)
+  name      String   @db.VarChar(255)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  user User @relation(fields:[userId], references:[id], onDelete: Cascade)
+  sports    Sport[]
+
+  @@map("sport_groups")
+}
+
+model Sport {
+  id             String       @id(map: "sports_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code           String       @unique(map: "sports_code_key") @db.VarChar(100)
+  name           String       @db.VarChar(255)
+  normalizedName String       @unique(map: "sports_normalized_name_key") @map("normalized_name") @db.VarChar(255)
+  sportGroupId   String       @map("sport_group_id") @db.Uuid
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sportGroup     SportGroup   @relation(fields: [sportGroupId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "sports_sport_group_id_fkey")
+  tournaments    Tournament[]
+
+  @@index([sportGroupId], map: "sports_sport_group_id_idx")
+  @@map("sports")
+}
+
+model AdminEntitlement {
+  id                       String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                   String                 @unique @map("user_id") @db.Uuid
+  status                   AdminEntitlementStatus @default(ACTIVE)
+  activeFrom               DateTime               @map("active_from") @db.Timestamptz(3)
+  activeUntil              DateTime               @map("active_until") @db.Timestamptz(3)
+  tournamentLimit          Int                    @map("tournament_limit")
+  adminAccessEndedAt       DateTime?              @map("admin_access_ended_at") @db.Timestamptz(3)
+  manualAdjustmentMetadata Json?                  @map("manual_adjustment_metadata") @db.JsonB
+  createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user                     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@map("admin_entitlements")
 }
 
 model SubscriptionOrder {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId String @map("user_id") @db.Uuid
-  pricingPlanVersionId String @map("pricing_plan_version_id") @db.Uuid
-  idempotencyKey String @unique @map("idempotency_key") @db.VarChar(255)
-  durationBundle Int @default(0) @map("duration_bundle")
-  tournamentBundle Int @default(0) @map("tournament_bundle")
-  durationMonthsGranted Int @map("duration_months_granted")
-  tournamentLimitGranted Int @map("tournament_limit_granted")
-  priceSnapshot Json @map("price_snapshot") @db.JsonB
-  totalAmountVnd Int @map("total_amount_vnd")
-  paymentStatus SubscriptionPaymentStatus @default(SIMULATED_SUCCESS) @map("payment_status")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  user User @relation(fields:[userId], references:[id], onDelete: Restrict)
-  pricingPlanVersion PricingPlanVersion @relation(fields:[pricingPlanVersionId], references:[id], onDelete: Restrict)
+  id                     String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                 String                    @map("user_id") @db.Uuid
+  pricingPlanVersionId   String                    @map("pricing_plan_version_id") @db.Uuid
+  idempotencyKey         String                    @unique @map("idempotency_key") @db.VarChar(255)
+  durationBundle         Int                       @default(0) @map("duration_bundle")
+  tournamentBundle       Int                       @default(0) @map("tournament_bundle")
+  durationMonthsGranted  Int                       @map("duration_months_granted")
+  tournamentLimitGranted Int                       @map("tournament_limit_granted")
+  priceSnapshot          Json                      @map("price_snapshot") @db.JsonB
+  totalAmountVnd         Int                       @map("total_amount_vnd")
+  paymentStatus          SubscriptionPaymentStatus @default(SIMULATED_SUCCESS) @map("payment_status")
+  createdAt              DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  user                   User                      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  pricingPlanVersion     PricingPlanVersion        @relation(fields: [pricingPlanVersionId], references: [id], onDelete: Restrict)
+
   @@index([userId, createdAt])
   @@map("subscription_orders")
 }
 
 model PricingPlanVersion {
-  id                         String                @id(map: "pricing_plan_versions_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  baseAmountVnd              Int                   @map("base_amount_vnd")
-  baseDurationMonths         Int                   @map("base_duration_months")
-  baseTournamentLimit        Int                   @map("base_tournament_limit")
-  durationAddonUnitAmountVnd Int                   @map("duration_addon_unit_amount_vnd")
-  tournamentAddonUnitAmountVnd Int                 @map("tournament_addon_unit_amount_vnd")
-  active                     Boolean               @default(false)
-  activatedAt                DateTime?             @map("activated_at") @db.Timestamptz(3)
-  createdByUserId            String?               @map("created_by_user_id") @db.Uuid
-  createdAt                  DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt                  DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  discountTiers              PricingDiscountTier[]
-  createdBy                  User?                 @relation("PricingPlanVersionCreator", fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  subscriptionOrders         SubscriptionOrder[]
+  id                           String                @id(map: "pricing_plan_versions_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  baseAmountVnd                Int                   @map("base_amount_vnd")
+  baseDurationMonths           Int                   @map("base_duration_months")
+  baseTournamentLimit          Int                   @map("base_tournament_limit")
+  durationAddonUnitAmountVnd   Int                   @map("duration_addon_unit_amount_vnd")
+  tournamentAddonUnitAmountVnd Int                   @map("tournament_addon_unit_amount_vnd")
+  active                       Boolean               @default(false)
+  activatedAt                  DateTime?             @map("activated_at") @db.Timestamptz(3)
+  createdByUserId              String?               @map("created_by_user_id") @db.Uuid
+  createdAt                    DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                    DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  discountTiers                PricingDiscountTier[]
+  createdBy                    User?                 @relation("PricingPlanVersionCreator", fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  subscriptionOrders           SubscriptionOrder[]
 
   @@index([active], map: "pricing_plan_versions_active_idx")
   @@map("pricing_plan_versions")
@@ -261,28 +292,28 @@ model PricingDiscountTier {
 }
 
 model Match {
-  id              String            @id(map: "matches_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  publicId        String            @unique(map: "matches_public_id_key") @map("public_id") @db.VarChar(32)
-  tournamentId    String            @map("tournament_id") @db.Uuid
-  status          MatchStatus       @default(WAITING)
-  currentRound    Int?              @map("current_round") @db.SmallInt
-  roundDurationMs Int               @map("round_duration_ms")
-  breakDurationMs Int               @map("break_duration_ms")
-  startedAt       DateTime?         @map("started_at") @db.Timestamptz(3)
-  finishedAt      DateTime?         @map("finished_at") @db.Timestamptz(3)
-  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  tournament      Tournament        @relation(fields: [tournamentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "matches_tournament_id_fkey")
-  athletes        MatchAthlete[]
-  accessCodes     MatchAccessCode[]
-  sessions        MatchSession[]
-  rounds          Round[]
+  id               String                 @id(map: "matches_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  publicId         String                 @unique(map: "matches_public_id_key") @map("public_id") @db.VarChar(32)
+  tournamentId     String                 @map("tournament_id") @db.Uuid
+  status           MatchStatus            @default(WAITING)
+  currentRound     Int?                   @map("current_round") @db.SmallInt
+  roundDurationMs  Int                    @map("round_duration_ms")
+  breakDurationMs  Int                    @map("break_duration_ms")
+  startedAt        DateTime?              @map("started_at") @db.Timestamptz(3)
+  finishedAt       DateTime?              @map("finished_at") @db.Timestamptz(3)
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tournament       Tournament             @relation(fields: [tournamentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "matches_tournament_id_fkey")
+  athletes         MatchAthlete[]
+  accessCodes      MatchAccessCode[]
+  sessions         MatchSession[]
+  rounds           Round[]
   resultOperations MatchResultOperation[]
-  scoringWindows  ScoringWindow[]
-  refereeVotes    RefereeVote[]
-  scoreEvents     ScoreEvent[]
-  penalties       Penalty[]
-  auditLogs       AuditLog[]
+  scoringWindows   ScoringWindow[]
+  refereeVotes     RefereeVote[]
+  scoreEvents      ScoreEvent[]
+  penalties        Penalty[]
+  auditLogs        AuditLog[]
 
   @@index([tournamentId], map: "matches_tournament_id_idx")
   @@index([status], map: "matches_status_idx")
@@ -366,19 +397,19 @@ model MatchSession {
 }
 
 model Round {
-  id                   String    @id(map: "rounds_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId              String    @map("match_id") @db.Uuid
-  roundNumber          Int       @map("round_number") @db.SmallInt
-  durationMs           Int?      @map("duration_ms")
-  startedAt            DateTime  @map("started_at") @db.Timestamptz(3)
-  endsAt               DateTime  @map("ends_at") @db.Timestamptz(3)
-  pausedAt             DateTime? @map("paused_at") @db.Timestamptz(3)
-  remainingDurationMs  Int?      @map("remaining_duration_ms")
-  invalidatedAt        DateTime? @map("invalidated_at") @db.Timestamptz(3)
-  invalidatedByAuditId String?   @map("invalidated_by_audit_id") @db.Uuid
-  endedAt              DateTime? @map("ended_at") @db.Timestamptz(3)
-  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  match                Match     @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "rounds_match_id_fkey")
+  id                   String          @id(map: "rounds_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId              String          @map("match_id") @db.Uuid
+  roundNumber          Int             @map("round_number") @db.SmallInt
+  durationMs           Int?            @map("duration_ms")
+  startedAt            DateTime        @map("started_at") @db.Timestamptz(3)
+  endsAt               DateTime        @map("ends_at") @db.Timestamptz(3)
+  pausedAt             DateTime?       @map("paused_at") @db.Timestamptz(3)
+  remainingDurationMs  Int?            @map("remaining_duration_ms")
+  invalidatedAt        DateTime?       @map("invalidated_at") @db.Timestamptz(3)
+  invalidatedByAuditId String?         @map("invalidated_by_audit_id") @db.Uuid
+  endedAt              DateTime?       @map("ended_at") @db.Timestamptz(3)
+  createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  match                Match           @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "rounds_match_id_fkey")
   scoringWindows       ScoringWindow[]
   scoreEvents          ScoreEvent[]
 
