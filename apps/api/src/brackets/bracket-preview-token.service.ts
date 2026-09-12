@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
-import type { ConfigService } from '@nestjs/config';
+import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import type { EnvironmentVariables } from '../config/environment';
 
@@ -22,7 +22,10 @@ export interface BracketPreviewTokenClaims {
 export class BracketPreviewTokenService {
   private readonly secret: string;
 
-  constructor(config: ConfigService<EnvironmentVariables, true>) {
+  constructor(
+    @Inject(ConfigService)
+    config: ConfigService<EnvironmentVariables, true>,
+  ) {
     this.secret = config.getOrThrow('BRACKET_PREVIEW_SECRET', { infer: true });
   }
 

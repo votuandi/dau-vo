@@ -5,7 +5,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AuditEventType, Prisma, TournamentStatus } from '@prisma/client';
+import {
+  AuditEventType,
+  BracketStatus,
+  Prisma,
+  TournamentStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type {
   CreateRosterItemDto,
@@ -195,13 +200,21 @@ export class OrganizationService {
       });
       if (!before) throw new NotFoundException(WEIGHT_CLASS_NOT_FOUND);
       if (!before.isActive) return before;
-      const [athletes, matches] = await Promise.all([
+      const [athletes, matches, brackets] = await Promise.all([
         tx.tournamentAthlete.count({
           where: { tournamentId, weightClassId: id, isActive: true },
         }),
         tx.match.count({ where: { tournamentId, weightClassId: id } }),
+        tx.tournamentBracket.count({
+          where: {
+            tournamentId,
+            weightClassId: id,
+            status: BracketStatus.ACTIVE,
+          },
+        }),
       ]);
-      if (athletes || matches) throw new ConflictException(WEIGHT_CLASS_IN_USE);
+      if (athletes || matches || brackets)
+        throw new ConflictException(WEIGHT_CLASS_IN_USE);
       const after = await tx.tournamentWeightClass.update({
         where: { id },
         data: { isActive: false, deactivatedAt: new Date() },
@@ -305,13 +318,20 @@ export class OrganizationService {
               data: { organizationId: null },
             });
           } else {
-            const [athletes, matches] = await Promise.all([
+            const [athletes, matches, brackets] = await Promise.all([
               tx.tournamentAthlete.count({
                 where: { tournamentId, weightClassId: id, isActive: true },
               }),
               tx.match.count({ where: { tournamentId, weightClassId: id } }),
+              tx.tournamentBracket.count({
+                where: {
+                  tournamentId,
+                  weightClassId: id,
+                  status: BracketStatus.ACTIVE,
+                },
+              }),
             ]);
-            if (athletes || matches)
+            if (athletes || matches || brackets)
               throw new ConflictException(WEIGHT_CLASS_IN_USE);
           }
         }

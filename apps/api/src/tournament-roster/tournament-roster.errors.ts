@@ -43,6 +43,11 @@ export const ATHLETE_UPDATE_EMPTY = {
   code: 'ATHLETE_UPDATE_EMPTY',
   message: 'Provide at least one athlete property to update',
 };
+export const ATHLETE_IN_ACTIVE_BRACKET = {
+  code: 'ATHLETE_IN_ACTIVE_BRACKET',
+  message:
+    'Athlete eligibility cannot be changed while the active bracket exists. Cancel or reset the bracket first.',
+};
 export const INVALID_BIRTH_YEAR = {
   code: 'INVALID_BIRTH_YEAR',
   message: 'birthYear must be between 1900 and the current UTC year',

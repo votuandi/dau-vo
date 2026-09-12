@@ -483,6 +483,20 @@ export class MatchLifecycleService implements OnModuleDestroy {
         if (roundNumbers.length === 0) {
           throw new InvalidResultCancellationStateError(match.status);
         }
+        // The Match row is already locked.  Outcome retraction then acquires
+        // the upstream/downstream fixture pair in its global UUID order.
+        // A prepared next match is a hard boundary: do not destroy its
+        // credentials or silently detach its entrants.
+        if (match.status === MatchStatus.FINISHED) {
+          await this.bracketOutcomes.retractFinishedMatch(
+            transaction,
+            input.matchId,
+            {
+              sessionId: input.sessionId,
+              reason: entireMatch ? 'MATCH_RESET' : 'ROUND_RESET',
+            },
+          );
+        }
         const nextStatus = roundNumbers.includes(1)
           ? MatchStatus.WAITING
           : MatchStatus.BREAK;
@@ -703,6 +717,15 @@ export class MatchLifecycleService implements OnModuleDestroy {
           },
           where: { id: operation.id },
         });
+        // Restoring a finished bracket match restores the authoritative score
+        // events first, then runs the same idempotent automatic outcome path
+        // used when the match originally finished.
+        if (operation.previousStatus === MatchStatus.FINISHED) {
+          await this.bracketOutcomes.processFinishedMatch(
+            transaction,
+            input.matchId,
+          );
+        }
         await transaction.auditLog.create({
           data: {
             eventType:

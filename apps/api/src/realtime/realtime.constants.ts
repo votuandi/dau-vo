@@ -80,6 +80,10 @@ export const RESULT_CANCELLATION_FAILED_ERROR = {
   code: 'RESULT_CANCELLATION_FAILED',
   message: 'The result cancellation could not be completed',
 } as const;
+export const BRACKET_PROGRESSION_LOCKED_ERROR = {
+  code: 'BRACKET_PROGRESSION_LOCKED',
+  message: 'The next bracket match has already been prepared',
+} as const;
 export const RESET_UNDO_FORBIDDEN_ERROR = {
   code: 'RESET_UNDO_FORBIDDEN',
   message: 'Only the inspector may undo a result cancellation',

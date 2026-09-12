@@ -37,6 +37,10 @@ const apiErrorMessages: Readonly<Record<string, string>> = {
   WEIGHT_CLASS_UPDATE_EMPTY: 'Hãy thay đổi ít nhất một thông tin của hạng cân.',
   WEIGHT_CLASS_IN_USE:
     'Hạng cân đang được vận động viên hoặc trận đấu sử dụng. Hãy chuyển các vận động viên hoặc trận liên quan trước khi ngừng dùng.',
+  ATHLETE_IN_ACTIVE_BRACKET:
+    'Vận động viên đang ở nhánh đấu hoạt động. Hãy hủy hoặc đặt lại nhánh đấu trước khi thay đổi điều kiện thi đấu.',
+  BRACKET_PROGRESSION_LOCKED:
+    'Không thể thay đổi kết quả vì trận đấu vòng tiếp theo đã được chuẩn bị.',
 };
 
 export const tournamentStatuses = [

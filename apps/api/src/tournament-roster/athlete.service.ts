@@ -13,7 +13,11 @@ import type {
   CreateAthleteDto,
   UpdateAthleteDto,
 } from './dto/roster.dto';
-import { ROSTER_TOURNAMENT_ARCHIVED } from './tournament-roster.errors';
+import {
+  ATHLETE_IN_ACTIVE_BRACKET,
+  ROSTER_TOURNAMENT_ARCHIVED,
+} from './tournament-roster.errors';
+import { BracketStatus } from '@prisma/client';
 
 export const ATHLETE_CLOCK = Symbol('ATHLETE_CLOCK');
 export interface AthleteClock {
@@ -142,6 +146,23 @@ export class AthleteService {
         select: view,
       });
       if (!before) throw new NotFoundException(NOT_FOUND);
+      // Entrant fields are a confirmed eligibility contract.  Profile fields
+      // remain editable because matches and brackets use their own snapshots.
+      const changesEligibility =
+        (input.isActive === false && before.isActive) ||
+        (input.weightClassId !== undefined &&
+          input.weightClassId !== before.weightClassId);
+      if (changesEligibility) {
+        const activeEntrant = await tx.bracketEntrant.findFirst({
+          where: {
+            athleteId: id,
+            bracket: { status: BracketStatus.ACTIVE },
+          },
+          select: { id: true },
+        });
+        if (activeEntrant)
+          throw new ConflictException(ATHLETE_IN_ACTIVE_BRACKET);
+      }
       const restoring = input.isActive === true && !before.isActive;
       // Deactivated athletes are deliberately editable; restoring always revalidates their assignments.
       const assignments =

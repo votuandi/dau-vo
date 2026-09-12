@@ -37,6 +37,7 @@ import {
 import type { Server } from 'socket.io';
 
 import { MATCH_SESSION_COOKIE } from '../match-access/match-access.constants';
+import { BracketProgressionLockedError } from '../brackets/bracket-outcome.service';
 import { MatchAccessService } from '../match-access/match-access.service';
 import {
   SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR,
@@ -79,6 +80,7 @@ import {
 } from './scoring.service';
 import {
   MATCH_SOCKET_PATH,
+  BRACKET_PROGRESSION_LOCKED_ERROR,
   MATCH_PARTICIPANTS_NOT_READY_ERROR,
   PENALTY_FAILED_ERROR,
   PENALTY_FORBIDDEN_ERROR,
@@ -468,6 +470,8 @@ export class RealtimeGateway
       }
       if (error instanceof InvalidResultCancellationStateError)
         return { error: RESULT_CANCELLATION_INVALID_STATE_ERROR, ok: false };
+      if (error instanceof BracketProgressionLockedError)
+        return { error: BRACKET_PROGRESSION_LOCKED_ERROR, ok: false };
       this.logger.error(
         { entireMatch, error, matchId: identity.matchId },
         'Unable to cancel match results',
@@ -538,6 +542,8 @@ export class RealtimeGateway
       if (error instanceof ResultCancellationUndoNotAllowedError) {
         return { error: RESET_UNDO_NOT_ALLOWED_ERROR, ok: false };
       }
+      if (error instanceof BracketProgressionLockedError)
+        return { error: BRACKET_PROGRESSION_LOCKED_ERROR, ok: false };
       this.logger.error(
         { error, matchId: identity.matchId, operationId: payload.operationId },
         'Unable to undo result cancellation',
