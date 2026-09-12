@@ -9,6 +9,7 @@ import { apiClient } from '@/services/api/client';
 
 export interface AdminTournament {
   readonly id: string;
+  readonly imagePath: string | null;
   readonly name: string;
   readonly description: string | null;
   readonly location: string | null;
@@ -192,6 +193,16 @@ export const adminManagementApi = {
     apiClient.get<TournamentResponse>(`admin/tournaments/${encodePathSegment(id)}`),
   updateTournament: (id: string, input: UpdateTournamentInput) =>
     apiClient.patch<TournamentResponse>(`admin/tournaments/${encodePathSegment(id)}`, input),
+  replaceTournamentImage: (id: string, file: File) => {
+    const body = new FormData();
+    body.append('file', file);
+    return apiClient.put<{ imagePath: string }>(
+      `admin/tournaments/${encodePathSegment(id)}/image`,
+      body,
+    );
+  },
+  removeTournamentImage: (id: string) =>
+    apiClient.delete<undefined>(`admin/tournaments/${encodePathSegment(id)}/image`),
   archiveTournament: (id: string) =>
     apiClient.delete<TournamentResponse>(`admin/tournaments/${encodePathSegment(id)}`),
   listMatches: (tournamentId: string) =>

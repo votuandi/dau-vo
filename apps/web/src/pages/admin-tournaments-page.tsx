@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { DateInput } from '@/components/ui/date-input';
+import { TournamentImage } from '@/components/tournament-image';
+import { TournamentImagePicker } from '@/components/tournament-image';
 import {
   getApiErrorMessage,
   inputClassName,
@@ -48,11 +50,12 @@ function buildCreateTournamentInput(values: {
   readonly startDate: string;
   readonly endDate: string;
   readonly sportId: string;
+  readonly status: TournamentStatus;
 }): CreateTournamentInput {
   return {
     name: values.name.trim(),
     sportId: values.sportId,
-    status: TournamentStatus.DRAFT,
+    status: values.status,
     ...(values.description.trim() ? { description: values.description.trim() } : {}),
     ...(values.location.trim() ? { location: values.location.trim() } : {}),
     ...(values.startDate ? { startDate: values.startDate } : {}),
@@ -72,12 +75,28 @@ export function AdminTournamentsPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [sportId, setSportId] = useState('');
+  const [status, setStatus] = useState<TournamentStatus>(TournamentStatus.DRAFT);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
   const [formErrors, setFormErrors] = useState<TournamentFormErrors>({});
 
   const createMutation = useMutation({
-    mutationFn: adminManagementApi.createTournament,
-    onSuccess: ({ tournament }) => {
+    mutationFn: async (input: CreateTournamentInput) => {
+      const created = await adminManagementApi.createTournament(input);
+      if (!logoFile) return { ...created, imageUploadFailed: false };
+      try {
+        await adminManagementApi.replaceTournamentImage(created.tournament.id, logoFile);
+        return { ...created, imageUploadFailed: false };
+      } catch {
+        return { ...created, imageUploadFailed: true };
+      }
+    },
+    onSuccess: ({ tournament, imageUploadFailed }) => {
       notifyMutationSuccess('Tạo giải đấu thành công.');
+      if (imageUploadFailed)
+        notifyMutationError(
+          new Error(),
+          'Giải đấu đã được tạo, nhưng tải logo thất bại. Bạn có thể thử lại ở trang chi tiết.',
+        );
       void queryClient.invalidateQueries({ queryKey: tournamentQueryKeys.all });
       void navigate(`/admin/tournaments/${tournament.id}`);
     },
@@ -119,18 +138,20 @@ export function AdminTournamentsPage() {
     }
 
     createMutation.mutate(
-      buildCreateTournamentInput({ name, description, location, startDate, endDate, sportId }),
+      buildCreateTournamentInput({
+        name,
+        description,
+        location,
+        startDate,
+        endDate,
+        sportId,
+        status,
+      }),
     );
   }
 
-  function archiveTournament(id: string, tournamentName: string) {
-    if (
-      window.confirm(
-        `Lưu trữ giải đấu “${tournamentName}”? Giải đấu và các trận sẽ vẫn được giữ trong hệ thống.`,
-      )
-    ) {
-      archiveMutation.mutate(id);
-    }
+  function archiveTournament(id: string) {
+    archiveMutation.mutate(id);
   }
 
   return (
@@ -201,7 +222,12 @@ export function AdminTournamentsPage() {
               {tournamentsQuery.data.tournaments.map((tournament) => (
                 <li className="py-5 first:pt-0 last:pb-0" key={tournament.id}>
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
+                    <TournamentImage
+                      className="size-14 shrink-0"
+                      imagePath={tournament.imagePath}
+                      name={tournament.name}
+                    />
+                    <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <Link
                           className="truncate text-lg font-bold hover:underline"
@@ -231,7 +257,7 @@ export function AdminTournamentsPage() {
                           isReadOnly
                         }
                         onClick={() => {
-                          archiveTournament(tournament.id, tournament.name);
+                          archiveTournament(tournament.id);
                         }}
                         size="sm"
                         type="button"
@@ -259,7 +285,7 @@ export function AdminTournamentsPage() {
           <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-6">
             <h2 className="text-xl font-black tracking-tight">Tạo giải đấu</h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              Giải mới được tạo ở trạng thái bản nháp.
+              Thiết lập thông tin và trạng thái ban đầu cho giải đấu.
             </p>
 
             <form className="mt-5 space-y-4" noValidate onSubmit={handleCreate}>
@@ -327,6 +353,34 @@ export function AdminTournamentsPage() {
                     {formErrors.sportId}
                   </p>
                 ) : null}
+              </div>
+              <TournamentImagePicker
+                disabled={createMutation.isPending}
+                imagePath={null}
+                name={name}
+                onUpload={(file) => {
+                  setLogoFile(file);
+                }}
+              />
+              <div>
+                <label className="text-sm font-semibold" htmlFor="new-tournament-status">
+                  Trạng thái
+                </label>
+                <select
+                  className={inputClassName}
+                  disabled={createMutation.isPending}
+                  id="new-tournament-status"
+                  onChange={(event) => {
+                    setStatus(event.target.value as TournamentStatus);
+                  }}
+                  value={status}
+                >
+                  {Object.values(TournamentStatus).map((item) => (
+                    <option key={item} value={item}>
+                      {tournamentStatusLabels[item]}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="text-sm font-semibold" htmlFor="new-tournament-name">

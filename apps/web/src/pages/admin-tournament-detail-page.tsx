@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { GeneratedAccessCodesPanel } from '@/components/generated-access-codes-panel';
 import { Button } from '@/components/ui/button';
 import { DateInput } from '@/components/ui/date-input';
+import { TournamentImage, TournamentImagePicker } from '@/components/tournament-image';
 import {
   athleteColorLabels,
   formatDate,
@@ -67,6 +68,33 @@ function TournamentEditor({
   const matchesQuery = useQuery(tournamentMatchesQueryOptions(tournament.id));
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  const imageMutation = useMutation({
+    mutationFn: (file: File) => adminManagementApi.replaceTournamentImage(tournament.id, file),
+    onSuccess: ({ imagePath }) => {
+      queryClient.setQueryData(tournamentQueryKeys.detail(tournament.id), {
+        tournament: { ...tournament, imagePath },
+      });
+      notifyMutationSuccess('Đã cập nhật logo giải đấu.');
+      void queryClient.invalidateQueries({ queryKey: tournamentQueryKeys.all });
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể tải logo lên.');
+    },
+  });
+  const removeImageMutation = useMutation({
+    mutationFn: () => adminManagementApi.removeTournamentImage(tournament.id),
+    onSuccess: () => {
+      queryClient.setQueryData(tournamentQueryKeys.detail(tournament.id), {
+        tournament: { ...tournament, imagePath: null },
+      });
+      notifyMutationSuccess('Đã gỡ logo giải đấu.');
+      void queryClient.invalidateQueries({ queryKey: tournamentQueryKeys.all });
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể gỡ logo.');
+    },
+  });
+
   const updateMutation = useMutation({
     mutationFn: (input: UpdateTournamentInput) =>
       adminManagementApi.updateTournament(tournament.id, input),
@@ -109,6 +137,20 @@ function TournamentEditor({
     <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
       <h2 className="text-xl font-black tracking-tight">Thông tin giải đấu</h2>
       <form className="mt-5 grid gap-4 sm:grid-cols-2" noValidate onSubmit={handleSubmit}>
+        <div className="sm:col-span-2">
+          <TournamentImagePicker
+            disabled={isReadOnly || updateMutation.isPending}
+            imagePath={tournament.imagePath}
+            name={name}
+            onRemove={() => {
+              removeImageMutation.mutate();
+            }}
+            onUpload={(file) => {
+              imageMutation.mutate(file);
+            }}
+            pending={imageMutation.isPending || removeImageMutation.isPending}
+          />
+        </div>
         <div className="sm:col-span-2">
           <label className="text-sm font-semibold" htmlFor="tournament-sport">
             Môn thể thao
@@ -587,6 +629,11 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
           ← Tất cả giải đấu
         </Link>
         <div className="mt-3 flex flex-wrap items-center gap-3">
+          <TournamentImage
+            className="size-16"
+            imagePath={tournament.imagePath}
+            name={tournament.name}
+          />
           <h1 className="text-3xl font-black tracking-tight md:text-4xl">{tournament.name}</h1>
           <span className="rounded-full border border-primary/10 bg-accent px-3 py-1 text-xs font-bold text-accent-foreground">
             {tournamentStatusLabels[tournament.status]}

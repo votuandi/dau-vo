@@ -67,6 +67,7 @@ const tournamentSelect = {
   description: true,
   endDate: true,
   id: true,
+  imagePath: true,
   location: true,
   name: true,
   startDate: true,
