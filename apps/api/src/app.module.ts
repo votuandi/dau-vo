@@ -21,6 +21,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { SuperAdminModule } from './super-admin/super-admin.module';
 import { MediaModule } from './media/media.module';
 import { TournamentRosterModule } from './tournament-roster/tournament-roster.module';
+import { BracketsModule } from './brackets/brackets.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { TournamentRosterModule } from './tournament-roster/tournament-roster.mo
               'req.body.password',
               'req.body.securityCode',
               'req.body.takeoverToken',
+              'req.body.previewToken',
               'res.headers.set-cookie',
             ],
           },
@@ -75,6 +77,7 @@ import { TournamentRosterModule } from './tournament-roster/tournament-roster.mo
     SuperAdminModule,
     MediaModule,
     TournamentRosterModule,
+    BracketsModule,
   ],
 })
 export class AppModule {}

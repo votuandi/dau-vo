@@ -7,6 +7,7 @@ export interface EnvironmentVariables {
   ADMIN_SESSION_TTL_SECONDS: number;
   API_PORT: number;
   BREAK_DURATION_MS: number;
+  BRACKET_PREVIEW_SECRET: string;
   DATABASE_URL: string;
   IMAGE_UPLOAD_ROOT: string;
   MATCH_SESSION_SECRET: string;
@@ -29,6 +30,8 @@ const DEFAULT_MATCH_PUBLIC_ID_INITIAL_LENGTH = 6;
 const DEFAULT_MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS = 10;
 const DEFAULT_MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS = 100;
 const DEFAULT_MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS = 60;
+const TEST_BRACKET_PREVIEW_SECRET =
+  'test-only-bracket-preview-secret-not-for-production';
 
 function requireString(
   config: Record<string, unknown>,
@@ -116,6 +119,12 @@ export function validateEnvironment(
   const apiPort = requirePositiveInteger(config, 'API_PORT');
   const nodeEnvironment = parseNodeEnvironment(config.NODE_ENV);
   const adminSessionSecret = requireString(config, 'ADMIN_SESSION_SECRET');
+  const bracketPreviewSecret =
+    nodeEnvironment === 'test' &&
+    (config.BRACKET_PREVIEW_SECRET === undefined ||
+      config.BRACKET_PREVIEW_SECRET === '')
+      ? TEST_BRACKET_PREVIEW_SECRET
+      : requireString(config, 'BRACKET_PREVIEW_SECRET');
   const matchSessionSecret = requireString(config, 'MATCH_SESSION_SECRET');
   const matchPublicIdInitialLength = positiveIntegerWithDefault(
     config,
@@ -130,6 +139,12 @@ export function validateEnvironment(
   if (nodeEnvironment === 'production' && adminSessionSecret.length < 32) {
     throw new Error(
       'ADMIN_SESSION_SECRET must contain at least 32 characters in production',
+    );
+  }
+
+  if (nodeEnvironment === 'production' && bracketPreviewSecret.length < 32) {
+    throw new Error(
+      'BRACKET_PREVIEW_SECRET must contain at least 32 characters in production',
     );
   }
 
@@ -163,6 +178,7 @@ export function validateEnvironment(
     ),
     API_PORT: apiPort,
     BREAK_DURATION_MS: requirePositiveInteger(config, 'BREAK_DURATION_MS'),
+    BRACKET_PREVIEW_SECRET: bracketPreviewSecret,
     DATABASE_URL: requireString(config, 'DATABASE_URL'),
     IMAGE_UPLOAD_ROOT:
       typeof config.IMAGE_UPLOAD_ROOT === 'string' &&

@@ -4,6 +4,7 @@ const validEnvironment: Record<string, unknown> = {
   ADMIN_SESSION_SECRET: 'admin-test-secret',
   API_PORT: '3000',
   BREAK_DURATION_MS: '60000',
+  BRACKET_PREVIEW_SECRET: 'bracket-preview-test-secret',
   DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/scoring',
   MATCH_SESSION_SECRET: 'match-test-secret',
   NODE_ENV: 'test',
@@ -26,6 +27,15 @@ describe('validateEnvironment', () => {
       MATCH_PUBLIC_ID_INITIAL_LENGTH: 6,
       MATCH_SESSION_TTL_SECONDS: 28_800,
       ROUND_DURATION_MS: 120_000,
+    });
+  });
+
+  it('uses an isolated test-only preview secret when one is not configured', () => {
+    const withoutPreviewSecret = { ...validEnvironment };
+    delete withoutPreviewSecret.BRACKET_PREVIEW_SECRET;
+    expect(validateEnvironment(withoutPreviewSecret)).toMatchObject({
+      BRACKET_PREVIEW_SECRET:
+        'test-only-bracket-preview-secret-not-for-production',
     });
   });
 
@@ -96,10 +106,27 @@ describe('validateEnvironment', () => {
         ...validEnvironment,
         ADMIN_SESSION_SECRET:
           'admin-production-secret-with-at-least-thirty-two-characters',
+        BRACKET_PREVIEW_SECRET:
+          'bracket-production-secret-with-at-least-thirty-two-characters',
         NODE_ENV: 'production',
       }),
     ).toThrow(
       'MATCH_SESSION_SECRET must contain at least 32 characters in production',
+    );
+  });
+
+  it('requires a sufficiently long bracket preview secret in production', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        ADMIN_SESSION_SECRET:
+          'admin-production-secret-with-at-least-thirty-two-characters',
+        MATCH_SESSION_SECRET:
+          'match-production-secret-with-at-least-thirty-two-characters',
+        NODE_ENV: 'production',
+      }),
+    ).toThrow(
+      'BRACKET_PREVIEW_SECRET must contain at least 32 characters in production',
     );
   });
 
