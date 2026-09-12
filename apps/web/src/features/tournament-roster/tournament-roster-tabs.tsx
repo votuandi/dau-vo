@@ -17,7 +17,8 @@ import {
 import { ApiClientError } from '@/services/api/client';
 import {
   adminManagementApi,
-  type AthleteInput,
+  type CreateAthleteInput,
+  type TournamentAthlete,
   type TournamentOrganization,
   type TournamentRosterItem,
 } from '@/services/api/admin-management';
@@ -31,12 +32,22 @@ const tabs = [
 ] as const;
 const organizationImageMaxBytes = 2 * 1024 * 1024;
 const organizationImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
+const athleteImageMaxBytes = 2 * 1024 * 1024;
+const athleteImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
 class OrganizationImageUploadError extends Error {
   constructor(
     readonly organization: TournamentOrganization,
     readonly file: File,
   ) {
     super('Organization was created but its image could not be uploaded.');
+  }
+}
+class AthleteImageUploadError extends Error {
+  constructor(
+    readonly athlete: TournamentAthlete,
+    readonly draft: CreateAthleteInput & { readonly file: File },
+  ) {
+    super('Athlete was saved but its image could not be uploaded.');
   }
 }
 type Tab = (typeof tabs)[number][0];
@@ -550,18 +561,103 @@ export function AthletesPage({
   const query = useQuery(tournamentAthletesQueryOptions(tournamentId, filters));
   const weights = useQuery(tournamentWeightClassesQueryOptions(tournamentId));
   const organizations = useQuery(tournamentOrganizationsQueryOptions(tournamentId));
-  const [draft, setDraft] = useState<AthleteInput | null>(null);
+  type AthleteDraft = CreateAthleteInput & {
+    readonly file: File | null;
+    readonly imageError: string;
+  };
+  const [draft, setDraft] = useState<AthleteDraft | null>(null);
+  const [editing, setEditing] = useState<TournamentAthlete | null>(null);
+  const [confirm, setConfirm] = useState<TournamentAthlete | null>(null);
+  const submitLock = useRef(false);
   const qc = useQueryClient();
-  const create = useMutation({
-    mutationFn: (x: AthleteInput) => adminManagementApi.createAthlete(tournamentId, x),
+  useEffect(() => {
+    if (query.data && query.data.totalPages > 0 && filters.page > query.data.totalPages) {
+      setParams(
+        (old) => {
+          const next = new URLSearchParams(old);
+          next.set('page', String(query.data.totalPages));
+          return next;
+        },
+        { replace: true },
+      );
+    }
+  }, [filters.page, query.data, setParams]);
+  const save = useMutation({
+    mutationFn: async ({
+      input,
+      athlete,
+    }: {
+      input: AthleteDraft;
+      athlete: TournamentAthlete | null;
+    }) => {
+      const text = {
+        name: input.name.trim(),
+        birthYear: input.birthYear,
+        weightClassId: input.weightClassId,
+        organizationId: input.organizationId ?? null,
+        details: input.details?.trim() || null,
+      };
+      const result = athlete
+        ? await adminManagementApi.updateAthlete(tournamentId, athlete.id, text)
+        : await adminManagementApi.createAthlete(tournamentId, text);
+      if (input.file) {
+        try {
+          await adminManagementApi.replaceAthleteImage(tournamentId, result.athlete.id, input.file);
+        } catch (error) {
+          if (!athlete)
+            throw new AthleteImageUploadError(result.athlete, { ...input, file: input.file });
+          throw error;
+        }
+      }
+      return result.athlete;
+    },
     onSuccess: () => {
       setDraft(null);
+      setEditing(null);
+      submitLock.current = false;
       void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId, 'athletes'] });
-      notifyMutationSuccess('Đã thêm vận động viên.');
+      notifyMutationSuccess('Đã lưu vận động viên.');
     },
     onError: (e) => {
-      notifyMutationError(e, 'Không thể thêm vận động viên.');
+      submitLock.current = false;
+      if (e instanceof AthleteImageUploadError) {
+        setEditing(e.athlete);
+        setDraft({ ...e.draft, imageError: '' });
+        notifyMutationError(
+          e,
+          'Vận động viên đã được tạo, nhưng tải ảnh thất bại. Hãy thử tải ảnh lại.',
+        );
+        return;
+      }
+      notifyMutationError(
+        e,
+        'Không thể lưu vận động viên. Thông tin đã lưu có thể được giữ lại nếu lỗi xảy ra khi tải ảnh.',
+      );
     },
+  });
+  const deactivate = useMutation({
+    mutationFn: (athlete: TournamentAthlete) =>
+      athlete.isActive
+        ? adminManagementApi.deleteAthlete(tournamentId, athlete.id)
+        : adminManagementApi.updateAthlete(tournamentId, athlete.id, { isActive: true }),
+    onSuccess: () => {
+      setConfirm(null);
+      void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId, 'athletes'] });
+      notifyMutationSuccess('Đã cập nhật trạng thái vận động viên.');
+    },
+    onError: (e) =>
+      notifyMutationError(
+        e,
+        'Không thể cập nhật trạng thái. Nếu khôi phục bị từ chối, hãy chọn hạng cân hoặc đơn vị đang hoạt động rồi lưu lại.',
+      ),
+  });
+  const removeImage = useMutation({
+    mutationFn: (id: string) => adminManagementApi.removeAthleteImage(tournamentId, id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId, 'athletes'] });
+      notifyMutationSuccess('Đã xóa ảnh đại diện.');
+    },
+    onError: (e) => notifyMutationError(e, 'Không thể xóa ảnh đại diện.'),
   });
   // The roster endpoints are independently loaded. Treat a response without either
   // collection as an empty roster while it is refreshed instead of crashing the tab.
@@ -663,7 +759,10 @@ export function AthletesPage({
                 weightClassId: activeWeights[0]?.id ?? '',
                 organizationId: null,
                 details: null,
+                file: null,
+                imageError: '',
               });
+              setEditing(null);
             }}
             type="button"
           >
@@ -679,13 +778,17 @@ export function AthletesPage({
           className="grid gap-3 rounded-xl border p-4"
           onSubmit={(e: SyntheticEvent<HTMLFormElement>) => {
             e.preventDefault();
-            create.mutate(draft);
+            if (!save.isPending && !submitLock.current && draft.name.trim() && !draft.imageError) {
+              submitLock.current = true;
+              save.mutate({ input: draft, athlete: editing });
+            }
           }}
         >
           <label>
-            Họ tên
+            Tên vận động viên
             <input
               className={inputClassName}
+              maxLength={255}
               onChange={(e) => {
                 setDraft({ ...draft, name: e.target.value });
               }}
@@ -698,12 +801,22 @@ export function AthletesPage({
             <input
               className={inputClassName}
               min="1900"
+              max={new Date().getFullYear()}
               onChange={(e) => {
                 setDraft({ ...draft, birthYear: Number(e.target.value) });
               }}
               required
               type="number"
               value={draft.birthYear}
+            />
+          </label>
+          <label>
+            Thông tin chi tiết
+            <textarea
+              className={textAreaClassName}
+              maxLength={5000}
+              onChange={(e) => setDraft({ ...draft, details: e.target.value })}
+              value={draft.details ?? ''}
             />
           </label>
           <label>
@@ -723,7 +836,7 @@ export function AthletesPage({
             </select>
           </label>
           <label>
-            Đơn vị
+            Đơn vị tham gia
             <select
               className={inputClassName}
               onChange={(e) => {
@@ -741,9 +854,57 @@ export function AthletesPage({
                 ))}
             </select>
           </label>
-          <Button disabled={create.isPending} type="submit">
-            Lưu
-          </Button>
+          <label>
+            Ảnh đại diện (JPEG, PNG hoặc WebP, tối đa 2 MiB)
+            <input
+              accept="image/jpeg,image/png,image/webp"
+              className={inputClassName}
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null;
+                const imageError =
+                  file && !athleteImageTypes.includes(file.type)
+                    ? 'Ảnh phải là JPEG, PNG hoặc WebP.'
+                    : file && file.size > athleteImageMaxBytes
+                      ? 'Ảnh không được vượt quá 2 MiB.'
+                      : '';
+                setDraft({ ...draft, file: imageError ? null : file, imageError });
+              }}
+              type="file"
+            />
+            {draft.file ? (
+              <>
+                <span className="block text-xs">
+                  {draft.file.name} · {(draft.file.size / 1024).toFixed(1)} KiB
+                </span>
+                <img
+                  alt="Xem trước ảnh đại diện"
+                  className="mt-2 h-16 w-16 rounded-full object-cover"
+                  src={URL.createObjectURL(draft.file)}
+                />
+              </>
+            ) : null}
+            {draft.imageError ? (
+              <span className="block text-xs text-destructive" role="alert">
+                {draft.imageError}
+              </span>
+            ) : null}
+          </label>
+          <div className="flex gap-2">
+            <Button disabled={save.isPending || !!draft.imageError} type="submit">
+              {save.isPending ? 'Đang lưu…' : 'Lưu'}
+            </Button>
+            <Button
+              disabled={save.isPending}
+              onClick={() => {
+                setDraft(null);
+                setEditing(null);
+              }}
+              type="button"
+              variant="outline"
+            >
+              Hủy
+            </Button>
+          </div>
         </form>
       ) : null}
       {query.isPending ? <p>Đang tải…</p> : null}
@@ -763,8 +924,77 @@ export function AthletesPage({
         <ul className="grid gap-2">
           {query.data?.items.map((x) => (
             <li className="rounded-xl border p-3" key={x.id}>
-              <b>{x.name}</b> · {x.birthYear} · {x.organization?.name ?? 'Không đơn vị'} ·{' '}
-              {x.weightClass.name} · {x.isActive ? 'Đang hoạt động' : 'Đã ngừng'}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  {x.imageUrl ? (
+                    <img
+                      alt={`Ảnh đại diện ${x.name}`}
+                      className="h-12 w-12 rounded-full object-cover"
+                      loading="lazy"
+                      src={x.imageUrl}
+                    />
+                  ) : (
+                    <span
+                      aria-label={`Chưa có ảnh đại diện cho ${x.name}`}
+                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted font-bold"
+                      role="img"
+                    >
+                      {x.name.trim().slice(0, 1).toLocaleUpperCase('vi')}
+                    </span>
+                  )}
+                  <div>
+                    <b>{x.name}</b> · {x.birthYear} · {x.organization?.name ?? 'Không đơn vị'} ·{' '}
+                    {x.weightClass.name} · {x.isActive ? 'Đang hoạt động' : 'Đã ngừng'}
+                    {x.details ? (
+                      <p className="text-sm text-muted-foreground">{x.details}</p>
+                    ) : null}
+                  </div>
+                </div>
+                {!readOnly ? (
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <Button
+                      disabled={save.isPending || deactivate.isPending}
+                      onClick={() => {
+                        setEditing(x);
+                        setDraft({
+                          name: x.name,
+                          birthYear: x.birthYear,
+                          weightClassId: x.weightClassId,
+                          organizationId: x.organizationId,
+                          details: x.details,
+                          file: null,
+                          imageError: '',
+                        });
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Sửa
+                    </Button>
+                    {x.imageUrl ? (
+                      <Button
+                        disabled={removeImage.isPending}
+                        onClick={() => removeImage.mutate(x.id)}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        Xóa ảnh
+                      </Button>
+                    ) : null}
+                    <Button
+                      disabled={deactivate.isPending}
+                      onClick={() => setConfirm(x)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      {x.isActive ? 'Ngừng dùng' : 'Khôi phục'}
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>
@@ -793,6 +1023,20 @@ export function AthletesPage({
             Sau
           </Button>
         </div>
+      ) : null}
+      {confirm ? (
+        <ConfirmationDialog
+          actionLabel={confirm.isActive ? 'Xác nhận ngừng dùng' : 'Khôi phục'}
+          busy={deactivate.isPending}
+          description={
+            confirm.isActive
+              ? 'Vận động viên sẽ không còn được chọn cho trận đấu mới.'
+              : 'Hạng cân và đơn vị hiện tại phải đang hoạt động để khôi phục.'
+          }
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => deactivate.mutate(confirm)}
+          title={`${confirm.isActive ? 'Ngừng dùng' : 'Khôi phục'} vận động viên?`}
+        />
       ) : null}
     </section>
   );

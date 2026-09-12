@@ -76,7 +76,7 @@ async function openCreate(user: ReturnType<typeof userEvent.setup>) {
 
 async function editButton(index: number): Promise<HTMLButtonElement> {
   const buttons = await screen.findAllByRole('button', { name: 'Sửa' });
-  const button = buttons[index];
+  const button = buttons[index] as HTMLButtonElement | undefined;
   if (!button) throw new Error(`Missing edit button ${String(index)}.`);
   return button;
 }

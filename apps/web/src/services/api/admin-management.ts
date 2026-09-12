@@ -199,10 +199,18 @@ export interface RosterItemInput {
   readonly details?: string | null;
   readonly isActive?: boolean;
 }
-export interface AthleteInput {
+export interface CreateAthleteInput {
   readonly name: string;
   readonly birthYear: number;
   readonly weightClassId: string;
+  readonly organizationId?: string | null;
+  readonly details?: string | null;
+  readonly isActive?: boolean;
+}
+export interface UpdateAthleteInput {
+  readonly name?: string;
+  readonly birthYear?: number;
+  readonly weightClassId?: string;
   readonly organizationId?: string | null;
   readonly details?: string | null;
   readonly isActive?: boolean;
@@ -362,12 +370,12 @@ export const adminManagementApi = {
       `admin/tournaments/${encodePathSegment(tournamentId)}/athletes?${q.toString()}`,
     );
   },
-  createAthlete: (tournamentId: string, input: AthleteInput) =>
+  createAthlete: (tournamentId: string, input: CreateAthleteInput) =>
     apiClient.post<AthleteResponse>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/athletes`,
       input,
     ),
-  updateAthlete: (tournamentId: string, id: string, input: AthleteInput) =>
+  updateAthlete: (tournamentId: string, id: string, input: UpdateAthleteInput) =>
     apiClient.patch<AthleteResponse>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/athletes/${encodePathSegment(id)}`,
       input,
@@ -375,5 +383,17 @@ export const adminManagementApi = {
   deleteAthlete: (tournamentId: string, id: string) =>
     apiClient.delete<AthleteResponse>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/athletes/${encodePathSegment(id)}`,
+    ),
+  replaceAthleteImage: (tournamentId: string, id: string, file: File) => {
+    const body = new FormData();
+    body.append('file', file);
+    return apiClient.put<{ readonly imagePath: string; readonly imageUrl: string }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/athletes/${encodePathSegment(id)}/image`,
+      body,
+    );
+  },
+  removeAthleteImage: (tournamentId: string, id: string) =>
+    apiClient.delete<undefined>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/athletes/${encodePathSegment(id)}/image`,
     ),
 };
