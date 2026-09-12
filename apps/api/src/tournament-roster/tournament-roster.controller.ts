@@ -31,9 +31,17 @@ import { IMAGE_MAX_BYTES } from '../media/image-storage';
 import { MulterErrorFilter } from '../media/multer-error.filter';
 // These classes must remain runtime imports for Nest validation metadata.
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
-import { CreateRosterItemDto, UpdateRosterItemDto } from './dto/roster.dto';
+import {
+  AthleteListQueryDto,
+  CreateAthleteDto,
+  CreateRosterItemDto,
+  UpdateAthleteDto,
+  UpdateRosterItemDto,
+} from './dto/roster.dto';
 import { TournamentRosterService } from './tournament-roster.service';
 import { UnitImageService } from './unit-image.service';
+import { AthleteService } from './athlete.service';
+import { AthleteImageService } from './athlete-image.service';
 const uuid = new ParseUUIDPipe({
   exceptionFactory: () => new BadRequestException(INVALID_ID_ERROR),
 });
@@ -49,7 +57,82 @@ export class TournamentRosterController {
     @Inject(TournamentRosterService)
     private readonly roster: TournamentRosterService,
     @Inject(UnitImageService) private readonly images: UnitImageService,
+    @Inject(AthleteService) private readonly athletes: AthleteService,
+    @Inject(AthleteImageService)
+    private readonly athleteImages: AthleteImageService,
   ) {}
+  @Get('athletes') async listAthletes(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Query() query: AthleteListQueryDto,
+    @Req() req: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, req.user);
+    return this.athletes.list(tournamentId, query);
+  }
+  @Post('athletes') async createAthlete(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Body() input: CreateAthleteDto,
+    @Req() req: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, req.user, true);
+    return {
+      athlete: await this.athletes.create(tournamentId, input, req.user.id),
+    };
+  }
+  @Get('athletes/:athleteId') async getAthlete(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Param('athleteId', uuid) id: string,
+    @Req() req: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, req.user);
+    return { athlete: await this.athletes.get(tournamentId, id) };
+  }
+  @Patch('athletes/:athleteId') async updateAthlete(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Param('athleteId', uuid) id: string,
+    @Body() input: UpdateAthleteDto,
+    @Req() req: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, req.user, true);
+    return {
+      athlete: await this.athletes.update(tournamentId, id, input, req.user.id),
+    };
+  }
+  @Delete('athletes/:athleteId') async deleteAthlete(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Param('athleteId', uuid) id: string,
+    @Req() req: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, req.user, true);
+    return {
+      athlete: await this.athletes.deactivate(tournamentId, id, req.user.id),
+    };
+  }
+  @Put('athletes/:athleteId/image')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: IMAGE_MAX_BYTES, files: 1 },
+    }),
+  )
+  @UseFilters(MulterErrorFilter)
+  async replaceAthleteImage(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Param('athleteId', uuid) id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() req: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, req.user, true);
+    return this.athleteImages.replace(tournamentId, id, req.user.id, file);
+  }
+  @Delete('athletes/:athleteId/image') async removeAthleteImage(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Param('athleteId', uuid) id: string,
+    @Req() req: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, req.user, true);
+    await this.athleteImages.remove(tournamentId, id, req.user.id);
+  }
   @Get('units') async listUnits(
     @Param('tournamentId', uuid) tournamentId: string,
     @Query('includeInactive') inactive: string | undefined,
