@@ -1,4 +1,4 @@
-import { useEffect, useState, type SyntheticEvent } from 'react';
+import { useEffect, useMemo, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { GeneratedAccessCodesPanel } from '@/components/generated-access-codes-panel';
@@ -410,13 +410,18 @@ function TournamentMatches({
     ]);
   }
 
-  const activeWeightClasses =
-    weightClassesQuery.data?.weightClasses.filter(({ isActive }) => isActive) ?? [];
-  const eligibleAthletes = athletesQuery.data?.items ?? [];
+  const activeWeightClasses = useMemo(
+    () => weightClassesQuery.data?.weightClasses.filter(({ isActive }) => isActive) ?? [],
+    [weightClassesQuery.data?.weightClasses],
+  );
+  const eligibleAthletes = useMemo(
+    () => athletesQuery.data?.items ?? [],
+    [athletesQuery.data?.items],
+  );
   const selectedWeightClass = activeWeightClasses.find(({ id }) => id === weightClassId);
   useEffect(() => {
     if (!weightClassId && activeWeightClasses.length > 0)
-      setWeightClassId(activeWeightClasses[0]!.id);
+      setWeightClassId(activeWeightClasses[0]?.id ?? '');
   }, [activeWeightClasses, weightClassId]);
   useEffect(() => {
     const ids = new Set(eligibleAthletes.map(({ id }) => id));
@@ -544,7 +549,9 @@ function TournamentMatches({
               disabled={eligibleAthletes.length < 2}
               label="Góc Đỏ (RED)"
               loading={athletesQuery.isPending}
-              onChange={(id) => setRedAthleteId(id || null)}
+              onChange={(id) => {
+                setRedAthleteId(id || null);
+              }}
               selectedAthleteId={redAthleteId}
               weightClassName={selectedWeightClass?.name}
             />
@@ -555,7 +562,9 @@ function TournamentMatches({
               excludedAthleteId={redAthleteId}
               label="Góc Xanh (BLUE)"
               loading={athletesQuery.isPending}
-              onChange={(id) => setBlueAthleteId(id || null)}
+              onChange={(id) => {
+                setBlueAthleteId(id || null);
+              }}
               selectedAthleteId={blueAthleteId}
               weightClassName={selectedWeightClass?.name}
             />

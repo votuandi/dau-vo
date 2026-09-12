@@ -73,7 +73,10 @@ export const router = createBrowserRouter([
             path: 'tournaments/:tournamentId',
             element: <AdminTournamentDetailPage />,
           },
-          { path: 'tournaments/:tournamentId/weight-classes', element: <AdminTournamentDetailPage /> },
+          {
+            path: 'tournaments/:tournamentId/weight-classes',
+            element: <AdminTournamentDetailPage />,
+          },
           { path: 'tournaments/:tournamentId/units', element: <AdminTournamentDetailPage /> },
           { path: 'tournaments/:tournamentId/athletes', element: <AdminTournamentDetailPage /> },
           { path: 'tournaments/:tournamentId/matches', element: <AdminTournamentDetailPage /> },

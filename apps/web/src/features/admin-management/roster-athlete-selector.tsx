@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { inputClassName } from './presentation';
 import type { TournamentAthlete } from '@/services/api/admin-management';
-import type { AthleteColor } from '@/types/shared';
+import { AthleteColor } from '@/types/shared';
 
 export function RosterAthleteSelector({
   athletes,
@@ -40,11 +40,13 @@ export function RosterAthleteSelector({
     );
   }, [available, search]);
   const selected = athletes.find((athlete) => athlete.id === selectedAthleteId);
-  const colorClasses =
-    color === 'RED' ? 'border-red-200 bg-red-50/60' : 'border-blue-200 bg-blue-50/60';
+  const colorClasses: Record<AthleteColor, string> = {
+    [AthleteColor.RED]: 'border-red-200 bg-red-50/60',
+    [AthleteColor.BLUE]: 'border-blue-200 bg-blue-50/60',
+  };
 
   return (
-    <div className={`rounded-xl border-2 p-4 ${colorClasses}`}>
+    <div className={`rounded-xl border-2 p-4 ${colorClasses[color]}`}>
       <p className="font-black">{label}</p>
       <p className="mt-1 text-xs text-muted-foreground">
         {weightClassName
@@ -58,7 +60,9 @@ export function RosterAthleteSelector({
         className={inputClassName}
         disabled={disabled || !weightClassName}
         id={`${color}-athlete-search`}
-        onChange={(event) => setSearch(event.target.value)}
+        onChange={(event) => {
+          setSearch(event.target.value);
+        }}
         placeholder="Tên, đơn vị hoặc năm sinh"
         type="search"
         value={search}
@@ -71,7 +75,9 @@ export function RosterAthleteSelector({
         className={inputClassName}
         disabled={disabled || !weightClassName || loading || available.length === 0}
         id={`${color}-athlete-select`}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
         value={selectedAthleteId ?? ''}
       >
         <option value="">{loading ? 'Đang tải danh sách…' : 'Chọn vận động viên'}</option>
@@ -88,7 +94,7 @@ export function RosterAthleteSelector({
             ? 'Không có kết quả phù hợp.'
             : excludedAthleteId
               ? 'Vận động viên đã chọn ở góc còn lại được loại khỏi danh sách.'
-              : `${available.length} vận động viên đủ điều kiện.`}
+              : `${String(available.length)} vận động viên đủ điều kiện.`}
       </p>
       {selected ? <AthleteCard athlete={selected} /> : null}
     </div>

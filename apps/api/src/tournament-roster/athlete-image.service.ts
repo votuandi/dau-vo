@@ -3,7 +3,6 @@ import {
   ConflictException,
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { AuditEventType, TournamentStatus } from '@prisma/client';
@@ -15,7 +14,6 @@ import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class AthleteImageService {
-  private readonly logger = new Logger(AthleteImageService.name);
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(IMAGE_STORAGE) private readonly storage: ImageStorage,
@@ -62,10 +60,10 @@ export class AthleteImageService {
         });
         return athlete.imagePath;
       });
-      if (prior) await this.cleanup(prior, id);
+      if (prior) await this.scheduleDeletion(prior);
       return { imagePath: stored.key, imageUrl: `/api/media/${stored.key}` };
     } catch (e) {
-      await this.cleanup(stored.key, id);
+      await this.scheduleDeletion(stored.key);
       throw e;
     }
   }
@@ -99,7 +97,7 @@ export class AthleteImageService {
       });
       return athlete.imagePath;
     });
-    if (prior) await this.cleanup(prior, id);
+    if (prior) await this.scheduleDeletion(prior);
   }
   private async lock(tx: Prisma.TransactionClient, id: string) {
     await tx.$queryRaw`SELECT id FROM tournaments WHERE id = ${id}::uuid FOR UPDATE`;
@@ -116,15 +114,11 @@ export class AthleteImageService {
           'Tournament roster cannot be changed while the tournament is archived',
       });
   }
-  private async cleanup(key: string, id: string) {
-    try {
-      await this.storage.delete(key);
-    } catch {
-      this.logger.warn({
-        event: 'image_delete_failed',
-        storageKey: key,
-        athleteId: id,
-      });
-    }
+  private async scheduleDeletion(key: string): Promise<void> {
+    await this.prisma.mediaDeletion.upsert({
+      where: { storageKey: key },
+      create: { storageKey: key, reason: 'IMAGE_REPLACED_OR_REMOVED' },
+      update: {},
+    });
   }
 }

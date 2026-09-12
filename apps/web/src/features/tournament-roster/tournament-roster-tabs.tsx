@@ -1,44 +1,553 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type SyntheticEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
-import { getApiErrorMessage, inputClassName, notifyMutationError, notifyMutationSuccess, textAreaClassName } from '@/features/admin-management/presentation';
-import { tournamentAthletesQueryOptions, tournamentUnitsQueryOptions, tournamentWeightClassesQueryOptions } from '@/features/admin-management/queries';
-import { adminManagementApi, type AthleteInput, type TournamentRosterItem } from '@/services/api/admin-management';
+import {
+  getApiErrorMessage,
+  inputClassName,
+  notifyMutationError,
+  notifyMutationSuccess,
+  textAreaClassName,
+} from '@/features/admin-management/presentation';
+import {
+  tournamentAthletesQueryOptions,
+  tournamentUnitsQueryOptions,
+  tournamentWeightClassesQueryOptions,
+} from '@/features/admin-management/queries';
+import {
+  adminManagementApi,
+  type AthleteInput,
+  type TournamentRosterItem,
+} from '@/services/api/admin-management';
 
-const tabs = [['info','Thông tin'], ['weight-classes','Hạng cân'], ['units','Đơn vị tham gia'], ['athletes','Vận động viên'], ['matches','Trận đấu']] as const;
+const tabs = [
+  ['info', 'Thông tin'],
+  ['weight-classes', 'Hạng cân'],
+  ['units', 'Đơn vị tham gia'],
+  ['athletes', 'Vận động viên'],
+  ['matches', 'Trận đấu'],
+] as const;
 type Tab = (typeof tabs)[number][0];
 
-export function TournamentTabs({ tournamentId, active }: { readonly tournamentId: string; readonly active: Tab }) {
-  return <nav aria-label="Khu vực quản lý giải đấu" className="overflow-x-auto border-b"><div className="flex min-w-max gap-1">{tabs.map(([id, label]) => <Link aria-current={id === active ? 'page' : undefined} className={id === active ? 'border-b-2 border-primary px-3 py-3 text-sm font-bold' : 'px-3 py-3 text-sm text-muted-foreground hover:text-foreground'} key={id} to={id === 'info' ? `/admin/tournaments/${tournamentId}` : `/admin/tournaments/${tournamentId}/${id}`}>{label}</Link>)}</div></nav>;
+export function TournamentTabs({
+  tournamentId,
+  active,
+}: {
+  readonly tournamentId: string;
+  readonly active: Tab;
+}) {
+  return (
+    <nav aria-label="Khu vực quản lý giải đấu" className="overflow-x-auto border-b">
+      <div className="flex min-w-max gap-1">
+        {tabs.map(([id, label]) => (
+          <Link
+            aria-current={id === active ? 'page' : undefined}
+            className={
+              id === active
+                ? 'border-b-2 border-primary px-3 py-3 text-sm font-bold'
+                : 'px-3 py-3 text-sm text-muted-foreground hover:text-foreground'
+            }
+            key={id}
+            to={
+              id === 'info'
+                ? `/admin/tournaments/${tournamentId}`
+                : `/admin/tournaments/${tournamentId}/${id}`
+            }
+          >
+            {label}
+          </Link>
+        ))}
+      </div>
+    </nav>
+  );
 }
 
-function RosterForm({ item, onSubmit, busy }: { readonly item: TournamentRosterItem | undefined; readonly onSubmit: (input: { name: string; details: string | null }) => void; readonly busy: boolean }) {
-  const [name, setName] = useState(item?.name ?? ''); const [details, setDetails] = useState(item?.details ?? '');
-  return <form className="grid gap-3 rounded-xl border bg-muted/30 p-4 sm:grid-cols-[1fr_2fr_auto]" onSubmit={(e) => { e.preventDefault(); if (name.trim()) onSubmit({ name: name.trim(), details: details.trim() || null }); }}>
-    <label className="text-sm font-semibold">Tên<input className={inputClassName} maxLength={255} onChange={(e) => setName(e.target.value)} required value={name}/></label>
-    <label className="text-sm font-semibold">Chi tiết<textarea className={textAreaClassName} maxLength={5000} onChange={(e) => setDetails(e.target.value)} value={details}/></label>
-    <Button className="self-end" disabled={busy} type="submit">{item ? 'Lưu' : 'Thêm mới'}</Button>
-  </form>;
+function RosterForm({
+  item,
+  onSubmit,
+  busy,
+}: {
+  readonly item: TournamentRosterItem | undefined;
+  readonly onSubmit: (input: { name: string; details: string | null }) => void;
+  readonly busy: boolean;
+}) {
+  const [name, setName] = useState(item?.name ?? '');
+  const [details, setDetails] = useState(item?.details ?? '');
+  return (
+    <form
+      className="grid gap-3 rounded-xl border bg-muted/30 p-4 sm:grid-cols-[1fr_2fr_auto]"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (name.trim()) onSubmit({ name: name.trim(), details: details.trim() || null });
+      }}
+    >
+      <label className="text-sm font-semibold">
+        Tên
+        <input
+          className={inputClassName}
+          maxLength={255}
+          onChange={(e) => {
+            setName(e.target.value);
+          }}
+          required
+          value={name}
+        />
+      </label>
+      <label className="text-sm font-semibold">
+        Chi tiết
+        <textarea
+          className={textAreaClassName}
+          maxLength={5000}
+          onChange={(e) => {
+            setDetails(e.target.value);
+          }}
+          value={details}
+        />
+      </label>
+      <Button className="self-end" disabled={busy} type="submit">
+        {item ? 'Lưu' : 'Thêm mới'}
+      </Button>
+    </form>
+  );
 }
 
-export function RosterItemsPage({ tournamentId, kind, readOnly }: { readonly tournamentId: string; readonly kind: 'units' | 'weight-classes'; readonly readOnly: boolean }) {
-  const qc = useQueryClient(); const query = useQuery({ queryKey: ['admin', 'tournaments', tournamentId, kind], queryFn: async (): Promise<readonly TournamentRosterItem[]> => kind === 'units' ? (await adminManagementApi.listUnits(tournamentId)).units : (await adminManagementApi.listWeightClasses(tournamentId)).weightClasses });
-  const [editing, setEditing] = useState<TournamentRosterItem | null>(null); const [confirm, setConfirm] = useState<TournamentRosterItem | null>(null);
-  const noun = kind === 'units' ? 'đơn vị' : 'hạng cân'; const mutate = useMutation({ mutationFn: async ({ item, input }: { item: TournamentRosterItem | undefined; input: { name: string; details: string | null } }) => { if (item) { if (kind === 'units') await adminManagementApi.updateUnit(tournamentId, item.id, input); else await adminManagementApi.updateWeightClass(tournamentId, item.id, input); } else if (kind === 'units') await adminManagementApi.createUnit(tournamentId, input); else await adminManagementApi.createWeightClass(tournamentId, input); }, onSuccess: () => { void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId] }); notifyMutationSuccess(`Đã lưu ${noun}.`); setEditing(null); }, onError: (e) => notifyMutationError(e, 'Không thể lưu thay đổi.') });
-  const deactivate = useMutation({ mutationFn: async (item: TournamentRosterItem) => { if (item.isActive) { if (kind === 'units') await adminManagementApi.deleteUnit(tournamentId, item.id); else await adminManagementApi.deleteWeightClass(tournamentId, item.id); } else if (kind === 'units') await adminManagementApi.updateUnit(tournamentId, item.id, { isActive: true }); else await adminManagementApi.updateWeightClass(tournamentId, item.id, { isActive: true }); }, onSuccess: () => { void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId] }); notifyMutationSuccess('Đã cập nhật trạng thái.'); setConfirm(null); }, onError: (e) => notifyMutationError(e, kind === 'weight-classes' && getApiErrorMessage(e, '').includes('WEIGHT_CLASS_IN_USE') ? 'Hạng cân đang được vận động viên hoặc trận đấu sử dụng. Hãy chuyển các vận động viên/trận liên quan trước.' : 'Không thể cập nhật trạng thái.') });
+export function RosterItemsPage({
+  tournamentId,
+  kind,
+  readOnly,
+}: {
+  readonly tournamentId: string;
+  readonly kind: 'units' | 'weight-classes';
+  readonly readOnly: boolean;
+}) {
+  const qc = useQueryClient();
+  const query = useQuery({
+    queryKey: ['admin', 'tournaments', tournamentId, kind],
+    queryFn: async (): Promise<readonly TournamentRosterItem[]> =>
+      kind === 'units'
+        ? (await adminManagementApi.listUnits(tournamentId)).units
+        : (await adminManagementApi.listWeightClasses(tournamentId)).weightClasses,
+  });
+  const [editing, setEditing] = useState<TournamentRosterItem | null>(null);
+  const [confirm, setConfirm] = useState<TournamentRosterItem | null>(null);
+  const noun = kind === 'units' ? 'đơn vị' : 'hạng cân';
+  const mutate = useMutation({
+    mutationFn: async ({
+      item,
+      input,
+    }: {
+      item: TournamentRosterItem | undefined;
+      input: { name: string; details: string | null };
+    }) => {
+      if (item) {
+        if (kind === 'units') await adminManagementApi.updateUnit(tournamentId, item.id, input);
+        else await adminManagementApi.updateWeightClass(tournamentId, item.id, input);
+      } else if (kind === 'units') await adminManagementApi.createUnit(tournamentId, input);
+      else await adminManagementApi.createWeightClass(tournamentId, input);
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId] });
+      notifyMutationSuccess(`Đã lưu ${noun}.`);
+      setEditing(null);
+    },
+    onError: (e) => {
+      notifyMutationError(e, 'Không thể lưu thay đổi.');
+    },
+  });
+  const deactivate = useMutation({
+    mutationFn: async (item: TournamentRosterItem) => {
+      if (item.isActive) {
+        if (kind === 'units') await adminManagementApi.deleteUnit(tournamentId, item.id);
+        else await adminManagementApi.deleteWeightClass(tournamentId, item.id);
+      } else if (kind === 'units')
+        await adminManagementApi.updateUnit(tournamentId, item.id, { isActive: true });
+      else await adminManagementApi.updateWeightClass(tournamentId, item.id, { isActive: true });
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId] });
+      notifyMutationSuccess('Đã cập nhật trạng thái.');
+      setConfirm(null);
+    },
+    onError: (e) => {
+      notifyMutationError(
+        e,
+        kind === 'weight-classes' && getApiErrorMessage(e, '').includes('WEIGHT_CLASS_IN_USE')
+          ? 'Hạng cân đang được vận động viên hoặc trận đấu sử dụng. Hãy chuyển các vận động viên/trận liên quan trước.'
+          : 'Không thể cập nhật trạng thái.',
+      );
+    },
+  });
   const items = query.data ?? [];
-  return <section className="space-y-5"><div><h2 className="text-xl font-black">{kind === 'units' ? 'Đơn vị tham gia' : 'Hạng cân'}</h2><p className="text-sm text-muted-foreground">Quản lý danh mục sử dụng trong giải đấu.</p></div>{!readOnly ? <RosterForm busy={mutate.isPending} item={editing ?? undefined} onSubmit={(input) => mutate.mutate({ item: editing ?? undefined, input })}/> : null}{query.isPending ? <p>Đang tải…</p> : null}{query.isError ? <div role="alert">Không thể tải. <Button onClick={() => void query.refetch()} size="sm" type="button">Thử lại</Button></div> : null}{query.isSuccess && items.length === 0 ? <p className="rounded-xl border border-dashed p-8 text-center text-muted-foreground">Chưa có {noun} nào.</p> : null}<ul className="grid gap-3">{items.map((item) => <li className="rounded-xl border p-4" key={item.id}><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-bold">{item.name}</h3><p className="text-sm text-muted-foreground">{item.details || 'Chưa có chi tiết'}</p><p className="mt-1 text-xs font-semibold">{item.isActive ? 'Đang hoạt động' : 'Đã ngừng'}</p></div>{!readOnly ? <div className="flex gap-2"><Button onClick={() => setEditing(item)} size="sm" type="button" variant="outline">Sửa</Button><Button onClick={() => setConfirm(item)} size="sm" type="button" variant="outline">{item.isActive ? 'Ngừng dùng' : 'Khôi phục'}</Button></div> : null}</div></li>)}</ul>{confirm ? <ConfirmationDialog actionLabel={confirm.isActive ? 'Xác nhận ngừng dùng' : 'Khôi phục'} busy={deactivate.isPending} description={kind === 'units' ? 'Các vận động viên đang thuộc đơn vị này sẽ trở thành “Không đơn vị”.' : 'Hạng cân chỉ có thể ngừng dùng khi không còn vận động viên hoặc trận đấu sử dụng.'} onCancel={() => setConfirm(null)} onConfirm={() => deactivate.mutate(confirm)} title={`${confirm.isActive ? 'Ngừng dùng' : 'Khôi phục'} ${noun}?`}/> : null}</section>;
+  return (
+    <section className="space-y-5">
+      <div>
+        <h2 className="text-xl font-black">{kind === 'units' ? 'Đơn vị tham gia' : 'Hạng cân'}</h2>
+        <p className="text-sm text-muted-foreground">Quản lý danh mục sử dụng trong giải đấu.</p>
+      </div>
+      {!readOnly ? (
+        <RosterForm
+          busy={mutate.isPending}
+          item={editing ?? undefined}
+          onSubmit={(input) => {
+            mutate.mutate({ item: editing ?? undefined, input });
+          }}
+        />
+      ) : null}
+      {query.isPending ? <p>Đang tải…</p> : null}
+      {query.isError ? (
+        <div role="alert">
+          Không thể tải.{' '}
+          <Button onClick={() => void query.refetch()} size="sm" type="button">
+            Thử lại
+          </Button>
+        </div>
+      ) : null}
+      {query.isSuccess && items.length === 0 ? (
+        <p className="rounded-xl border border-dashed p-8 text-center text-muted-foreground">
+          Chưa có {noun} nào.
+        </p>
+      ) : null}
+      <ul className="grid gap-3">
+        {items.map((item) => (
+          <li className="rounded-xl border p-4" key={item.id}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="font-bold">{item.name}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {item.details ?? 'Chưa có chi tiết'}
+                </p>
+                <p className="mt-1 text-xs font-semibold">
+                  {item.isActive ? 'Đang hoạt động' : 'Đã ngừng'}
+                </p>
+              </div>
+              {!readOnly ? (
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => {
+                      setEditing(item);
+                    }}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    Sửa
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setConfirm(item);
+                    }}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {item.isActive ? 'Ngừng dùng' : 'Khôi phục'}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ul>
+      {confirm ? (
+        <ConfirmationDialog
+          actionLabel={confirm.isActive ? 'Xác nhận ngừng dùng' : 'Khôi phục'}
+          busy={deactivate.isPending}
+          description={
+            kind === 'units'
+              ? 'Các vận động viên đang thuộc đơn vị này sẽ trở thành “Không đơn vị”.'
+              : 'Hạng cân chỉ có thể ngừng dùng khi không còn vận động viên hoặc trận đấu sử dụng.'
+          }
+          onCancel={() => {
+            setConfirm(null);
+          }}
+          onConfirm={() => {
+            deactivate.mutate(confirm);
+          }}
+          title={`${confirm.isActive ? 'Ngừng dùng' : 'Khôi phục'} ${noun}?`}
+        />
+      ) : null}
+    </section>
+  );
 }
 
-export function AthletesPage({ tournamentId, readOnly }: { readonly tournamentId: string; readonly readOnly: boolean }) {
-  const [params, setParams] = useSearchParams(); const [search, setSearch] = useState(params.get('search') ?? '');
-  useEffect(() => { const timer = window.setTimeout(() => { setParams((old) => { const next = new URLSearchParams(old); search ? next.set('search', search) : next.delete('search'); next.set('page', '1'); return next; }, { replace: true }); }, 350); return () => window.clearTimeout(timer); }, [search, setParams]);
-  const filters = { page: Number(params.get('page') ?? '1'), pageSize: 25, ...(params.get('search') ? { search: params.get('search')! } : {}), ...(params.get('weightClassId') ? { weightClassId: params.get('weightClassId')! } : {}), ...(params.get('unitId') ? { unitId: params.get('unitId')! } : {}), ...(params.get('noUnit') === 'true' ? { noUnit: true } : {}), ...(params.get('isActive') ? { isActive: params.get('isActive') === 'true' } : {}) };
-  const query = useQuery(tournamentAthletesQueryOptions(tournamentId, filters)); const weights = useQuery(tournamentWeightClassesQueryOptions(tournamentId)); const units = useQuery(tournamentUnitsQueryOptions(tournamentId)); const [draft, setDraft] = useState<AthleteInput | null>(null); const qc = useQueryClient();
-  const create = useMutation({ mutationFn: (x: AthleteInput) => adminManagementApi.createAthlete(tournamentId, x), onSuccess: () => { setDraft(null); void qc.invalidateQueries({ queryKey: ['admin','tournaments',tournamentId,'athletes'] }); notifyMutationSuccess('Đã thêm vận động viên.'); }, onError: (e) => notifyMutationError(e, 'Không thể thêm vận động viên.') });
+export function AthletesPage({
+  tournamentId,
+  readOnly,
+}: {
+  readonly tournamentId: string;
+  readonly readOnly: boolean;
+}) {
+  const [params, setParams] = useSearchParams();
+  const [search, setSearch] = useState(params.get('search') ?? '');
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setParams(
+        (old) => {
+          const next = new URLSearchParams(old);
+          if (search) next.set('search', search);
+          else next.delete('search');
+          next.set('page', '1');
+          return next;
+        },
+        { replace: true },
+      );
+    }, 350);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [search, setParams]);
+  const searchParam = params.get('search');
+  const weightClassIdParam = params.get('weightClassId');
+  const unitIdParam = params.get('unitId');
+  const filters = {
+    page: Number(params.get('page') ?? '1'),
+    pageSize: 25,
+    ...(searchParam ? { search: searchParam } : {}),
+    ...(weightClassIdParam ? { weightClassId: weightClassIdParam } : {}),
+    ...(unitIdParam ? { unitId: unitIdParam } : {}),
+    ...(params.get('noUnit') === 'true' ? { noUnit: true } : {}),
+    ...(params.get('isActive') ? { isActive: params.get('isActive') === 'true' } : {}),
+  };
+  const query = useQuery(tournamentAthletesQueryOptions(tournamentId, filters));
+  const weights = useQuery(tournamentWeightClassesQueryOptions(tournamentId));
+  const units = useQuery(tournamentUnitsQueryOptions(tournamentId));
+  const [draft, setDraft] = useState<AthleteInput | null>(null);
+  const qc = useQueryClient();
+  const create = useMutation({
+    mutationFn: (x: AthleteInput) => adminManagementApi.createAthlete(tournamentId, x),
+    onSuccess: () => {
+      setDraft(null);
+      void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId, 'athletes'] });
+      notifyMutationSuccess('Đã thêm vận động viên.');
+    },
+    onError: (e) => {
+      notifyMutationError(e, 'Không thể thêm vận động viên.');
+    },
+  });
   const activeWeights = weights.data?.weightClasses.filter((x) => x.isActive) ?? [];
-  function updateParam(key: string, value: string) { setParams((old) => { const n = new URLSearchParams(old); value ? n.set(key, value) : n.delete(key); n.set('page','1'); return n; }); }
-  return <section className="space-y-5"><div><h2 className="text-xl font-black">Vận động viên</h2><p className="text-sm text-muted-foreground">Tìm kiếm và lọc danh sách đăng ký.</p></div><div className="grid gap-3 sm:grid-cols-4"><label className="text-sm">Tìm tên<input aria-label="Tìm vận động viên" className={inputClassName} onChange={(e) => setSearch(e.target.value)} value={search}/></label><label className="text-sm">Hạng cân<select className={inputClassName} onChange={(e) => updateParam('weightClassId',e.target.value)} value={params.get('weightClassId') ?? ''}><option value="">Tất cả</option>{weights.data?.weightClasses.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label><label className="text-sm">Đơn vị<select className={inputClassName} onChange={(e) => { const value=e.target.value; updateParam('unitId',value === '__none' ? '' : value); updateParam('noUnit',value === '__none' ? 'true' : ''); }} value={params.get('noUnit') === 'true' ? '__none' : params.get('unitId') ?? ''}><option value="">Tất cả</option><option value="__none">Không đơn vị</option>{units.data?.units.filter(x=>x.isActive).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label><label className="text-sm">Trạng thái<select className={inputClassName} onChange={(e) => updateParam('isActive',e.target.value)} value={params.get('isActive') ?? ''}><option value="">Tất cả</option><option value="true">Đang hoạt động</option><option value="false">Đã ngừng</option></select></label></div>{!readOnly && (activeWeights.length ? <Button onClick={() => setDraft({ name:'', birthYear: new Date().getFullYear(), weightClassId: activeWeights[0]!.id, unitId: null, details: null })} type="button">Thêm vận động viên</Button> : <Button asChild><Link to={`/admin/tournaments/${tournamentId}/weight-classes`}>Tạo hạng cân trước</Link></Button>)}{draft ? <form className="grid gap-3 rounded-xl border p-4" onSubmit={(e: FormEvent) => { e.preventDefault(); create.mutate(draft); }}><label>Họ tên<input className={inputClassName} onChange={e=>setDraft({...draft,name:e.target.value})} required value={draft.name}/></label><label>Năm sinh<input className={inputClassName} min="1900" onChange={e=>setDraft({...draft,birthYear:Number(e.target.value)})} required type="number" value={draft.birthYear}/></label><label>Hạng cân<select className={inputClassName} onChange={e=>setDraft({...draft,weightClassId:e.target.value})} value={draft.weightClassId}>{activeWeights.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label><label>Đơn vị<select className={inputClassName} onChange={e=>setDraft({...draft,unitId:e.target.value || null})} value={draft.unitId ?? ''}><option value="">Không đơn vị</option>{units.data?.units.filter(x=>x.isActive).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label><Button disabled={create.isPending} type="submit">Lưu</Button></form> : null}{query.isPending ? <p>Đang tải…</p> : null}{query.isError ? <div role="alert">Không thể tải. <Button onClick={()=>void query.refetch()} size="sm" type="button">Thử lại</Button></div> : null}{query.data?.items.length === 0 ? <p className="rounded-xl border border-dashed p-8 text-center">Không tìm thấy vận động viên.</p> : <ul className="grid gap-2">{query.data?.items.map(x=><li className="rounded-xl border p-3" key={x.id}><b>{x.name}</b> · {x.birthYear} · {x.unit?.name ?? 'Không đơn vị'} · {x.weightClass.name} · {x.isActive ? 'Đang hoạt động' : 'Đã ngừng'}</li>)}</ul>}{query.data && query.data.totalPages > 1 ? <div className="flex gap-2"><Button disabled={filters.page <= 1} onClick={()=>updateParam('page',String(filters.page-1))} type="button">Trước</Button><span className="py-2 text-sm">Trang {filters.page}/{query.data.totalPages}</span><Button disabled={filters.page >= query.data.totalPages} onClick={()=>updateParam('page',String(filters.page+1))} type="button">Sau</Button></div> : null}</section>;
+  function updateParam(key: string, value: string) {
+    setParams((old) => {
+      const n = new URLSearchParams(old);
+      if (value) n.set(key, value);
+      else n.delete(key);
+      n.set('page', '1');
+      return n;
+    });
+  }
+  return (
+    <section className="space-y-5">
+      <div>
+        <h2 className="text-xl font-black">Vận động viên</h2>
+        <p className="text-sm text-muted-foreground">Tìm kiếm và lọc danh sách đăng ký.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-4">
+        <label className="text-sm">
+          Tìm tên
+          <input
+            aria-label="Tìm vận động viên"
+            className={inputClassName}
+            onChange={(e) => {
+              setSearch(e.target.value);
+            }}
+            value={search}
+          />
+        </label>
+        <label className="text-sm">
+          Hạng cân
+          <select
+            className={inputClassName}
+            onChange={(e) => {
+              updateParam('weightClassId', e.target.value);
+            }}
+            value={params.get('weightClassId') ?? ''}
+          >
+            <option value="">Tất cả</option>
+            {weights.data?.weightClasses.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          Đơn vị
+          <select
+            className={inputClassName}
+            onChange={(e) => {
+              const value = e.target.value;
+              updateParam('unitId', value === '__none' ? '' : value);
+              updateParam('noUnit', value === '__none' ? 'true' : '');
+            }}
+            value={params.get('noUnit') === 'true' ? '__none' : (params.get('unitId') ?? '')}
+          >
+            <option value="">Tất cả</option>
+            <option value="__none">Không đơn vị</option>
+            {units.data?.units
+              .filter((x) => x.isActive)
+              .map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          Trạng thái
+          <select
+            className={inputClassName}
+            onChange={(e) => {
+              updateParam('isActive', e.target.value);
+            }}
+            value={params.get('isActive') ?? ''}
+          >
+            <option value="">Tất cả</option>
+            <option value="true">Đang hoạt động</option>
+            <option value="false">Đã ngừng</option>
+          </select>
+        </label>
+      </div>
+      {!readOnly &&
+        (activeWeights.length ? (
+          <Button
+            onClick={() => {
+              setDraft({
+                name: '',
+                birthYear: new Date().getFullYear(),
+                weightClassId: activeWeights[0]?.id ?? '',
+                unitId: null,
+                details: null,
+              });
+            }}
+            type="button"
+          >
+            Thêm vận động viên
+          </Button>
+        ) : (
+          <Button asChild>
+            <Link to={`/admin/tournaments/${tournamentId}/weight-classes`}>Tạo hạng cân trước</Link>
+          </Button>
+        ))}
+      {draft ? (
+        <form
+          className="grid gap-3 rounded-xl border p-4"
+          onSubmit={(e: SyntheticEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            create.mutate(draft);
+          }}
+        >
+          <label>
+            Họ tên
+            <input
+              className={inputClassName}
+              onChange={(e) => {
+                setDraft({ ...draft, name: e.target.value });
+              }}
+              required
+              value={draft.name}
+            />
+          </label>
+          <label>
+            Năm sinh
+            <input
+              className={inputClassName}
+              min="1900"
+              onChange={(e) => {
+                setDraft({ ...draft, birthYear: Number(e.target.value) });
+              }}
+              required
+              type="number"
+              value={draft.birthYear}
+            />
+          </label>
+          <label>
+            Hạng cân
+            <select
+              className={inputClassName}
+              onChange={(e) => {
+                setDraft({ ...draft, weightClassId: e.target.value });
+              }}
+              value={draft.weightClassId}
+            >
+              {activeWeights.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Đơn vị
+            <select
+              className={inputClassName}
+              onChange={(e) => {
+                setDraft({ ...draft, unitId: e.target.value || null });
+              }}
+              value={draft.unitId ?? ''}
+            >
+              <option value="">Không đơn vị</option>
+              {units.data?.units
+                .filter((x) => x.isActive)
+                .map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <Button disabled={create.isPending} type="submit">
+            Lưu
+          </Button>
+        </form>
+      ) : null}
+      {query.isPending ? <p>Đang tải…</p> : null}
+      {query.isError ? (
+        <div role="alert">
+          Không thể tải.{' '}
+          <Button onClick={() => void query.refetch()} size="sm" type="button">
+            Thử lại
+          </Button>
+        </div>
+      ) : null}
+      {query.data?.items.length === 0 ? (
+        <p className="rounded-xl border border-dashed p-8 text-center">
+          Không tìm thấy vận động viên.
+        </p>
+      ) : (
+        <ul className="grid gap-2">
+          {query.data?.items.map((x) => (
+            <li className="rounded-xl border p-3" key={x.id}>
+              <b>{x.name}</b> · {x.birthYear} · {x.unit?.name ?? 'Không đơn vị'} ·{' '}
+              {x.weightClass.name} · {x.isActive ? 'Đang hoạt động' : 'Đã ngừng'}
+            </li>
+          ))}
+        </ul>
+      )}
+      {query.data && query.data.totalPages > 1 ? (
+        <div className="flex gap-2">
+          <Button
+            disabled={filters.page <= 1}
+            onClick={() => {
+              updateParam('page', String(filters.page - 1));
+            }}
+            type="button"
+          >
+            Trước
+          </Button>
+          <span className="py-2 text-sm">
+            Trang {filters.page}/{query.data.totalPages}
+          </span>
+          <Button
+            disabled={filters.page >= query.data.totalPages}
+            onClick={() => {
+              updateParam('page', String(filters.page + 1));
+            }}
+            type="button"
+          >
+            Sau
+          </Button>
+        </div>
+      ) : null}
+    </section>
+  );
 }

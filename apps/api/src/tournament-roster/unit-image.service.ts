@@ -3,7 +3,6 @@ import {
   ConflictException,
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { AuditEventType, TournamentStatus } from '@prisma/client';
@@ -17,7 +16,6 @@ import { ROSTER_TOURNAMENT_ARCHIVED } from './tournament-roster.errors';
 
 @Injectable()
 export class UnitImageService {
-  private readonly logger = new Logger(UnitImageService.name);
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(IMAGE_STORAGE) private readonly storage: ImageStorage,
@@ -60,10 +58,10 @@ export class UnitImageService {
         });
         return unit.imagePath;
       });
-      if (prior) await this.deleteAfterCommit(prior, unitId);
+      if (prior) await this.scheduleDeletion(prior);
       return { imagePath: stored.key };
     } catch (error) {
-      await this.deleteAfterCommit(stored.key, unitId);
+      await this.scheduleDeletion(stored.key);
       throw error;
     }
   }
@@ -97,18 +95,14 @@ export class UnitImageService {
       });
       return unit.imagePath;
     });
-    if (prior) await this.deleteAfterCommit(prior, unitId);
+    if (prior) await this.scheduleDeletion(prior);
   }
-  private async deleteAfterCommit(key: string, unitId: string) {
-    try {
-      await this.storage.delete(key);
-    } catch {
-      this.logger.warn({
-        event: 'image_delete_failed',
-        storageKey: key,
-        unitId,
-      });
-    }
+  private async scheduleDeletion(key: string): Promise<void> {
+    await this.prisma.mediaDeletion.upsert({
+      where: { storageKey: key },
+      create: { storageKey: key, reason: 'IMAGE_REPLACED_OR_REMOVED' },
+      update: {},
+    });
   }
   private async assertMutableTournament(
     tx: Prisma.TransactionClient,

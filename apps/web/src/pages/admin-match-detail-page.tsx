@@ -1,4 +1,4 @@
-import { useEffect, useState, type SyntheticEvent } from 'react';
+import { useEffect, useMemo, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { GeneratedAccessCodesPanel } from '@/components/generated-access-codes-panel';
@@ -32,6 +32,7 @@ import {
   type UpdateMatchInput,
 } from '@/services/api/admin-management';
 import { AthleteColor, type MatchAccessRole } from '@/types/shared';
+import { MatchStatus } from '@/types/shared';
 import { useAdminAccessContext } from '@/features/auth/admin-access';
 import { RosterAthleteSelector } from '@/features/admin-management/roster-athlete-selector';
 
@@ -117,11 +118,14 @@ function MatchEditor({
 
   const activeWeightClasses =
     weightsQuery.data?.weightClasses.filter(({ isActive }) => isActive) ?? [];
-  const eligibleAthletes = athletesQuery.data?.items ?? [];
+  const eligibleAthletes = useMemo(
+    () => athletesQuery.data?.items ?? [],
+    [athletesQuery.data?.items],
+  );
   const selectedWeightClass = activeWeightClasses.find(({ id }) => id === weightClassId);
   const isLegacy =
     match.weightClassId === null || match.athletes.some(({ athleteId }) => athleteId === null);
-  const canReplace = match.status === 'WAITING' && !isLegacy;
+  const canReplace = match.status === MatchStatus.WAITING && !isLegacy;
   useEffect(() => {
     const ids = new Set(eligibleAthletes.map(({ id }) => id));
     if (redAthleteId && !ids.has(redAthleteId)) setRedAthleteId(null);
@@ -211,7 +215,9 @@ function MatchEditor({
                   disabled={eligibleAthletes.length < 2}
                   label="Góc Đỏ (RED)"
                   loading={athletesQuery.isPending}
-                  onChange={(id) => setRedAthleteId(id || null)}
+                  onChange={(id) => {
+                    setRedAthleteId(id || null);
+                  }}
                   selectedAthleteId={redAthleteId}
                   weightClassName={selectedWeightClass?.name}
                 />
@@ -222,7 +228,9 @@ function MatchEditor({
                   excludedAthleteId={redAthleteId}
                   label="Góc Xanh (BLUE)"
                   loading={athletesQuery.isPending}
-                  onChange={(id) => setBlueAthleteId(id || null)}
+                  onChange={(id) => {
+                    setBlueAthleteId(id || null);
+                  }}
                   selectedAthleteId={blueAthleteId}
                   weightClassName={selectedWeightClass?.name}
                 />
