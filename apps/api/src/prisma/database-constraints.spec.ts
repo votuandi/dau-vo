@@ -56,6 +56,10 @@ async function cleanFixtures(): Promise<void> {
   await prisma.matchAthlete.deleteMany({
     where: { matchId: { in: matchIds } },
   });
+  await prisma.$executeRaw`
+    DELETE FROM "tournament_brackets"
+    WHERE "tournament_id" IN (${fixture.tournamentId}::uuid, ${fixture.otherTournamentId}::uuid)
+  `;
   await prisma.tournamentAthlete.deleteMany({
     where: {
       tournamentId: { in: [fixture.tournamentId, fixture.otherTournamentId] },
@@ -143,6 +147,47 @@ describe('database unique constraints', () => {
         },
       }),
     ).rejects.toMatchObject({ code: 'P2002' });
+  });
+
+  it('enforces active-bracket uniqueness and bracket sizing checks', async () => {
+    const weightClass = await prisma.tournamentWeightClass.create({
+      data: {
+        tournamentId: fixture.tournamentId,
+        name: 'Bracket constraint class',
+        normalizedName: 'bracket constraint class',
+      },
+    });
+    await prisma.$executeRaw`
+      INSERT INTO "tournament_brackets" (
+        "tournament_id", "weight_class_id", "athlete_count", "bracket_size",
+        "round_count", "confirmation_key"
+      ) VALUES (
+        ${fixture.tournamentId}::uuid, ${weightClass.id}::uuid, 2, 2, 1,
+        'database-constraint-bracket-one'
+      )
+    `;
+    await expect(
+      prisma.$executeRaw`
+        INSERT INTO "tournament_brackets" (
+          "tournament_id", "weight_class_id", "athlete_count", "bracket_size",
+          "round_count", "confirmation_key"
+        ) VALUES (
+          ${fixture.tournamentId}::uuid, ${weightClass.id}::uuid, 2, 2, 1,
+          'database-constraint-bracket-two'
+        )
+      `,
+    ).rejects.toMatchObject({ code: 'P2010', meta: { code: '23505' } });
+    await expect(
+      prisma.$executeRaw`
+        INSERT INTO "tournament_brackets" (
+          "tournament_id", "weight_class_id", "athlete_count", "bracket_size",
+          "round_count", "confirmation_key"
+        ) VALUES (
+          ${fixture.tournamentId}::uuid, ${weightClass.id}::uuid, 0, 2, 1,
+          'database-constraint-bracket-invalid'
+        )
+      `,
+    ).rejects.toMatchObject({ code: 'P2010', meta: { code: '23514' } });
   });
 
   it('rejects deleting a Sport referenced by a Tournament', async () => {

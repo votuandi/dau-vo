@@ -240,6 +240,22 @@ separate audited remediation is approved.
 
 ## Testing and rollout
 
+### Phase 3 persistence implementation
+
+Confirmed brackets are stored in `tournament_brackets`, `bracket_entrants`,
+`bracket_fixtures`, and `bracket_slots`. The authoritative operational link is
+the nullable, unique `matches.bracket_fixture_id`; existing and manually
+created matches leave it null. `tournament_brackets_one_active_per_weight_class_key`
+is a PostgreSQL partial unique index because Prisma cannot model it.
+
+The migration uses a check constraint for exactly one slot source and direct
+slot resolution, plus a trigger to ensure slot sources, resolutions, and
+fixture winners belong to the same bracket. It intentionally cannot guarantee
+that a fixture has exactly two slots, that a winner-source slot stays
+unresolved until its source is complete, or that a winner is a participant:
+the future bracket service creates the complete tree and enforces those
+lifecycle invariants transactionally.
+
 Unit-test draw construction for 1, 2, non-power-of-two, and power-of-two
 entrant counts; each entrant exactly once; no double bye; and `n - 1`
 fixtures. Test token tampering, expiry, replay, redraw/cancel non-persistence,
