@@ -319,6 +319,7 @@ model TournamentOrganization {
   tournamentId   String              @map("tournament_id") @db.Uuid
   name           String              @db.VarChar(255)
   normalizedName String              @map("normalized_name") @db.VarChar(255)
+  location       String?             @db.VarChar(255)
   details        String?             @db.Text
   imagePath      String?             @map("image_path") @db.VarChar(1024)
   isActive       Boolean             @default(true) @map("is_active")

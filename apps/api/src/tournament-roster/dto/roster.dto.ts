@@ -17,6 +17,11 @@ export class CreateRosterItemDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(255)
+  location?: string | null;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(5000)
   details?: string | null;
 }
@@ -27,6 +32,11 @@ export class UpdateRosterItemDto {
   @MinLength(1)
   @MaxLength(255)
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  location?: string | null;
 
   @IsOptional()
   @IsString()

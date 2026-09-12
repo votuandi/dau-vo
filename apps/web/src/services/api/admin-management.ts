@@ -171,7 +171,9 @@ export interface TournamentRosterItem {
   readonly updatedAt: string;
 }
 export interface TournamentOrganization extends TournamentRosterItem {
+  readonly location: string | null;
   readonly imagePath: string | null;
+  readonly imageUrl?: string | null;
 }
 export interface TournamentAthlete {
   readonly id: string;
@@ -193,6 +195,7 @@ export interface TournamentAthlete {
 }
 export interface RosterItemInput {
   readonly name?: string;
+  readonly location?: string | null;
   readonly details?: string | null;
   readonly isActive?: boolean;
 }
@@ -323,7 +326,7 @@ export const adminManagementApi = {
   replaceOrganizationImage: (tournamentId: string, id: string, file: File) => {
     const body = new FormData();
     body.append('file', file);
-    return apiClient.put<{ readonly imagePath: string }>(
+    return apiClient.put<{ readonly imagePath: string; readonly imageUrl: string }>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/organizations/${encodePathSegment(id)}/image`,
       body,
     );

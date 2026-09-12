@@ -25,7 +25,7 @@ export class OrganizationImageService {
     organizationId: string,
     actorId: string,
     file: Express.Multer.File | undefined,
-  ): Promise<{ imagePath: string }> {
+  ): Promise<{ imagePath: string; imageUrl: string }> {
     if (!file) throw new BadRequestException(IMAGE_FILE_REQUIRED);
     const stored = await this.storage.save({
       buffer: file.buffer,
@@ -59,7 +59,7 @@ export class OrganizationImageService {
         return organization.imagePath;
       });
       if (prior) await this.scheduleDeletion(prior);
-      return { imagePath: stored.key };
+      return { imagePath: stored.key, imageUrl: `/api/media/${stored.key}` };
     } catch (error) {
       await this.scheduleDeletion(stored.key);
       throw error;

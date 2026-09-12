@@ -18,6 +18,7 @@ import { ApiClientError } from '@/services/api/client';
 import {
   adminManagementApi,
   type AthleteInput,
+  type TournamentOrganization,
   type TournamentRosterItem,
 } from '@/services/api/admin-management';
 
@@ -28,6 +29,16 @@ const tabs = [
   ['athletes', 'Vận động viên'],
   ['matches', 'Trận đấu'],
 ] as const;
+const organizationImageMaxBytes = 2 * 1024 * 1024;
+const organizationImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
+class OrganizationImageUploadError extends Error {
+  constructor(
+    readonly organization: TournamentOrganization,
+    readonly file: File,
+  ) {
+    super('Organization was created but its image could not be uploaded.');
+  }
+}
 type Tab = (typeof tabs)[number][0];
 
 export function TournamentTabs({
@@ -70,13 +81,20 @@ function RosterForm({
   onSubmit,
   onValuesChange,
   busy,
+  organization,
 }: {
   readonly mode: 'create' | 'edit';
   readonly values: RosterValues;
   readonly onCancel: () => void;
-  readonly onSubmit: (input: { name: string; details: string | null }) => void;
+  readonly onSubmit: (input: {
+    name: string;
+    location?: string | null;
+    details: string | null;
+    file: File | null;
+  }) => void;
   readonly onValuesChange: (values: RosterValues) => void;
   readonly busy: boolean;
+  readonly organization: boolean;
 }) {
   return (
     <form
@@ -85,7 +103,12 @@ function RosterForm({
       onSubmit={(e) => {
         e.preventDefault();
         if (!busy && values.name.trim()) {
-          onSubmit({ name: values.name.trim(), details: values.details.trim() || null });
+          onSubmit({
+            name: values.name.trim(),
+            ...(organization ? { location: values.location.trim() || null } : {}),
+            details: values.details.trim() || null,
+            file: values.file,
+          });
         }
       }}
     >
@@ -104,6 +127,56 @@ function RosterForm({
           value={values.name}
         />
       </label>
+      {organization ? (
+        <label className="text-sm font-semibold">
+          Địa phương
+          <input
+            className={inputClassName}
+            maxLength={255}
+            onChange={(e) => {
+              onValuesChange({ ...values, location: e.target.value });
+            }}
+            value={values.location}
+          />
+        </label>
+      ) : null}
+      {organization ? (
+        <label className="text-sm font-semibold">
+          Logo đơn vị (JPEG, PNG hoặc WebP, tối đa 2 MiB)
+          <input
+            accept="image/jpeg,image/png,image/webp"
+            className={inputClassName}
+            onChange={(e) => {
+              const file = e.target.files?.[0] ?? null;
+              const error =
+                file && !organizationImageTypes.includes(file.type)
+                  ? 'Logo phải là ảnh JPEG, PNG hoặc WebP.'
+                  : file && file.size > organizationImageMaxBytes
+                    ? 'Logo không được vượt quá 2 MiB.'
+                    : '';
+              onValuesChange({ ...values, file: error ? null : file, imageError: error });
+            }}
+            type="file"
+          />
+          {values.file ? (
+            <>
+              <span className="block text-xs font-normal">
+                {values.file.name} · {(values.file.size / 1024).toFixed(1)} KiB
+              </span>
+              <img
+                alt="Xem trước logo đơn vị"
+                className="mt-2 h-16 w-16 rounded object-cover"
+                src={URL.createObjectURL(values.file)}
+              />
+            </>
+          ) : null}
+          {values.imageError ? (
+            <span className="block text-xs text-destructive" role="alert">
+              {values.imageError}
+            </span>
+          ) : null}
+        </label>
+      ) : null}
       <label className="text-sm font-semibold">
         Chi tiết
         <textarea
@@ -129,7 +202,10 @@ function RosterForm({
 
 interface RosterValues {
   readonly name: string;
+  readonly location: string;
   readonly details: string;
+  readonly file: File | null;
+  readonly imageError: string;
 }
 
 type RosterDraft =
@@ -137,10 +213,22 @@ type RosterDraft =
   | { readonly mode: 'edit'; readonly item: TournamentRosterItem; readonly values: RosterValues }
   | null;
 
-const emptyRosterValues = (): RosterValues => ({ name: '', details: '' });
+const emptyRosterValues = (): RosterValues => ({
+  name: '',
+  location: '',
+  details: '',
+  file: null,
+  imageError: '',
+});
 
 function rosterValues(item: TournamentRosterItem): RosterValues {
-  return { name: item.name, details: item.details ?? '' };
+  return {
+    name: item.name,
+    location: (item as TournamentOrganization).location ?? '',
+    details: item.details ?? '',
+    file: null,
+    imageError: '',
+  };
 }
 
 export function RosterItemsPage({
@@ -172,15 +260,33 @@ export function RosterItemsPage({
       input,
     }: {
       itemId: string | undefined;
-      input: { name: string; details: string | null };
+      input: { name: string; location?: string | null; details: string | null; file: File | null };
     }) => {
+      const textInput = {
+        name: input.name,
+        ...(kind === 'organizations' ? { location: input.location ?? null } : {}),
+        details: input.details,
+      };
       if (itemId) {
-        if (kind === 'organizations')
-          await adminManagementApi.updateOrganization(tournamentId, itemId, input);
-        else await adminManagementApi.updateWeightClass(tournamentId, itemId, input);
-      } else if (kind === 'organizations')
-        await adminManagementApi.createOrganization(tournamentId, input);
-      else await adminManagementApi.createWeightClass(tournamentId, input);
+        if (kind === 'organizations') {
+          await adminManagementApi.updateOrganization(tournamentId, itemId, textInput);
+          if (input.file)
+            await adminManagementApi.replaceOrganizationImage(tournamentId, itemId, input.file);
+        } else await adminManagementApi.updateWeightClass(tournamentId, itemId, textInput);
+      } else if (kind === 'organizations') {
+        const created = await adminManagementApi.createOrganization(tournamentId, textInput);
+        if (input.file) {
+          try {
+            await adminManagementApi.replaceOrganizationImage(
+              tournamentId,
+              created.organization.id,
+              input.file,
+            );
+          } catch {
+            throw new OrganizationImageUploadError(created.organization, input.file);
+          }
+        }
+      } else await adminManagementApi.createWeightClass(tournamentId, textInput);
     },
     onSuccess: () => {
       submitLock.current = false;
@@ -190,6 +296,18 @@ export function RosterItemsPage({
     },
     onError: (e) => {
       submitLock.current = false;
+      if (e instanceof OrganizationImageUploadError) {
+        setDraft({
+          mode: 'edit',
+          item: e.organization,
+          values: { ...rosterValues(e.organization), file: e.file },
+        });
+        notifyMutationError(
+          e,
+          'Đơn vị đã được tạo, nhưng tải logo thất bại. Hãy thử tải logo lại.',
+        );
+        return;
+      }
       notifyMutationError(e, 'Không thể lưu thay đổi.');
     },
   });
@@ -219,6 +337,16 @@ export function RosterItemsPage({
       );
     },
   });
+  const removeOrganizationImage = useMutation({
+    mutationFn: (id: string) => adminManagementApi.removeOrganizationImage(tournamentId, id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId] });
+      notifyMutationSuccess('Đã xóa logo đơn vị.');
+    },
+    onError: (e) => {
+      notifyMutationError(e, 'Không thể xóa logo đơn vị.');
+    },
+  });
   const items = query.data ?? [];
   return (
     <section className="space-y-5">
@@ -233,6 +361,7 @@ export function RosterItemsPage({
           <RosterForm
             busy={mutate.isPending}
             mode={draft.mode}
+            organization={kind === 'organizations'}
             onCancel={() => {
               setDraft(null);
             }}
@@ -278,7 +407,34 @@ export function RosterItemsPage({
           <li className="rounded-xl border p-4" key={item.id}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h3 className="font-bold">{item.name}</h3>
+                {kind === 'organizations' ? (
+                  <div className="mb-2 flex items-center gap-2">
+                    {(item as TournamentOrganization).imagePath ? (
+                      <img
+                        alt={`Logo ${item.name}`}
+                        className="h-12 w-12 rounded object-cover"
+                        loading="lazy"
+                        src={`/api/media/${(item as TournamentOrganization).imagePath ?? ''}`}
+                      />
+                    ) : (
+                      <span
+                        aria-label={`Chưa có logo cho ${item.name}`}
+                        className="flex h-12 w-12 items-center justify-center rounded bg-muted text-xs"
+                        role="img"
+                      >
+                        ĐV
+                      </span>
+                    )}
+                    <h3 className="font-bold">{item.name}</h3>
+                  </div>
+                ) : (
+                  <h3 className="font-bold">{item.name}</h3>
+                )}
+                {kind === 'organizations' ? (
+                  <p className="text-sm text-muted-foreground">
+                    {(item as TournamentOrganization).location ?? 'Chưa có địa phương'}
+                  </p>
+                ) : null}
                 <p className="text-sm text-muted-foreground">
                   {item.details ?? 'Chưa có chi tiết'}
                 </p>
@@ -289,7 +445,9 @@ export function RosterItemsPage({
               {!readOnly ? (
                 <div className="flex gap-2">
                   <Button
-                    disabled={mutate.isPending || deactivate.isPending}
+                    disabled={
+                      mutate.isPending || deactivate.isPending || removeOrganizationImage.isPending
+                    }
                     onClick={() => {
                       setDraft({ mode: 'edit', item, values: rosterValues(item) });
                     }}
@@ -299,6 +457,19 @@ export function RosterItemsPage({
                   >
                     Sửa
                   </Button>
+                  {kind === 'organizations' && (item as TournamentOrganization).imagePath ? (
+                    <Button
+                      disabled={removeOrganizationImage.isPending}
+                      onClick={() => {
+                        removeOrganizationImage.mutate(item.id);
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Xóa logo
+                    </Button>
+                  ) : null}
                   <Button
                     disabled={mutate.isPending || deactivate.isPending}
                     onClick={() => {

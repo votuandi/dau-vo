@@ -26,6 +26,7 @@ const organizationSelect = {
   id: true,
   tournamentId: true,
   name: true,
+  location: true,
   details: true,
   imagePath: true,
   isActive: true,
@@ -232,15 +233,18 @@ export class OrganizationService {
           name,
           normalizedName: this.normalized(name),
           details: this.details(input.details),
+          ...(kind === 'organization'
+            ? { location: this.location(input.location) }
+            : {}),
         };
         const row =
           kind === 'organization'
             ? await tx.tournamentOrganization.create({
-                data,
+                data: data as Prisma.TournamentOrganizationCreateInput,
                 select: organizationSelect,
               })
             : await tx.tournamentWeightClass.create({
-                data,
+                data: data as Prisma.TournamentWeightClassCreateInput,
                 select: weightClassSelect,
               });
         await this.audit(
@@ -316,6 +320,9 @@ export class OrganizationService {
           ...(input.details === undefined
             ? {}
             : { details: this.details(input.details) }),
+          ...(kind === 'organization' && input.location !== undefined
+            ? { location: this.location(input.location) }
+            : {}),
           ...(input.isActive === undefined
             ? {}
             : {
@@ -327,12 +334,12 @@ export class OrganizationService {
           kind === 'organization'
             ? await tx.tournamentOrganization.update({
                 where: { id },
-                data,
+                data: data as Prisma.TournamentOrganizationUpdateInput,
                 select: organizationSelect,
               })
             : await tx.tournamentWeightClass.update({
                 where: { id },
-                data,
+                data: data as Prisma.TournamentWeightClassUpdateInput,
                 select: weightClassSelect,
               });
         await this.audit(
@@ -386,7 +393,10 @@ export class OrganizationService {
     return trimmed;
   }
   private details(value: string | null | undefined) {
-    return typeof value === 'string' ? value.trim() : value;
+    return typeof value === 'string' ? value.trim() || null : value;
+  }
+  private location(value: string | null | undefined) {
+    return typeof value === 'string' ? value.trim() || null : value;
   }
   private normalized(value: string) {
     return value.normalize('NFKC').toLocaleLowerCase('vi');
