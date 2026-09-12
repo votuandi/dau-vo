@@ -22,6 +22,7 @@ import {
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
 import { activeRoundElapsedMs } from './round-timing';
 import {
   DuplicateRefereeVoteError,
@@ -121,6 +122,8 @@ export class ScoringService implements OnModuleDestroy {
   constructor(
     @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(SportRulesRegistry)
+    private readonly sportRules: SportRulesRegistry,
   ) {}
 
   onModuleDestroy(): void {
@@ -154,6 +157,7 @@ export class ScoringService implements OnModuleDestroy {
     const result = await this.prisma.$transaction(
       async (transaction) => {
         await this.lockMatch(transaction, input.matchId);
+        await this.rulesForMatch(transaction, input.matchId);
         await this.lockActiveRefereeSession(
           transaction,
           input.matchId,
@@ -394,6 +398,7 @@ export class ScoringService implements OnModuleDestroy {
     return this.prisma.$transaction(
       async (transaction) => {
         await this.lockMatch(transaction, matchId);
+        await this.rulesForMatch(transaction, matchId);
         const clock = await this.serverClock(transaction);
         const [match, window] = await Promise.all([
           transaction.match.findUniqueOrThrow({
@@ -445,6 +450,7 @@ export class ScoringService implements OnModuleDestroy {
     resolvedAt: Date,
     matchPublicId: string,
   ): Promise<ScoringResolutionTransition> {
+    const rules = await this.rulesForMatch(transaction, window.matchId);
     const votes = await transaction.refereeVote.findMany({
       orderBy: { serverReceivedAt: 'asc' },
       select: { athleteColor: true, refereeSlot: true, serverReceivedAt: true },
@@ -457,9 +463,9 @@ export class ScoringService implements OnModuleDestroy {
       (vote) => vote.athleteColor === AthleteColor.BLUE,
     ).length;
     const winningColor =
-      redVotes >= 2
+      redVotes >= rules.refereeMajorityThreshold
         ? AthleteColor.RED
-        : blueVotes >= 2
+        : blueVotes >= rules.refereeMajorityThreshold
           ? AthleteColor.BLUE
           : null;
 
@@ -495,7 +501,7 @@ export class ScoringService implements OnModuleDestroy {
           roundNumber: window.roundNumber,
           scoringWindowId: window.id,
           type: ScoreEventType.REFEREE_POINT,
-          value: 1,
+          value: rules.refereePointValue,
         },
         select: { id: true },
       });
@@ -634,6 +640,14 @@ export class ScoringService implements OnModuleDestroy {
     if (rows.length !== 1) {
       throw new Error('Match not found while acquiring scoring lock');
     }
+  }
+
+  private async rulesForMatch(transaction: Prisma.TransactionClient, matchId: string) {
+    const match = await transaction.match.findUniqueOrThrow({
+      select: { tournament: { select: { sport: { select: { sportGroup: { select: { code: true } } } } } } },
+      where: { id: matchId },
+    });
+    return this.sportRules.resolve(match.tournament.sport.sportGroup.code);
   }
 
   private async lockActiveRefereeSession(

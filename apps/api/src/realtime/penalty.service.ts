@@ -13,6 +13,7 @@ import {
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
 import { activeRoundElapsedMs } from './round-timing';
 import {
   InactivePenaltySessionError,
@@ -59,6 +60,8 @@ export class PenaltyService {
   constructor(
     @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(SportRulesRegistry)
+    private readonly sportRules: SportRulesRegistry,
   ) {}
 
   async addPenalty(input: {
@@ -69,6 +72,7 @@ export class PenaltyService {
     return this.prisma.$transaction(
       async (transaction) => {
         await this.lockMatch(transaction, input.matchId);
+        const rules = await this.rulesForMatch(transaction, input.matchId);
         await this.lockActiveInspectorSession(
           transaction,
           input.matchId,
@@ -113,7 +117,7 @@ export class PenaltyService {
             createdBySessionId: input.sessionId,
             matchId: input.matchId,
             roundNumber: activeRound.roundNumber,
-            value: -1,
+            value: rules.inspectorPenaltyValue,
           },
           select: { createdAt: true, id: true, value: true },
         });
@@ -214,6 +218,14 @@ export class PenaltyService {
     if (rows.length !== 1) {
       throw new Error('Match not found while acquiring penalty lock');
     }
+  }
+
+  private async rulesForMatch(transaction: Prisma.TransactionClient, matchId: string) {
+    const match = await transaction.match.findUniqueOrThrow({
+      select: { tournament: { select: { sport: { select: { sportGroup: { select: { code: true } } } } } } },
+      where: { id: matchId },
+    });
+    return this.sportRules.resolve(match.tournament.sport.sportGroup.code);
   }
 
   private async lockActiveInspectorSession(

@@ -33,6 +33,11 @@ export const SPORT_INACTIVE_ERROR: AdminManagementErrorBody = {
   message: 'Sport is inactive',
 };
 
+export const SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR: AdminManagementErrorBody = {
+  code: 'SPORT_GROUP_RULES_NOT_IMPLEMENTED',
+  message: 'This sport group does not have an implemented ruleset',
+};
+
 export const TOURNAMENT_SPORT_CHANGE_NOT_ALLOWED_ERROR: AdminManagementErrorBody =
   {
     code: 'TOURNAMENT_SPORT_CHANGE_NOT_ALLOWED',

@@ -10,15 +10,17 @@ import { ConfigService } from '@nestjs/config';
 import {
   AthleteColor,
   AuditEventType,
-  MatchAccessRole,
   Prisma,
   TournamentStatus,
   UserRole,
 } from '@prisma/client';
+import type { MatchAccessRole } from '@prisma/client';
 import { hash } from 'bcryptjs';
 
 import type { EnvironmentVariables } from '../config/environment';
 import { PrismaService } from '../prisma/prisma.service';
+import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
+import { SportGroupRulesNotImplementedError } from '../sport-rules/sport-rules.errors';
 import {
   calculateAdminAccessState,
   isActiveAdminState,
@@ -38,6 +40,7 @@ import {
   TOURNAMENT_ARCHIVED_ERROR,
   TOURNAMENT_NOT_FOUND_ERROR,
   SPORT_INACTIVE_ERROR,
+  SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR,
   SPORT_NOT_FOUND_ERROR,
   TOURNAMENT_SPORT_CHANGE_NOT_ALLOWED_ERROR,
 } from './admin-management.errors';
@@ -58,13 +61,6 @@ import {
 
 const ACCESS_CODE_HASH_COST = 12;
 const PUBLIC_ID_GENERATION_ATTEMPTS = 8;
-
-export const MATCH_ACCESS_ROLES = [
-  MatchAccessRole.REFEREE_1,
-  MatchAccessRole.REFEREE_2,
-  MatchAccessRole.REFEREE_3,
-  MatchAccessRole.INSPECTOR,
-] as const satisfies readonly MatchAccessRole[];
 
 const tournamentSelect = {
   createdAt: true,
@@ -171,6 +167,8 @@ export class AdminManagementService {
     private readonly realtimeSessions: RealtimeSessionRegistryService,
     @Inject(RealtimeMatchStateService)
     private readonly matchState: RealtimeMatchStateService,
+    @Inject(SportRulesRegistry)
+    private readonly sportRules: SportRulesRegistry,
   ) {
     this.breakDurationMs = config.getOrThrow('BREAK_DURATION_MS', {
       infer: true,
@@ -493,9 +491,6 @@ export class AdminManagementService {
     input: CreateMatchDto,
     adminUserId: string,
   ): Promise<CreatedMatchResult> {
-    const athletes = this.prepareAthletes(input.athletes);
-    const accessCodes = await this.prepareAccessCodes(MATCH_ACCESS_ROLES);
-
     for (
       let attempt = 1;
       attempt <= PUBLIC_ID_GENERATION_ATTEMPTS;
@@ -509,7 +504,7 @@ export class AdminManagementService {
         const match = await this.prisma.$transaction(async (transaction) => {
           await transaction.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId}::uuid FOR UPDATE`;
           const tournament = await transaction.tournament.findUnique({
-            select: { id: true, status: true },
+            select: { id: true, status: true, sport: { select: { sportGroup: { select: { code: true } } } } },
             where: { id: tournamentId },
           });
 
@@ -520,6 +515,9 @@ export class AdminManagementService {
           if (tournament.status === TournamentStatus.ARCHIVED) {
             throw new ConflictException(TOURNAMENT_ARCHIVED_ERROR);
           }
+          const rules = this.resolveRules(tournament.sport.sportGroup.code);
+          const athletes = this.prepareAthletes(input.athletes, rules.athleteColors);
+          const accessCodes = await this.prepareAccessCodes(rules.accessRoles);
 
           const created = await transaction.match.create({
             data: {
@@ -548,13 +546,10 @@ export class AdminManagementService {
             select: { id: true },
           });
 
-          return created;
+          return { accessCodes, created };
         });
 
-        return {
-          accessCodes: accessCodes.map(({ code, role }) => ({ code, role })),
-          match,
-        };
+        return { accessCodes: match.accessCodes.map(({ code, role }) => ({ code, role })), match: match.created };
       } catch (error: unknown) {
         if (!this.isPublicIdCollision(error)) {
           throw error;
@@ -657,20 +652,16 @@ export class AdminManagementService {
     adminUserId: string,
   ): Promise<MatchView> {
     this.assertNonemptyUpdate(input, INVALID_MATCH_ERROR);
-    const athletes =
-      input.athletes === undefined
-        ? undefined
-        : this.prepareAthletes(input.athletes);
-
     return this.prisma.$transaction(async (transaction) => {
       const existing = await transaction.match.findUnique({
-        select: { id: true },
+        select: { id: true, tournament: { select: { sport: { select: { sportGroup: { select: { code: true } } } } } } },
         where: { id },
       });
 
       if (existing === null) {
         throw new NotFoundException(MATCH_NOT_FOUND_ERROR);
       }
+      const athletes = input.athletes === undefined ? undefined : this.prepareAthletes(input.athletes, this.resolveRules(existing.tournament.sport.sportGroup.code).athleteColors);
 
       const data: Prisma.MatchUpdateInput = {};
 
@@ -720,17 +711,32 @@ export class AdminManagementService {
   ): Promise<RegeneratedAccessCodesResult> {
     const existingCodes = await this.prisma.matchAccessCode.findMany({
       orderBy: { role: 'asc' },
-      select: { id: true, role: true },
+      select: {
+        id: true,
+        match: {
+          select: {
+            tournament: {
+              select: {
+                sport: { select: { sportGroup: { select: { code: true } } } },
+              },
+            },
+          },
+        },
+        role: true,
+      },
       where: { matchId },
     });
 
     if (existingCodes.length === 0) {
       await this.requireMatch(matchId);
     }
+    const firstCode = existingCodes[0];
+    const rules = firstCode === undefined ? undefined : this.resolveRules(firstCode.match.tournament.sport.sportGroup.code);
 
     if (
-      existingCodes.length !== MATCH_ACCESS_ROLES.length ||
-      !MATCH_ACCESS_ROLES.every((role) =>
+      rules === undefined ||
+      existingCodes.length !== rules.accessRoles.length ||
+      !rules.accessRoles.every((role) =>
         existingCodes.some((code) => code.role === role),
       )
     ) {
@@ -861,16 +867,23 @@ export class AdminManagementService {
     this.realtimeSessions.revokeSessions(revokedSessionIds);
   }
 
+  private resolveRules(sportGroupCode: string) {
+    try { return this.sportRules.resolve(sportGroupCode); } catch (error: unknown) {
+      if (error instanceof SportGroupRulesNotImplementedError) throw new ConflictException(SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR);
+      throw error;
+    }
+  }
+
   private prepareAthletes(
     athletes: readonly MatchAthleteDto[],
+    athleteColors: readonly AthleteColor[],
   ): Prisma.MatchAthleteCreateWithoutMatchInput[] {
     const colors = new Set(athletes.map(({ color }) => color));
 
     if (
-      athletes.length !== 2 ||
-      colors.size !== 2 ||
-      !colors.has(AthleteColor.RED) ||
-      !colors.has(AthleteColor.BLUE)
+      athletes.length !== athleteColors.length ||
+      colors.size !== athleteColors.length ||
+      !athleteColors.every((color) => colors.has(color))
     ) {
       throw new BadRequestException(INVALID_MATCH_ATHLETES_ERROR);
     }

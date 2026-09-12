@@ -161,6 +161,7 @@ export interface RoundPausedPayload {
 export type RoundResumedPayload = RoundPausedPayload;
 
 export type RoundControlErrorCode =
+  | 'SPORT_GROUP_RULES_NOT_IMPLEMENTED'
   | 'REALTIME_AUTHENTICATION_REQUIRED'
   | 'ROUND_CONTROL_FAILED'
   | 'ROUND_CONTROL_FORBIDDEN'
@@ -178,6 +179,7 @@ export interface ResultCancellationPayload {
 }
 
 export type ResultCancellationErrorCode =
+  | 'SPORT_GROUP_RULES_NOT_IMPLEMENTED'
   | 'REALTIME_AUTHENTICATION_REQUIRED'
   | 'RESULT_CANCELLATION_FAILED'
   | 'RESULT_CANCELLATION_FORBIDDEN'
@@ -195,6 +197,7 @@ export interface ResultCancellationUndoPayload {
 }
 
 export type ResultCancellationUndoErrorCode =
+  | 'SPORT_GROUP_RULES_NOT_IMPLEMENTED'
   | 'REALTIME_AUTHENTICATION_REQUIRED'
   | 'RESET_UNDO_FAILED'
   | 'RESET_UNDO_FORBIDDEN'
@@ -210,6 +213,7 @@ export interface MatchFinishedPayload {
 }
 
 export type RoundStartErrorCode =
+  | 'SPORT_GROUP_RULES_NOT_IMPLEMENTED'
   | 'MATCH_PARTICIPANTS_NOT_READY'
   | 'REALTIME_AUTHENTICATION_REQUIRED'
   | 'ROUND_START_FAILED'
@@ -235,6 +239,7 @@ export interface VoteSubmitPayload {
 }
 
 export type VoteSubmitErrorCode =
+  | 'SPORT_GROUP_RULES_NOT_IMPLEMENTED'
   | 'REALTIME_AUTHENTICATION_REQUIRED'
   | 'VOTE_ALREADY_SUBMITTED'
   | 'VOTE_FAILED'
@@ -318,6 +323,7 @@ export interface PenaltyAddPayload {
 }
 
 export type PenaltyAddErrorCode =
+  | 'SPORT_GROUP_RULES_NOT_IMPLEMENTED'
   | 'PENALTY_FAILED'
   | 'PENALTY_FORBIDDEN'
   | 'PENALTY_INVALID_ATHLETE'

@@ -38,6 +38,10 @@ import type { Server } from 'socket.io';
 
 import { MATCH_SESSION_COOKIE } from '../match-access/match-access.constants';
 import { MatchAccessService } from '../match-access/match-access.service';
+import {
+  SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR,
+  SportGroupRulesNotImplementedError,
+} from '../sport-rules/sport-rules.errors';
 import type { ValidatedMatchSession } from '../match-access/match-access.types';
 import {
   InactiveRoundStartSessionError,
@@ -256,6 +260,9 @@ export class RealtimeGateway
         identity.publicMatchId,
       );
     } catch (error: unknown) {
+      if (error instanceof SportGroupRulesNotImplementedError) {
+        return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
+      }
       this.logger.error(
         { error, matchId: identity.matchId },
         'Unable to verify match participant readiness',
@@ -286,6 +293,8 @@ export class RealtimeGateway
         sessionTokenHash: this.matchAccess.hashSessionToken(sessionToken),
       });
     } catch (error: unknown) {
+      if (error instanceof SportGroupRulesNotImplementedError)
+        return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
       if (error instanceof InactiveRoundStartSessionError) {
         this.sessionRegistry.revokeSessions([identity.sessionId]);
         return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
@@ -368,6 +377,8 @@ export class RealtimeGateway
           ? await this.lifecycle.pauseRound(input)
           : await this.lifecycle.resumeRound(input);
     } catch (error: unknown) {
+      if (error instanceof SportGroupRulesNotImplementedError)
+        return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
       if (error instanceof InactiveRoundControlSessionError) {
         this.sessionRegistry.revokeSessions([identity.sessionId]);
         return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
@@ -449,6 +460,8 @@ export class RealtimeGateway
         ? await this.lifecycle.resetMatchResults(input)
         : await this.lifecycle.cancelCurrentRoundResult(input);
     } catch (error: unknown) {
+      if (error instanceof SportGroupRulesNotImplementedError)
+        return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
       if (error instanceof InactiveRoundControlSessionError) {
         this.sessionRegistry.revokeSessions([identity.sessionId]);
         return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
@@ -516,6 +529,8 @@ export class RealtimeGateway
         sessionTokenHash: this.matchAccess.hashSessionToken(token),
       });
     } catch (error: unknown) {
+      if (error instanceof SportGroupRulesNotImplementedError)
+        return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
       if (error instanceof InactiveRoundControlSessionError) {
         this.sessionRegistry.revokeSessions([identity.sessionId]);
         return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
@@ -596,6 +611,8 @@ export class RealtimeGateway
       client.emit(RealtimeEvent.VOTE_ACCEPTED, transition.accepted);
       return { ok: true, vote: transition.accepted };
     } catch (error: unknown) {
+      if (error instanceof SportGroupRulesNotImplementedError)
+        return this.rejectVote(client, identity.publicMatchId, SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR);
       if (error instanceof InactiveVoteSessionError) {
         this.sessionRegistry.revokeSessions([identity.sessionId]);
         return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
@@ -676,6 +693,8 @@ export class RealtimeGateway
       await this.publishPenaltyAdded(transition);
       return { ok: true, penalty: transition.payload.penalty };
     } catch (error: unknown) {
+      if (error instanceof SportGroupRulesNotImplementedError)
+        return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
       if (error instanceof InactivePenaltySessionError) {
         this.sessionRegistry.revokeSessions([identity.sessionId]);
         return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };

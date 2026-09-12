@@ -22,6 +22,7 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
 import { RealtimeSessionRegistryService } from './realtime-session-registry.service';
 
 const ACCESS_ROLES = [
@@ -36,6 +37,8 @@ export class RealtimeMatchStateService {
   constructor(
     @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(SportRulesRegistry)
+    private readonly sportRules: SportRulesRegistry,
     @Inject(RealtimeSessionRegistryService)
     private readonly sessionRegistry: RealtimeSessionRegistryService,
   ) {}
@@ -328,6 +331,7 @@ export class RealtimeMatchStateService {
     matchId: string,
     matchPublicId: string,
   ): Promise<MatchStartReadinessDetails> {
+    const rules = await this.rulesForMatch(matchId);
     const { presence, scoreboardConnectedCount } = await this.presence(
       matchId,
       matchPublicId,
@@ -336,9 +340,9 @@ export class RealtimeMatchStateService {
       presence.some((entry) => entry.accessRole === role && entry.connected);
 
     return {
-      referee1Connected: isConnected(SharedMatchAccessRole.REFEREE_1),
-      referee2Connected: isConnected(SharedMatchAccessRole.REFEREE_2),
-      referee3Connected: isConnected(SharedMatchAccessRole.REFEREE_3),
+      referee1Connected: rules.requiredRefereeSlots.includes(RefereeSlot.REFEREE_1) && isConnected(SharedMatchAccessRole.REFEREE_1),
+      referee2Connected: rules.requiredRefereeSlots.includes(RefereeSlot.REFEREE_2) && isConnected(SharedMatchAccessRole.REFEREE_2),
+      referee3Connected: rules.requiredRefereeSlots.includes(RefereeSlot.REFEREE_3) && isConnected(SharedMatchAccessRole.REFEREE_3),
       scoreboardConnectedCount,
     };
   }
@@ -369,6 +373,14 @@ export class RealtimeMatchStateService {
       referees,
       scoreboardConnectedCount: presenceState.scoreboardConnectedCount,
     };
+  }
+
+  private async rulesForMatch(matchId: string) {
+    const match = await this.prisma.match.findUniqueOrThrow({
+      select: { tournament: { select: { sport: { select: { sportGroup: { select: { code: true } } } } } } },
+      where: { id: matchId },
+    });
+    return this.sportRules.resolve(match.tournament.sport.sportGroup.code);
   }
 
   private async presence(

@@ -24,6 +24,7 @@ import {
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
 import {
   InactiveRoundStartSessionError,
   InactiveRoundControlSessionError,
@@ -127,6 +128,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
   constructor(
     @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(SportRulesRegistry)
+    private readonly sportRules: SportRulesRegistry,
   ) {}
 
   onModuleDestroy(): void {
@@ -170,6 +173,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
         // can advance the state, rather than being delayed by a separate
         // session-validation transaction and accidentally starting Round 2.
         await this.lockMatch(transaction, input.matchId);
+        await this.rulesForMatch(transaction, input.matchId);
         await this.lockActiveInspectorSession(
           transaction,
           input.matchId,
@@ -279,6 +283,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
     const result = await this.prisma.$transaction(
       async (transaction) => {
         await this.lockMatch(transaction, input.matchId);
+        await this.rulesForMatch(transaction, input.matchId);
         await this.lockActiveControlSession(transaction, input);
         const clock = await this.serverClock(transaction);
         const match = await transaction.match.findUniqueOrThrow({
@@ -355,6 +360,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
     const result = await this.prisma.$transaction(
       async (transaction) => {
         await this.lockMatch(transaction, input.matchId);
+        await this.rulesForMatch(transaction, input.matchId);
         await this.lockActiveControlSession(transaction, input);
         const clock = await this.serverClock(transaction);
         const match = await transaction.match.findUniqueOrThrow({
@@ -449,6 +455,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
     const result = await this.prisma.$transaction(
       async (transaction) => {
         await this.lockMatch(transaction, input.matchId);
+        await this.rulesForMatch(transaction, input.matchId);
         await this.lockActiveControlSession(transaction, input);
         const clock = await this.serverClock(transaction);
         const match = await transaction.match.findUniqueOrThrow({
@@ -603,6 +610,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
     return this.prisma.$transaction(
       async (transaction) => {
         await this.lockMatch(transaction, input.matchId);
+        await this.rulesForMatch(transaction, input.matchId);
         await this.lockActiveControlSession(transaction, input);
         const clock = await this.serverClock(transaction);
         const operation = await transaction.matchResultOperation.findFirst({
@@ -811,6 +819,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
     return this.prisma.$transaction(
       async (transaction) => {
         await this.lockMatch(transaction, matchId);
+        await this.rulesForMatch(transaction, matchId);
         const clock = await this.serverClock(transaction);
         const [match, round] = await Promise.all([
           transaction.match.findUniqueOrThrow({
@@ -947,6 +956,14 @@ export class MatchLifecycleService implements OnModuleDestroy {
     if (row === undefined) {
       throw new MatchLifecycleTargetMissingError();
     }
+  }
+
+  private async rulesForMatch(transaction: Prisma.TransactionClient, matchId: string) {
+    const match = await transaction.match.findUniqueOrThrow({
+      select: { tournament: { select: { sport: { select: { sportGroup: { select: { code: true } } } } } } },
+      where: { id: matchId },
+    });
+    return this.sportRules.resolve(match.tournament.sport.sportGroup.code);
   }
 
   private async lockActiveInspectorSession(
