@@ -1,10 +1,9 @@
-import { useEffect, useState, type SyntheticEvent } from 'react';
+import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import {
-  getApiErrorMessage,
   inputClassName,
   notifyMutationError,
   notifyMutationSuccess,
@@ -15,6 +14,7 @@ import {
   tournamentOrganizationsQueryOptions,
   tournamentWeightClassesQueryOptions,
 } from '@/features/admin-management/queries';
+import { ApiClientError } from '@/services/api/client';
 import {
   adminManagementApi,
   type AthleteInput,
@@ -64,34 +64,44 @@ export function TournamentTabs({
 }
 
 function RosterForm({
-  item,
+  mode,
+  values,
+  onCancel,
   onSubmit,
+  onValuesChange,
   busy,
 }: {
-  readonly item: TournamentRosterItem | undefined;
+  readonly mode: 'create' | 'edit';
+  readonly values: RosterValues;
+  readonly onCancel: () => void;
   readonly onSubmit: (input: { name: string; details: string | null }) => void;
+  readonly onValuesChange: (values: RosterValues) => void;
   readonly busy: boolean;
 }) {
-  const [name, setName] = useState(item?.name ?? '');
-  const [details, setDetails] = useState(item?.details ?? '');
   return (
     <form
+      aria-label={mode === 'edit' ? 'Chỉnh sửa danh mục' : 'Tạo danh mục mới'}
       className="grid gap-3 rounded-xl border bg-muted/30 p-4 sm:grid-cols-[1fr_2fr_auto]"
       onSubmit={(e) => {
         e.preventDefault();
-        if (name.trim()) onSubmit({ name: name.trim(), details: details.trim() || null });
+        if (!busy && values.name.trim()) {
+          onSubmit({ name: values.name.trim(), details: values.details.trim() || null });
+        }
       }}
     >
+      <p aria-live="polite" className="sm:col-span-3 text-sm font-semibold">
+        {mode === 'edit' ? 'Đang chỉnh sửa danh mục' : 'Tạo danh mục mới'}
+      </p>
       <label className="text-sm font-semibold">
         Tên
         <input
           className={inputClassName}
           maxLength={255}
           onChange={(e) => {
-            setName(e.target.value);
+            onValuesChange({ ...values, name: e.target.value });
           }}
           required
-          value={name}
+          value={values.name}
         />
       </label>
       <label className="text-sm font-semibold">
@@ -100,16 +110,37 @@ function RosterForm({
           className={textAreaClassName}
           maxLength={5000}
           onChange={(e) => {
-            setDetails(e.target.value);
+            onValuesChange({ ...values, details: e.target.value });
           }}
-          value={details}
+          value={values.details}
         />
       </label>
-      <Button className="self-end" disabled={busy} type="submit">
-        {item ? 'Lưu' : 'Thêm mới'}
-      </Button>
+      <div className="flex self-end gap-2">
+        <Button disabled={busy} type="submit">
+          {busy ? 'Đang lưu…' : mode === 'edit' ? 'Lưu' : 'Thêm mới'}
+        </Button>
+        <Button disabled={busy} onClick={onCancel} type="button" variant="outline">
+          Hủy
+        </Button>
+      </div>
     </form>
   );
+}
+
+interface RosterValues {
+  readonly name: string;
+  readonly details: string;
+}
+
+type RosterDraft =
+  | { readonly mode: 'create'; readonly values: RosterValues }
+  | { readonly mode: 'edit'; readonly item: TournamentRosterItem; readonly values: RosterValues }
+  | null;
+
+const emptyRosterValues = (): RosterValues => ({ name: '', details: '' });
+
+function rosterValues(item: TournamentRosterItem): RosterValues {
+  return { name: item.name, details: item.details ?? '' };
 }
 
 export function RosterItemsPage({
@@ -122,6 +153,7 @@ export function RosterItemsPage({
   readonly readOnly: boolean;
 }) {
   const qc = useQueryClient();
+  const submitLock = useRef(false);
   const query = useQuery({
     // Keep the array projection separate from the full endpoint response cached by
     // tournamentOrganizationsQueryOptions/tournamentWeightClassesQueryOptions.
@@ -131,31 +163,33 @@ export function RosterItemsPage({
         ? (await adminManagementApi.listOrganizations(tournamentId)).organizations
         : (await adminManagementApi.listWeightClasses(tournamentId)).weightClasses,
   });
-  const [editing, setEditing] = useState<TournamentRosterItem | null>(null);
+  const [draft, setDraft] = useState<RosterDraft>(null);
   const [confirm, setConfirm] = useState<TournamentRosterItem | null>(null);
   const noun = kind === 'organizations' ? 'đơn vị' : 'hạng cân';
   const mutate = useMutation({
     mutationFn: async ({
-      item,
+      itemId,
       input,
     }: {
-      item: TournamentRosterItem | undefined;
+      itemId: string | undefined;
       input: { name: string; details: string | null };
     }) => {
-      if (item) {
+      if (itemId) {
         if (kind === 'organizations')
-          await adminManagementApi.updateOrganization(tournamentId, item.id, input);
-        else await adminManagementApi.updateWeightClass(tournamentId, item.id, input);
+          await adminManagementApi.updateOrganization(tournamentId, itemId, input);
+        else await adminManagementApi.updateWeightClass(tournamentId, itemId, input);
       } else if (kind === 'organizations')
         await adminManagementApi.createOrganization(tournamentId, input);
       else await adminManagementApi.createWeightClass(tournamentId, input);
     },
     onSuccess: () => {
+      submitLock.current = false;
       void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId] });
       notifyMutationSuccess(`Đã lưu ${noun}.`);
-      setEditing(null);
+      setDraft(null);
     },
     onError: (e) => {
+      submitLock.current = false;
       notifyMutationError(e, 'Không thể lưu thay đổi.');
     },
   });
@@ -177,7 +211,9 @@ export function RosterItemsPage({
     onError: (e) => {
       notifyMutationError(
         e,
-        kind === 'weight-classes' && getApiErrorMessage(e, '').includes('WEIGHT_CLASS_IN_USE')
+        kind === 'weight-classes' &&
+          e instanceof ApiClientError &&
+          e.body.code === 'WEIGHT_CLASS_IN_USE'
           ? 'Hạng cân đang được vận động viên hoặc trận đấu sử dụng. Hãy chuyển các vận động viên/trận liên quan trước.'
           : 'Không thể cập nhật trạng thái.',
       );
@@ -193,13 +229,35 @@ export function RosterItemsPage({
         <p className="text-sm text-muted-foreground">Quản lý danh mục sử dụng trong giải đấu.</p>
       </div>
       {!readOnly ? (
-        <RosterForm
-          busy={mutate.isPending}
-          item={editing ?? undefined}
-          onSubmit={(input) => {
-            mutate.mutate({ item: editing ?? undefined, input });
-          }}
-        />
+        draft ? (
+          <RosterForm
+            busy={mutate.isPending}
+            mode={draft.mode}
+            onCancel={() => {
+              setDraft(null);
+            }}
+            onSubmit={(input) => {
+              if (!mutate.isPending && !submitLock.current) {
+                submitLock.current = true;
+                mutate.mutate({ itemId: draft.mode === 'edit' ? draft.item.id : undefined, input });
+              }
+            }}
+            onValuesChange={(values) => {
+              setDraft((current) => (current ? { ...current, values } : current));
+            }}
+            values={draft.values}
+          />
+        ) : (
+          <Button
+            disabled={mutate.isPending || deactivate.isPending}
+            onClick={() => {
+              setDraft({ mode: 'create', values: emptyRosterValues() });
+            }}
+            type="button"
+          >
+            Thêm {noun}
+          </Button>
+        )
       ) : null}
       {query.isPending ? <p>Đang tải…</p> : null}
       {query.isError ? (
@@ -231,8 +289,9 @@ export function RosterItemsPage({
               {!readOnly ? (
                 <div className="flex gap-2">
                   <Button
+                    disabled={mutate.isPending || deactivate.isPending}
                     onClick={() => {
-                      setEditing(item);
+                      setDraft({ mode: 'edit', item, values: rosterValues(item) });
                     }}
                     size="sm"
                     type="button"
@@ -241,6 +300,7 @@ export function RosterItemsPage({
                     Sửa
                   </Button>
                   <Button
+                    disabled={mutate.isPending || deactivate.isPending}
                     onClick={() => {
                       setConfirm(item);
                     }}
@@ -269,7 +329,7 @@ export function RosterItemsPage({
             setConfirm(null);
           }}
           onConfirm={() => {
-            deactivate.mutate(confirm);
+            if (!deactivate.isPending) deactivate.mutate(confirm);
           }}
           title={`${confirm.isActive ? 'Ngừng dùng' : 'Khôi phục'} ${noun}?`}
         />

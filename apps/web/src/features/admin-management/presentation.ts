@@ -29,6 +29,14 @@ const apiErrorMessages: Readonly<Record<string, string>> = {
   SPORT_INACTIVE: 'Môn thể thao đã chọn hiện không còn hoạt động.',
   TOURNAMENT_SPORT_CHANGE_NOT_ALLOWED:
     'Không thể đổi môn thể thao sau khi giải đấu đã có trận đấu.',
+  ORGANIZATION_NAME_ALREADY_EXISTS: 'Đã có đơn vị tham gia cùng tên trong giải đấu này.',
+  WEIGHT_CLASS_NAME_ALREADY_EXISTS: 'Đã có hạng cân cùng tên trong giải đấu này.',
+  ORGANIZATION_NOT_FOUND: 'Không tìm thấy đơn vị tham gia.',
+  WEIGHT_CLASS_NOT_FOUND: 'Không tìm thấy hạng cân.',
+  ORGANIZATION_UPDATE_EMPTY: 'Hãy thay đổi ít nhất một thông tin của đơn vị.',
+  WEIGHT_CLASS_UPDATE_EMPTY: 'Hãy thay đổi ít nhất một thông tin của hạng cân.',
+  WEIGHT_CLASS_IN_USE:
+    'Hạng cân đang được vận động viên hoặc trận đấu sử dụng. Hãy chuyển các vận động viên hoặc trận liên quan trước khi ngừng dùng.',
 };
 
 export const tournamentStatuses = [
