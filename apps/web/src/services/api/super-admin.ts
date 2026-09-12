@@ -77,6 +77,14 @@ export interface ManagedUser {
     readonly purgeAfter: string | null;
     readonly deletionReason: string | null;
     readonly restoredAt: string | null;
+    readonly sportId: string;
+    readonly sport: {
+      readonly id: string;
+      readonly code: string;
+      readonly name: string;
+      readonly isActive: boolean;
+      readonly sportGroup: { readonly id: string; readonly code: string; readonly name: string };
+    };
   }[];
 }
 export interface ManagedUsersPage {

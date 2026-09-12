@@ -43,6 +43,14 @@ export class PublicViewController {
           startDate: true,
           endDate: true,
           status: true,
+          sport: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              sportGroup: { select: { id: true, code: true, name: true } },
+            },
+          },
         },
       }),
       this.prisma.tournament.count({ where }),
@@ -62,6 +70,14 @@ export class PublicViewController {
         startDate: true,
         endDate: true,
         status: true,
+        sport: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            sportGroup: { select: { id: true, code: true, name: true } },
+          },
+        },
         matches: {
           where: { status: { not: MatchStatus.WAITING } },
           select: {

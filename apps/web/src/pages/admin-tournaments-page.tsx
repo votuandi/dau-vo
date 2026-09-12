@@ -21,6 +21,11 @@ interface TournamentFormErrors {
   readonly dates?: string;
 }
 
+// The Sport picker is introduced in the following UI phase. Until then, the
+// existing form submits its explicit Võ Gậy catalog ID; the API never applies
+// this value as a server-side fallback.
+const TRANSITIONAL_DEFAULT_SPORT_ID = 'd91e1cf7-89a7-4475-bd93-6b5f35a14574';
+
 function tournamentStatusTagClassName(status: TournamentStatus): string {
   switch (status) {
     case TournamentStatus.DRAFT:
@@ -45,6 +50,7 @@ function buildCreateTournamentInput(values: {
 }): CreateTournamentInput {
   return {
     name: values.name.trim(),
+    sportId: TRANSITIONAL_DEFAULT_SPORT_ID,
     status: TournamentStatus.DRAFT,
     ...(values.description.trim() ? { description: values.description.trim() } : {}),
     ...(values.location.trim() ? { location: values.location.trim() } : {}),

@@ -15,8 +15,18 @@ export interface AdminTournament {
   readonly startDate: string | null;
   readonly endDate: string | null;
   readonly status: TournamentStatus;
+  readonly sportId: string;
+  readonly sport: AdminSport;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+export interface AdminSport {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly isActive: boolean;
+  readonly sportGroup: { readonly id: string; readonly code: string; readonly name: string };
 }
 
 export interface AdminMatchAthlete {
@@ -107,6 +117,7 @@ export interface AdminMatchMonitoring {
 }
 
 export interface CreateTournamentInput {
+  readonly sportId: string;
   readonly name: string;
   readonly description?: string;
   readonly location?: string;
@@ -116,6 +127,7 @@ export interface CreateTournamentInput {
 }
 
 export interface UpdateTournamentInput {
+  readonly sportId?: string;
   readonly name?: string;
   readonly description?: string | null;
   readonly location?: string | null;

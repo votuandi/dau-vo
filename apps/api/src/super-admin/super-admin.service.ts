@@ -54,6 +54,16 @@ const select = {
       purgeAfter: true,
       deletionReason: true,
       restoredAt: true,
+      sportId: true,
+      sport: {
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          isActive: true,
+          sportGroup: { select: { id: true, code: true, name: true } },
+        },
+      },
     },
   },
 } satisfies Prisma.UserSelect;

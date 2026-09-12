@@ -8,6 +8,12 @@ export interface PublicTournament {
   readonly startDate: string;
   readonly endDate: string | null;
   readonly status: 'ACTIVE' | 'FINISHED';
+  readonly sport: {
+    readonly id: string;
+    readonly code: string;
+    readonly name: string;
+    readonly sportGroup: { readonly id: string; readonly code: string; readonly name: string };
+  };
 }
 export interface PublicMatch {
   readonly id: string;

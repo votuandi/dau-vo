@@ -17,7 +17,6 @@ import {
 } from '@prisma/client';
 import { hash } from 'bcryptjs';
 
-import { DEFAULT_SPORT } from '../../prisma/default-sport';
 import type { EnvironmentVariables } from '../config/environment';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -38,6 +37,9 @@ import {
   PUBLIC_MATCH_ID_COLLISION_ERROR,
   TOURNAMENT_ARCHIVED_ERROR,
   TOURNAMENT_NOT_FOUND_ERROR,
+  SPORT_INACTIVE_ERROR,
+  SPORT_NOT_FOUND_ERROR,
+  TOURNAMENT_SPORT_CHANGE_NOT_ALLOWED_ERROR,
 } from './admin-management.errors';
 import type {
   CreateMatchDto,
@@ -73,6 +75,16 @@ const tournamentSelect = {
   name: true,
   startDate: true,
   status: true,
+  sportId: true,
+  sport: {
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      isActive: true,
+      sportGroup: { select: { id: true, code: true, name: true } },
+    },
+  },
   updatedAt: true,
 } satisfies Prisma.TournamentSelect;
 
@@ -280,12 +292,19 @@ export class AdminManagementService {
         if (used >= entitlement.tournamentLimit)
           throw new ConflictException({ code: 'TOURNAMENT_LIMIT_REACHED' });
       }
-      const defaultSport = await transaction.sport.findUnique({
-        where: { code: DEFAULT_SPORT.code },
-        select: { id: true },
+      await transaction.$queryRaw`SELECT id FROM sports WHERE id = ${input.sportId}::uuid FOR UPDATE`;
+      const sport = await transaction.sport.findUnique({
+        where: { id: input.sportId },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          isActive: true,
+          sportGroup: { select: { id: true, code: true, name: true } },
+        },
       });
-      if (defaultSport === null)
-        throw new ConflictException({ code: 'DEFAULT_SPORT_NOT_CONFIGURED' });
+      if (sport === null) throw new NotFoundException(SPORT_NOT_FOUND_ERROR);
+      if (!sport.isActive) throw new ConflictException(SPORT_INACTIVE_ERROR);
       const tournament = await transaction.tournament.create({
         data: {
           description: this.optionalTrimmedText(input.description),
@@ -293,7 +312,7 @@ export class AdminManagementService {
           location: this.optionalTrimmedText(input.location),
           name,
           ownerUserId: adminUserId,
-          sportId: defaultSport.id,
+          sportId: sport.id,
           startDate,
           status: input.status,
         },
@@ -304,7 +323,7 @@ export class AdminManagementService {
         data: {
           adminUserId,
           eventType: AuditEventType.TOURNAMENT_CREATED,
-          metadata: { tournamentId: tournament.id },
+          metadata: { tournamentId: tournament.id, sportId: sport.id, sport },
         },
         select: { id: true },
       });
@@ -334,6 +353,7 @@ export class AdminManagementService {
     this.assertNonemptyUpdate(input, INVALID_TOURNAMENT_ERROR);
 
     return this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT id FROM tournaments WHERE id = ${id}::uuid FOR UPDATE`;
       const current = await transaction.tournament.findUnique({
         select: tournamentSelect,
         where: { id },
@@ -341,6 +361,27 @@ export class AdminManagementService {
 
       if (current === null) {
         throw new NotFoundException(TOURNAMENT_NOT_FOUND_ERROR);
+      }
+
+      let sportId: string | undefined;
+      if (input.sportId !== undefined && input.sportId !== current.sportId) {
+        // Always lock Sport rows by UUID order. Sport lifecycle mutations use the
+        // same row lock before checking tournament usage.
+        const sportIds = [current.sportId, input.sportId].sort();
+        await transaction.$queryRaw`SELECT id FROM sports WHERE id IN (${sportIds[0]}::uuid, ${sportIds[1]}::uuid) ORDER BY id FOR UPDATE`;
+        const target = await transaction.sport.findUnique({
+          where: { id: input.sportId },
+          select: { id: true, isActive: true },
+        });
+        if (target === null) throw new NotFoundException(SPORT_NOT_FOUND_ERROR);
+        if (!target.isActive) throw new ConflictException(SPORT_INACTIVE_ERROR);
+        if (
+          (await transaction.match.count({ where: { tournamentId: id } })) > 0
+        )
+          throw new ConflictException(
+            TOURNAMENT_SPORT_CHANGE_NOT_ALLOWED_ERROR,
+          );
+        sportId = target.id;
       }
 
       const startDate =
@@ -373,6 +414,7 @@ export class AdminManagementService {
       if (input.status !== undefined) {
         data.status = input.status;
       }
+      if (sportId !== undefined) data.sport = { connect: { id: sportId } };
 
       const tournament = await transaction.tournament.update({
         data,
@@ -387,6 +429,9 @@ export class AdminManagementService {
           metadata: {
             fields: Object.keys(input),
             tournamentId: id,
+            ...(sportId === undefined
+              ? {}
+              : { previousSportId: current.sportId, sportId }),
           },
         },
         select: { id: true },
@@ -462,6 +507,7 @@ export class AdminManagementService {
 
       try {
         const match = await this.prisma.$transaction(async (transaction) => {
+          await transaction.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId}::uuid FOR UPDATE`;
           const tournament = await transaction.tournament.findUnique({
             select: { id: true, status: true },
             where: { id: tournamentId },

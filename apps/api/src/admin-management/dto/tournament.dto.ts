@@ -2,6 +2,7 @@ import {
   IsEnum,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   MaxLength,
   MinLength,
@@ -12,6 +13,9 @@ import { TournamentStatus } from '@prisma/client';
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export class CreateTournamentDto {
+  @IsUUID()
+  sportId!: string;
+
   @IsString()
   @MinLength(1)
   @MaxLength(255)
@@ -42,6 +46,10 @@ export class CreateTournamentDto {
 }
 
 export class UpdateTournamentDto {
+  @IsOptional()
+  @IsUUID()
+  sportId?: string;
+
   @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsString()
   @MinLength(1)

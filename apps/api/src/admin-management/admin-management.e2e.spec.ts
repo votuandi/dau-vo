@@ -44,6 +44,14 @@ interface TournamentView {
   startDate: string | null;
   endDate: string | null;
   status: TournamentStatus;
+  sportId: string;
+  sport: {
+    id: string;
+    code: string;
+    name: string;
+    isActive: boolean;
+    sportGroup: { id: string; code: string; name: string };
+  };
 }
 
 interface AthleteView {
@@ -164,6 +172,7 @@ describe('Admin tournament and match management (integration)', () => {
   let adminCookie: string;
   let testAdminId: string;
   let credentialGenerator: MatchCredentialGeneratorService;
+  let alternateSportId: string;
   const installedTriggers = new Set<TriggerFixture>();
 
   function authenticated(testRequest: SupertestRequest): SupertestRequest {
@@ -179,6 +188,7 @@ describe('Admin tournament and match management (integration)', () => {
     )
       .send({
         name: `${TEST_PREFIX}-${label}`,
+        sportId: DEFAULT_SPORT.id,
         ...overrides,
       })
       .expect(201);
@@ -297,6 +307,17 @@ describe('Admin tournament and match management (integration)', () => {
     });
     testAdminId = testAdmin.id;
 
+    const alternateSport = await prisma.sport.create({
+      data: {
+        code: `${TEST_PREFIX}-ALT`.toUpperCase(),
+        name: `${TEST_PREFIX} Alternate Sport`,
+        normalizedName: `${TEST_PREFIX} alternate sport`,
+        sportGroupId: '4a78ed51-2fb6-4c9c-a1ec-f054873d6101',
+      },
+      select: { id: true },
+    });
+    alternateSportId = alternateSport.id;
+
     const loginResponse = await request(app.getHttpServer())
       .post('/api/auth/login')
       .send({
@@ -313,6 +334,7 @@ describe('Admin tournament and match management (integration)', () => {
         await dropTrigger(trigger);
       }
       await cleanTestData();
+      await prisma.sport.deleteMany({ where: { id: alternateSportId } });
     }
 
     if (redis !== undefined) {
@@ -347,6 +369,13 @@ describe('Admin tournament and match management (integration)', () => {
       description: 'Initial description',
       location: 'Initial venue',
       status: TournamentStatus.DRAFT,
+      sportId: DEFAULT_SPORT.id,
+      sport: {
+        id: DEFAULT_SPORT.id,
+        code: DEFAULT_SPORT.code,
+        name: DEFAULT_SPORT.name,
+        isActive: true,
+      },
     });
     await expect(
       prisma.tournament.findUniqueOrThrow({
@@ -392,6 +421,31 @@ describe('Admin tournament and match management (integration)', () => {
       location: 'Updated venue',
       status: TournamentStatus.ACTIVE,
     });
+
+    await authenticated(request(app.getHttpServer()).get('/api/tournaments'))
+      .expect(200)
+      .expect(({ body }) => {
+        const item = (body as { items: TournamentView[] }).items.find(
+          ({ id }) => id === tournament.id,
+        );
+        expect(item).toMatchObject({
+          sport: {
+            id: DEFAULT_SPORT.id,
+            code: DEFAULT_SPORT.code,
+            name: DEFAULT_SPORT.name,
+          },
+        });
+        expect(item).not.toHaveProperty('sport.isActive');
+      });
+    await authenticated(
+      request(app.getHttpServer()).get(`/api/tournaments/${tournament.id}`),
+    )
+      .expect(200)
+      .expect(({ body }) => {
+        expect((body as TournamentResponseBody).tournament).toMatchObject({
+          sport: { id: DEFAULT_SPORT.id, code: DEFAULT_SPORT.code },
+        });
+      });
 
     const archiveResponse = await authenticated(
       request(app.getHttpServer()).delete(
@@ -479,6 +533,101 @@ describe('Admin tournament and match management (integration)', () => {
     await authenticated(request(app.getHttpServer()).patch(matchEndpoint))
       .send({ status: null })
       .expect(400);
+  });
+
+  it('requires an active, existing Sport when creating a tournament', async () => {
+    await authenticated(
+      request(app.getHttpServer()).post('/api/admin/tournaments'),
+    )
+      .send({ name: `${TEST_PREFIX}-missing-sport` })
+      .expect(400);
+    await authenticated(
+      request(app.getHttpServer()).post('/api/admin/tournaments'),
+    )
+      .send({
+        name: `${TEST_PREFIX}-unknown-sport`,
+        sportId: '00000000-0000-4000-8000-000000000001',
+      })
+      .expect(404)
+      .expect({ code: 'SPORT_NOT_FOUND', message: 'Sport not found' });
+
+    await prisma.sport.update({
+      data: { isActive: false },
+      where: { id: alternateSportId },
+    });
+    await authenticated(
+      request(app.getHttpServer()).post('/api/admin/tournaments'),
+    )
+      .send({
+        name: `${TEST_PREFIX}-inactive-sport`,
+        sportId: alternateSportId,
+      })
+      .expect(409)
+      .expect({ code: 'SPORT_INACTIVE', message: 'Sport is inactive' });
+    await prisma.sport.update({
+      data: { isActive: true },
+      where: { id: alternateSportId },
+    });
+  });
+
+  it('allows Sport changes before the first Match and rejects them afterwards', async () => {
+    const tournament = await createTournament('sport-change');
+
+    await authenticated(
+      request(app.getHttpServer()).patch(
+        `/api/admin/tournaments/${tournament.id}`,
+      ),
+    )
+      .send({ sportId: DEFAULT_SPORT.id })
+      .expect(200)
+      .expect(({ body }) => {
+        expect((body as TournamentResponseBody).tournament.sportId).toBe(
+          DEFAULT_SPORT.id,
+        );
+      });
+
+    await authenticated(
+      request(app.getHttpServer()).patch(
+        `/api/admin/tournaments/${tournament.id}`,
+      ),
+    )
+      .send({ sportId: alternateSportId })
+      .expect(200)
+      .expect(({ body }) => {
+        expect((body as TournamentResponseBody).tournament.sportId).toBe(
+          alternateSportId,
+        );
+      });
+
+    await createMatch(tournament.id, 'sport-change');
+    await authenticated(
+      request(app.getHttpServer()).patch(
+        `/api/admin/tournaments/${tournament.id}`,
+      ),
+    )
+      .send({ sportId: DEFAULT_SPORT.id })
+      .expect(409)
+      .expect({
+        code: 'TOURNAMENT_SPORT_CHANGE_NOT_ALLOWED',
+        message: 'Tournament sport cannot change after matches exist',
+      });
+
+    await prisma.sport.update({
+      data: { isActive: false },
+      where: { id: DEFAULT_SPORT.id },
+    });
+    await authenticated(
+      request(app.getHttpServer()).patch(
+        `/api/admin/tournaments/${tournament.id}`,
+      ),
+    )
+      .send({ sportId: DEFAULT_SPORT.id })
+      .expect(409)
+      .expect({ code: 'SPORT_INACTIVE', message: 'Sport is inactive' });
+    await prisma.sport.update({
+      data: { isActive: true },
+      where: { id: DEFAULT_SPORT.id },
+    });
   });
 
   it('rejects anything other than exactly one RED and one BLUE athlete', async () => {

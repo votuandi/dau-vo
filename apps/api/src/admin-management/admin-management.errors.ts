@@ -23,6 +23,22 @@ export const TOURNAMENT_NOT_FOUND_ERROR: AdminManagementErrorBody = {
   message: 'Tournament not found',
 };
 
+export const SPORT_NOT_FOUND_ERROR: AdminManagementErrorBody = {
+  code: 'SPORT_NOT_FOUND',
+  message: 'Sport not found',
+};
+
+export const SPORT_INACTIVE_ERROR: AdminManagementErrorBody = {
+  code: 'SPORT_INACTIVE',
+  message: 'Sport is inactive',
+};
+
+export const TOURNAMENT_SPORT_CHANGE_NOT_ALLOWED_ERROR: AdminManagementErrorBody =
+  {
+    code: 'TOURNAMENT_SPORT_CHANGE_NOT_ALLOWED',
+    message: 'Tournament sport cannot change after matches exist',
+  };
+
 export const TOURNAMENT_ARCHIVED_ERROR: AdminManagementErrorBody = {
   code: 'TOURNAMENT_ARCHIVED',
   message: 'Matches cannot be created in an archived tournament',
