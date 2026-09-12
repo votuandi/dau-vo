@@ -424,7 +424,7 @@ model MatchAthlete {
   tournamentId String             @map("tournament_id") @db.Uuid
   athleteId    String?            @map("athlete_id") @db.Uuid
   name         String             @db.VarChar(255)
-  organization String             @db.VarChar(255)
+  organization String?            @db.VarChar(255)
   color        AthleteColor
   createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
