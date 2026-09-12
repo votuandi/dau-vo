@@ -107,6 +107,8 @@ function isRealtimeAuthenticationError(error: Error): boolean {
 
 function getRoundStartErrorMessage(code: RoundStartErrorCode, fallback: string): string {
   switch (code) {
+    case 'SPORT_GROUP_RULES_NOT_IMPLEMENTED':
+      return 'Luật thi đấu cho nhóm môn này chưa được triển khai.';
     case 'REALTIME_AUTHENTICATION_REQUIRED':
       return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
     case 'ROUND_START_FORBIDDEN':
@@ -122,6 +124,8 @@ function getRoundStartErrorMessage(code: RoundStartErrorCode, fallback: string):
 
 function getRoundControlErrorMessage(code: RoundControlErrorCode, fallback: string): string {
   switch (code) {
+    case 'SPORT_GROUP_RULES_NOT_IMPLEMENTED':
+      return 'Luật thi đấu cho nhóm môn này chưa được triển khai.';
     case 'REALTIME_AUTHENTICATION_REQUIRED':
       return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
     case 'ROUND_CONTROL_FORBIDDEN':
@@ -138,6 +142,8 @@ function getResultCancellationErrorMessage(
   fallback: string,
 ): string {
   switch (code) {
+    case 'SPORT_GROUP_RULES_NOT_IMPLEMENTED':
+      return 'Luật thi đấu cho nhóm môn này chưa được triển khai.';
     case 'REALTIME_AUTHENTICATION_REQUIRED':
       return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
     case 'RESULT_CANCELLATION_FORBIDDEN':
@@ -154,6 +160,8 @@ function getResultCancellationUndoErrorMessage(
   fallback: string,
 ): string {
   switch (code) {
+    case 'SPORT_GROUP_RULES_NOT_IMPLEMENTED':
+      return 'Luật thi đấu cho nhóm môn này chưa được triển khai.';
     case 'REALTIME_AUTHENTICATION_REQUIRED':
       return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
     case 'RESET_UNDO_FORBIDDEN':
@@ -167,6 +175,8 @@ function getResultCancellationUndoErrorMessage(
 
 function getVoteSubmitErrorMessage(code: VoteSubmitErrorCode, fallback: string): string {
   switch (code) {
+    case 'SPORT_GROUP_RULES_NOT_IMPLEMENTED':
+      return 'Luật thi đấu cho nhóm môn này chưa được triển khai.';
     case 'REALTIME_AUTHENTICATION_REQUIRED':
       return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
     case 'VOTE_FORBIDDEN':
@@ -190,6 +200,8 @@ function getVoteSubmitErrorMessage(code: VoteSubmitErrorCode, fallback: string):
 
 function getPenaltyErrorMessage(code: PenaltyAddErrorCode, fallback: string): string {
   switch (code) {
+    case 'SPORT_GROUP_RULES_NOT_IMPLEMENTED':
+      return 'Luật thi đấu cho nhóm môn này chưa được triển khai.';
     case 'REALTIME_AUTHENTICATION_REQUIRED':
       return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
     case 'PENALTY_FORBIDDEN':

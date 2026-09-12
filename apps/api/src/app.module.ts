@@ -19,6 +19,8 @@ import { PublicViewModule } from './public-view/public-view.module';
 import { PricingModule } from './pricing/pricing.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { SuperAdminModule } from './super-admin/super-admin.module';
+import { MediaModule } from './media/media.module';
+import { TournamentRosterModule } from './tournament-roster/tournament-roster.module';
 
 @Module({
   imports: [
@@ -71,6 +73,8 @@ import { SuperAdminModule } from './super-admin/super-admin.module';
     PricingModule,
     SubscriptionsModule,
     SuperAdminModule,
+    MediaModule,
+    TournamentRosterModule,
   ],
 })
 export class AppModule {}

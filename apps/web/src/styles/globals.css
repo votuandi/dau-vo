@@ -48,6 +48,19 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  input::placeholder,
+  textarea::placeholder {
+    color: hsl(var(--muted-foreground) / 0.72);
+  }
+
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-text-fill-color: hsl(var(--foreground));
+    -webkit-box-shadow: 0 0 0 1000px rgb(255 255 255 / 0.88) inset;
+    transition: background-color 9999s ease-out 0s;
+  }
+
   ::selection {
     background: hsl(var(--primary) / 0.2);
     color: hsl(var(--foreground));
@@ -60,5 +73,25 @@
       radial-gradient(circle at 8% 0%, rgb(220 38 38 / 30%), transparent 34rem),
       radial-gradient(circle at 96% 92%, rgb(14 165 233 / 32%), transparent 38rem),
       linear-gradient(145deg, #061826 0%, #0b2f4a 52%, #071522 100%);
+  }
+
+  .form-field {
+    @apply space-y-1.5;
+  }
+
+  label.form-field {
+    @apply block text-sm font-semibold leading-5 text-foreground;
+  }
+
+  .form-label {
+    @apply block text-sm font-semibold leading-5 text-foreground;
+  }
+
+  .form-hint {
+    @apply text-xs leading-5 text-muted-foreground;
+  }
+
+  .form-error {
+    @apply text-sm font-medium text-destructive;
   }
 }

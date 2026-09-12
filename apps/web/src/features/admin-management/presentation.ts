@@ -8,12 +8,20 @@ const apiErrorMessages: Readonly<Record<string, string>> = {
   INVALID_ID: 'Mã định danh không hợp lệ.',
   INVALID_MATCH: 'Thông tin trận đấu không hợp lệ.',
   INVALID_MATCH_ATHLETES: 'Trận đấu phải có đúng một vận động viên Đỏ và một vận động viên Xanh.',
+  DUPLICATE_MATCH_ATHLETE: 'Một vận động viên không thể thi đấu ở cả hai góc.',
   INVALID_TEXT: 'Nội dung đã nhập không hợp lệ.',
   INVALID_TOURNAMENT: 'Thông tin giải đấu không hợp lệ.',
   INVALID_TOURNAMENT_DATE_RANGE: 'Ngày bắt đầu không thể sau ngày kết thúc.',
   MATCH_ACCESS_CODE_NOT_FOUND: 'Không tìm thấy mã truy cập trận đấu.',
   MATCH_ACCESS_CODES_INCOMPLETE: 'Trận đấu chưa có đủ các mã truy cập cần thiết.',
   MATCH_NOT_FOUND: 'Không tìm thấy trận đấu.',
+  MATCH_ATHLETE_NOT_FOUND: 'Vận động viên đã không còn trong danh sách đăng ký.',
+  MATCH_ATHLETE_INACTIVE: 'Một vận động viên đã ngừng hoạt động. Danh sách đã được làm mới.',
+  MATCH_ATHLETE_WEIGHT_CLASS_MISMATCH:
+    'Hai vận động viên phải thuộc cùng một hạng cân đang hoạt động.',
+  MATCH_ATHLETE_ORGANIZATION_INVALID:
+    'Đơn vị của vận động viên không còn hoạt động. Danh sách đã được làm mới.',
+  MATCH_ATHLETE_REPLACEMENT_UNSAFE: 'Không thể thay vận động viên sau khi trận đã có hoạt động.',
   PUBLIC_MATCH_ID_COLLISION: 'Không thể tạo mã trận đấu duy nhất. Vui lòng thử lại.',
   TOURNAMENT_ARCHIVED: 'Không thể tạo trận trong giải đấu đã lưu trữ.',
   TOURNAMENT_NOT_FOUND: 'Không tìm thấy giải đấu.',
@@ -21,6 +29,14 @@ const apiErrorMessages: Readonly<Record<string, string>> = {
   SPORT_INACTIVE: 'Môn thể thao đã chọn hiện không còn hoạt động.',
   TOURNAMENT_SPORT_CHANGE_NOT_ALLOWED:
     'Không thể đổi môn thể thao sau khi giải đấu đã có trận đấu.',
+  ORGANIZATION_NAME_ALREADY_EXISTS: 'Đã có đơn vị tham gia cùng tên trong giải đấu này.',
+  WEIGHT_CLASS_NAME_ALREADY_EXISTS: 'Đã có hạng cân cùng tên trong giải đấu này.',
+  ORGANIZATION_NOT_FOUND: 'Không tìm thấy đơn vị tham gia.',
+  WEIGHT_CLASS_NOT_FOUND: 'Không tìm thấy hạng cân.',
+  ORGANIZATION_UPDATE_EMPTY: 'Hãy thay đổi ít nhất một thông tin của đơn vị.',
+  WEIGHT_CLASS_UPDATE_EMPTY: 'Hãy thay đổi ít nhất một thông tin của hạng cân.',
+  WEIGHT_CLASS_IN_USE:
+    'Hạng cân đang được vận động viên hoặc trận đấu sử dụng. Hãy chuyển các vận động viên hoặc trận liên quan trước khi ngừng dùng.',
 };
 
 export const tournamentStatuses = [
@@ -69,10 +85,10 @@ export const athleteColorLabels: Record<AthleteColor, string> = {
 };
 
 export const inputClassName =
-  'mt-2 h-11 w-full rounded-lg border border-input bg-white/80 px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60';
+  'mt-1.5 h-11 w-full rounded-lg border border-input bg-white/80 px-3 text-sm text-foreground shadow-sm outline-none transition-[border-color,box-shadow,background-color] placeholder:text-muted-foreground/70 hover:border-primary/35 focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10 aria-[invalid=true]:border-destructive aria-[invalid=true]:bg-red-50/50 aria-[invalid=true]:focus:ring-destructive/10 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-70';
 
 export const textAreaClassName =
-  'mt-2 min-h-24 w-full resize-y rounded-lg border border-input bg-white/80 px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60';
+  'mt-1.5 min-h-28 w-full resize-y rounded-lg border border-input bg-white/80 px-3 py-2.5 text-sm leading-6 text-foreground shadow-sm outline-none transition-[border-color,box-shadow,background-color] placeholder:text-muted-foreground/70 hover:border-primary/35 focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10 aria-[invalid=true]:border-destructive aria-[invalid=true]:bg-red-50/50 aria-[invalid=true]:focus:ring-destructive/10 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-70';
 
 export function getApiErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiClientError) {

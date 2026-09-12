@@ -1,4 +1,4 @@
-import { useState, type SyntheticEvent } from 'react';
+import { useEffect, useMemo, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { GeneratedAccessCodesPanel } from '@/components/generated-access-codes-panel';
@@ -20,7 +20,9 @@ import {
 import {
   matchQueryKeys,
   matchQueryOptions,
+  tournamentAthletesQueryOptions,
   tournamentQueryKeys,
+  tournamentWeightClassesQueryOptions,
 } from '@/features/admin-management/queries';
 import {
   adminManagementApi,
@@ -30,27 +32,9 @@ import {
   type UpdateMatchInput,
 } from '@/services/api/admin-management';
 import { AthleteColor, type MatchAccessRole } from '@/types/shared';
+import { MatchStatus } from '@/types/shared';
 import { useAdminAccessContext } from '@/features/auth/admin-access';
-
-interface AthleteFormValue {
-  readonly name: string;
-  readonly organization: string;
-}
-
-function getAthleteValue(match: AdminMatch, color: AthleteColor): AthleteFormValue {
-  const athlete = match.athletes.find((item) => item.color === color);
-  return athlete
-    ? { name: athlete.name, organization: athlete.organization }
-    : { name: '', organization: '' };
-}
-
-function toAthleteInput(color: AthleteColor, value: AthleteFormValue): MatchAthleteInput {
-  return {
-    color,
-    name: value.name.trim(),
-    organization: value.organization.trim(),
-  };
-}
+import { RosterAthleteSelector } from '@/features/admin-management/roster-athlete-selector';
 
 function MatchEditor({
   match,
@@ -66,8 +50,23 @@ function MatchEditor({
   const [breakDurationSeconds, setBreakDurationSeconds] = useState(
     millisecondsToSeconds(match.breakDurationMs),
   );
-  const [redAthlete, setRedAthlete] = useState(() => getAthleteValue(match, AthleteColor.RED));
-  const [blueAthlete, setBlueAthlete] = useState(() => getAthleteValue(match, AthleteColor.BLUE));
+  const [weightClassId, setWeightClassId] = useState(match.weightClassId ?? '');
+  const [redAthleteId, setRedAthleteId] = useState<string | null>(
+    () => match.athletes.find((athlete) => athlete.color === AthleteColor.RED)?.athleteId ?? null,
+  );
+  const [blueAthleteId, setBlueAthleteId] = useState<string | null>(
+    () => match.athletes.find((athlete) => athlete.color === AthleteColor.BLUE)?.athleteId ?? null,
+  );
+  const weightsQuery = useQuery(tournamentWeightClassesQueryOptions(match.tournamentId));
+  const athletesQuery = useQuery({
+    ...tournamentAthletesQueryOptions(match.tournamentId, {
+      isActive: true,
+      page: 1,
+      pageSize: 100,
+      ...(weightClassId ? { weightClassId } : {}),
+    }),
+    enabled: Boolean(weightClassId),
+  });
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const updateMutation = useMutation({
@@ -81,6 +80,9 @@ function MatchEditor({
     },
     onError: (error) => {
       notifyMutationError(error, 'Không thể cập nhật trận đấu.');
+      void queryClient.invalidateQueries({
+        queryKey: tournamentQueryKeys.athletes(match.tournamentId, {}),
+      });
     },
   });
 
@@ -94,13 +96,8 @@ function MatchEditor({
       setValidationError('Thời lượng phải là số giây nguyên lớn hơn 0.');
       return;
     }
-    if (
-      !redAthlete.name.trim() ||
-      !redAthlete.organization.trim() ||
-      !blueAthlete.name.trim() ||
-      !blueAthlete.organization.trim()
-    ) {
-      setValidationError('Nhập đầy đủ tên và đơn vị cho cả hai vận động viên.');
+    if (canReplace && (!redAthleteId || !blueAthleteId || redAthleteId === blueAthleteId)) {
+      setValidationError('Chọn hai vận động viên khác nhau trong cùng hạng cân.');
       return;
     }
 
@@ -108,12 +105,35 @@ function MatchEditor({
     updateMutation.mutate({
       roundDurationMs,
       breakDurationMs,
-      athletes: [
-        toAthleteInput(AthleteColor.RED, redAthlete),
-        toAthleteInput(AthleteColor.BLUE, blueAthlete),
-      ],
+      ...(canReplace && redAthleteId && blueAthleteId
+        ? {
+            athletes: [
+              { color: AthleteColor.RED, athleteId: redAthleteId },
+              { color: AthleteColor.BLUE, athleteId: blueAthleteId },
+            ] as [MatchAthleteInput, MatchAthleteInput],
+          }
+        : {}),
     });
   }
+
+  const activeWeightClasses =
+    weightsQuery.data?.weightClasses.filter(({ isActive }) => isActive) ?? [];
+  const eligibleAthletes = useMemo(
+    () => athletesQuery.data?.items ?? [],
+    [athletesQuery.data?.items],
+  );
+  const selectedWeightClass = activeWeightClasses.find(({ id }) => id === weightClassId);
+  const isLegacy =
+    match.weightClassId === null || match.athletes.some(({ athleteId }) => athleteId === null);
+  const canReplace = match.status === MatchStatus.WAITING && !isLegacy;
+  useEffect(() => {
+    const ids = new Set(eligibleAthletes.map(({ id }) => id));
+    if (redAthleteId && !ids.has(redAthleteId)) setRedAthleteId(null);
+    if (blueAthleteId && !ids.has(blueAthleteId)) setBlueAthleteId(null);
+  }, [eligibleAthletes, redAthleteId, blueAthleteId]);
+  useEffect(() => {
+    if (redAthleteId && redAthleteId === blueAthleteId) setBlueAthleteId(null);
+  }, [blueAthleteId, redAthleteId]);
 
   return (
     <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
@@ -166,70 +186,67 @@ function MatchEditor({
         </div>
 
         <fieldset
-          className="grid gap-4 md:grid-cols-2"
-          disabled={updateMutation.isPending || isReadOnly}
+          className="space-y-4"
+          disabled={updateMutation.isPending || isReadOnly || !canReplace}
         >
           <legend className="mb-3 text-sm font-bold">Vận động viên</legend>
-          <div className="rounded-xl border-2 border-red-200 bg-red-50/60 p-4">
-            <h3 className="font-black text-red-800">Góc Đỏ</h3>
-            <label className="mt-3 block text-sm font-semibold" htmlFor="edit-red-athlete-name">
-              Họ tên
-            </label>
-            <input
-              className={inputClassName}
-              id="edit-red-athlete-name"
-              maxLength={255}
-              onChange={(event) => {
-                setRedAthlete((current) => ({ ...current, name: event.target.value }));
-              }}
-              value={redAthlete.name}
-            />
-            <label
-              className="mt-3 block text-sm font-semibold"
-              htmlFor="edit-red-athlete-organization"
-            >
-              Đơn vị
-            </label>
-            <input
-              className={inputClassName}
-              id="edit-red-athlete-organization"
-              maxLength={255}
-              onChange={(event) => {
-                setRedAthlete((current) => ({ ...current, organization: event.target.value }));
-              }}
-              value={redAthlete.organization}
-            />
-          </div>
-          <div className="rounded-xl border-2 border-blue-200 bg-blue-50/60 p-4">
-            <h3 className="font-black text-blue-800">Góc Xanh</h3>
-            <label className="mt-3 block text-sm font-semibold" htmlFor="edit-blue-athlete-name">
-              Họ tên
-            </label>
-            <input
-              className={inputClassName}
-              id="edit-blue-athlete-name"
-              maxLength={255}
-              onChange={(event) => {
-                setBlueAthlete((current) => ({ ...current, name: event.target.value }));
-              }}
-              value={blueAthlete.name}
-            />
-            <label
-              className="mt-3 block text-sm font-semibold"
-              htmlFor="edit-blue-athlete-organization"
-            >
-              Đơn vị
-            </label>
-            <input
-              className={inputClassName}
-              id="edit-blue-athlete-organization"
-              maxLength={255}
-              onChange={(event) => {
-                setBlueAthlete((current) => ({ ...current, organization: event.target.value }));
-              }}
-              value={blueAthlete.organization}
-            />
-          </div>
+          {canReplace ? (
+            <>
+              <label className="block text-sm font-semibold" htmlFor="edit-match-weight-class">
+                Hạng cân
+              </label>
+              <select
+                className={inputClassName}
+                id="edit-match-weight-class"
+                onChange={(event) => {
+                  setWeightClassId(event.target.value);
+                  setRedAthleteId(null);
+                  setBlueAthleteId(null);
+                }}
+                value={weightClassId}
+              >
+                {activeWeightClasses.map((weightClass) => (
+                  <option key={weightClass.id} value={weightClass.id}>
+                    {weightClass.name}
+                  </option>
+                ))}
+              </select>
+              <div className="grid gap-4 md:grid-cols-2">
+                <RosterAthleteSelector
+                  athletes={eligibleAthletes}
+                  color={AthleteColor.RED}
+                  disabled={eligibleAthletes.length < 2}
+                  excludedAthleteId={blueAthleteId}
+                  label="Góc Đỏ (RED)"
+                  loading={athletesQuery.isPending}
+                  onChange={(id) => {
+                    setRedAthleteId(id || null);
+                  }}
+                  selectedAthleteId={redAthleteId}
+                  weightClassName={selectedWeightClass?.name}
+                />
+                <RosterAthleteSelector
+                  athletes={eligibleAthletes}
+                  color={AthleteColor.BLUE}
+                  disabled={eligibleAthletes.length < 2}
+                  excludedAthleteId={redAthleteId}
+                  label="Góc Xanh (BLUE)"
+                  loading={athletesQuery.isPending}
+                  onChange={(id) => {
+                    setBlueAthleteId(id || null);
+                  }}
+                  selectedAthleteId={blueAthleteId}
+                  weightClassName={selectedWeightClass?.name}
+                />
+              </div>
+            </>
+          ) : (
+            <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+              {isLegacy
+                ? 'Trận đấu cũ không có liên kết danh sách đăng ký nên không thể thay vận động viên.'
+                : 'Không thể thay vận động viên sau khi trận đã có hoạt động hoặc không còn ở trạng thái chờ.'}
+            </p>
+          )}
         </fieldset>
 
         {validationError ? (
@@ -442,6 +459,17 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
         <p className="mt-2 text-sm text-muted-foreground">
           Match ID công khai · Tạo {formatDateTime(match.createdAt)}
         </p>
+        <p className="mt-1 text-sm font-semibold">
+          {match.weightClass?.name ?? 'Hạng cân chưa xác định'}
+        </p>
+        <div className="mt-3 flex flex-wrap gap-3 text-sm">
+          {match.athletes.map((athlete) => (
+            <span className="rounded-lg border px-3 py-2" key={athlete.id}>
+              {athlete.color === AthleteColor.RED ? 'Đỏ (RED)' : 'Xanh (BLUE)'}:{' '}
+              <b>{athlete.name}</b> · {athlete.organization ?? 'Không đơn vị'}
+            </span>
+          ))}
+        </div>
       </header>
 
       <MatchEditor isReadOnly={isReadOnly} key={match.updatedAt} match={match} />

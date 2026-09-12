@@ -61,7 +61,7 @@ function AthletePanel({
   readonly athlete: {
     color: AthleteColor;
     name: string;
-    organization: string;
+    organization: string | null;
     score: number;
     violations: number;
   };

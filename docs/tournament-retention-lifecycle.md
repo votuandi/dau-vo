@@ -7,3 +7,8 @@ During grace, the owner may use the admin GET APIs only. After grace, every owne
 Renewing during grace restores write access. Renewing within the sixty-day recovery window also clears the lapse deletion fields automatically on the next lifecycle run. A renewal after purge never recreates historical data.
 
 Run the processor from the API workspace with `pnpm lifecycle:run`. It uses a PostgreSQL transaction advisory lock, so invoking it concurrently is safe; normal deployments should schedule this command at least hourly. The command is restart-safe: state transitions are conditional and the aggregate purge runs in one transaction. Database backup restore is the recovery path after permanent purge; do not attempt to recreate a purged aggregate from subscription orders.
+
+Purge captures Tournament, organization, and athlete image keys, deletes Matches before
+the Tournament cascade, and transactionally queues each unreachable key. Object
+storage deletion runs only after commit. Failures are structured-log events and
+remain in `media_deletions`; safely retry with `pnpm media:reconcile`.

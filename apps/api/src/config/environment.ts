@@ -8,6 +8,7 @@ export interface EnvironmentVariables {
   API_PORT: number;
   BREAK_DURATION_MS: number;
   DATABASE_URL: string;
+  IMAGE_UPLOAD_ROOT: string;
   MATCH_SESSION_SECRET: string;
   MATCH_SESSION_TTL_SECONDS: number;
   MATCH_PUBLIC_ID_INITIAL_LENGTH: number;
@@ -163,6 +164,11 @@ export function validateEnvironment(
     API_PORT: apiPort,
     BREAK_DURATION_MS: requirePositiveInteger(config, 'BREAK_DURATION_MS'),
     DATABASE_URL: requireString(config, 'DATABASE_URL'),
+    IMAGE_UPLOAD_ROOT:
+      typeof config.IMAGE_UPLOAD_ROOT === 'string' &&
+      config.IMAGE_UPLOAD_ROOT.trim().length > 0
+        ? config.IMAGE_UPLOAD_ROOT.trim()
+        : 'public/uploads',
     MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS: positiveIntegerWithDefault(
       config,
       'MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS',

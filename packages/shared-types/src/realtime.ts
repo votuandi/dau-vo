@@ -97,7 +97,7 @@ export interface MatchStateAthlete {
   color: AthleteColor;
   id: string;
   name: string;
-  organization: string;
+  organization: string | null;
   score: number;
   violations: number;
 }
@@ -132,7 +132,7 @@ export interface PublicMatchStatePayload {
   athletes: Array<{
     color: AthleteColor;
     name: string;
-    organization: string;
+    organization: string | null;
     score: number;
     violations: number;
   }>;

@@ -234,7 +234,7 @@ describe('default sport catalog seed', () => {
     expect(sportGroupUpsert).toHaveBeenCalledWith({
       where: { code: DEFAULT_SPORT_GROUP.code },
       create: DEFAULT_SPORT_GROUP,
-      update: { name: DEFAULT_SPORT_GROUP.name },
+      update: {},
       select: { id: true },
     });
     expect(sportUpsert).toHaveBeenCalledWith({
@@ -243,16 +243,11 @@ describe('default sport catalog seed', () => {
         ...DEFAULT_SPORT,
         sportGroupId: DEFAULT_SPORT_GROUP.id,
       },
-      update: {
-        isActive: true,
-        name: DEFAULT_SPORT.name,
-        normalizedName: DEFAULT_SPORT.normalizedName,
-        sportGroupId: DEFAULT_SPORT_GROUP.id,
-      },
+      update: {},
     });
   });
 
-  it('is idempotent and repairs a partially existing canonical catalog', async () => {
+  it('is idempotent and does not overwrite an existing managed catalog', async () => {
     const { prisma, sportGroupUpsert, sportUpsert } =
       prismaForCatalog('repaired-group-id');
     await ensureDefaultSportCatalog(prisma);
@@ -260,14 +255,19 @@ describe('default sport catalog seed', () => {
 
     expect(sportGroupUpsert).toHaveBeenCalledTimes(2);
     expect(sportUpsert).toHaveBeenCalledTimes(2);
-    expect(sportUpsert).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        create: expect.objectContaining({ sportGroupId: 'repaired-group-id' }),
-        update: expect.objectContaining({
-          isActive: true,
-          sportGroupId: 'repaired-group-id',
-        }),
-      }),
-    );
+    expect(sportGroupUpsert).toHaveBeenLastCalledWith({
+      where: { code: DEFAULT_SPORT_GROUP.code },
+      create: DEFAULT_SPORT_GROUP,
+      update: {},
+      select: { id: true },
+    });
+    expect(sportUpsert).toHaveBeenLastCalledWith({
+      where: { code: DEFAULT_SPORT.code },
+      create: {
+        ...DEFAULT_SPORT,
+        sportGroupId: 'repaired-group-id',
+      },
+      update: {},
+    });
   });
 });

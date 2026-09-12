@@ -7,6 +7,7 @@ import {
   TournamentDeletionReason,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { MediaDeletionService } from '../media/media-deletion.service';
 import { addUtcMonths, ADMIN_GRACE_MONTHS } from './admin-access.policy';
 
 const RECOVERY_DAYS = 60;
@@ -18,7 +19,11 @@ export class TournamentLifecycleService
 {
   private readonly logger = new Logger(TournamentLifecycleService.name);
   private timer: NodeJS.Timeout | undefined;
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(MediaDeletionService)
+    private readonly mediaDeletion: MediaDeletionService,
+  ) {}
 
   onModuleInit(): void {
     // Each instance may tick; the transaction advisory lock elects one processor.
@@ -44,14 +49,20 @@ export class TournamentLifecycleService
     softDeleted: number;
     restored: number;
     purged: number;
+    media: { deleted: number; failed: number };
   }> {
-    return this.prisma.$transaction(
+    const result = await this.prisma.$transaction(
       async (tx) => {
         const lock = await tx.$queryRaw<
           Array<{ locked: boolean }>
         >`SELECT pg_try_advisory_xact_lock(73421891) AS locked`;
         if (!lock[0]?.locked)
-          return { expired: 0, softDeleted: 0, restored: 0, purged: 0 };
+          return {
+            expired: 0,
+            softDeleted: 0,
+            restored: 0,
+            purged: 0,
+          };
         const expired = await tx.adminEntitlement.updateMany({
           where: {
             status: AdminEntitlementStatus.ACTIVE,
@@ -120,6 +131,22 @@ export class TournamentLifecycleService
         });
         let purged = 0;
         for (const { id } of candidates) {
+          // Capture every image before cascade deletion. Storage I/O deliberately
+          // happens only after this transaction commits.
+          const images = await Promise.all([
+            tx.tournament.findUnique({
+              where: { id },
+              select: { imagePath: true },
+            }),
+            tx.tournamentOrganization.findMany({
+              where: { tournamentId: id },
+              select: { imagePath: true },
+            }),
+            tx.tournamentAthlete.findMany({
+              where: { tournamentId: id },
+              select: { imagePath: true },
+            }),
+          ]);
           await tx.match.deleteMany({ where: { tournamentId: id } });
           const deleted = await tx.tournament.deleteMany({
             where: {
@@ -129,6 +156,21 @@ export class TournamentLifecycleService
             },
           });
           purged += deleted.count;
+          if (deleted.count) {
+            const keys = [
+              images[0]?.imagePath,
+              ...images[1].map((row) => row.imagePath),
+              ...images[2].map((row) => row.imagePath),
+            ].filter((key): key is string => key !== null && key !== undefined);
+            if (keys.length)
+              await tx.mediaDeletion.createMany({
+                data: keys.map((storageKey) => ({
+                  storageKey,
+                  reason: 'TOURNAMENT_PURGE',
+                })),
+                skipDuplicates: true,
+              });
+          }
         }
         if (expired.count + restored.count + softDeleted + purged) {
           await tx.auditLog.create({
@@ -160,5 +202,9 @@ export class TournamentLifecycleService
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
+    // A failure here is retained in the durable outbox and must never undo the
+    // committed aggregate deletion.
+    const media = await this.mediaDeletion.reconcile();
+    return { ...result, media };
   }
 }

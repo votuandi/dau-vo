@@ -1,10 +1,15 @@
 import { queryOptions } from '@tanstack/react-query';
 import { adminManagementApi } from '@/services/api/admin-management';
+import type { AthleteListInput } from '@/services/api/admin-management';
 
 export const tournamentQueryKeys = {
   all: ['admin', 'tournaments'] as const,
   detail: (id: string) => ['admin', 'tournaments', id] as const,
   matches: (id: string) => ['admin', 'tournaments', id, 'matches'] as const,
+  organizations: (id: string) => ['admin', 'tournaments', id, 'organizations'] as const,
+  weightClasses: (id: string) => ['admin', 'tournaments', id, 'weight-classes'] as const,
+  athletes: (id: string, filters: AthleteListInput) =>
+    ['admin', 'tournaments', id, 'athletes', filters] as const,
 };
 
 export const sportQueryKeys = {
@@ -30,6 +35,25 @@ export function tournamentQueryOptions(id: string) {
   return queryOptions({
     queryKey: tournamentQueryKeys.detail(id),
     queryFn: () => adminManagementApi.getTournament(id),
+  });
+}
+
+export function tournamentOrganizationsQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: tournamentQueryKeys.organizations(id),
+    queryFn: () => adminManagementApi.listOrganizations(id),
+  });
+}
+export function tournamentWeightClassesQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: tournamentQueryKeys.weightClasses(id),
+    queryFn: () => adminManagementApi.listWeightClasses(id),
+  });
+}
+export function tournamentAthletesQueryOptions(id: string, filters: AthleteListInput) {
+  return queryOptions({
+    queryKey: tournamentQueryKeys.athletes(id, filters),
+    queryFn: () => adminManagementApi.listAthletes(id, filters),
   });
 }
 

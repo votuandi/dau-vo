@@ -8,13 +8,16 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
-  AthleteColor,
   AuditEventType,
   Prisma,
   TournamentStatus,
   UserRole,
 } from '@prisma/client';
-import type { MatchAccessRole } from '@prisma/client';
+import type {
+  AthleteColor,
+  MatchAccessRole,
+  MatchStatus,
+} from '@prisma/client';
 import { hash } from 'bcryptjs';
 
 import type { EnvironmentVariables } from '../config/environment';
@@ -30,6 +33,12 @@ import { RealtimeSessionRegistryService } from '../realtime/realtime-session-reg
 import { RealtimeMatchStateService } from '../realtime/realtime-match-state.service';
 import {
   INVALID_MATCH_ATHLETES_ERROR,
+  DUPLICATE_MATCH_ATHLETE_ERROR,
+  MATCH_ATHLETE_INACTIVE_ERROR,
+  MATCH_ATHLETE_NOT_FOUND_ERROR,
+  MATCH_ATHLETE_REPLACEMENT_UNSAFE_ERROR,
+  MATCH_ATHLETE_ORGANIZATION_ERROR,
+  MATCH_ATHLETE_WEIGHT_CLASS_ERROR,
   INVALID_MATCH_ERROR,
   INVALID_TOURNAMENT_DATE_RANGE_ERROR,
   INVALID_TOURNAMENT_ERROR,
@@ -67,6 +76,7 @@ const tournamentSelect = {
   description: true,
   endDate: true,
   id: true,
+  imagePath: true,
   location: true,
   name: true,
   startDate: true,
@@ -96,6 +106,7 @@ const matchSelect = {
     orderBy: { color: 'asc' },
     select: {
       color: true,
+      athleteId: true,
       createdAt: true,
       id: true,
       name: true,
@@ -120,6 +131,8 @@ const matchSelect = {
     },
   },
   tournamentId: true,
+  weightClass: { select: { id: true, name: true, isActive: true } },
+  weightClassId: true,
   updatedAt: true,
 } satisfies Prisma.MatchSelect;
 
@@ -540,9 +553,11 @@ export class AdminManagementService {
             throw new ConflictException(TOURNAMENT_ARCHIVED_ERROR);
           }
           const rules = this.resolveRules(tournament.sport.sportGroup.code);
-          const athletes = this.prepareAthletes(
+          this.assertAthleteColors(input.athletes, rules.athleteColors);
+          const athletes = await this.prepareRosterAthletes(
+            transaction,
+            tournamentId,
             input.athletes,
-            rules.athleteColors,
           );
           const accessCodes = await this.prepareAccessCodes(rules.accessRoles);
 
@@ -559,6 +574,7 @@ export class AdminManagementService {
               publicId,
               roundDurationMs: input.roundDurationMs ?? this.roundDurationMs,
               tournamentId,
+              weightClassId: athletes[0]!.weightClassId,
             },
             select: matchSelect,
           });
@@ -568,7 +584,12 @@ export class AdminManagementService {
               adminUserId,
               eventType: AuditEventType.MATCH_CREATED,
               matchId: created.id,
-              metadata: { publicId, tournamentId },
+              metadata: {
+                athleteIds: input.athletes.map(({ athleteId }) => athleteId),
+                publicId,
+                tournamentId,
+                weightClassId: athletes[0]!.weightClassId,
+              },
             },
             select: { id: true },
           });
@@ -689,6 +710,10 @@ export class AdminManagementService {
       const existing = await transaction.match.findUnique({
         select: {
           id: true,
+          tournamentId: true,
+          status: true,
+          weightClassId: true,
+          athletes: { select: { athleteId: true } },
           tournament: {
             select: {
               sport: { select: { sportGroup: { select: { code: true } } } },
@@ -701,14 +726,25 @@ export class AdminManagementService {
       if (existing === null) {
         throw new NotFoundException(MATCH_NOT_FOUND_ERROR);
       }
-      const athletes =
-        input.athletes === undefined
-          ? undefined
-          : this.prepareAthletes(
-              input.athletes,
-              this.resolveRules(existing.tournament.sport.sportGroup.code)
-                .athleteColors,
-            );
+      let athletes:
+        Awaited<ReturnType<typeof this.prepareRosterAthletes>> | undefined;
+      if (input.athletes !== undefined) {
+        this.assertAthleteColors(
+          input.athletes,
+          this.resolveRules(existing.tournament.sport.sportGroup.code)
+            .athleteColors,
+        );
+        await this.assertSafeAthleteReplacement(
+          transaction,
+          id,
+          existing.status,
+        );
+        athletes = await this.prepareRosterAthletes(
+          transaction,
+          existing.tournamentId,
+          input.athletes,
+        );
+      }
 
       const data: Prisma.MatchUpdateInput = {};
 
@@ -718,6 +754,16 @@ export class AdminManagementService {
       if (input.breakDurationMs !== undefined) {
         data.breakDurationMs = input.breakDurationMs;
       }
+      if (athletes !== undefined) {
+        data.weightClass = {
+          connect: {
+            tournamentId_id: {
+              id: athletes[0]!.weightClassId,
+              tournamentId: existing.tournamentId,
+            },
+          },
+        };
+      }
 
       await transaction.match.update({ data, where: { id } });
 
@@ -725,6 +771,7 @@ export class AdminManagementService {
         for (const athlete of athletes) {
           await transaction.matchAthlete.update({
             data: {
+              athleteId: athlete.athleteId,
               name: athlete.name,
               organization: athlete.organization,
             },
@@ -740,7 +787,20 @@ export class AdminManagementService {
           adminUserId,
           eventType: AuditEventType.MATCH_UPDATED,
           matchId: id,
-          metadata: { fields: Object.keys(input) },
+          metadata:
+            athletes === undefined
+              ? { fields: Object.keys(input) }
+              : {
+                  afterAthleteIds: input.athletes!.map(
+                    ({ athleteId }) => athleteId,
+                  ),
+                  beforeAthleteIds: existing.athletes
+                    .map(({ athleteId }) => athleteId)
+                    .filter(
+                      (athleteId): athleteId is string => athleteId !== null,
+                    ),
+                  fields: Object.keys(input),
+                },
         },
         select: { id: true },
       });
@@ -927,10 +987,10 @@ export class AdminManagementService {
     }
   }
 
-  private prepareAthletes(
+  private assertAthleteColors(
     athletes: readonly MatchAthleteDto[],
     athleteColors: readonly AthleteColor[],
-  ): Prisma.MatchAthleteCreateWithoutMatchInput[] {
+  ): void {
     const colors = new Set(athletes.map(({ color }) => color));
 
     if (
@@ -941,18 +1001,89 @@ export class AdminManagementService {
       throw new BadRequestException(INVALID_MATCH_ATHLETES_ERROR);
     }
 
-    const prepared = athletes.map(({ color, name, organization }) => ({
-      color,
-      name: this.requiredTrimmedText(name, 'athlete name'),
-      organization: this.requiredTrimmedText(
-        organization,
-        'athlete organization',
-      ),
-    }));
+    if (
+      new Set(athletes.map(({ athleteId }) => athleteId)).size !==
+      athletes.length
+    ) {
+      throw new BadRequestException(DUPLICATE_MATCH_ATHLETE_ERROR);
+    }
+  }
 
-    return prepared.sort((left, right) =>
-      left.color === right.color ? 0 : left.color === AthleteColor.RED ? -1 : 1,
+  private async prepareRosterAthletes(
+    transaction: Prisma.TransactionClient,
+    tournamentId: string,
+    selections: readonly MatchAthleteDto[],
+  ): Promise<
+    Array<
+      Prisma.MatchAthleteUncheckedCreateWithoutMatchInput & {
+        weightClassId: string;
+      }
+    >
+  > {
+    const selected = await transaction.tournamentAthlete.findMany({
+      include: {
+        organization: { select: { id: true, isActive: true, name: true } },
+        weightClass: { select: { id: true, isActive: true } },
+      },
+      where: {
+        id: { in: selections.map(({ athleteId }) => athleteId) },
+        tournamentId,
+      },
+    });
+    if (selected.length !== selections.length)
+      throw new NotFoundException(MATCH_ATHLETE_NOT_FOUND_ERROR);
+    if (selected.some(({ isActive }) => !isActive))
+      throw new ConflictException(MATCH_ATHLETE_INACTIVE_ERROR);
+    if (selected.some(({ weightClass }) => !weightClass.isActive))
+      throw new ConflictException(MATCH_ATHLETE_WEIGHT_CLASS_ERROR);
+    if (
+      selected.some(
+        ({ organization }) => organization !== null && !organization.isActive,
+      )
+    )
+      throw new ConflictException(MATCH_ATHLETE_ORGANIZATION_ERROR);
+    const weightClassIds = new Set(
+      selected.map(({ weightClassId }) => weightClassId),
     );
+    if (weightClassIds.size !== 1)
+      throw new BadRequestException(MATCH_ATHLETE_WEIGHT_CLASS_ERROR);
+    const byId = new Map(selected.map((athlete) => [athlete.id, athlete]));
+    return selections.map(({ athleteId, color }) => {
+      const athlete = byId.get(athleteId)!;
+      return {
+        athleteId,
+        color,
+        name: athlete.name,
+        organization: athlete.organization?.name ?? null,
+        tournamentId,
+        weightClassId: athlete.weightClassId,
+      };
+    });
+  }
+
+  private async assertSafeAthleteReplacement(
+    transaction: Prisma.TransactionClient,
+    matchId: string,
+    status: MatchStatus,
+  ): Promise<void> {
+    if (status !== 'WAITING')
+      throw new ConflictException(MATCH_ATHLETE_REPLACEMENT_UNSAFE_ERROR);
+    const [rounds, windows, votes, scores, penalties, results, sessions] =
+      await Promise.all([
+        transaction.round.count({ where: { matchId } }),
+        transaction.scoringWindow.count({ where: { matchId } }),
+        transaction.refereeVote.count({ where: { matchId } }),
+        transaction.scoreEvent.count({ where: { matchId } }),
+        transaction.penalty.count({ where: { matchId } }),
+        transaction.matchResultOperation.count({ where: { matchId } }),
+        transaction.matchSession.count({ where: { matchId } }),
+      ]);
+    if (
+      rounds + windows + votes + scores + penalties + results + sessions >
+      0
+    ) {
+      throw new ConflictException(MATCH_ATHLETE_REPLACEMENT_UNSAFE_ERROR);
+    }
   }
 
   private async requireTournament(id: string): Promise<void> {

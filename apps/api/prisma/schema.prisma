@@ -172,6 +172,7 @@ model Tournament {
   id             String                    @id(map: "tournaments_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name           String                    @db.VarChar(255)
   description    String?                   @db.Text
+  imagePath      String?                   @map("image_path") @db.VarChar(1024)
   location       String?                   @db.VarChar(255)
   startDate      DateTime?                 @map("start_date") @db.Date
   endDate        DateTime?                 @map("end_date") @db.Date
@@ -185,6 +186,9 @@ model Tournament {
   createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   matches        Match[]
+  organizations          TournamentOrganization[]
+  weightClasses  TournamentWeightClass[]
+  athletes       TournamentAthlete[]
   owner          User                      @relation("TournamentOwner", fields: [ownerUserId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "tournaments_owner_user_id_fkey")
   sport          Sport                     @relation(fields: [sportId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "tournaments_sport_id_fkey")
 
@@ -194,6 +198,22 @@ model Tournament {
   @@index([purgeAfter], map: "tournaments_purge_after_idx")
   @@index([sportId], map: "tournaments_sport_id_idx")
   @@map("tournaments")
+}
+
+// Durable outbox for storage cleanup. Rows are written in the same transaction
+// that makes an image unreachable, then deleted only after an idempotent storage
+// delete succeeds. This keeps object I/O outside database transactions.
+model MediaDeletion {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  storageKey  String   @unique(map: "media_deletions_storage_key_key") @map("storage_key") @db.VarChar(1024)
+  reason      String   @db.VarChar(100)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  attempts    Int      @default(0)
+  lastError   String?  @map("last_error") @db.Text
+  lastTriedAt DateTime? @map("last_tried_at") @db.Timestamptz(3)
+
+  @@index([createdAt], map: "media_deletions_created_at_idx")
+  @@map("media_deletions")
 }
 
 model SportGroup {
@@ -263,8 +283,8 @@ model PricingPlanVersion {
   baseAmountVnd                Int                   @map("base_amount_vnd")
   baseDurationMonths           Int                   @map("base_duration_months")
   baseTournamentLimit          Int                   @map("base_tournament_limit")
-  durationAddonUnitAmountVnd   Int                   @map("duration_addon_unit_amount_vnd")
-  tournamentAddonUnitAmountVnd Int                   @map("tournament_addon_unit_amount_vnd")
+  durationAddonUnitAmountVnd           Int                   @map("duration_addon_unit_amount_vnd")
+  tournamentAddonUnitAmountVnd         Int                   @map("tournament_addon_unit_amount_vnd")
   active                       Boolean               @default(false)
   activatedAt                  DateTime?             @map("activated_at") @db.Timestamptz(3)
   createdByUserId              String?               @map("created_by_user_id") @db.Uuid
@@ -291,10 +311,80 @@ model PricingDiscountTier {
   @@map("pricing_discount_tiers")
 }
 
+// Names are unique for a tournament for the lifetime of a roster row.  A
+// deactivated row can be reactivated, but must be renamed before a replacement
+// with the same normalized name can be registered.
+model TournamentOrganization {
+  id             String              @id(map: "tournament_organizations_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tournamentId   String              @map("tournament_id") @db.Uuid
+  name           String              @db.VarChar(255)
+  normalizedName String              @map("normalized_name") @db.VarChar(255)
+  location       String?             @db.VarChar(255)
+  details        String?             @db.Text
+  imagePath      String?             @map("image_path") @db.VarChar(1024)
+  isActive       Boolean             @default(true) @map("is_active")
+  deactivatedAt  DateTime?           @map("deactivated_at") @db.Timestamptz(3)
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tournament     Tournament          @relation(fields: [tournamentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  athletes       TournamentAthlete[]
+
+  @@unique([tournamentId, id], map: "tournament_organizations_tournament_id_id_key")
+  @@unique([tournamentId, normalizedName], map: "tournament_organizations_tournament_id_normalized_name_key")
+  @@index([tournamentId, isActive, normalizedName], map: "tournament_organizations_active_name_idx")
+  @@map("tournament_organizations")
+}
+
+model TournamentWeightClass {
+  id             String              @id(map: "tournament_weight_classes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tournamentId   String              @map("tournament_id") @db.Uuid
+  name           String              @db.VarChar(255)
+  normalizedName String              @map("normalized_name") @db.VarChar(255)
+  details        String?             @db.Text
+  isActive       Boolean             @default(true) @map("is_active")
+  deactivatedAt  DateTime?           @map("deactivated_at") @db.Timestamptz(3)
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tournament     Tournament          @relation(fields: [tournamentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  athletes       TournamentAthlete[]
+  matches        Match[]
+
+  @@unique([tournamentId, id], map: "tournament_weight_classes_tournament_id_id_key")
+  @@unique([tournamentId, normalizedName], map: "tournament_weight_classes_tournament_id_normalized_name_key")
+  @@index([tournamentId, isActive, normalizedName], map: "tournament_weight_classes_active_name_idx")
+  @@map("tournament_weight_classes")
+}
+
+model TournamentAthlete {
+  id            String                @id(map: "tournament_athletes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tournamentId  String                @map("tournament_id") @db.Uuid
+  organizationId        String?               @map("organization_id") @db.Uuid
+  weightClassId String                @map("weight_class_id") @db.Uuid
+  name          String                @db.VarChar(255)
+  birthYear     Int                   @map("birth_year") @db.SmallInt
+  details       String?               @db.Text
+  imagePath     String?               @map("image_path") @db.VarChar(1024)
+  isActive      Boolean               @default(true) @map("is_active")
+  deactivatedAt DateTime?             @map("deactivated_at") @db.Timestamptz(3)
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tournament    Tournament            @relation(fields: [tournamentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  organization          TournamentOrganization?       @relation(fields: [tournamentId, organizationId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade)
+  weightClass   TournamentWeightClass @relation(fields: [tournamentId, weightClassId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade)
+  matchAthletes MatchAthlete[]
+
+  @@unique([tournamentId, id], map: "tournament_athletes_tournament_id_id_key")
+  @@index([tournamentId, isActive, name], map: "tournament_athletes_tournament_id_is_active_name_idx")
+  @@index([tournamentId, organizationId, isActive], map: "tournament_athletes_tournament_id_organization_id_is_active_idx")
+  @@index([tournamentId, weightClassId, isActive], map: "tournament_athletes_tournament_id_weight_class_id_is_active_idx")
+  @@map("tournament_athletes")
+}
+
 model Match {
   id               String                 @id(map: "matches_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   publicId         String                 @unique(map: "matches_public_id_key") @map("public_id") @db.VarChar(32)
   tournamentId     String                 @map("tournament_id") @db.Uuid
+  weightClassId    String?                @map("weight_class_id") @db.Uuid
   status           MatchStatus            @default(WAITING)
   currentRound     Int?                   @map("current_round") @db.SmallInt
   roundDurationMs  Int                    @map("round_duration_ms")
@@ -304,6 +394,7 @@ model Match {
   createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   tournament       Tournament             @relation(fields: [tournamentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "matches_tournament_id_fkey")
+  weightClass      TournamentWeightClass? @relation(fields: [tournamentId, weightClassId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade, map: "matches_tournament_weight_class_id_fkey")
   athletes         MatchAthlete[]
   accessCodes      MatchAccessCode[]
   sessions         MatchSession[]
@@ -315,7 +406,9 @@ model Match {
   penalties        Penalty[]
   auditLogs        AuditLog[]
 
+  @@unique([id, tournamentId], map: "matches_id_tournament_id_key")
   @@index([tournamentId], map: "matches_tournament_id_idx")
+  @@index([tournamentId, weightClassId], map: "matches_tournament_id_weight_class_id_idx")
   @@index([status], map: "matches_status_idx")
   @@map("matches")
 }
@@ -343,18 +436,22 @@ model MatchResultOperation {
 }
 
 model MatchAthlete {
-  id           String       @id(map: "match_athletes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId      String       @map("match_id") @db.Uuid
-  name         String       @db.VarChar(255)
-  organization String       @db.VarChar(255)
+  id           String             @id(map: "match_athletes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId      String             @map("match_id") @db.Uuid
+  tournamentId String             @map("tournament_id") @db.Uuid
+  athleteId    String?            @map("athlete_id") @db.Uuid
+  name         String             @db.VarChar(255)
+  organization String?            @db.VarChar(255)
   color        AthleteColor
-  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  match        Match        @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "match_athletes_match_id_fkey")
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  match        Match              @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "match_athletes_match_id_fkey")
+  athlete      TournamentAthlete? @relation(fields: [tournamentId, athleteId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade, map: "match_athletes_tournament_athlete_id_fkey")
   scoreEvents  ScoreEvent[]
   penalties    Penalty[]
 
   @@unique([matchId, color], map: "match_athletes_match_id_color_key")
+  @@index([tournamentId, athleteId], map: "match_athletes_tournament_id_athlete_id_idx")
   @@map("match_athletes")
 }
 

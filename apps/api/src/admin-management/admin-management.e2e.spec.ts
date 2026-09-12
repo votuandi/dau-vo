@@ -56,9 +56,21 @@ interface TournamentView {
 
 interface AthleteView {
   id: string;
+  athleteId: string | null;
   color: AthleteColor;
   name: string;
-  organization: string;
+  organization: string | null;
+}
+
+interface RosterItemView {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
+
+interface RosterAthleteView extends RosterItemView {
+  organizationId: string | null;
+  weightClassId: string;
 }
 
 interface MatchView {
@@ -201,6 +213,76 @@ describe('Admin tournament and match management (integration)', () => {
     label: string,
     overrides: Record<string, unknown> = {},
   ): Promise<MatchCreationResponseBody> {
+    const weightClass = await createWeightClass(
+      tournamentId,
+      `${label}-weight`,
+    );
+    const [red, blue] = await Promise.all([
+      createAthlete(tournamentId, `${label}-red`, weightClass.id),
+      createAthlete(tournamentId, `${label}-blue`, weightClass.id),
+    ]);
+    return createMatchWithAthletes(tournamentId, red.id, blue.id, overrides);
+  }
+
+  async function createWeightClass(
+    tournamentId: string,
+    label: string,
+    overrides: Record<string, unknown> = {},
+  ): Promise<RosterItemView> {
+    const response = await authenticated(
+      request(app.getHttpServer()).post(
+        `/api/admin/tournaments/${tournamentId}/weight-classes`,
+      ),
+    )
+      .send({ name: `${TEST_PREFIX}-${label}`, ...overrides })
+      .expect(201);
+    return (response.body as { weightClass: RosterItemView }).weightClass;
+  }
+
+  async function createOrganization(
+    tournamentId: string,
+    label: string,
+    overrides: Record<string, unknown> = {},
+  ): Promise<RosterItemView> {
+    const response = await authenticated(
+      request(app.getHttpServer()).post(
+        `/api/admin/tournaments/${tournamentId}/organizations`,
+      ),
+    )
+      .send({ name: `${TEST_PREFIX}-${label}`, ...overrides })
+      .expect(201);
+    return (response.body as { organization: RosterItemView }).organization;
+  }
+
+  async function createAthlete(
+    tournamentId: string,
+    label: string,
+    weightClassId: string,
+    organizationId?: string | null,
+    overrides: Record<string, unknown> = {},
+  ): Promise<RosterAthleteView> {
+    const response = await authenticated(
+      request(app.getHttpServer()).post(
+        `/api/admin/tournaments/${tournamentId}/athletes`,
+      ),
+    )
+      .send({
+        birthYear: 2000,
+        name: `${TEST_PREFIX}-${label}`,
+        organizationId,
+        weightClassId,
+        ...overrides,
+      })
+      .expect(201);
+    return (response.body as { athlete: RosterAthleteView }).athlete;
+  }
+
+  async function createMatchWithAthletes(
+    tournamentId: string,
+    redAthleteId: string,
+    blueAthleteId: string,
+    overrides: Record<string, unknown> = {},
+  ): Promise<MatchCreationResponseBody> {
     const response = await authenticated(
       request(app.getHttpServer()).post(
         `/api/admin/tournaments/${tournamentId}/matches`,
@@ -210,13 +292,11 @@ describe('Admin tournament and match management (integration)', () => {
         athletes: [
           {
             color: AthleteColor.RED,
-            name: `${TEST_PREFIX}-${label}-red`,
-            organization: 'Red test organization',
+            athleteId: redAthleteId,
           },
           {
             color: AthleteColor.BLUE,
-            name: `${TEST_PREFIX}-${label}-blue`,
-            organization: 'Blue test organization',
+            athleteId: blueAthleteId,
           },
         ],
         ...overrides,
@@ -633,10 +713,15 @@ describe('Admin tournament and match management (integration)', () => {
   it('rejects anything other than exactly one RED and one BLUE athlete', async () => {
     const tournament = await createTournament('athlete-validation');
     const endpoint = `/api/admin/tournaments/${tournament.id}/matches`;
+    const weightClass = await createWeightClass(tournament.id, 'validation');
+    const rosterAthlete = await createAthlete(
+      tournament.id,
+      'validation-athlete',
+      weightClass.id,
+    );
     const athlete = {
       color: AthleteColor.RED,
-      name: `${TEST_PREFIX}-validation-red`,
-      organization: 'Validation organization',
+      athleteId: rosterAthlete.id,
     };
 
     await authenticated(request(app.getHttpServer()).post(endpoint))
@@ -653,7 +738,7 @@ describe('Admin tournament and match management (integration)', () => {
           athlete,
           {
             ...athlete,
-            name: `${TEST_PREFIX}-validation-second-red`,
+            color: AthleteColor.RED,
           },
         ],
       })
@@ -687,6 +772,19 @@ describe('Admin tournament and match management (integration)', () => {
       /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]+$/,
     );
     expectExactlyOneAthletePerColor(creation.match.athletes);
+    const storedAthletes = await prisma.matchAthlete.findMany({
+      orderBy: { color: 'asc' },
+      where: { matchId: creation.match.id },
+    });
+    expect(storedAthletes.every(({ athleteId }) => athleteId !== null)).toBe(
+      true,
+    );
+    expect(storedAthletes.map(({ name }) => name)).toEqual(
+      expect.arrayContaining([
+        `${TEST_PREFIX}-match-create-red`,
+        `${TEST_PREFIX}-match-create-blue`,
+      ]),
+    );
 
     expect(creation.accessCodes).toHaveLength(4);
     expect(creation.accessCodes.map(({ role }) => role).sort()).toEqual(
@@ -746,6 +844,210 @@ describe('Admin tournament and match management (integration)', () => {
       },
     });
     expect(audit).not.toBeNull();
+  });
+
+  it('uses roster snapshots and rejects invalid roster selections at the HTTP boundary', async () => {
+    const tournament = await createTournament('roster-contract');
+    const weight = await createWeightClass(
+      tournament.id,
+      'roster-contract-weight',
+    );
+    const organization = await createOrganization(
+      tournament.id,
+      'roster-contract-organization',
+    );
+    const [red, blue] = await Promise.all([
+      createAthlete(
+        tournament.id,
+        'roster-contract-red',
+        weight.id,
+        organization.id,
+      ),
+      createAthlete(tournament.id, 'roster-contract-blue', weight.id),
+    ]);
+    const endpoint = `/api/admin/tournaments/${tournament.id}/matches`;
+
+    await authenticated(request(app.getHttpServer()).post(endpoint))
+      .send({
+        athletes: [
+          {
+            color: AthleteColor.RED,
+            name: 'obsolete',
+            organization: 'obsolete',
+          },
+          {
+            color: AthleteColor.BLUE,
+            name: 'obsolete blue',
+            organization: 'obsolete blue',
+          },
+        ],
+      })
+      .expect(400);
+    await authenticated(request(app.getHttpServer()).post(endpoint))
+      .send({
+        athletes: [
+          { color: AthleteColor.RED, athleteId: red.id },
+          { color: AthleteColor.BLUE, athleteId: red.id },
+        ],
+      })
+      .expect(400)
+      .expect({
+        code: 'DUPLICATE_MATCH_ATHLETE',
+        message: 'An athlete may only appear once in a match',
+      });
+    await authenticated(request(app.getHttpServer()).post(endpoint))
+      .send({
+        athletes: [
+          { color: AthleteColor.RED, athleteId: 'not-a-uuid' },
+          { color: AthleteColor.BLUE, athleteId: blue.id },
+        ],
+      })
+      .expect(400);
+
+    const creation = await createMatchWithAthletes(
+      tournament.id,
+      red.id,
+      blue.id,
+    );
+    const persisted = await prisma.match.findUniqueOrThrow({
+      include: { athletes: { orderBy: { color: 'asc' } } },
+      where: { id: creation.match.id },
+    });
+    expect(persisted.weightClassId).toBe(weight.id);
+    expect(persisted.athletes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          athleteId: red.id,
+          name: `${TEST_PREFIX}-roster-contract-red`,
+          organization: `${TEST_PREFIX}-roster-contract-organization`,
+        }),
+        expect.objectContaining({
+          athleteId: blue.id,
+          name: `${TEST_PREFIX}-roster-contract-blue`,
+          organization: null,
+        }),
+      ]),
+    );
+
+    await prisma.tournamentAthlete.update({
+      data: { name: 'renamed roster athlete', isActive: false },
+      where: { id: red.id },
+    });
+    await prisma.tournamentOrganization.update({
+      data: { isActive: false, name: 'renamed organization' },
+      where: { id: organization.id },
+    });
+    const snapshot = await prisma.matchAthlete.findMany({
+      where: { matchId: creation.match.id },
+    });
+    expect(snapshot).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          athleteId: red.id,
+          name: `${TEST_PREFIX}-roster-contract-red`,
+          organization: `${TEST_PREFIX}-roster-contract-organization`,
+        }),
+      ]),
+    );
+  });
+
+  it('rejects roster-backed match creation in an archived tournament', async () => {
+    const tournament = await createTournament('archived-roster-match');
+    const weight = await createWeightClass(tournament.id, 'archived-weight');
+    const [red, blue] = await Promise.all([
+      createAthlete(tournament.id, 'archived-red', weight.id),
+      createAthlete(tournament.id, 'archived-blue', weight.id),
+    ]);
+    await authenticated(
+      request(app.getHttpServer()).delete(
+        `/api/admin/tournaments/${tournament.id}`,
+      ),
+    ).expect(200);
+    await authenticated(
+      request(app.getHttpServer()).post(
+        `/api/admin/tournaments/${tournament.id}/matches`,
+      ),
+    )
+      .send({
+        athletes: [
+          { color: AthleteColor.RED, athleteId: red.id },
+          { color: AthleteColor.BLUE, athleteId: blue.id },
+        ],
+      })
+      .expect(409)
+      .expect({
+        code: 'TOURNAMENT_ARCHIVED',
+        message: 'Matches cannot be created in an archived tournament',
+      });
+  });
+
+  it('rejects cross-tournament, inactive, mismatched, inactive-class, and inactive-organization selections', async () => {
+    const tournament = await createTournament('roster-rejections');
+    const otherTournament = await createTournament('roster-other');
+    const weight = await createWeightClass(tournament.id, 'rejections-weight');
+    const otherWeight = await createWeightClass(
+      tournament.id,
+      'rejections-other-weight',
+    );
+    const [red, blue, mismatched, inactive] = await Promise.all([
+      createAthlete(tournament.id, 'rejections-red', weight.id),
+      createAthlete(tournament.id, 'rejections-blue', weight.id),
+      createAthlete(tournament.id, 'rejections-mismatched', otherWeight.id),
+      createAthlete(tournament.id, 'rejections-inactive', weight.id),
+    ]);
+    const foreignWeight = await createWeightClass(
+      otherTournament.id,
+      'foreign-weight',
+    );
+    const foreign = await createAthlete(
+      otherTournament.id,
+      'foreign',
+      foreignWeight.id,
+    );
+    const endpoint = `/api/admin/tournaments/${tournament.id}/matches`;
+    const selection = (blueId: string) => ({
+      athletes: [
+        { color: AthleteColor.RED, athleteId: red.id },
+        { color: AthleteColor.BLUE, athleteId: blueId },
+      ],
+    });
+    await authenticated(request(app.getHttpServer()).post(endpoint))
+      .send(selection(foreign.id))
+      .expect(404);
+    await prisma.tournamentAthlete.update({
+      data: { isActive: false },
+      where: { id: inactive.id },
+    });
+    await authenticated(request(app.getHttpServer()).post(endpoint))
+      .send(selection(inactive.id))
+      .expect(409);
+    await authenticated(request(app.getHttpServer()).post(endpoint))
+      .send(selection(mismatched.id))
+      .expect(400);
+    const organization = await createOrganization(
+      tournament.id,
+      'rejections-organization',
+    );
+    const organizationAthlete = await createAthlete(
+      tournament.id,
+      'rejections-organization-athlete',
+      weight.id,
+      organization.id,
+    );
+    await prisma.tournamentOrganization.update({
+      data: { isActive: false },
+      where: { id: organization.id },
+    });
+    await authenticated(request(app.getHttpServer()).post(endpoint))
+      .send(selection(organizationAthlete.id))
+      .expect(409);
+    await prisma.tournamentWeightClass.update({
+      data: { isActive: false },
+      where: { id: weight.id },
+    });
+    await authenticated(request(app.getHttpServer()).post(endpoint))
+      .send(selection(blue.id))
+      .expect(409);
   });
 
   it('enforces public ID uniqueness and safely retries a collision', async () => {
@@ -814,16 +1116,36 @@ describe('Admin tournament and match management (integration)', () => {
   it('reads and updates match settings and both athletes', async () => {
     const tournament = await createTournament('match-update');
     const creation = await createMatch(tournament.id, 'before-update');
+    const weightClass = await createWeightClass(
+      tournament.id,
+      'updated-weight',
+    );
+    const updatedOrganization = await createOrganization(
+      tournament.id,
+      'updated-organization',
+    );
+    const [updatedBlue, updatedRed] = await Promise.all([
+      createAthlete(
+        tournament.id,
+        'updated-blue',
+        weightClass.id,
+        updatedOrganization.id,
+      ),
+      createAthlete(
+        tournament.id,
+        'updated-red',
+        weightClass.id,
+        updatedOrganization.id,
+      ),
+    ]);
     const updatedAthletes = [
       {
         color: AthleteColor.BLUE,
-        name: `${TEST_PREFIX}-updated-blue`,
-        organization: 'Updated blue organization',
+        athleteId: updatedBlue.id,
       },
       {
         color: AthleteColor.RED,
-        name: `${TEST_PREFIX}-updated-red`,
-        organization: 'Updated red organization',
+        athleteId: updatedRed.id,
       },
     ];
 
@@ -882,6 +1204,52 @@ describe('Admin tournament and match management (integration)', () => {
       currentRound: null,
       status: MatchStatus.WAITING,
     });
+  });
+
+  it('does not partially replace athletes after match activity has begun', async () => {
+    const tournament = await createTournament('unsafe-athlete-replacement');
+    const creation = await createMatch(
+      tournament.id,
+      'unsafe-athlete-replacement',
+    );
+    const before = await prisma.matchAthlete.findMany({
+      orderBy: { color: 'asc' },
+      where: { matchId: creation.match.id },
+    });
+    const weight = await createWeightClass(
+      tournament.id,
+      'unsafe-replacement-weight',
+    );
+    const [red, blue] = await Promise.all([
+      createAthlete(tournament.id, 'unsafe-replacement-red', weight.id),
+      createAthlete(tournament.id, 'unsafe-replacement-blue', weight.id),
+    ]);
+    await prisma.match.update({
+      data: { status: MatchStatus.ROUND_1_RUNNING },
+      where: { id: creation.match.id },
+    });
+    await authenticated(
+      request(app.getHttpServer()).patch(
+        `/api/admin/matches/${creation.match.id}`,
+      ),
+    )
+      .send({
+        athletes: [
+          { athleteId: red.id, color: AthleteColor.RED },
+          { athleteId: blue.id, color: AthleteColor.BLUE },
+        ],
+      })
+      .expect(409)
+      .expect({
+        code: 'MATCH_ATHLETE_REPLACEMENT_UNSAFE',
+        message: 'Athletes can only be replaced before match activity begins',
+      });
+    expect(
+      await prisma.matchAthlete.findMany({
+        orderBy: { color: 'asc' },
+        where: { matchId: creation.match.id },
+      }),
+    ).toEqual(before);
   });
 
   it('regenerates individual or all codes and revokes dependent sessions', async () => {
@@ -1053,8 +1421,14 @@ describe('Admin tournament and match management (integration)', () => {
       functionName: `admin_match_rollback_fn_${safeSuffix}`,
       triggerName: `admin_match_rollback_tr_${safeSuffix}`,
     };
-    const redName = `${TEST_PREFIX}-rollback-red`;
-    const blueName = `${TEST_PREFIX}-rollback-blue`;
+    const weightClass = await createWeightClass(
+      tournament.id,
+      'rollback-weight',
+    );
+    const [red, blue] = await Promise.all([
+      createAthlete(tournament.id, 'rollback-red', weightClass.id),
+      createAthlete(tournament.id, 'rollback-blue', weightClass.id),
+    ]);
     const matchAuditCountBefore = await prisma.auditLog.count({
       where: {
         adminUserId: testAdminId,
@@ -1091,16 +1465,8 @@ describe('Admin tournament and match management (integration)', () => {
       )
         .send({
           athletes: [
-            {
-              color: AthleteColor.RED,
-              name: redName,
-              organization: 'Rollback red organization',
-            },
-            {
-              color: AthleteColor.BLUE,
-              name: blueName,
-              organization: 'Rollback blue organization',
-            },
+            { color: AthleteColor.RED, athleteId: red.id },
+            { color: AthleteColor.BLUE, athleteId: blue.id },
           ],
         })
         .expect(500);
@@ -1113,7 +1479,7 @@ describe('Admin tournament and match management (integration)', () => {
     ).toBe(0);
     expect(
       await prisma.matchAthlete.count({
-        where: { name: { in: [redName, blueName] } },
+        where: { athleteId: { in: [red.id, blue.id] } },
       }),
     ).toBe(0);
     expect(

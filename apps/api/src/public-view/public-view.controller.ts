@@ -15,6 +15,8 @@ import { AuthGuard } from '../auth/admin-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 
 const visibleStatuses = [TournamentStatus.ACTIVE, TournamentStatus.FINISHED];
+const imageUrl = (key: string | null): string | null =>
+  key === null ? null : `/api/media/${key}`;
 
 @Controller()
 @UseGuards(AuthGuard)
@@ -43,6 +45,7 @@ export class PublicViewController {
           startDate: true,
           endDate: true,
           status: true,
+          imagePath: true,
           sport: {
             select: {
               id: true,
@@ -55,7 +58,15 @@ export class PublicViewController {
       }),
       this.prisma.tournament.count({ where }),
     ]);
-    return { items, page, pageSize: take, total };
+    return {
+      items: items.map(({ imagePath, ...tournament }) => ({
+        ...tournament,
+        imageUrl: imageUrl(imagePath),
+      })),
+      page,
+      pageSize: take,
+      total,
+    };
   }
 
   @Get('tournaments/:id')
@@ -70,6 +81,7 @@ export class PublicViewController {
         startDate: true,
         endDate: true,
         status: true,
+        imagePath: true,
         sport: {
           select: {
             id: true,
@@ -80,20 +92,41 @@ export class PublicViewController {
         },
         matches: {
           where: { status: { not: MatchStatus.WAITING } },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
           select: {
             id: true,
             publicId: true,
             status: true,
             currentRound: true,
+            weightClass: { select: { name: true } },
             athletes: {
-              select: { name: true, organization: true, color: true },
+              orderBy: { color: 'asc' },
+              select: {
+                name: true,
+                organization: true,
+                color: true,
+                athlete: { select: { imagePath: true } },
+              },
             },
           },
         },
       },
     });
     if (tournament === null) throw new NotFoundException();
-    return { tournament };
+    const { imagePath, matches, ...safeTournament } = tournament;
+    return {
+      tournament: {
+        ...safeTournament,
+        imageUrl: imageUrl(imagePath),
+        matches: matches.map(({ athletes, ...match }) => ({
+          ...match,
+          athletes: athletes.map(({ athlete, ...snapshot }) => ({
+            ...snapshot,
+            imageUrl: imageUrl(athlete?.imagePath ?? null),
+          })),
+        })),
+      },
+    };
   }
 
   @Get('matches/:id')
@@ -110,11 +143,29 @@ export class PublicViewController {
         currentRound: true,
         startedAt: true,
         finishedAt: true,
-        athletes: { select: { name: true, organization: true, color: true } },
+        weightClass: { select: { name: true } },
+        athletes: {
+          orderBy: { color: 'asc' },
+          select: {
+            name: true,
+            organization: true,
+            color: true,
+            athlete: { select: { imagePath: true } },
+          },
+        },
         tournament: { select: { id: true, name: true, status: true } },
       },
     });
     if (match === null) throw new NotFoundException();
-    return { match };
+    const { athletes, ...safeMatch } = match;
+    return {
+      match: {
+        ...safeMatch,
+        athletes: athletes.map(({ athlete, ...snapshot }) => ({
+          ...snapshot,
+          imageUrl: imageUrl(athlete?.imagePath ?? null),
+        })),
+      },
+    };
   }
 }

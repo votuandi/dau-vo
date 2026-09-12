@@ -4,6 +4,8 @@ dist/
 coverage/
 *.tsbuildinfo
 .vite/
+apps/api/public/uploads/*
+!apps/api/public/uploads/.gitkeep
 
 # Local environment files; keep the documented template
 .env

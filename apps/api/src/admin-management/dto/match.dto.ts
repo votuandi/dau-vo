@@ -5,11 +5,9 @@ import {
   IsArray,
   IsEnum,
   IsInt,
-  IsString,
+  IsUUID,
   Max,
-  MaxLength,
   Min,
-  MinLength,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
@@ -21,15 +19,8 @@ export class MatchAthleteDto {
   @IsEnum(AthleteColor)
   color!: AthleteColor;
 
-  @IsString()
-  @MinLength(1)
-  @MaxLength(255)
-  name!: string;
-
-  @IsString()
-  @MinLength(1)
-  @MaxLength(255)
-  organization!: string;
+  @IsUUID()
+  athleteId!: string;
 }
 
 export class CreateMatchDto {
