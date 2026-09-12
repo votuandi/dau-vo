@@ -316,6 +316,7 @@ export interface ActiveBracket {
     readonly bracketSize: number;
     readonly roundCount: number;
     readonly confirmedAt: string;
+    readonly championEntrant: { readonly id: string; readonly snapshotName: string } | null;
   };
   readonly entrants: readonly {
     readonly id: string;
@@ -405,6 +406,10 @@ export const adminManagementApi = {
     apiClient.post<MatchWithGeneratedCodesResponse>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/brackets/${encodePathSegment(bracketId)}/fixtures/${encodePathSegment(fixtureId)}/prepare-match`,
       {},
+    ),
+  decideBracketFixtureWinner: (tournamentId: string, bracketId: string, fixtureId: string, input: { readonly entrantId: string; readonly reason: string; readonly idempotencyKey: string }) =>
+    apiClient.post<{ readonly fixtureId: string; readonly winnerEntrantId: string }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/brackets/${encodePathSegment(bracketId)}/fixtures/${encodePathSegment(fixtureId)}/decide-winner`, input,
     ),
   getMatch: (id: string) => apiClient.get<MatchResponse>(`admin/matches/${encodePathSegment(id)}`),
   getMatchMonitoring: (id: string) =>

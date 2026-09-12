@@ -7,6 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Body,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -20,6 +21,9 @@ import { AuthGuard } from '../auth/admin-auth.guard';
 import type { AuthenticatedUserRequest } from '../auth/admin-auth.types';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { BracketOutcomeService } from './bracket-outcome.service';
+import { PrismaService } from '../prisma/prisma.service';
+import type { DecideBracketWinnerDto } from './dto/decide-bracket-winner.dto';
 
 const uuid = new ParseUUIDPipe({
   exceptionFactory: () => new BadRequestException(INVALID_ID_ERROR),
@@ -32,6 +36,8 @@ export class BracketFixturesController {
   constructor(
     @Inject(AdminManagementService)
     private readonly management: AdminManagementService,
+    @Inject(BracketOutcomeService) private readonly outcomes: BracketOutcomeService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
   @Post(':fixtureId/prepare-match')
@@ -54,5 +60,21 @@ export class BracketFixturesController {
       fixtureId,
       request.user.id,
     );
+  }
+
+  @Post(':fixtureId/decide-winner')
+  async decideWinner(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Param('bracketId', uuid) bracketId: string,
+    @Param('fixtureId', uuid) fixtureId: string,
+    @Body() input: DecideBracketWinnerDto,
+    @Req() request: AuthenticatedUserRequest,
+  ) {
+    await this.management.assertTournamentAccess(tournamentId, request.user, true);
+    return this.prisma.$transaction(async (tx) => {
+      const fixture = await tx.bracketFixture.findFirst({ where: { id: fixtureId, bracketId, bracket: { tournamentId } }, select: { id: true } });
+      if (!fixture) throw new BadRequestException({ code: 'BRACKET_FIXTURE_NOT_FOUND', message: 'Fixture does not belong to bracket' });
+      return this.outcomes.manuallyDecide(tx, fixtureId, input.entrantId, request.user.id, input.reason.trim(), input.idempotencyKey);
+    });
   }
 }

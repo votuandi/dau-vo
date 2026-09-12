@@ -10,6 +10,8 @@ export interface SportRulesDefinition {
   readonly refereeMajorityThreshold: number;
   readonly refereePointValue: number;
   readonly inspectorPenaltyValue: number;
+  /** Decides a completed match from the server-calculated effective totals. */
+  readonly determineWinner: (totals: Readonly<Record<AthleteColor, number>>) => AthleteColor | null;
 }
 
 /** The executable rules for SportGroup.code ONE_ON_ONE_COMBAT. */
@@ -23,6 +25,12 @@ export const oneOnOneCombatRules: SportRulesDefinition = Object.freeze({
   athleteColors: Object.freeze([AthleteColor.RED, AthleteColor.BLUE]),
   code: 'ONE_ON_ONE_COMBAT',
   inspectorPenaltyValue: -1,
+  determineWinner: (totals: Readonly<Record<AthleteColor, number>>) =>
+    totals[AthleteColor.RED] === totals[AthleteColor.BLUE]
+      ? null
+      : totals[AthleteColor.RED] > totals[AthleteColor.BLUE]
+        ? AthleteColor.RED
+        : AthleteColor.BLUE,
   minimumScoreboardConnections: 1,
   refereeMajorityThreshold: 2,
   refereePointValue: 1,

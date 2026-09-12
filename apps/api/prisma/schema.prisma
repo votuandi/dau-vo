@@ -458,6 +458,7 @@ model TournamentBracket {
   confirmedAt        DateTime      @default(now()) @map("confirmed_at") @db.Timestamptz(3)
   completedAt        DateTime?     @map("completed_at") @db.Timestamptz(3)
   cancelledAt        DateTime?     @map("cancelled_at") @db.Timestamptz(3)
+  championEntrantId  String?       @map("champion_entrant_id") @db.Uuid
   createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   tournament         Tournament    @relation(fields: [tournamentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "tournament_brackets_tournament_id_fkey")
@@ -465,6 +466,7 @@ model TournamentBracket {
   confirmedBy        User?         @relation("TournamentBracketConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "tournament_brackets_confirmed_by_user_id_fkey")
   entrants           BracketEntrant[]
   fixtures           BracketFixture[]
+  championEntrant    BracketEntrant? @relation("TournamentBracketChampion", fields: [championEntrantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([id, tournamentId], map: "tournament_brackets_id_tournament_id_key")
   @@index([tournamentId, weightClassId], map: "tournament_brackets_tournament_id_weight_class_id_idx")
@@ -489,6 +491,7 @@ model BracketEntrant {
   directSlots            BracketSlot[]     @relation("BracketSlotDirectEntrant")
   resolvedSlots          BracketSlot[]     @relation("BracketSlotResolvedEntrant")
   wonFixtures            BracketFixture[]  @relation("BracketFixtureWinner")
+  championOf             TournamentBracket[] @relation("TournamentBracketChampion")
 
   @@unique([bracketId, athleteId], map: "bracket_entrants_bracket_id_athlete_id_key")
   @@index([athleteId], map: "bracket_entrants_athlete_id_idx")
@@ -516,6 +519,18 @@ model BracketFixture {
   @@index([bracketId, roundNumber, position], map: "bracket_fixtures_bracket_id_round_number_position_idx")
   @@index([winnerEntrantId], map: "bracket_fixtures_winner_entrant_id_idx")
   @@map("bracket_fixtures")
+}
+
+model BracketWinnerDecisionIdempotency {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fixtureId      String   @map("fixture_id") @db.Uuid
+  key            String   @db.VarChar(255)
+  entrantId      String   @map("entrant_id") @db.Uuid
+  response       Json     @db.JsonB
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([fixtureId, key], map: "bracket_winner_decision_idempotency_fixture_id_key_key")
+  @@map("bracket_winner_decision_idempotency")
 }
 
 model BracketSlot {

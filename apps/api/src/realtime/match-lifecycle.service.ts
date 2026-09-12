@@ -25,6 +25,7 @@ import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
+import { BracketOutcomeService } from '../brackets/bracket-outcome.service';
 import {
   InactiveRoundStartSessionError,
   InactiveRoundControlSessionError,
@@ -130,6 +131,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
     private readonly prisma: PrismaService,
     @Inject(SportRulesRegistry)
     private readonly sportRules: SportRulesRegistry,
+    @Inject(BracketOutcomeService)
+    private readonly bracketOutcomes: BracketOutcomeService,
   ) {}
 
   onModuleDestroy(): void {
@@ -908,6 +911,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
             : null;
 
         if (matchFinished !== null) {
+          await this.bracketOutcomes.processFinishedMatch(transaction, matchId);
           await transaction.auditLog.create({
             data: {
               eventType: AuditEventType.MATCH_FINISHED,

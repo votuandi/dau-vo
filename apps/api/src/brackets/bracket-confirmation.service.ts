@@ -234,6 +234,7 @@ export class BracketConfirmationService {
       .then((b) => this.view(b));
   }
   private readonly include: Prisma.TournamentBracketInclude = {
+    championEntrant: true,
     entrants: {
       orderBy: [
         { initialRoundNumber: 'asc' },
@@ -264,6 +265,7 @@ export class BracketConfirmationService {
         bracketSize: b.bracketSize,
         roundCount: b.roundCount,
         confirmedAt: b.confirmedAt,
+        championEntrant: b.championEntrant,
       },
       entrants: b.entrants,
       fixtures: b.fixtures,
