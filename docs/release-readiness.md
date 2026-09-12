@@ -131,3 +131,71 @@ backup point and planned data loss. Test both a clean database and a snapshot
 taken before the unified-user feature migration in staging.
 
 Production requirements: HTTPS at the edge, a single explicit HTTPS `WEB_ORIGIN`, independent 32+ character session secrets, non-default database credentials, and a non-default `INITIAL_SUPER_ADMIN_PASSWORD`. The seed is intentionally idempotent; it creates or reactivates only the normalized `superadmin` system identity and must not be treated as a general user bootstrap tool.
+
+### Sport catalog rollout
+
+The Sport catalog migration is exactly
+`20260912090000_sport_catalog`. It is self-contained: it creates `sport_groups`
+and `sports`, inserts `ONE_ON_ONE_COMBAT` / `Đối kháng 1-1` and
+`STICK_FIGHTING` / `Võ Gậy` (active), adds non-null `tournaments.sport_id`,
+backfills every legacy Tournament to `STICK_FIGHTING`, and adds the
+`tournaments_sport_id_fkey` `RESTRICT` foreign key and index. It does not rely
+on the seed.
+
+| Capability                                   | Active admin | Expired read-only admin               | Super admin                            |
+| -------------------------------------------- | ------------ | ------------------------------------- | -------------------------------------- |
+| `GET /api/admin/sports` (active Sports only) | Yes          | Yes for readable owned administration | Yes                                    |
+| Create/update a Sport                        | No           | No                                    | `POST`/`PATCH /api/super-admin/sports` |
+| List Sport Groups                            | No           | No                                    | `GET /api/super-admin/sport-groups`    |
+| Delete a Sport or mutate a Sport Group       | No endpoint  | No endpoint                           | No endpoint                            |
+
+For a clean install, run the normal checked-in migration deployment and then the
+idempotent seed:
+
+```powershell
+pnpm --filter @martial-arts-scoring/api prisma:migrate:deploy
+pnpm --filter @martial-arts-scoring/api prisma:seed
+```
+
+For an upgrade, take and verify a backup, inspect migration status, deploy the
+same migration, and verify the catalog before enabling operator use. Do not use
+`migrate dev` or manually update Sports/Tournaments to circumvent catalog guards.
+
+```powershell
+pnpm --filter @martial-arts-scoring/api prisma:migrate:status
+pnpm --filter @martial-arts-scoring/api prisma:migrate:deploy
+pnpm --filter @martial-arts-scoring/api prisma:verify:sport-catalog
+```
+
+The verification uses disposable PostgreSQL and covers both clean/catalog
+installation and a legacy snapshot with active and retained soft-deleted
+Tournaments, a Match, scoring history, and audit history. It confirms all
+legacy Tournaments retain their data and point at `Võ Gậy`; repeated seed runs
+do not duplicate the default records.
+
+Expected post-migration records are one group with code `ONE_ON_ONE_COMBAT`,
+name `Đối kháng 1-1`, and one active Sport with code `STICK_FIGHTING`, name
+`Võ Gậy`, in that group. Relevant stable errors are `SPORT_NOT_FOUND`,
+`SPORT_INACTIVE`, `SPORT_IN_USE`, `SPORT_GROUP_CHANGE_NOT_ALLOWED`,
+`TOURNAMENT_SPORT_CHANGE_NOT_ALLOWED`, and
+`SPORT_GROUP_RULES_NOT_IMPLEMENTED`.
+
+Sport creation/update is Super Admin-only and produces `ADMIN_ACTION` audit
+records with safe before/after catalog fields. Monitor migration status and the
+normal application health/audit pipeline; investigate any
+`SPORT_GROUP_RULES_NOT_IMPLEMENTED` response as a deployment/configuration
+error. A Sport remains used while any Tournament row references it, including
+archived and soft-deleted rows. The implemented retention purge permanently
+deletes eligible Tournament rows, at which point they no longer count as a
+Sport usage reference; there is still no Sport deletion endpoint.
+
+Before release, run the catalog migration verifier and repository gates:
+
+```powershell
+pnpm --filter @martial-arts-scoring/api prisma:verify:sport-catalog
+pnpm format:check
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+```

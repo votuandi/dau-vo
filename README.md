@@ -220,6 +220,71 @@ the database stores bcrypt hashes. Save newly displayed codes immediately.
 Regenerating a code revokes active match sessions associated with its previous
 credential.
 
+## Sport catalog and rulesets
+
+The competition domain is `SportGroup 1 -> many Sport 1 -> many Tournament 1 ->
+many Match`. A Sport Group is the stable application-level classification that
+selects executable rules; a Sport is the catalog choice made for a Tournament.
+
+```mermaid
+flowchart LR
+  G[SportGroup\ncode] -->|1 to many| S[Sport]
+  S -->|1 to many| T[Tournament]
+  T -->|1 to many| M[Match]
+  R[Application rules registry\nkeyed by SportGroup.code] -->|ONE_ON_ONE_COMBAT| G
+```
+
+The catalog migration supplies these active system records:
+
+| Record      | Code                | Vietnamese name |
+| ----------- | ------------------- | --------------- |
+| Sport Group | `ONE_ON_ONE_COMBAT` | `Đối kháng 1-1` |
+| Sport       | `STICK_FIGHTING`    | `Võ Gậy`        |
+
+Only `SUPER_ADMIN` can manage Sports: `GET`/`POST`/`PATCH`
+`/api/super-admin/sports` and `GET /api/super-admin/sport-groups`. There is no
+Sport deletion endpoint and no Sport Group creation or mutation endpoint. Sport
+codes are creation-time identifiers and are not editable. The catalog API writes
+an `ADMIN_ACTION` audit record for every Sport creation or update.
+
+An active `ADMIN` (for owned records) or `SUPER_ADMIN` may obtain selectable
+Sports only through `GET /api/admin/sports`; it returns active Sports only. The
+Tournament create/edit UI uses that list. A Tournament may change to another
+active Sport only before its first Match is created. Once any Match exists, a
+change is rejected with `TOURNAMENT_SPORT_CHANGE_NOT_ALLOWED`.
+
+A Sport with one or more stored Tournaments is _used_, including a Tournament
+that is archived or soft-deleted. A used Sport cannot be disabled or moved to a
+different Sport Group (`SPORT_IN_USE` or `SPORT_GROUP_CHANGE_NOT_ALLOWED`). The
+database foreign keys from Tournament to Sport and Sport to Sport Group use
+`RESTRICT`; do not manually edit production rows to bypass these guards. The
+implemented lifecycle permanently deletes a Tournament after its purge deadline,
+so that deleted Tournament no longer contributes a usage reference. This does
+not provide a manual Sport-delete workflow.
+
+### Adding Sports and Groups
+
+To add a Sport under an existing, supported group, use the Super Admin UI at
+`/super-admin/sports` or `POST /api/super-admin/sports`, select the existing
+group, and create it active. Confirm it appears in `GET /api/admin/sports`.
+No scoring implementation is required: every Sport in that group resolves to
+the same ruleset.
+
+Adding a new Sport Group is an engineering release, not a UI operation:
+
+1. Implement and test its ruleset strategy, then register its immutable code in
+   [`SportRulesRegistry`](apps/api/src/sport-rules/sport-rules.registry.ts).
+2. Add the group through a reviewed migration/system-data change, not a UI
+   mutation. Deploy the executable strategy before adding Sports to that group.
+3. Add its Sports only after the ruleset is deployable.
+4. Verify match creation, roles, lifecycle, scoring, penalties, realtime
+   payloads, scoreboard, audit records, and migration behavior.
+5. Never use, or introduce, a silent fallback to `ONE_ON_ONE_COMBAT`.
+
+See [ADR 0013](docs/adr/0013-sport-group-ruleset-resolution.md) for the
+ruleset-resolution decision and [release readiness](docs/release-readiness.md)
+for migration and operator checks.
+
 ## Match participant authentication
 
 Referees sign in at `/trong-tai`; inspectors sign in at `/giam-dinh`. Both forms
