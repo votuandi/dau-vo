@@ -11,6 +11,14 @@ export function SuperAdminHomePage() {
         ·{' '}
         <Link className="text-primary underline" to="/super-admin/pricing">
           Quản lý bảng giá
+        </Link>{' '}
+        ·{' '}
+        <Link className="text-primary underline" to="/super-admin/sports">
+          Quản lý môn thể thao
+        </Link>{' '}
+        ·{' '}
+        <Link className="text-primary underline" to="/super-admin/sport-groups">
+          Xem nhóm môn thể thao
         </Link>
       </p>
     </section>

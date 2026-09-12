@@ -8,6 +8,8 @@ import { authApi, type AuthenticatedUser } from '@/services/api/auth';
 const navigationItems = [
   { to: '/super-admin', label: 'Tổng quan' },
   { to: '/super-admin/users', label: 'Người dùng' },
+  { to: '/super-admin/sports', label: 'Môn thể thao' },
+  { to: '/super-admin/sport-groups', label: 'Nhóm môn thể thao' },
   { to: '/super-admin/pricing', label: 'Bảng giá' },
 ] as const;
 

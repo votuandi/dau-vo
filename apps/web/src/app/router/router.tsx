@@ -21,6 +21,8 @@ import { SuperAdminPricingPage } from '@/features/super-admin/pricing/pricing-pa
 import { CreateSuperAdminUserPage } from '@/features/super-admin/users/create-user-page';
 import { SuperAdminUsersPage } from '@/features/super-admin/users/users-page';
 import { SuperAdminUserDetailPage } from '@/features/super-admin/users/user-detail-page';
+import { SuperAdminSportGroupsPage } from '@/features/super-admin/sports/sport-groups-page';
+import { SuperAdminSportsPage } from '@/features/super-admin/sports/sports-page';
 import { MatchRole } from '@/types/shared';
 import { RoleAwareIndexRedirect } from './role-aware-index-redirect';
 
@@ -89,6 +91,8 @@ export const router = createBrowserRouter([
               { path: 'users/new', element: <CreateSuperAdminUserPage /> },
               { path: 'users/:id', element: <SuperAdminUserDetailPage /> },
               { path: 'pricing', element: <SuperAdminPricingPage /> },
+              { path: 'sports', element: <SuperAdminSportsPage /> },
+              { path: 'sport-groups', element: <SuperAdminSportGroupsPage /> },
             ],
           },
         ],

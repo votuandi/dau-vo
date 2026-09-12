@@ -126,6 +126,35 @@ export interface CreatePricingVersionInput {
   readonly tournamentAddonUnitAmountVnd: number;
   readonly discountTiers: readonly Omit<PricingDiscountTier, 'id'>[];
 }
+export interface SportGroup {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly sportCount: number;
+}
+export interface ManagedSport {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly sportGroupId: string;
+  readonly sportGroup: Pick<SportGroup, 'id' | 'code' | 'name'>;
+  readonly isActive: boolean;
+  readonly tournamentCount: number;
+  /** Server capabilities are authoritative; omitted values retain the usage safeguards. */
+  readonly canDisable?: boolean;
+  readonly canChangeSportGroup?: boolean;
+}
+export interface CreateSportInput {
+  readonly name: string;
+  readonly code: string;
+  readonly sportGroupId: string;
+  readonly isActive: boolean;
+}
+export interface UpdateSportInput {
+  readonly name?: string;
+  readonly sportGroupId?: string;
+  readonly isActive?: boolean;
+}
 
 function query(input: ListSuperAdminUsersInput): string {
   const params = new URLSearchParams();
@@ -159,4 +188,9 @@ export const superAdminApi = {
   pricing: () => apiClient.get<readonly PricingVersion[]>('super-admin/pricing'),
   createPricing: (body: CreatePricingVersionInput) =>
     apiClient.put<PricingVersion>('super-admin/pricing', body),
+  sports: () => apiClient.get<readonly ManagedSport[]>('super-admin/sports'),
+  sportGroups: () => apiClient.get<readonly SportGroup[]>('super-admin/sport-groups'),
+  createSport: (body: CreateSportInput) => apiClient.post<ManagedSport>('super-admin/sports', body),
+  updateSport: (id: string, body: UpdateSportInput) =>
+    apiClient.patch<ManagedSport>(`super-admin/sports/${id}`, body),
 };
