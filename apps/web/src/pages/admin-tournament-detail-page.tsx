@@ -6,11 +6,9 @@ import { Button } from '@/components/ui/button';
 import { DateInput } from '@/components/ui/date-input';
 import { TournamentImage, TournamentImagePicker } from '@/components/tournament-image';
 import {
-  athleteColorLabels,
   formatDate,
   getApiErrorMessage,
   inputClassName,
-  matchStatusLabels,
   notifyMutationError,
   notifyMutationSuccess,
   textAreaClassName,
@@ -40,11 +38,9 @@ import {
   RosterItemsPage,
   TournamentTabs,
 } from '@/features/tournament-roster/tournament-roster-tabs';
+import { TournamentMatchesPage } from '@/features/tournament-bracket/tournament-matches-page';
 import { RosterAthleteSelector } from '@/features/admin-management/roster-athlete-selector';
-import {
-  tournamentAthletesQueryOptions,
-  tournamentWeightClassesQueryOptions,
-} from '@/features/admin-management/queries';
+import { tournamentAthletesQueryOptions, tournamentWeightClassesQueryOptions } from '@/features/admin-management/queries';
 
 function TournamentEditor({
   tournament,
@@ -306,56 +302,13 @@ function TournamentEditor({
 }
 
 function MatchCard({ match }: { readonly match: AdminMatch }) {
-  return (
-    <li className="rounded-xl border border-border p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              className="font-mono text-xl font-black tracking-wider hover:underline"
-              to={`/admin/matches/${match.id}`}
-            >
-              {match.publicId}
-            </Link>
-            <span className="rounded-full border border-primary/10 bg-accent px-2.5 py-1 text-xs font-bold text-accent-foreground">
-              {matchStatusLabels[match.status]}
-            </span>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm">
-            <span className="font-semibold">
-              {match.weightClass?.name ?? 'Hạng cân chưa xác định'}
-            </span>
-            {match.athletes.map((athlete) => (
-              <span key={athlete.id}>
-                <span
-                  className={
-                    athlete.color === AthleteColor.RED
-                      ? 'font-bold text-red-700'
-                      : 'font-bold text-blue-700'
-                  }
-                >
-                  {athleteColorLabels[athlete.color]}:
-                </span>{' '}
-                {athlete.name}
-              </span>
-            ))}
-          </div>
-        </div>
-        <Button asChild size="sm" variant="outline">
-          <Link to={`/admin/matches/${match.id}`}>Quản lý trận</Link>
-        </Button>
-      </div>
-    </li>
-  );
+  return <li className="rounded-xl border p-4"><Link className="font-bold underline" to={`/admin/matches/${match.id}`}>{match.publicId}</Link></li>;
 }
 
-function TournamentMatches({
+export function TournamentMatchesLegacyRemoved({
   tournament,
   isReadOnly,
-}: {
-  readonly tournament: AdminTournament;
-  readonly isReadOnly: boolean;
-}) {
+}: { readonly tournament: AdminTournament; readonly isReadOnly: boolean }) {
   const queryClient = useQueryClient();
   const matchesQuery = useQuery(tournamentMatchesQueryOptions(tournament.id));
   const weightClassesQuery = useQuery(tournamentWeightClassesQueryOptions(tournament.id));
@@ -705,7 +658,7 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
         />
       ) : null}
       {active === 'matches' ? (
-        <TournamentMatches isReadOnly={isReadOnly} tournament={tournament} />
+        <TournamentMatchesPage isReadOnly={isReadOnly} tournament={tournament} />
       ) : null}
       {active === 'weight-classes' ? (
         <RosterItemsPage
