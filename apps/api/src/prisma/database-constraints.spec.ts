@@ -28,6 +28,7 @@ const fixture = {
   scoringWindowId: '70000000-0000-4000-8000-000000000001',
   sessionId: '60000000-0000-4000-8000-000000000001',
   tournamentId: '10000000-0000-4000-8000-000000000001',
+  otherTournamentId: '10000000-0000-4000-8000-000000000003',
   voteId: '80000000-0000-4000-8000-000000000001',
 } as const;
 
@@ -55,9 +56,28 @@ async function cleanFixtures(): Promise<void> {
   await prisma.matchAthlete.deleteMany({
     where: { matchId: { in: matchIds } },
   });
+  await prisma.tournamentAthlete.deleteMany({
+    where: {
+      tournamentId: { in: [fixture.tournamentId, fixture.otherTournamentId] },
+    },
+  });
+  await prisma.tournamentUnit.deleteMany({
+    where: {
+      tournamentId: { in: [fixture.tournamentId, fixture.otherTournamentId] },
+    },
+  });
+  await prisma.tournamentWeightClass.deleteMany({
+    where: {
+      tournamentId: { in: [fixture.tournamentId, fixture.otherTournamentId] },
+    },
+  });
   await prisma.match.deleteMany({ where: { id: { in: matchIds } } });
   await prisma.tournament.deleteMany({ where: { id: fixture.tournamentId } });
+  await prisma.tournament.deleteMany({
+    where: { id: fixture.otherTournamentId },
+  });
   await prisma.user.deleteMany({ where: { id: fixture.tournamentId } });
+  await prisma.user.deleteMany({ where: { id: fixture.otherTournamentId } });
 }
 
 async function createMatchFixture(): Promise<void> {
@@ -190,6 +210,114 @@ describe('database unique constraints', () => {
         },
       }),
     ).rejects.toMatchObject({ code: 'P2002' });
+  });
+
+  it('enforces tournament-scoped roster references and permits an unassigned athlete', async () => {
+    await prisma.user.create({
+      data: {
+        id: fixture.otherTournamentId,
+        username: 'other-roster-owner',
+        normalizedUsername: 'other-roster-owner',
+        passwordHash: 'hash',
+      },
+    });
+    await prisma.tournament.create({
+      data: {
+        id: fixture.otherTournamentId,
+        name: 'Other roster tournament',
+        ownerUserId: fixture.otherTournamentId,
+        sportId: DEFAULT_SPORT.id,
+      },
+    });
+    const ownWeightClass = await prisma.tournamentWeightClass.create({
+      data: {
+        tournamentId: fixture.tournamentId,
+        name: 'Light',
+        normalizedName: 'light',
+      },
+    });
+    const otherWeightClass = await prisma.tournamentWeightClass.create({
+      data: {
+        tournamentId: fixture.otherTournamentId,
+        name: 'Heavy',
+        normalizedName: 'heavy',
+      },
+    });
+    const otherUnit = await prisma.tournamentUnit.create({
+      data: {
+        tournamentId: fixture.otherTournamentId,
+        name: 'Other unit',
+        normalizedName: 'other unit',
+      },
+    });
+    const otherAthlete = await prisma.tournamentAthlete.create({
+      data: {
+        tournamentId: fixture.otherTournamentId,
+        weightClassId: otherWeightClass.id,
+        name: 'Other athlete',
+        birthYear: 2000,
+      },
+    });
+
+    await expect(
+      prisma.tournamentAthlete.create({
+        data: {
+          tournamentId: fixture.tournamentId,
+          unitId: otherUnit.id,
+          weightClassId: ownWeightClass.id,
+          name: 'Invalid unit',
+          birthYear: 2000,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2003' });
+    await expect(
+      prisma.tournamentAthlete.create({
+        data: {
+          tournamentId: fixture.tournamentId,
+          weightClassId: otherWeightClass.id,
+          name: 'Invalid weight',
+          birthYear: 2000,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2003' });
+    const athlete = await prisma.tournamentAthlete.create({
+      data: {
+        tournamentId: fixture.tournamentId,
+        weightClassId: ownWeightClass.id,
+        name: 'No unit',
+        birthYear: 2000,
+      },
+    });
+    await expect(
+      prisma.match.update({
+        where: { id: fixture.matchId },
+        data: { weightClassId: otherWeightClass.id },
+      }),
+    ).rejects.toMatchObject({ code: 'P2003' });
+    await expect(
+      prisma.matchAthlete.create({
+        data: {
+          id: fixture.athleteId,
+          matchId: fixture.matchId,
+          tournamentId: fixture.tournamentId,
+          athleteId: otherAthlete.id,
+          color: AthleteColor.RED,
+          name: 'Snapshot',
+          organization: 'Club',
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2003' });
+    await prisma.matchAthlete.create({
+      data: {
+        id: fixture.athleteId,
+        matchId: fixture.matchId,
+        tournamentId: fixture.tournamentId,
+        athleteId: athlete.id,
+        color: AthleteColor.RED,
+        name: 'Snapshot',
+        organization: 'Club',
+      },
+    });
   });
 
   it('rejects duplicate referee slots within a scoring window', async () => {
