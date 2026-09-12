@@ -164,7 +164,9 @@ export async function ensureDefaultSportCatalog(
   const sportGroup = await prisma.sportGroup.upsert({
     where: { code: DEFAULT_SPORT_GROUP.code },
     create: DEFAULT_SPORT_GROUP,
-    update: { name: DEFAULT_SPORT_GROUP.name },
+    // Seeding is an idempotent bootstrap operation, never a catalog repair
+    // mechanism: it must not silently rename a managed record.
+    update: {},
     select: { id: true },
   });
 
@@ -174,12 +176,7 @@ export async function ensureDefaultSportCatalog(
       ...DEFAULT_SPORT,
       sportGroupId: sportGroup.id,
     },
-    update: {
-      isActive: DEFAULT_SPORT.isActive,
-      name: DEFAULT_SPORT.name,
-      normalizedName: DEFAULT_SPORT.normalizedName,
-      sportGroupId: sportGroup.id,
-    },
+    update: {},
   });
 }
 

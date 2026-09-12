@@ -199,6 +199,64 @@ describe('Super-admin management (e2e)', () => {
     });
   });
 
+  it('enforces the Sport catalog authorization and immutable/usage safeguards at HTTP level', async () => {
+    const root = request.agent(app.getHttpServer());
+    const user = request.agent(app.getHttpServer());
+    await request(app.getHttpServer())
+      .get('/api/super-admin/sports')
+      .expect(401);
+    await root
+      .post('/api/auth/login')
+      .send({ username: superAdmin.username, password })
+      .expect(200);
+    await user
+      .post('/api/auth/register')
+      .send({
+        username: `${prefix}sport-user`,
+        password,
+        fullName: 'Sport User',
+        email: `${prefix}sport-user@example.test`,
+        phone: '0900000091',
+      })
+      .expect(201);
+    await user.get('/api/admin/sports').expect(403);
+    await user.get('/api/super-admin/sports').expect(403);
+
+    const groups = await root.get('/api/super-admin/sport-groups').expect(200);
+    const groupId = groups.body[0].id as string;
+    const created = await root
+      .post('/api/super-admin/sports')
+      .send({
+        code: `E2E_SPORT_${Date.now()}`,
+        name: `${prefix} Sport`,
+        sportGroupId: groupId,
+        isActive: true,
+      })
+      .expect(201);
+    const sportId = created.body.id as string;
+    await root
+      .patch(`/api/super-admin/sports/${sportId}`)
+      .send({ code: 'MUTATED' })
+      .expect(400);
+    await root
+      .patch(`/api/super-admin/sports/${sportId}`)
+      .send({ sportGroupId: groupId })
+      .expect(200);
+    await root
+      .patch(`/api/super-admin/sports/${sportId}`)
+      .send({ isActive: false })
+      .expect(200);
+    expect(
+      await prisma.auditLog.findFirst({
+        where: {
+          adminUserId: superAdmin.id,
+          metadata: { path: ['targetSportId'], equals: sportId },
+        },
+      }),
+    ).not.toBeNull();
+    await prisma.sport.delete({ where: { id: sportId } });
+  });
+
   it('creates ADMIN users atomically with their initial entitlement', async () => {
     const root = request.agent(app.getHttpServer());
     await root
