@@ -131,6 +131,9 @@ function MatchEditor({
     if (redAthleteId && !ids.has(redAthleteId)) setRedAthleteId(null);
     if (blueAthleteId && !ids.has(blueAthleteId)) setBlueAthleteId(null);
   }, [eligibleAthletes, redAthleteId, blueAthleteId]);
+  useEffect(() => {
+    if (redAthleteId && redAthleteId === blueAthleteId) setBlueAthleteId(null);
+  }, [blueAthleteId, redAthleteId]);
 
   return (
     <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
@@ -213,6 +216,7 @@ function MatchEditor({
                   athletes={eligibleAthletes}
                   color={AthleteColor.RED}
                   disabled={eligibleAthletes.length < 2}
+                  excludedAthleteId={blueAthleteId}
                   label="Góc Đỏ (RED)"
                   loading={athletesQuery.isPending}
                   onChange={(id) => {

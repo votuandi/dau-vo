@@ -101,6 +101,7 @@ describe('RosterItemsPage', () => {
       expect(api.createOrganization).toHaveBeenCalledWith('t1', {
         name: 'New organization',
         details: 'Details',
+        location: null,
       });
     });
     await waitFor(() => {

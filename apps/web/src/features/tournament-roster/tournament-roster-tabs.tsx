@@ -595,7 +595,7 @@ export function AthletesPage({
         birthYear: input.birthYear,
         weightClassId: input.weightClassId,
         organizationId: input.organizationId ?? null,
-        details: input.details?.trim() || null,
+        details: input.details?.trim() ?? null,
       };
       const result = athlete
         ? await adminManagementApi.updateAthlete(tournamentId, athlete.id, text)
@@ -645,11 +645,12 @@ export function AthletesPage({
       void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId, 'athletes'] });
       notifyMutationSuccess('Đã cập nhật trạng thái vận động viên.');
     },
-    onError: (e) =>
+    onError: (e) => {
       notifyMutationError(
         e,
         'Không thể cập nhật trạng thái. Nếu khôi phục bị từ chối, hãy chọn hạng cân hoặc đơn vị đang hoạt động rồi lưu lại.',
-      ),
+      );
+    },
   });
   const removeImage = useMutation({
     mutationFn: (id: string) => adminManagementApi.removeAthleteImage(tournamentId, id),
@@ -657,7 +658,9 @@ export function AthletesPage({
       void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId, 'athletes'] });
       notifyMutationSuccess('Đã xóa ảnh đại diện.');
     },
-    onError: (e) => notifyMutationError(e, 'Không thể xóa ảnh đại diện.'),
+    onError: (e) => {
+      notifyMutationError(e, 'Không thể xóa ảnh đại diện.');
+    },
   });
   // The roster endpoints are independently loaded. Treat a response without either
   // collection as an empty roster while it is refreshed instead of crashing the tab.
@@ -815,7 +818,9 @@ export function AthletesPage({
             <textarea
               className={textAreaClassName}
               maxLength={5000}
-              onChange={(e) => setDraft({ ...draft, details: e.target.value })}
+              onChange={(e) => {
+                setDraft({ ...draft, details: e.target.value });
+              }}
               value={draft.details ?? ''}
             />
           </label>
@@ -975,7 +980,9 @@ export function AthletesPage({
                     {x.imageUrl ? (
                       <Button
                         disabled={removeImage.isPending}
-                        onClick={() => removeImage.mutate(x.id)}
+                        onClick={() => {
+                          removeImage.mutate(x.id);
+                        }}
                         size="sm"
                         type="button"
                         variant="outline"
@@ -985,7 +992,9 @@ export function AthletesPage({
                     ) : null}
                     <Button
                       disabled={deactivate.isPending}
-                      onClick={() => setConfirm(x)}
+                      onClick={() => {
+                        setConfirm(x);
+                      }}
                       size="sm"
                       type="button"
                       variant="outline"
@@ -1033,8 +1042,12 @@ export function AthletesPage({
               ? 'Vận động viên sẽ không còn được chọn cho trận đấu mới.'
               : 'Hạng cân và đơn vị hiện tại phải đang hoạt động để khôi phục.'
           }
-          onCancel={() => setConfirm(null)}
-          onConfirm={() => deactivate.mutate(confirm)}
+          onCancel={() => {
+            setConfirm(null);
+          }}
+          onConfirm={() => {
+            deactivate.mutate(confirm);
+          }}
           title={`${confirm.isActive ? 'Ngừng dùng' : 'Khôi phục'} vận động viên?`}
         />
       ) : null}
