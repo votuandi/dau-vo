@@ -1,4 +1,4 @@
-import { useState, type SyntheticEvent } from 'react';
+import { useEffect, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { GeneratedAccessCodesPanel } from '@/components/generated-access-codes-panel';
@@ -35,20 +35,16 @@ import {
 } from '@/services/api/admin-management';
 import { AthleteColor, TournamentStatus } from '@/types/shared';
 import { useAdminAccessContext } from '@/features/auth/admin-access';
-import { AthletesPage, RosterItemsPage, TournamentTabs } from '@/features/tournament-roster/tournament-roster-tabs';
-
-interface AthleteDraft {
-  readonly name: string;
-  readonly organization: string;
-}
-
-function athleteInput(color: AthleteColor, draft: AthleteDraft): MatchAthleteInput {
-  return {
-    color,
-    name: draft.name.trim(),
-    organization: draft.organization.trim(),
-  };
-}
+import {
+  AthletesPage,
+  RosterItemsPage,
+  TournamentTabs,
+} from '@/features/tournament-roster/tournament-roster-tabs';
+import { RosterAthleteSelector } from '@/features/admin-management/roster-athlete-selector';
+import {
+  tournamentAthletesQueryOptions,
+  tournamentWeightClassesQueryOptions,
+} from '@/features/admin-management/queries';
 
 function TournamentEditor({
   tournament,
@@ -326,6 +322,9 @@ function MatchCard({ match }: { readonly match: AdminMatch }) {
             </span>
           </div>
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+            <span className="font-semibold">
+              {match.weightClass?.name ?? 'Hạng cân chưa xác định'}
+            </span>
             {match.athletes.map((athlete) => (
               <span key={athlete.id}>
                 <span
@@ -359,8 +358,19 @@ function TournamentMatches({
 }) {
   const queryClient = useQueryClient();
   const matchesQuery = useQuery(tournamentMatchesQueryOptions(tournament.id));
-  const [redAthlete, setRedAthlete] = useState<AthleteDraft>({ name: '', organization: '' });
-  const [blueAthlete, setBlueAthlete] = useState<AthleteDraft>({ name: '', organization: '' });
+  const weightClassesQuery = useQuery(tournamentWeightClassesQueryOptions(tournament.id));
+  const [weightClassId, setWeightClassId] = useState('');
+  const athletesQuery = useQuery({
+    ...tournamentAthletesQueryOptions(tournament.id, {
+      isActive: true,
+      page: 1,
+      pageSize: 100,
+      ...(weightClassId ? { weightClassId } : {}),
+    }),
+    enabled: Boolean(weightClassId),
+  });
+  const [redAthleteId, setRedAthleteId] = useState<string | null>(null);
+  const [blueAthleteId, setBlueAthleteId] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [generatedCodes, setGeneratedCodes] = useState<readonly GeneratedAccessCode[]>([]);
   const [newMatch, setNewMatch] = useState<AdminMatch | null>(null);
@@ -371,39 +381,48 @@ function TournamentMatches({
     onSuccess: (response) => {
       setGeneratedCodes(response.accessCodes);
       setNewMatch(response.match);
-      setRedAthlete({ name: '', organization: '' });
-      setBlueAthlete({ name: '', organization: '' });
+      setRedAthleteId(null);
+      setBlueAthleteId(null);
       queryClient.setQueryData(matchQueryKeys.detail(response.match.id), { match: response.match });
       notifyMutationSuccess('Tạo trận đấu thành công.');
       void queryClient.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournament.id) });
     },
     onError: (error) => {
       notifyMutationError(error, 'Không thể tạo trận đấu.');
+      void queryClient.invalidateQueries({
+        queryKey: tournamentQueryKeys.athletes(tournament.id, {}),
+      });
     },
   });
 
   function handleCreate(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     createMutation.reset();
-    setGeneratedCodes([]);
-    setNewMatch(null);
-
-    if (
-      !redAthlete.name.trim() ||
-      !redAthlete.organization.trim() ||
-      !blueAthlete.name.trim() ||
-      !blueAthlete.organization.trim()
-    ) {
-      setValidationError('Nhập đầy đủ tên và đơn vị cho cả vận động viên Đỏ và Xanh.');
+    if (!redAthleteId || !blueAthleteId) {
+      setValidationError('Chọn một vận động viên cho mỗi góc.');
       return;
     }
 
     setValidationError(null);
     createMutation.mutate([
-      athleteInput(AthleteColor.RED, redAthlete),
-      athleteInput(AthleteColor.BLUE, blueAthlete),
+      { color: AthleteColor.RED, athleteId: redAthleteId },
+      { color: AthleteColor.BLUE, athleteId: blueAthleteId },
     ]);
   }
+
+  const activeWeightClasses =
+    weightClassesQuery.data?.weightClasses.filter(({ isActive }) => isActive) ?? [];
+  const eligibleAthletes = athletesQuery.data?.items ?? [];
+  const selectedWeightClass = activeWeightClasses.find(({ id }) => id === weightClassId);
+  useEffect(() => {
+    if (!weightClassId && activeWeightClasses.length > 0)
+      setWeightClassId(activeWeightClasses[0]!.id);
+  }, [activeWeightClasses, weightClassId]);
+  useEffect(() => {
+    const ids = new Set(eligibleAthletes.map(({ id }) => id));
+    if (redAthleteId && !ids.has(redAthleteId)) setRedAthleteId(null);
+    if (blueAthleteId && !ids.has(blueAthleteId)) setBlueAthleteId(null);
+  }, [eligibleAthletes, redAthleteId, blueAthleteId]);
 
   return (
     <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
@@ -477,66 +496,69 @@ function TournamentMatches({
           <h3 className="font-black">Tạo trận mới</h3>
           <fieldset className="mt-4 space-y-4" disabled={createMutation.isPending || isReadOnly}>
             <legend className="sr-only">Hai vận động viên</legend>
-            <div className="rounded-lg border border-red-200 bg-red-50/60 p-3">
-              <p className="text-sm font-bold text-red-800">Vận động viên Đỏ</p>
-              <label className="mt-3 block text-xs font-semibold" htmlFor="red-athlete-name">
-                Họ tên
-              </label>
-              <input
-                className={inputClassName}
-                id="red-athlete-name"
-                maxLength={255}
-                onChange={(event) => {
-                  setRedAthlete((current) => ({ ...current, name: event.target.value }));
-                }}
-                value={redAthlete.name}
-              />
-              <label
-                className="mt-3 block text-xs font-semibold"
-                htmlFor="red-athlete-organization"
-              >
-                Đơn vị
-              </label>
-              <input
-                className={inputClassName}
-                id="red-athlete-organization"
-                maxLength={255}
-                onChange={(event) => {
-                  setRedAthlete((current) => ({ ...current, organization: event.target.value }));
-                }}
-                value={redAthlete.organization}
-              />
-            </div>
-            <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">
-              <p className="text-sm font-bold text-blue-800">Vận động viên Xanh</p>
-              <label className="mt-3 block text-xs font-semibold" htmlFor="blue-athlete-name">
-                Họ tên
-              </label>
-              <input
-                className={inputClassName}
-                id="blue-athlete-name"
-                maxLength={255}
-                onChange={(event) => {
-                  setBlueAthlete((current) => ({ ...current, name: event.target.value }));
-                }}
-                value={blueAthlete.name}
-              />
-              <label
-                className="mt-3 block text-xs font-semibold"
-                htmlFor="blue-athlete-organization"
-              >
-                Đơn vị
-              </label>
-              <input
-                className={inputClassName}
-                id="blue-athlete-organization"
-                maxLength={255}
-                onChange={(event) => {
-                  setBlueAthlete((current) => ({ ...current, organization: event.target.value }));
-                }}
-                value={blueAthlete.organization}
-              />
-            </div>
+            <label className="block text-sm font-semibold" htmlFor="match-weight-class">
+              Hạng cân
+            </label>
+            <select
+              className={inputClassName}
+              id="match-weight-class"
+              onChange={(event) => {
+                setWeightClassId(event.target.value);
+                setRedAthleteId(null);
+                setBlueAthleteId(null);
+              }}
+              value={weightClassId}
+            >
+              <option value="">Chọn hạng cân</option>
+              {activeWeightClasses.map((weightClass) => (
+                <option key={weightClass.id} value={weightClass.id}>
+                  {weightClass.name}
+                </option>
+              ))}
+            </select>
+            {activeWeightClasses.length === 0 ? (
+              <p className="rounded-lg border border-dashed p-3 text-sm">
+                Chưa có hạng cân hoạt động.{' '}
+                <Link
+                  className="font-bold underline"
+                  to={`/admin/tournaments/${tournament.id}/weight-classes`}
+                >
+                  Quản lý hạng cân
+                </Link>
+              </p>
+            ) : null}
+            {weightClassId && !athletesQuery.isPending && eligibleAthletes.length < 2 ? (
+              <p className="rounded-lg border border-dashed p-3 text-sm">
+                Hạng cân này cần ít nhất hai vận động viên đang hoạt động.{' '}
+                <Link
+                  className="font-bold underline"
+                  to={`/admin/tournaments/${tournament.id}/athletes`}
+                >
+                  Quản lý vận động viên
+                </Link>
+              </p>
+            ) : null}
+            <RosterAthleteSelector
+              athletes={eligibleAthletes}
+              color={AthleteColor.RED}
+              disabled={eligibleAthletes.length < 2}
+              label="Góc Đỏ (RED)"
+              loading={athletesQuery.isPending}
+              onChange={(id) => setRedAthleteId(id || null)}
+              selectedAthleteId={redAthleteId}
+              weightClassName={selectedWeightClass?.name}
+            />
+            <RosterAthleteSelector
+              athletes={eligibleAthletes}
+              color={AthleteColor.BLUE}
+              disabled={eligibleAthletes.length < 2}
+              excludedAthleteId={redAthleteId}
+              label="Góc Xanh (BLUE)"
+              loading={athletesQuery.isPending}
+              onChange={(id) => setBlueAthleteId(id || null)}
+              selectedAthleteId={blueAthleteId}
+              weightClassName={selectedWeightClass?.name}
+            />
           </fieldset>
 
           {validationError ? (
@@ -557,7 +579,10 @@ function TournamentMatches({
             disabled={
               createMutation.isPending ||
               tournament.status === TournamentStatus.ARCHIVED ||
-              isReadOnly
+              isReadOnly ||
+              !redAthleteId ||
+              !blueAthleteId ||
+              eligibleAthletes.length < 2
             }
             type="submit"
           >
@@ -621,7 +646,12 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
 
   const tournament = tournamentQuery.data.tournament;
   const tail = location.pathname.split('/').at(-1);
-  const active = tail === tournamentId ? 'info' : tail === 'weight-classes' || tail === 'units' || tail === 'athletes' || tail === 'matches' ? tail : 'info';
+  const active =
+    tail === tournamentId
+      ? 'info'
+      : tail === 'weight-classes' || tail === 'units' || tail === 'athletes' || tail === 'matches'
+        ? tail
+        : 'info';
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8">
@@ -651,11 +681,36 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
       </header>
 
       <TournamentTabs active={active} tournamentId={tournamentId} />
-      {active === 'info' ? <TournamentEditor isReadOnly={isReadOnly} key={tournament.updatedAt} tournament={tournament} /> : null}
-      {active === 'matches' ? <TournamentMatches isReadOnly={isReadOnly} tournament={tournament} /> : null}
-      {active === 'weight-classes' ? <RosterItemsPage kind="weight-classes" readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED} tournamentId={tournamentId} /> : null}
-      {active === 'units' ? <RosterItemsPage kind="units" readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED} tournamentId={tournamentId} /> : null}
-      {active === 'athletes' ? <AthletesPage readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED} tournamentId={tournamentId} /> : null}
+      {active === 'info' ? (
+        <TournamentEditor
+          isReadOnly={isReadOnly}
+          key={tournament.updatedAt}
+          tournament={tournament}
+        />
+      ) : null}
+      {active === 'matches' ? (
+        <TournamentMatches isReadOnly={isReadOnly} tournament={tournament} />
+      ) : null}
+      {active === 'weight-classes' ? (
+        <RosterItemsPage
+          kind="weight-classes"
+          readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED}
+          tournamentId={tournamentId}
+        />
+      ) : null}
+      {active === 'units' ? (
+        <RosterItemsPage
+          kind="units"
+          readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED}
+          tournamentId={tournamentId}
+        />
+      ) : null}
+      {active === 'athletes' ? (
+        <AthletesPage
+          readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED}
+          tournamentId={tournamentId}
+        />
+      ) : null}
     </div>
   );
 }
