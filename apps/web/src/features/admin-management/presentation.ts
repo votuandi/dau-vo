@@ -19,7 +19,7 @@ const apiErrorMessages: Readonly<Record<string, string>> = {
   MATCH_ATHLETE_INACTIVE: 'Một vận động viên đã ngừng hoạt động. Danh sách đã được làm mới.',
   MATCH_ATHLETE_WEIGHT_CLASS_MISMATCH:
     'Hai vận động viên phải thuộc cùng một hạng cân đang hoạt động.',
-  MATCH_ATHLETE_UNIT_INVALID:
+  MATCH_ATHLETE_ORGANIZATION_INVALID:
     'Đơn vị của vận động viên không còn hoạt động. Danh sách đã được làm mới.',
   MATCH_ATHLETE_REPLACEMENT_UNSAFE: 'Không thể thay vận động viên sau khi trận đã có hoạt động.',
   PUBLIC_MATCH_ID_COLLISION: 'Không thể tạo mã trận đấu duy nhất. Vui lòng thử lại.',

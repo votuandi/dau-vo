@@ -11,18 +11,18 @@ import type { Express } from 'express';
 import { IMAGE_STORAGE, type ImageStorage } from '../media/image-storage';
 import { IMAGE_FILE_REQUIRED } from '../media/media.errors';
 import { PrismaService } from '../prisma/prisma.service';
-import { UNIT_NOT_FOUND } from './tournament-roster.errors';
+import { ORGANIZATION_NOT_FOUND } from './tournament-roster.errors';
 import { ROSTER_TOURNAMENT_ARCHIVED } from './tournament-roster.errors';
 
 @Injectable()
-export class UnitImageService {
+export class OrganizationImageService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(IMAGE_STORAGE) private readonly storage: ImageStorage,
   ) {}
   async replace(
     tournamentId: string,
-    unitId: string,
+    organizationId: string,
     actorId: string,
     file: Express.Multer.File | undefined,
   ): Promise<{ imagePath: string }> {
@@ -30,18 +30,18 @@ export class UnitImageService {
     const stored = await this.storage.save({
       buffer: file.buffer,
       declaredContentType: file.mimetype,
-      resource: 'units',
+      resource: 'organizations',
     });
     try {
       const prior = await this.prisma.$transaction(async (tx) => {
         await this.assertMutableTournament(tx, tournamentId);
-        const unit = await tx.tournamentUnit.findFirst({
-          where: { id: unitId, tournamentId },
+        const organization = await tx.tournamentOrganization.findFirst({
+          where: { id: organizationId, tournamentId },
           select: { imagePath: true },
         });
-        if (!unit) throw new NotFoundException(UNIT_NOT_FOUND);
-        await tx.tournamentUnit.update({
-          where: { id: unitId },
+        if (!organization) throw new NotFoundException(ORGANIZATION_NOT_FOUND);
+        await tx.tournamentOrganization.update({
+          where: { id: organizationId },
           data: { imagePath: stored.key },
         });
         await tx.auditLog.create({
@@ -49,14 +49,14 @@ export class UnitImageService {
             adminUserId: actorId,
             eventType: AuditEventType.ADMIN_ACTION,
             metadata: {
-              action: 'UNIT_IMAGE_REPLACED',
-              targetId: unitId,
-              before: { imagePath: unit.imagePath },
+              action: 'ORGANIZATION_IMAGE_REPLACED',
+              targetId: organizationId,
+              before: { imagePath: organization.imagePath },
               after: { imagePath: stored.key },
             },
           },
         });
-        return unit.imagePath;
+        return organization.imagePath;
       });
       if (prior) await this.scheduleDeletion(prior);
       return { imagePath: stored.key };
@@ -67,18 +67,18 @@ export class UnitImageService {
   }
   async remove(
     tournamentId: string,
-    unitId: string,
+    organizationId: string,
     actorId: string,
   ): Promise<void> {
     const prior = await this.prisma.$transaction(async (tx) => {
       await this.assertMutableTournament(tx, tournamentId);
-      const unit = await tx.tournamentUnit.findFirst({
-        where: { id: unitId, tournamentId },
+      const organization = await tx.tournamentOrganization.findFirst({
+        where: { id: organizationId, tournamentId },
         select: { imagePath: true },
       });
-      if (!unit) throw new NotFoundException(UNIT_NOT_FOUND);
-      await tx.tournamentUnit.update({
-        where: { id: unitId },
+      if (!organization) throw new NotFoundException(ORGANIZATION_NOT_FOUND);
+      await tx.tournamentOrganization.update({
+        where: { id: organizationId },
         data: { imagePath: null },
       });
       await tx.auditLog.create({
@@ -86,14 +86,14 @@ export class UnitImageService {
           adminUserId: actorId,
           eventType: AuditEventType.ADMIN_ACTION,
           metadata: {
-            action: 'UNIT_IMAGE_REMOVED',
-            targetId: unitId,
-            before: { imagePath: unit.imagePath },
+            action: 'ORGANIZATION_IMAGE_REMOVED',
+            targetId: organizationId,
+            before: { imagePath: organization.imagePath },
             after: { imagePath: null },
           },
         },
       });
-      return unit.imagePath;
+      return organization.imagePath;
     });
     if (prior) await this.scheduleDeletion(prior);
   }

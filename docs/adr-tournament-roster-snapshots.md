@@ -8,7 +8,7 @@ snapshot fields.
 
 Roster rows use recoverable deactivation (`isActive` and `deactivatedAt`). Names
 are unique for the entire lifetime of a tournament, including deactivated rows.
-To replace a deactivated unit or weight class with the same display name, the
+To replace a deactivated organization or weight class with the same display name, the
 old row must first be renamed; this makes restoration unambiguous. Deactivation
 does not delete registrations or historical snapshots. Physical tournament purge
 cascades roster rows after match cleanup; an athlete referenced by a surviving

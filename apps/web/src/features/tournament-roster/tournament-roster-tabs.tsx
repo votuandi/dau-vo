@@ -12,7 +12,7 @@ import {
 } from '@/features/admin-management/presentation';
 import {
   tournamentAthletesQueryOptions,
-  tournamentUnitsQueryOptions,
+  tournamentOrganizationsQueryOptions,
   tournamentWeightClassesQueryOptions,
 } from '@/features/admin-management/queries';
 import {
@@ -24,7 +24,7 @@ import {
 const tabs = [
   ['info', 'Thông tin'],
   ['weight-classes', 'Hạng cân'],
-  ['units', 'Đơn vị tham gia'],
+  ['organizations', 'Đơn vị tham gia'],
   ['athletes', 'Vận động viên'],
   ['matches', 'Trận đấu'],
 ] as const;
@@ -118,22 +118,22 @@ export function RosterItemsPage({
   readOnly,
 }: {
   readonly tournamentId: string;
-  readonly kind: 'units' | 'weight-classes';
+  readonly kind: 'organizations' | 'weight-classes';
   readonly readOnly: boolean;
 }) {
   const qc = useQueryClient();
   const query = useQuery({
     // Keep the array projection separate from the full endpoint response cached by
-    // tournamentUnitsQueryOptions/tournamentWeightClassesQueryOptions.
+    // tournamentOrganizationsQueryOptions/tournamentWeightClassesQueryOptions.
     queryKey: ['admin', 'tournaments', tournamentId, kind, 'roster-items'],
     queryFn: async (): Promise<readonly TournamentRosterItem[]> =>
-      kind === 'units'
-        ? (await adminManagementApi.listUnits(tournamentId)).units
+      kind === 'organizations'
+        ? (await adminManagementApi.listOrganizations(tournamentId)).organizations
         : (await adminManagementApi.listWeightClasses(tournamentId)).weightClasses,
   });
   const [editing, setEditing] = useState<TournamentRosterItem | null>(null);
   const [confirm, setConfirm] = useState<TournamentRosterItem | null>(null);
-  const noun = kind === 'units' ? 'đơn vị' : 'hạng cân';
+  const noun = kind === 'organizations' ? 'đơn vị' : 'hạng cân';
   const mutate = useMutation({
     mutationFn: async ({
       item,
@@ -143,9 +143,11 @@ export function RosterItemsPage({
       input: { name: string; details: string | null };
     }) => {
       if (item) {
-        if (kind === 'units') await adminManagementApi.updateUnit(tournamentId, item.id, input);
+        if (kind === 'organizations')
+          await adminManagementApi.updateOrganization(tournamentId, item.id, input);
         else await adminManagementApi.updateWeightClass(tournamentId, item.id, input);
-      } else if (kind === 'units') await adminManagementApi.createUnit(tournamentId, input);
+      } else if (kind === 'organizations')
+        await adminManagementApi.createOrganization(tournamentId, input);
       else await adminManagementApi.createWeightClass(tournamentId, input);
     },
     onSuccess: () => {
@@ -160,10 +162,11 @@ export function RosterItemsPage({
   const deactivate = useMutation({
     mutationFn: async (item: TournamentRosterItem) => {
       if (item.isActive) {
-        if (kind === 'units') await adminManagementApi.deleteUnit(tournamentId, item.id);
+        if (kind === 'organizations')
+          await adminManagementApi.deleteOrganization(tournamentId, item.id);
         else await adminManagementApi.deleteWeightClass(tournamentId, item.id);
-      } else if (kind === 'units')
-        await adminManagementApi.updateUnit(tournamentId, item.id, { isActive: true });
+      } else if (kind === 'organizations')
+        await adminManagementApi.updateOrganization(tournamentId, item.id, { isActive: true });
       else await adminManagementApi.updateWeightClass(tournamentId, item.id, { isActive: true });
     },
     onSuccess: () => {
@@ -184,7 +187,9 @@ export function RosterItemsPage({
   return (
     <section className="space-y-5">
       <div>
-        <h2 className="text-xl font-black">{kind === 'units' ? 'Đơn vị tham gia' : 'Hạng cân'}</h2>
+        <h2 className="text-xl font-black">
+          {kind === 'organizations' ? 'Đơn vị tham gia' : 'Hạng cân'}
+        </h2>
         <p className="text-sm text-muted-foreground">Quản lý danh mục sử dụng trong giải đấu.</p>
       </div>
       {!readOnly ? (
@@ -256,7 +261,7 @@ export function RosterItemsPage({
           actionLabel={confirm.isActive ? 'Xác nhận ngừng dùng' : 'Khôi phục'}
           busy={deactivate.isPending}
           description={
-            kind === 'units'
+            kind === 'organizations'
               ? 'Các vận động viên đang thuộc đơn vị này sẽ trở thành “Không đơn vị”.'
               : 'Hạng cân chỉ có thể ngừng dùng khi không còn vận động viên hoặc trận đấu sử dụng.'
           }
@@ -301,19 +306,19 @@ export function AthletesPage({
   }, [search, setParams]);
   const searchParam = params.get('search');
   const weightClassIdParam = params.get('weightClassId');
-  const unitIdParam = params.get('unitId');
+  const organizationIdParam = params.get('organizationId');
   const filters = {
     page: Number(params.get('page') ?? '1'),
     pageSize: 25,
     ...(searchParam ? { search: searchParam } : {}),
     ...(weightClassIdParam ? { weightClassId: weightClassIdParam } : {}),
-    ...(unitIdParam ? { unitId: unitIdParam } : {}),
-    ...(params.get('noUnit') === 'true' ? { noUnit: true } : {}),
+    ...(organizationIdParam ? { organizationId: organizationIdParam } : {}),
+    ...(params.get('noOrganization') === 'true' ? { noOrganization: true } : {}),
     ...(params.get('isActive') ? { isActive: params.get('isActive') === 'true' } : {}),
   };
   const query = useQuery(tournamentAthletesQueryOptions(tournamentId, filters));
   const weights = useQuery(tournamentWeightClassesQueryOptions(tournamentId));
-  const units = useQuery(tournamentUnitsQueryOptions(tournamentId));
+  const organizations = useQuery(tournamentOrganizationsQueryOptions(tournamentId));
   const [draft, setDraft] = useState<AthleteInput | null>(null);
   const qc = useQueryClient();
   const create = useMutation({
@@ -330,7 +335,7 @@ export function AthletesPage({
   // The roster endpoints are independently loaded. Treat a response without either
   // collection as an empty roster while it is refreshed instead of crashing the tab.
   const weightClasses = weights.data?.weightClasses ?? [];
-  const unitsList = units.data?.units ?? [];
+  const organizationsList = organizations.data?.organizations ?? [];
   const activeWeights = weightClasses.filter((x) => x.isActive);
   function updateParam(key: string, value: string) {
     setParams((old) => {
@@ -382,14 +387,18 @@ export function AthletesPage({
             className={inputClassName}
             onChange={(e) => {
               const value = e.target.value;
-              updateParam('unitId', value === '__none' ? '' : value);
-              updateParam('noUnit', value === '__none' ? 'true' : '');
+              updateParam('organizationId', value === '__none' ? '' : value);
+              updateParam('noOrganization', value === '__none' ? 'true' : '');
             }}
-            value={params.get('noUnit') === 'true' ? '__none' : (params.get('unitId') ?? '')}
+            value={
+              params.get('noOrganization') === 'true'
+                ? '__none'
+                : (params.get('organizationId') ?? '')
+            }
           >
             <option value="">Tất cả</option>
             <option value="__none">Không đơn vị</option>
-            {unitsList
+            {organizationsList
               .filter((x) => x.isActive)
               .map((x) => (
                 <option key={x.id} value={x.id}>
@@ -421,7 +430,7 @@ export function AthletesPage({
                 name: '',
                 birthYear: new Date().getFullYear(),
                 weightClassId: activeWeights[0]?.id ?? '',
-                unitId: null,
+                organizationId: null,
                 details: null,
               });
             }}
@@ -487,12 +496,12 @@ export function AthletesPage({
             <select
               className={inputClassName}
               onChange={(e) => {
-                setDraft({ ...draft, unitId: e.target.value || null });
+                setDraft({ ...draft, organizationId: e.target.value || null });
               }}
-              value={draft.unitId ?? ''}
+              value={draft.organizationId ?? ''}
             >
               <option value="">Không đơn vị</option>
-              {unitsList
+              {organizationsList
                 .filter((x) => x.isActive)
                 .map((x) => (
                   <option key={x.id} value={x.id}>
@@ -523,7 +532,7 @@ export function AthletesPage({
         <ul className="grid gap-2">
           {query.data?.items.map((x) => (
             <li className="rounded-xl border p-3" key={x.id}>
-              <b>{x.name}</b> · {x.birthYear} · {x.unit?.name ?? 'Không đơn vị'} ·{' '}
+              <b>{x.name}</b> · {x.birthYear} · {x.organization?.name ?? 'Không đơn vị'} ·{' '}
               {x.weightClass.name} · {x.isActive ? 'Đang hoạt động' : 'Đã ngừng'}
             </li>
           ))}

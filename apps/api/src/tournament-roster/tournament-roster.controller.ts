@@ -38,8 +38,8 @@ import {
   UpdateAthleteDto,
   UpdateRosterItemDto,
 } from './dto/roster.dto';
-import { TournamentRosterService } from './tournament-roster.service';
-import { UnitImageService } from './unit-image.service';
+import { OrganizationService } from './tournament-roster.service';
+import { OrganizationImageService } from './organization-image.service';
 import { AthleteService } from './athlete.service';
 import { AthleteImageService } from './athlete-image.service';
 const uuid = new ParseUUIDPipe({
@@ -54,9 +54,10 @@ export class TournamentRosterController {
   constructor(
     @Inject(AdminManagementService)
     private readonly access: AdminManagementService,
-    @Inject(TournamentRosterService)
-    private readonly roster: TournamentRosterService,
-    @Inject(UnitImageService) private readonly images: UnitImageService,
+    @Inject(OrganizationService)
+    private readonly roster: OrganizationService,
+    @Inject(OrganizationImageService)
+    private readonly images: OrganizationImageService,
     @Inject(AthleteService) private readonly athletes: AthleteService,
     @Inject(AthleteImageService)
     private readonly athleteImages: AthleteImageService,
@@ -133,61 +134,77 @@ export class TournamentRosterController {
     await this.access.assertTournamentAccess(tournamentId, req.user, true);
     await this.athleteImages.remove(tournamentId, id, req.user.id);
   }
-  @Get('units') async listUnits(
+  @Get('organizations') async listOrganizations(
     @Param('tournamentId', uuid) tournamentId: string,
     @Query('includeInactive') inactive: string | undefined,
     @Req() req: AuthenticatedUserRequest,
   ) {
     await this.access.assertTournamentAccess(tournamentId, req.user);
     return {
-      units: await this.roster.listUnits(tournamentId, include(inactive)),
+      organizations: await this.roster.listOrganizations(
+        tournamentId,
+        include(inactive),
+      ),
     };
   }
-  @Post('units') async createUnit(
+  @Post('organizations') async createOrganization(
     @Param('tournamentId', uuid) tournamentId: string,
     @Body() input: CreateRosterItemDto,
     @Req() req: AuthenticatedUserRequest,
   ) {
     await this.access.assertTournamentAccess(tournamentId, req.user, true);
     return {
-      unit: await this.roster.createUnit(tournamentId, input, req.user.id),
-    };
-  }
-  @Get('units/:unitId') async getUnit(
-    @Param('tournamentId', uuid) tournamentId: string,
-    @Param('unitId', uuid) unitId: string,
-    @Req() req: AuthenticatedUserRequest,
-  ) {
-    await this.access.assertTournamentAccess(tournamentId, req.user);
-    return { unit: await this.roster.getUnit(tournamentId, unitId) };
-  }
-  @Patch('units/:unitId') async updateUnit(
-    @Param('tournamentId', uuid) tournamentId: string,
-    @Param('unitId', uuid) unitId: string,
-    @Body() input: UpdateRosterItemDto,
-    @Req() req: AuthenticatedUserRequest,
-  ) {
-    await this.access.assertTournamentAccess(tournamentId, req.user, true);
-    return {
-      unit: await this.roster.updateUnit(
+      organization: await this.roster.createOrganization(
         tournamentId,
-        unitId,
         input,
         req.user.id,
       ),
     };
   }
-  @Delete('units/:unitId') async deleteUnit(
+  @Get('organizations/:organizationId') async getOrganization(
     @Param('tournamentId', uuid) tournamentId: string,
-    @Param('unitId', uuid) unitId: string,
+    @Param('organizationId', uuid) organizationId: string,
+    @Req() req: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, req.user);
+    return {
+      organization: await this.roster.getOrganization(
+        tournamentId,
+        organizationId,
+      ),
+    };
+  }
+  @Patch('organizations/:organizationId') async updateOrganization(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Param('organizationId', uuid) organizationId: string,
+    @Body() input: UpdateRosterItemDto,
     @Req() req: AuthenticatedUserRequest,
   ) {
     await this.access.assertTournamentAccess(tournamentId, req.user, true);
     return {
-      unit: await this.roster.deactivateUnit(tournamentId, unitId, req.user.id),
+      organization: await this.roster.updateOrganization(
+        tournamentId,
+        organizationId,
+        input,
+        req.user.id,
+      ),
     };
   }
-  @Put('units/:unitId/image')
+  @Delete('organizations/:organizationId') async deleteOrganization(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Param('organizationId', uuid) organizationId: string,
+    @Req() req: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, req.user, true);
+    return {
+      organization: await this.roster.deactivateOrganization(
+        tournamentId,
+        organizationId,
+        req.user.id,
+      ),
+    };
+  }
+  @Put('organizations/:organizationId/image')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
@@ -197,20 +214,20 @@ export class TournamentRosterController {
   @UseFilters(MulterErrorFilter)
   async replaceImage(
     @Param('tournamentId', uuid) tournamentId: string,
-    @Param('unitId', uuid) unitId: string,
+    @Param('organizationId', uuid) organizationId: string,
     @UploadedFile() file: Express.Multer.File | undefined,
     @Req() req: AuthenticatedUserRequest,
   ) {
     await this.access.assertTournamentAccess(tournamentId, req.user, true);
-    return this.images.replace(tournamentId, unitId, req.user.id, file);
+    return this.images.replace(tournamentId, organizationId, req.user.id, file);
   }
-  @Delete('units/:unitId/image') async removeImage(
+  @Delete('organizations/:organizationId/image') async removeImage(
     @Param('tournamentId', uuid) tournamentId: string,
-    @Param('unitId', uuid) unitId: string,
+    @Param('organizationId', uuid) organizationId: string,
     @Req() req: AuthenticatedUserRequest,
   ) {
     await this.access.assertTournamentAccess(tournamentId, req.user, true);
-    await this.images.remove(tournamentId, unitId, req.user.id);
+    await this.images.remove(tournamentId, organizationId, req.user.id);
   }
   @Get('weight-classes') async listWeights(
     @Param('tournamentId', uuid) tournamentId: string,

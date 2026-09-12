@@ -658,7 +658,10 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
   const active =
     tail === tournamentId
       ? 'info'
-      : tail === 'weight-classes' || tail === 'units' || tail === 'athletes' || tail === 'matches'
+      : tail === 'weight-classes' ||
+          tail === 'organizations' ||
+          tail === 'athletes' ||
+          tail === 'matches'
         ? tail
         : 'info';
 
@@ -707,9 +710,9 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
           tournamentId={tournamentId}
         />
       ) : null}
-      {active === 'units' ? (
+      {active === 'organizations' ? (
         <RosterItemsPage
-          kind="units"
+          kind="organizations"
           readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED}
           tournamentId={tournamentId}
         />

@@ -75,9 +75,9 @@ export const MATCH_ATHLETE_WEIGHT_CLASS_ERROR: AdminManagementErrorBody = {
   code: 'MATCH_ATHLETE_WEIGHT_CLASS_MISMATCH',
   message: 'Selected athletes must be in the same active weight class',
 };
-export const MATCH_ATHLETE_UNIT_ERROR: AdminManagementErrorBody = {
-  code: 'MATCH_ATHLETE_UNIT_INVALID',
-  message: 'A selected athlete has an invalid or inactive unit',
+export const MATCH_ATHLETE_ORGANIZATION_ERROR: AdminManagementErrorBody = {
+  code: 'MATCH_ATHLETE_ORGANIZATION_INVALID',
+  message: 'A selected athlete has an invalid or inactive organization',
 };
 export const MATCH_ATHLETE_REPLACEMENT_UNSAFE_ERROR: AdminManagementErrorBody =
   {

@@ -58,8 +58,13 @@ const TYPES: Record<
       b.readUInt32LE(4) + 8 === b.length,
   },
 };
-const RESOURCES = new Set<ImageResource>(['tournaments', 'units', 'athletes']);
-const KEY = /^(tournaments|units|athletes)\/[0-9a-f-]{36}\.(jpg|png|webp)$/;
+const RESOURCES = new Set<ImageResource>([
+  'tournaments',
+  'organizations',
+  'athletes',
+]);
+const KEY =
+  /^(tournaments|organizations|athletes)\/[0-9a-f-]{36}\.(jpg|png|webp)$/;
 
 export class LocalImageStorage implements ImageStorage {
   constructor(private readonly root: string) {}

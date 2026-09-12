@@ -33,7 +33,7 @@ export function RosterAthleteSelector({
     const needle = search.trim().toLocaleLowerCase('vi');
     if (!needle) return available;
     return available.filter((athlete) =>
-      [athlete.name, athlete.unit?.name ?? '', athlete.birthYear, athlete.weightClass.name]
+      [athlete.name, athlete.organization?.name ?? '', athlete.birthYear, athlete.weightClass.name]
         .join(' ')
         .toLocaleLowerCase('vi')
         .includes(needle),
@@ -83,7 +83,7 @@ export function RosterAthleteSelector({
         <option value="">{loading ? 'Đang tải danh sách…' : 'Chọn vận động viên'}</option>
         {visible.map((athlete) => (
           <option key={athlete.id} value={athlete.id}>
-            {athlete.name} · {athlete.birthYear} · {athlete.unit?.name ?? 'Không đơn vị'}
+            {athlete.name} · {athlete.birthYear} · {athlete.organization?.name ?? 'Không đơn vị'}
           </option>
         ))}
       </select>
@@ -122,7 +122,8 @@ export function AthleteCard({ athlete }: { readonly athlete: TournamentAthlete }
       <div className="min-w-0">
         <p className="truncate font-bold">{athlete.name}</p>
         <p className="text-xs text-muted-foreground">
-          {athlete.birthYear} · {athlete.unit?.name ?? 'Không đơn vị'} · {athlete.weightClass.name}
+          {athlete.birthYear} · {athlete.organization?.name ?? 'Không đơn vị'} ·{' '}
+          {athlete.weightClass.name}
         </p>
       </div>
     </div>

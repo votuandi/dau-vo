@@ -9,7 +9,7 @@ authoritative scoring and penalty commands are implemented.
 
 ## Tournament athlete API
 
-Registered-athlete CRUD is available under `/api/admin/tournaments/:tournamentId/athletes`, including image replacement/removal. Athlete details are limited to 5,000 characters; birth years are 1900 through the current UTC year. List queries accept `page` (default 1), `pageSize` (default 25, max 100), `search`, `weightClassId`, `unitId`, `noUnit`, and `isActive`, returning deterministic name/id order and `{ items, page, pageSize, total, totalPages }`. Deactivated athletes remain editable, but restoration revalidates their weight class and unit. Stable athlete errors are `ATHLETE_NOT_FOUND`, `ROSTER_ASSIGNMENT_NOT_FOUND`, `ATHLETE_UPDATE_EMPTY`, and `INVALID_BIRTH_YEAR`.
+Registered-athlete CRUD is available under `/api/admin/tournaments/:tournamentId/athletes`, including image replacement/removal. Athlete details are limited to 5,000 characters; birth years are 1900 through the current UTC year. List queries accept `page` (default 1), `pageSize` (default 25, max 100), `search`, `weightClassId`, `organizationId`, `noOrganization`, and `isActive`, returning deterministic name/id order and `{ items, page, pageSize, total, totalPages }`. Deactivated athletes remain editable, but restoration revalidates their weight class and organization. Stable athlete errors are `ATHLETE_NOT_FOUND`, `ROSTER_ASSIGNMENT_NOT_FOUND`, `ATHLETE_UPDATE_EMPTY`, and `INVALID_BIRTH_YEAR`.
 
 ## Prerequisites
 

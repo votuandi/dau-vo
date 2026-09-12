@@ -3,25 +3,25 @@ export const ROSTER_TOURNAMENT_ARCHIVED = {
   message:
     'Tournament roster cannot be changed while the tournament is archived',
 };
-export const UNIT_NOT_FOUND = {
-  code: 'UNIT_NOT_FOUND',
-  message: 'Participating unit not found',
+export const ORGANIZATION_NOT_FOUND = {
+  code: 'ORGANIZATION_NOT_FOUND',
+  message: 'Participating organization not found',
 };
 export const WEIGHT_CLASS_NOT_FOUND = {
   code: 'WEIGHT_CLASS_NOT_FOUND',
   message: 'Weight class not found',
 };
-export const UNIT_NAME_EXISTS = {
-  code: 'UNIT_NAME_ALREADY_EXISTS',
-  message: 'A participating unit with this name already exists',
+export const ORGANIZATION_NAME_EXISTS = {
+  code: 'ORGANIZATION_NAME_ALREADY_EXISTS',
+  message: 'A participating organization with this name already exists',
 };
 export const WEIGHT_CLASS_NAME_EXISTS = {
   code: 'WEIGHT_CLASS_NAME_ALREADY_EXISTS',
   message: 'A weight class with this name already exists',
 };
-export const UNIT_UPDATE_EMPTY = {
-  code: 'UNIT_UPDATE_EMPTY',
-  message: 'Provide at least one unit property to update',
+export const ORGANIZATION_UPDATE_EMPTY = {
+  code: 'ORGANIZATION_UPDATE_EMPTY',
+  message: 'Provide at least one organization property to update',
 };
 export const WEIGHT_CLASS_UPDATE_EMPTY = {
   code: 'WEIGHT_CLASS_UPDATE_EMPTY',

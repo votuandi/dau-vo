@@ -138,7 +138,7 @@ export class TournamentLifecycleService
               where: { id },
               select: { imagePath: true },
             }),
-            tx.tournamentUnit.findMany({
+            tx.tournamentOrganization.findMany({
               where: { tournamentId: id },
               select: { imagePath: true },
             }),

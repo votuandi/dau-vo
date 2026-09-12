@@ -13,16 +13,16 @@ import type {
 } from './dto/roster.dto';
 import {
   ROSTER_TOURNAMENT_ARCHIVED,
-  UNIT_NAME_EXISTS,
-  UNIT_NOT_FOUND,
-  UNIT_UPDATE_EMPTY,
+  ORGANIZATION_NAME_EXISTS,
+  ORGANIZATION_NOT_FOUND,
+  ORGANIZATION_UPDATE_EMPTY,
   WEIGHT_CLASS_IN_USE,
   WEIGHT_CLASS_NAME_EXISTS,
   WEIGHT_CLASS_NOT_FOUND,
   WEIGHT_CLASS_UPDATE_EMPTY,
 } from './tournament-roster.errors';
 
-const unitSelect = {
+const organizationSelect = {
   id: true,
   tournamentId: true,
   name: true,
@@ -32,7 +32,7 @@ const unitSelect = {
   deactivatedAt: true,
   createdAt: true,
   updatedAt: true,
-} satisfies Prisma.TournamentUnitSelect;
+} satisfies Prisma.TournamentOrganizationSelect;
 const weightClassSelect = {
   id: true,
   tournamentId: true,
@@ -43,25 +43,25 @@ const weightClassSelect = {
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.TournamentWeightClassSelect;
-export type UnitView = Prisma.TournamentUnitGetPayload<{
-  select: typeof unitSelect;
+export type OrganizationView = Prisma.TournamentOrganizationGetPayload<{
+  select: typeof organizationSelect;
 }>;
 export type WeightClassView = Prisma.TournamentWeightClassGetPayload<{
   select: typeof weightClassSelect;
 }>;
-type RosterView = UnitView | WeightClassView;
+type RosterView = OrganizationView | WeightClassView;
 
 @Injectable()
-export class TournamentRosterService {
+export class OrganizationService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
-  async listUnits(
+  async listOrganizations(
     tournamentId: string,
     includeInactive: boolean,
-  ): Promise<UnitView[]> {
-    return this.prisma.tournamentUnit.findMany({
+  ): Promise<OrganizationView[]> {
+    return this.prisma.tournamentOrganization.findMany({
       where: { tournamentId, ...(includeInactive ? {} : { isActive: true }) },
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
-      select: unitSelect,
+      select: organizationSelect,
     });
   }
   async listWeightClasses(
@@ -74,12 +74,15 @@ export class TournamentRosterService {
       select: weightClassSelect,
     });
   }
-  async getUnit(tournamentId: string, id: string): Promise<UnitView> {
-    const row = await this.prisma.tournamentUnit.findFirst({
+  async getOrganization(
+    tournamentId: string,
+    id: string,
+  ): Promise<OrganizationView> {
+    const row = await this.prisma.tournamentOrganization.findFirst({
       where: { id, tournamentId },
-      select: unitSelect,
+      select: organizationSelect,
     });
-    if (!row) throw new NotFoundException(UNIT_NOT_FOUND);
+    if (!row) throw new NotFoundException(ORGANIZATION_NOT_FOUND);
     return row;
   }
   async getWeightClass(
@@ -93,17 +96,17 @@ export class TournamentRosterService {
     if (!row) throw new NotFoundException(WEIGHT_CLASS_NOT_FOUND);
     return row;
   }
-  async createUnit(
+  async createOrganization(
     tournamentId: string,
     input: CreateRosterItemDto,
     actorId: string,
-  ): Promise<UnitView> {
+  ): Promise<OrganizationView> {
     return this.create(
-      'unit',
+      'organization',
       tournamentId,
       input,
       actorId,
-    ) as Promise<UnitView>;
+    ) as Promise<OrganizationView>;
   }
   async createWeightClass(
     tournamentId: string,
@@ -117,19 +120,19 @@ export class TournamentRosterService {
       actorId,
     ) as Promise<WeightClassView>;
   }
-  async updateUnit(
+  async updateOrganization(
     tournamentId: string,
     id: string,
     input: UpdateRosterItemDto,
     actorId: string,
-  ): Promise<UnitView> {
+  ): Promise<OrganizationView> {
     return this.update(
-      'unit',
+      'organization',
       tournamentId,
       id,
       input,
       actorId,
-    ) as Promise<UnitView>;
+    ) as Promise<OrganizationView>;
   }
   async updateWeightClass(
     tournamentId: string,
@@ -145,32 +148,32 @@ export class TournamentRosterService {
       actorId,
     ) as Promise<WeightClassView>;
   }
-  async deactivateUnit(
+  async deactivateOrganization(
     tournamentId: string,
     id: string,
     actorId: string,
-  ): Promise<UnitView> {
+  ): Promise<OrganizationView> {
     return this.prisma.$transaction(async (tx) => {
       await this.lockTournament(tx, tournamentId);
-      const before = await tx.tournamentUnit.findFirst({
+      const before = await tx.tournamentOrganization.findFirst({
         where: { id, tournamentId },
-        select: unitSelect,
+        select: organizationSelect,
       });
-      if (!before) throw new NotFoundException(UNIT_NOT_FOUND);
+      if (!before) throw new NotFoundException(ORGANIZATION_NOT_FOUND);
       if (!before.isActive) return before;
       await tx.tournamentAthlete.updateMany({
-        where: { tournamentId, unitId: id },
-        data: { unitId: null },
+        where: { tournamentId, organizationId: id },
+        data: { organizationId: null },
       });
-      const after = await tx.tournamentUnit.update({
+      const after = await tx.tournamentOrganization.update({
         where: { id },
         data: { isActive: false, deactivatedAt: new Date() },
-        select: unitSelect,
+        select: organizationSelect,
       });
       await this.audit(
         tx,
         actorId,
-        'UNIT_DEACTIVATED',
+        'ORGANIZATION_DEACTIVATED',
         id,
         this.safe(before),
         this.safe(after),
@@ -215,7 +218,7 @@ export class TournamentRosterService {
     });
   }
   private async create(
-    kind: 'unit' | 'weight',
+    kind: 'organization' | 'weight',
     tournamentId: string,
     input: CreateRosterItemDto,
     actorId: string,
@@ -231,8 +234,11 @@ export class TournamentRosterService {
           details: this.details(input.details),
         };
         const row =
-          kind === 'unit'
-            ? await tx.tournamentUnit.create({ data, select: unitSelect })
+          kind === 'organization'
+            ? await tx.tournamentOrganization.create({
+                data,
+                select: organizationSelect,
+              })
             : await tx.tournamentWeightClass.create({
                 data,
                 select: weightClassSelect,
@@ -240,7 +246,9 @@ export class TournamentRosterService {
         await this.audit(
           tx,
           actorId,
-          kind === 'unit' ? 'UNIT_CREATED' : 'WEIGHT_CLASS_CREATED',
+          kind === 'organization'
+            ? 'ORGANIZATION_CREATED'
+            : 'WEIGHT_CLASS_CREATED',
           row.id,
           null,
           this.safe(row),
@@ -252,7 +260,7 @@ export class TournamentRosterService {
     }
   }
   private async update(
-    kind: 'unit' | 'weight',
+    kind: 'organization' | 'weight',
     tournamentId: string,
     id: string,
     input: UpdateRosterItemDto,
@@ -260,17 +268,19 @@ export class TournamentRosterService {
   ): Promise<RosterView> {
     if (!Object.keys(input).length)
       throw new BadRequestException(
-        kind === 'unit' ? UNIT_UPDATE_EMPTY : WEIGHT_CLASS_UPDATE_EMPTY,
+        kind === 'organization'
+          ? ORGANIZATION_UPDATE_EMPTY
+          : WEIGHT_CLASS_UPDATE_EMPTY,
       );
     const name = input.name === undefined ? undefined : this.name(input.name);
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.lockTournament(tx, tournamentId);
         const before =
-          kind === 'unit'
-            ? await tx.tournamentUnit.findFirst({
+          kind === 'organization'
+            ? await tx.tournamentOrganization.findFirst({
                 where: { id, tournamentId },
-                select: unitSelect,
+                select: organizationSelect,
               })
             : await tx.tournamentWeightClass.findFirst({
                 where: { id, tournamentId },
@@ -278,13 +288,15 @@ export class TournamentRosterService {
               });
         if (!before)
           throw new NotFoundException(
-            kind === 'unit' ? UNIT_NOT_FOUND : WEIGHT_CLASS_NOT_FOUND,
+            kind === 'organization'
+              ? ORGANIZATION_NOT_FOUND
+              : WEIGHT_CLASS_NOT_FOUND,
           );
         if (input.isActive === false && before.isActive) {
-          if (kind === 'unit') {
+          if (kind === 'organization') {
             await tx.tournamentAthlete.updateMany({
-              where: { tournamentId, unitId: id },
-              data: { unitId: null },
+              where: { tournamentId, organizationId: id },
+              data: { organizationId: null },
             });
           } else {
             const [athletes, matches] = await Promise.all([
@@ -312,11 +324,11 @@ export class TournamentRosterService {
               }),
         };
         const after =
-          kind === 'unit'
-            ? await tx.tournamentUnit.update({
+          kind === 'organization'
+            ? await tx.tournamentOrganization.update({
                 where: { id },
                 data,
-                select: unitSelect,
+                select: organizationSelect,
               })
             : await tx.tournamentWeightClass.update({
                 where: { id },
@@ -327,15 +339,15 @@ export class TournamentRosterService {
           tx,
           actorId,
           input.isActive === true && !before.isActive
-            ? kind === 'unit'
-              ? 'UNIT_RESTORED'
+            ? kind === 'organization'
+              ? 'ORGANIZATION_RESTORED'
               : 'WEIGHT_CLASS_RESTORED'
             : input.isActive === false && before.isActive
-              ? kind === 'unit'
-                ? 'UNIT_DEACTIVATED'
+              ? kind === 'organization'
+                ? 'ORGANIZATION_DEACTIVATED'
                 : 'WEIGHT_CLASS_DEACTIVATED'
-              : kind === 'unit'
-                ? 'UNIT_UPDATED'
+              : kind === 'organization'
+                ? 'ORGANIZATION_UPDATED'
                 : 'WEIGHT_CLASS_UPDATED',
           id,
           this.safe(before),
@@ -398,13 +410,15 @@ export class TournamentRosterService {
       },
     });
   }
-  private unique(error: unknown, kind: 'unit' | 'weight'): never {
+  private unique(error: unknown, kind: 'organization' | 'weight'): never {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P2002'
     )
       throw new ConflictException(
-        kind === 'unit' ? UNIT_NAME_EXISTS : WEIGHT_CLASS_NAME_EXISTS,
+        kind === 'organization'
+          ? ORGANIZATION_NAME_EXISTS
+          : WEIGHT_CLASS_NAME_EXISTS,
       );
     throw error;
   }

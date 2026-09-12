@@ -3,7 +3,7 @@ import type { Readable } from 'node:stream';
 export const IMAGE_STORAGE = Symbol('IMAGE_STORAGE');
 export const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 
-export type ImageResource = 'tournaments' | 'units' | 'athletes';
+export type ImageResource = 'tournaments' | 'organizations' | 'athletes';
 export type ImageContentType = 'image/jpeg' | 'image/png' | 'image/webp';
 
 export interface ImageInput {

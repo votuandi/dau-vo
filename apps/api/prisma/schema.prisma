@@ -186,7 +186,7 @@ model Tournament {
   createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   matches        Match[]
-  units          TournamentUnit[]
+  organizations          TournamentOrganization[]
   weightClasses  TournamentWeightClass[]
   athletes       TournamentAthlete[]
   owner          User                      @relation("TournamentOwner", fields: [ownerUserId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "tournaments_owner_user_id_fkey")
@@ -283,8 +283,8 @@ model PricingPlanVersion {
   baseAmountVnd                Int                   @map("base_amount_vnd")
   baseDurationMonths           Int                   @map("base_duration_months")
   baseTournamentLimit          Int                   @map("base_tournament_limit")
-  durationAddonUnitAmountVnd   Int                   @map("duration_addon_unit_amount_vnd")
-  tournamentAddonUnitAmountVnd Int                   @map("tournament_addon_unit_amount_vnd")
+  durationAddonUnitAmountVnd           Int                   @map("duration_addon_unit_amount_vnd")
+  tournamentAddonUnitAmountVnd         Int                   @map("tournament_addon_unit_amount_vnd")
   active                       Boolean               @default(false)
   activatedAt                  DateTime?             @map("activated_at") @db.Timestamptz(3)
   createdByUserId              String?               @map("created_by_user_id") @db.Uuid
@@ -314,8 +314,8 @@ model PricingDiscountTier {
 // Names are unique for a tournament for the lifetime of a roster row.  A
 // deactivated row can be reactivated, but must be renamed before a replacement
 // with the same normalized name can be registered.
-model TournamentUnit {
-  id             String              @id(map: "tournament_units_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+model TournamentOrganization {
+  id             String              @id(map: "tournament_organizations_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tournamentId   String              @map("tournament_id") @db.Uuid
   name           String              @db.VarChar(255)
   normalizedName String              @map("normalized_name") @db.VarChar(255)
@@ -328,10 +328,10 @@ model TournamentUnit {
   tournament     Tournament          @relation(fields: [tournamentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   athletes       TournamentAthlete[]
 
-  @@unique([tournamentId, id], map: "tournament_units_tournament_id_id_key")
-  @@unique([tournamentId, normalizedName], map: "tournament_units_tournament_id_normalized_name_key")
-  @@index([tournamentId, isActive, normalizedName], map: "tournament_units_tournament_id_is_active_normalized_name_idx")
-  @@map("tournament_units")
+  @@unique([tournamentId, id], map: "tournament_organizations_tournament_id_id_key")
+  @@unique([tournamentId, normalizedName], map: "tournament_organizations_tournament_id_normalized_name_key")
+  @@index([tournamentId, isActive, normalizedName], map: "tournament_organizations_active_name_idx")
+  @@map("tournament_organizations")
 }
 
 model TournamentWeightClass {
@@ -357,7 +357,7 @@ model TournamentWeightClass {
 model TournamentAthlete {
   id            String                @id(map: "tournament_athletes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tournamentId  String                @map("tournament_id") @db.Uuid
-  unitId        String?               @map("unit_id") @db.Uuid
+  organizationId        String?               @map("organization_id") @db.Uuid
   weightClassId String                @map("weight_class_id") @db.Uuid
   name          String                @db.VarChar(255)
   birthYear     Int                   @map("birth_year") @db.SmallInt
@@ -368,13 +368,13 @@ model TournamentAthlete {
   createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   tournament    Tournament            @relation(fields: [tournamentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  unit          TournamentUnit?       @relation(fields: [tournamentId, unitId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade)
+  organization          TournamentOrganization?       @relation(fields: [tournamentId, organizationId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade)
   weightClass   TournamentWeightClass @relation(fields: [tournamentId, weightClassId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade)
   matchAthletes MatchAthlete[]
 
   @@unique([tournamentId, id], map: "tournament_athletes_tournament_id_id_key")
   @@index([tournamentId, isActive, name], map: "tournament_athletes_tournament_id_is_active_name_idx")
-  @@index([tournamentId, unitId, isActive], map: "tournament_athletes_tournament_id_unit_id_is_active_idx")
+  @@index([tournamentId, organizationId, isActive], map: "tournament_athletes_tournament_id_organization_id_is_active_idx")
   @@index([tournamentId, weightClassId, isActive], map: "tournament_athletes_tournament_id_weight_class_id_is_active_idx")
   @@map("tournament_athletes")
 }

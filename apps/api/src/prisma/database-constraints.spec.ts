@@ -61,7 +61,7 @@ async function cleanFixtures(): Promise<void> {
       tournamentId: { in: [fixture.tournamentId, fixture.otherTournamentId] },
     },
   });
-  await prisma.tournamentUnit.deleteMany({
+  await prisma.tournamentOrganization.deleteMany({
     where: {
       tournamentId: { in: [fixture.tournamentId, fixture.otherTournamentId] },
     },
@@ -245,11 +245,11 @@ describe('database unique constraints', () => {
         normalizedName: 'heavy',
       },
     });
-    const otherUnit = await prisma.tournamentUnit.create({
+    const otherOrganization = await prisma.tournamentOrganization.create({
       data: {
         tournamentId: fixture.otherTournamentId,
-        name: 'Other unit',
-        normalizedName: 'other unit',
+        name: 'Other organization',
+        normalizedName: 'other organization',
       },
     });
     const otherAthlete = await prisma.tournamentAthlete.create({
@@ -265,9 +265,9 @@ describe('database unique constraints', () => {
       prisma.tournamentAthlete.create({
         data: {
           tournamentId: fixture.tournamentId,
-          unitId: otherUnit.id,
+          organizationId: otherOrganization.id,
           weightClassId: ownWeightClass.id,
-          name: 'Invalid unit',
+          name: 'Invalid organization',
           birthYear: 2000,
         },
       }),
@@ -286,7 +286,7 @@ describe('database unique constraints', () => {
       data: {
         tournamentId: fixture.tournamentId,
         weightClassId: ownWeightClass.id,
-        name: 'No unit',
+        name: 'No organization',
         birthYear: 2000,
       },
     });

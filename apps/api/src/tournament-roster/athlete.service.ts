@@ -34,7 +34,7 @@ const UPDATE_EMPTY = {
 const view = {
   id: true,
   tournamentId: true,
-  unitId: true,
+  organizationId: true,
   weightClassId: true,
   name: true,
   birthYear: true,
@@ -44,7 +44,7 @@ const view = {
   deactivatedAt: true,
   createdAt: true,
   updatedAt: true,
-  unit: { select: { id: true, name: true, isActive: true } },
+  organization: { select: { id: true, name: true, isActive: true } },
   weightClass: { select: { id: true, name: true, isActive: true } },
 } satisfies Prisma.TournamentAthleteSelect;
 type Row = Prisma.TournamentAthleteGetPayload<{ select: typeof view }>;
@@ -63,16 +63,16 @@ export class AthleteService {
         code: 'INVALID_PAGINATION',
         message: 'page must be positive and pageSize must be between 1 and 100',
       });
-    if (q.noUnit === true && q.unitId)
+    if (q.noOrganization === true && q.organizationId)
       throw new BadRequestException({
         code: 'INVALID_ATHLETE_FILTERS',
-        message: 'unitId and noUnit cannot be combined',
+        message: 'organizationId and noOrganization cannot be combined',
       });
     const where: Prisma.TournamentAthleteWhereInput = {
       tournamentId,
       ...(q.weightClassId ? { weightClassId: q.weightClassId } : {}),
-      ...(q.unitId ? { unitId: q.unitId } : {}),
-      ...(q.noUnit ? { unitId: null } : {}),
+      ...(q.organizationId ? { organizationId: q.organizationId } : {}),
+      ...(q.noOrganization ? { organizationId: null } : {}),
       ...(q.isActive === undefined ? {} : { isActive: q.isActive }),
       ...(q.search?.trim()
         ? { name: { contains: q.search.trim(), mode: 'insensitive' } }
@@ -111,13 +111,13 @@ export class AthleteService {
         tx,
         tournamentId,
         input.weightClassId,
-        input.unitId,
+        input.organizationId,
       );
       const row = await tx.tournamentAthlete.create({
         data: {
           tournamentId,
           weightClassId: input.weightClassId,
-          unitId: input.unitId ?? null,
+          organizationId: input.organizationId ?? null,
           name: this.name(input.name),
           birthYear: this.birth(input.birthYear),
           details: this.details(input.details),
@@ -146,13 +146,15 @@ export class AthleteService {
       // Deactivated athletes are deliberately editable; restoring always revalidates their assignments.
       const assignments =
         input.weightClassId !== undefined ||
-        input.unitId !== undefined ||
+        input.organizationId !== undefined ||
         restoring
           ? await this.assignments(
               tx,
               tournamentId,
               input.weightClassId ?? before.weightClassId,
-              input.unitId === undefined ? before.unitId : input.unitId,
+              input.organizationId === undefined
+                ? before.organizationId
+                : input.organizationId,
             )
           : {};
       const birthYear =
@@ -198,23 +200,23 @@ export class AthleteService {
     tx: Prisma.TransactionClient,
     tournamentId: string,
     weightClassId: string,
-    unitId: string | null | undefined,
+    organizationId: string | null | undefined,
   ) {
     const weight = await tx.tournamentWeightClass.findFirst({
       where: { id: weightClassId, tournamentId, isActive: true },
       select: { id: true },
     });
     if (!weight) throw new NotFoundException(RELATED_NOT_FOUND);
-    if (unitId) {
-      const unit = await tx.tournamentUnit.findFirst({
-        where: { id: unitId, tournamentId, isActive: true },
+    if (organizationId) {
+      const organization = await tx.tournamentOrganization.findFirst({
+        where: { id: organizationId, tournamentId, isActive: true },
         select: { id: true },
       });
-      if (!unit) throw new NotFoundException(RELATED_NOT_FOUND);
+      if (!organization) throw new NotFoundException(RELATED_NOT_FOUND);
     }
     return {
       weightClassId,
-      unitId: unitId ?? null,
+      organizationId: organizationId ?? null,
     };
   }
   private birth(year: number) {

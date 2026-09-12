@@ -170,7 +170,7 @@ export interface TournamentRosterItem {
   readonly createdAt: string;
   readonly updatedAt: string;
 }
-export interface TournamentUnit extends TournamentRosterItem {
+export interface TournamentOrganization extends TournamentRosterItem {
   readonly imagePath: string | null;
 }
 export interface TournamentAthlete {
@@ -182,9 +182,13 @@ export interface TournamentAthlete {
   readonly imagePath: string | null;
   readonly imageUrl: string | null;
   readonly isActive: boolean;
-  readonly unitId: string | null;
+  readonly organizationId: string | null;
   readonly weightClassId: string;
-  readonly unit: { readonly id: string; readonly name: string; readonly isActive: boolean } | null;
+  readonly organization: {
+    readonly id: string;
+    readonly name: string;
+    readonly isActive: boolean;
+  } | null;
   readonly weightClass: { readonly id: string; readonly name: string; readonly isActive: boolean };
 }
 export interface RosterItemInput {
@@ -196,7 +200,7 @@ export interface AthleteInput {
   readonly name: string;
   readonly birthYear: number;
   readonly weightClassId: string;
-  readonly unitId?: string | null;
+  readonly organizationId?: string | null;
   readonly details?: string | null;
   readonly isActive?: boolean;
 }
@@ -205,8 +209,8 @@ export interface AthleteListInput {
   readonly pageSize?: number;
   readonly search?: string;
   readonly weightClassId?: string;
-  readonly unitId?: string;
-  readonly noUnit?: boolean;
+  readonly organizationId?: string;
+  readonly noOrganization?: boolean;
   readonly isActive?: boolean;
 }
 
@@ -225,8 +229,8 @@ interface MatchesResponse {
 interface MatchResponse {
   readonly match: AdminMatch;
 }
-interface UnitsResponse {
-  readonly units: readonly TournamentUnit[];
+interface OrganizationsResponse {
+  readonly organizations: readonly TournamentOrganization[];
 }
 interface WeightClassesResponse {
   readonly weightClasses: readonly TournamentRosterItem[];
@@ -298,35 +302,35 @@ export const adminManagementApi = {
       `admin/matches/${encodePathSegment(id)}/access-codes/${encodePathSegment(role)}/regenerate`,
       {},
     ),
-  listUnits: (tournamentId: string, includeInactive = true) =>
-    apiClient.get<UnitsResponse>(
-      `admin/tournaments/${encodePathSegment(tournamentId)}/units?includeInactive=${String(includeInactive)}`,
+  listOrganizations: (tournamentId: string, includeInactive = true) =>
+    apiClient.get<OrganizationsResponse>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/organizations?includeInactive=${String(includeInactive)}`,
     ),
-  createUnit: (tournamentId: string, input: RosterItemInput) =>
-    apiClient.post<{ readonly unit: TournamentUnit }>(
-      `admin/tournaments/${encodePathSegment(tournamentId)}/units`,
+  createOrganization: (tournamentId: string, input: RosterItemInput) =>
+    apiClient.post<{ readonly organization: TournamentOrganization }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/organizations`,
       input,
     ),
-  updateUnit: (tournamentId: string, id: string, input: RosterItemInput) =>
-    apiClient.patch<{ readonly unit: TournamentUnit }>(
-      `admin/tournaments/${encodePathSegment(tournamentId)}/units/${encodePathSegment(id)}`,
+  updateOrganization: (tournamentId: string, id: string, input: RosterItemInput) =>
+    apiClient.patch<{ readonly organization: TournamentOrganization }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/organizations/${encodePathSegment(id)}`,
       input,
     ),
-  deleteUnit: (tournamentId: string, id: string) =>
-    apiClient.delete<{ readonly unit: TournamentUnit }>(
-      `admin/tournaments/${encodePathSegment(tournamentId)}/units/${encodePathSegment(id)}`,
+  deleteOrganization: (tournamentId: string, id: string) =>
+    apiClient.delete<{ readonly organization: TournamentOrganization }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/organizations/${encodePathSegment(id)}`,
     ),
-  replaceUnitImage: (tournamentId: string, id: string, file: File) => {
+  replaceOrganizationImage: (tournamentId: string, id: string, file: File) => {
     const body = new FormData();
     body.append('file', file);
     return apiClient.put<{ readonly imagePath: string }>(
-      `admin/tournaments/${encodePathSegment(tournamentId)}/units/${encodePathSegment(id)}/image`,
+      `admin/tournaments/${encodePathSegment(tournamentId)}/organizations/${encodePathSegment(id)}/image`,
       body,
     );
   },
-  removeUnitImage: (tournamentId: string, id: string) =>
+  removeOrganizationImage: (tournamentId: string, id: string) =>
     apiClient.delete<undefined>(
-      `admin/tournaments/${encodePathSegment(tournamentId)}/units/${encodePathSegment(id)}/image`,
+      `admin/tournaments/${encodePathSegment(tournamentId)}/organizations/${encodePathSegment(id)}/image`,
     ),
   listWeightClasses: (tournamentId: string, includeInactive = true) =>
     apiClient.get<WeightClassesResponse>(

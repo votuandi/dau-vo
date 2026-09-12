@@ -37,7 +37,7 @@ import {
   MATCH_ATHLETE_INACTIVE_ERROR,
   MATCH_ATHLETE_NOT_FOUND_ERROR,
   MATCH_ATHLETE_REPLACEMENT_UNSAFE_ERROR,
-  MATCH_ATHLETE_UNIT_ERROR,
+  MATCH_ATHLETE_ORGANIZATION_ERROR,
   MATCH_ATHLETE_WEIGHT_CLASS_ERROR,
   INVALID_MATCH_ERROR,
   INVALID_TOURNAMENT_DATE_RANGE_ERROR,
@@ -1022,7 +1022,7 @@ export class AdminManagementService {
   > {
     const selected = await transaction.tournamentAthlete.findMany({
       include: {
-        unit: { select: { id: true, isActive: true, name: true } },
+        organization: { select: { id: true, isActive: true, name: true } },
         weightClass: { select: { id: true, isActive: true } },
       },
       where: {
@@ -1036,8 +1036,12 @@ export class AdminManagementService {
       throw new ConflictException(MATCH_ATHLETE_INACTIVE_ERROR);
     if (selected.some(({ weightClass }) => !weightClass.isActive))
       throw new ConflictException(MATCH_ATHLETE_WEIGHT_CLASS_ERROR);
-    if (selected.some(({ unit }) => unit !== null && !unit.isActive))
-      throw new ConflictException(MATCH_ATHLETE_UNIT_ERROR);
+    if (
+      selected.some(
+        ({ organization }) => organization !== null && !organization.isActive,
+      )
+    )
+      throw new ConflictException(MATCH_ATHLETE_ORGANIZATION_ERROR);
     const weightClassIds = new Set(
       selected.map(({ weightClassId }) => weightClassId),
     );
@@ -1050,7 +1054,7 @@ export class AdminManagementService {
         athleteId,
         color,
         name: athlete.name,
-        organization: athlete.unit?.name ?? null,
+        organization: athlete.organization?.name ?? null,
         tournamentId,
         weightClassId: athlete.weightClassId,
       };
