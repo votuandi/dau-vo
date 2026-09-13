@@ -24,6 +24,7 @@ import { BracketPreviewService } from './bracket-preview.service';
 import { ConfirmBracketDto } from './dto/confirm-bracket.dto';
 import { DecideBracketWinnerDto } from './dto/decide-bracket-winner.dto';
 import { BracketCancellationService } from './bracket-cancellation.service';
+import { BracketDrawSetupService } from './bracket-draw-setup.service';
 import { CancelBracketDto } from './dto/cancel-bracket.dto';
 import { MatchListQueryDto } from '../admin-management/dto/match-list-query.dto';
 
@@ -65,6 +66,7 @@ describe('bracket and match-filter controller validation', () => {
         { provide: AdminManagementService, useValue: management },
         { provide: TournamentImageService, useValue: {} },
         { provide: BracketPreviewService, useValue: { preview: jest.fn() } },
+        { provide: BracketDrawSetupService, useValue: { setup: jest.fn() } },
         { provide: BracketConfirmationService, useValue: confirmations },
         {
           provide: BracketCancellationService,

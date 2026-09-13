@@ -1,5 +1,6 @@
 import { randomInt } from 'node:crypto';
 import { bracketRoundLabel } from '@martial-arts-scoring/shared-types';
+import { summarizeBracket } from './bracket-summary';
 
 export type BracketSide = 'RED' | 'BLUE';
 
@@ -95,8 +96,8 @@ export function generateSingleEliminationBracket(
 ): GeneratedSingleEliminationBracket {
   assertValidAthletes(input.athleteIds, input.maxAthletes);
 
-  const bracketSize = nextPowerOfTwo(input.athleteIds.length);
-  const byeCount = bracketSize - input.athleteIds.length;
+  const summary = summarizeBracket(input.athleteIds.length);
+  const { bracketSize, byeCount } = summary;
   const shuffledAthletes = fisherYatesShuffle(
     input.athleteIds,
     input.randomSource,
@@ -139,10 +140,11 @@ export function buildSingleEliminationBracket(
 
   const athleteCount = athleteIds.length;
   const bracketSize = initialEntrants.length;
-  const byeCount = bracketSize - athleteCount;
-  const roundCount = Math.log2(bracketSize);
-  const firstRoundMatchCount = athleteCount - bracketSize / 2;
-  const totalFixtureCount = athleteCount - 1;
+  const summary = summarizeBracket(athleteCount);
+  if (summary.bracketSize !== bracketSize)
+    throw new Error('Bracket placements have an invalid size.');
+  const { byeCount, roundCount, totalFixtureCount } = summary;
+  const firstRoundMatchCount = summary.firstRoundFixtureCount;
   const fixtures: MutableFixture[] = [];
   const fixturesByRound = new Map<number, MutableFixture[]>();
   let advancements = initialEntrants.map(toAdvancement);
@@ -216,12 +218,6 @@ function assertValidAthletes(
       `Bracket cannot contain more than ${maxAthletes} athletes.`,
     );
   }
-}
-
-function nextPowerOfTwo(value: number): number {
-  let power = 1;
-  while (power < value) power *= 2;
-  return power;
 }
 
 function fisherYatesShuffle<T>(

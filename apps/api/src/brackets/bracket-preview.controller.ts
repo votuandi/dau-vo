@@ -27,6 +27,7 @@ import { ConfirmBracketDto } from './dto/confirm-bracket.dto';
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { CancelBracketDto } from './dto/cancel-bracket.dto';
 import { BracketCancellationService } from './bracket-cancellation.service';
+import { BracketDrawSetupService } from './bracket-draw-setup.service';
 
 const uuid = new ParseUUIDPipe({
   exceptionFactory: () => new BadRequestException(INVALID_ID_ERROR),
@@ -47,7 +48,20 @@ export class BracketPreviewController {
     private readonly confirmations: BracketConfirmationService,
     @Inject(BracketCancellationService)
     private readonly cancellations: BracketCancellationService,
+    @Inject(BracketDrawSetupService)
+    private readonly drawSetup: BracketDrawSetupService,
   ) {}
+
+  @Get('draw-setup')
+  @Header('Cache-Control', 'no-store')
+  async setup(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Param('weightClassId', uuid) weightClassId: string,
+    @Req() request: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, request.user, true);
+    return this.drawSetup.setup(tournamentId, weightClassId);
+  }
 
   @Post('preview')
   @Header('Cache-Control', 'no-store')

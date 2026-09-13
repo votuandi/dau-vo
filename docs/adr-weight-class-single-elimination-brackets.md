@@ -161,6 +161,26 @@ the operational match row is locked by the lifecycle transaction first.
 
 ### Preview and confirmation
 
+### Draw setup before randomization
+
+`GET /admin/tournaments/:tournamentId/weight-classes/:weightClassId/bracket/draw-setup`
+is the read-only contract used when the draw dialog opens. It applies the same
+authoritative eligibility predicates as confirmation (active athlete and weight
+class, correct tournament/class association, and no inactive organization),
+returns the entire roster without pagination, and returns a deterministic
+summary. The service supports 2--64 athletes; over-capacity rosters fail with
+`BRACKET_ATHLETE_LIMIT_EXCEEDED` rather than allocating an unbounded tree.
+
+The response contains a five-minute HMAC-authenticated setup token that binds
+tournament, weight class, canonical roster fingerprint, summary, expiry, and a
+nonce. It has no placement or random claim. Verification uses constant-time
+signature comparison and requires the caller to recompute and supply the
+current fingerprint, so a changed roster, altered token, expired token, or
+wrong URL scope is rejected. The token is an authorization-to-randomize
+precondition, not a draw result. Setup performs no random call, database write,
+or audit event and is served with `Cache-Control: no-store`; clients must keep
+it only in dialog memory and never log it.
+
 `POST /admin/tournaments/:tournamentId/weight-classes/:weightClassId/brackets/preview`
 validates tournament access, active tournament/weight class, and the active
 eligible roster, randomly draws each eligible athlete once, and returns the

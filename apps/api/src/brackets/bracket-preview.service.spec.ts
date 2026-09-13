@@ -78,6 +78,7 @@ describe('BracketPreviewService', () => {
         byeCount,
         roundCount,
         totalFixtureCount,
+        firstRoundFixtureCount: count - bracketSize / 2,
       });
       expect(result.previewToken).toBe('opaque-token');
       expect(result.initialEntrants).toHaveLength(bracketSize);

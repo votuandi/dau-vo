@@ -15,6 +15,7 @@ import {
   generateSingleEliminationBracket,
 } from './single-elimination-bracket.generator';
 import { BracketPreviewTokenService } from './bracket-preview-token.service';
+import { MAX_BRACKET_ATHLETES, summarizeBracket } from './bracket-summary';
 
 const TOURNAMENT_NOT_FOUND = {
   code: 'TOURNAMENT_NOT_FOUND',
@@ -111,9 +112,15 @@ export class BracketPreviewService {
         code: 'BRACKET_INSUFFICIENT_ATHLETES',
         message: 'At least two eligible athletes are required',
       });
+    if (athletes.length > MAX_BRACKET_ATHLETES)
+      throw new ConflictException({
+        code: 'BRACKET_ATHLETE_LIMIT_EXCEEDED',
+        message: `Bracket cannot contain more than ${MAX_BRACKET_ATHLETES} athletes`,
+      });
     const generated = generateSingleEliminationBracket({
       athleteIds: athletes.map(({ id }) => id),
       randomSource: cryptoRandomSource,
+      maxAthletes: MAX_BRACKET_ATHLETES,
     });
     const byId = new Map(athletes.map((athlete) => [athlete.id, athlete]));
     const placements = generated.initialEntrants.map((placement) => ({
@@ -135,13 +142,7 @@ export class BracketPreviewService {
       previewToken: token.previewToken,
       expiresAt: token.expiresAt,
       rosterFingerprint,
-      summary: {
-        athleteCount: generated.athleteCount,
-        bracketSize: generated.bracketSize,
-        byeCount: generated.byeCount,
-        roundCount: generated.roundCount,
-        totalFixtureCount: generated.totalFixtureCount,
-      },
+      summary: summarizeBracket(generated.athleteCount),
       initialEntrants: placements,
       rounds: generated.rounds,
       fixtures: generated.fixtures,
