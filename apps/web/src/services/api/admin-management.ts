@@ -6,6 +6,9 @@ import {
 } from '@/types/shared';
 import type { MatchStatePayload } from '@martial-arts-scoring/shared-types';
 import { apiClient } from '@/services/api/client';
+import type { ApiRequestOptions } from '@/services/api/client';
+
+type ApiRequestWithoutBody = Omit<ApiRequestOptions<never>, 'body' | 'method'>;
 
 export interface AdminTournament {
   readonly id: string;
@@ -279,6 +282,7 @@ export interface BracketPreview {
     readonly byeCount: number;
     readonly roundCount: number;
     readonly totalFixtureCount: number;
+    readonly firstRoundFixtureCount: number;
   };
   readonly initialEntrants: readonly {
     readonly drawPosition: number;
@@ -412,27 +416,36 @@ export const adminManagementApi = {
       `admin/tournaments/${encodePathSegment(tournamentId)}/matches`,
       input,
     ),
-  getBracketDrawSetup: (tournamentId: string, weightClassId: string) =>
+  getBracketDrawSetup: (
+    tournamentId: string,
+    weightClassId: string,
+    options?: ApiRequestWithoutBody,
+  ) =>
     apiClient.get<BracketDrawSetup>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/draw-setup`,
+      options,
     ),
   previewBracket: (
     tournamentId: string,
     weightClassId: string,
     input: { readonly setupToken: string; readonly designatedByeAthleteIds: readonly string[] },
+    options?: ApiRequestWithoutBody,
   ) =>
     apiClient.post<BracketPreview>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/preview`,
       input,
+      options,
     ),
   confirmBracket: (
     tournamentId: string,
     weightClassId: string,
     input: { readonly previewToken: string; readonly idempotencyKey: string },
+    options?: ApiRequestWithoutBody,
   ) =>
     apiClient.post<ActiveBracket>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/confirm`,
       input,
+      options,
     ),
   getBracket: (tournamentId: string, weightClassId: string) =>
     apiClient.get<ActiveBracket>(

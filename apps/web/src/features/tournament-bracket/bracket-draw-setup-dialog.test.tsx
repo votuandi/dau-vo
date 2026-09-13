@@ -6,7 +6,14 @@ import { BracketDrawSetupDialog } from './bracket-draw-setup-dialog';
 const setup = {
   setupToken: 'setup',
   expiresAt: '',
-  summary: { athleteCount: 6, bracketSize: 8, byeCount: 2, roundCount: 3, totalFixtureCount: 7 },
+  summary: {
+    athleteCount: 6,
+    bracketSize: 8,
+    byeCount: 2,
+    roundCount: 3,
+    totalFixtureCount: 7,
+    firstRoundFixtureCount: 2,
+  },
   eligibleAthletes: [
     { id: 'a', name: 'An', organizationName: 'A', imageUrl: null },
     { id: 'b', name: 'Bình', organizationName: 'B', imageUrl: null },
@@ -15,6 +22,36 @@ const setup = {
 } as const;
 
 describe('BracketDrawSetupDialog', () => {
+  it.each([
+    [29, 32, 13],
+    [31, 32, 15],
+  ])(
+    'uses the server-provided first-round fixture count for %i athletes',
+    (athleteCount, bracketSize, expected) => {
+      render(
+        <BracketDrawSetupDialog
+          error={null}
+          onClose={vi.fn()}
+          onReload={vi.fn()}
+          onSubmit={vi.fn()}
+          pending={false}
+          selectedIds={[]}
+          setup={{
+            ...setup,
+            summary: {
+              ...setup.summary,
+              athleteCount,
+              bracketSize,
+              byeCount: bracketSize - athleteCount,
+              firstRoundFixtureCount: expected,
+            },
+          }}
+        />,
+      );
+      expect(screen.getByText('Trận vòng 1').parentElement).toHaveTextContent(String(expected));
+    },
+  );
+
   it('only submits after confirmation and supports random byes', async () => {
     const user = userEvent.setup();
     const submit = vi.fn();

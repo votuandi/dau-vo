@@ -41,7 +41,7 @@ export function BracketDrawSetupDialog({
           : current,
     );
   };
-  const firstRoundMatches = setup.summary.bracketSize / 2;
+  const firstRoundMatches = setup.summary.firstRoundFixtureCount;
 
   return (
     <Dialog

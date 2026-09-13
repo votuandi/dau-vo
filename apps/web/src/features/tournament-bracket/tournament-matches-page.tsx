@@ -127,6 +127,8 @@ export function TournamentMatchesPage({
   // Prevent a stale successful query from flashing a bracket after cancellation.
   const [confirmedCancelled, setConfirmedCancelled] = useState(false);
   const drawWeightClassRef = useRef(selectedId);
+  const workflowEpochRef = useRef(0);
+  const workflowAbortRef = useRef<AbortController | null>(null);
   const winnerReasonRef = useRef<HTMLTextAreaElement>(null);
   const cancelReasonRef = useRef<HTMLTextAreaElement>(null);
   const resetDraw = () => {
@@ -137,30 +139,55 @@ export function TournamentMatchesPage({
     setConfirmationKey(null);
     setDialogError(null);
   };
+  const currentWorkflow = (weightClassId: string, epoch: number) =>
+    selectedId === weightClassId && workflowEpochRef.current === epoch;
+  const beginWorkflow = (weightClassId: string) => {
+    workflowAbortRef.current?.abort();
+    const controller = new AbortController();
+    workflowAbortRef.current = controller;
+    workflowEpochRef.current += 1;
+    return { weightClassId, epoch: workflowEpochRef.current, signal: controller.signal };
+  };
   useEffect(() => {
     if (drawWeightClassRef.current !== selectedId) {
+      workflowAbortRef.current?.abort();
+      workflowAbortRef.current = null;
+      workflowEpochRef.current += 1;
       resetDraw();
       setCancelOpen(false);
       setCancelError(null);
       setConfirmedCancelled(false);
+      setGeneratedCodes([]);
+      setPreparedMatch(null);
       drawWeightClassRef.current = selectedId;
     }
   }, [selectedId]);
   const draw = useMutation({
-    mutationFn: async (designatedByeAthleteIds: readonly string[]) => {
-      if (!drawSetup) throw new Error('Draw setup is unavailable');
-      return adminManagementApi.previewBracket(tournament.id, selectedId ?? '', {
-        setupToken: drawSetup.setupToken,
-        designatedByeAthleteIds,
-      });
+    mutationFn: async (input: {
+      readonly context: {
+        readonly weightClassId: string;
+        readonly epoch: number;
+        readonly signal: AbortSignal;
+      };
+      readonly setupToken: string;
+      readonly designatedByeAthleteIds: readonly string[];
+    }) => {
+      return adminManagementApi.previewBracket(
+        tournament.id,
+        input.context.weightClassId,
+        { setupToken: input.setupToken, designatedByeAthleteIds: input.designatedByeAthleteIds },
+        { signal: input.context.signal },
+      );
     },
-    onSuccess: (value) => {
+    onSuccess: (value, input) => {
+      if (!currentWorkflow(input.context.weightClassId, input.context.epoch)) return;
       setDialogError(null);
       setPreview(value);
       setConfirmationKey(crypto.randomUUID());
       setWorkflow('reviewingPreview');
     },
-    onError: (error) => {
+    onError: (error, input) => {
+      if (!currentWorkflow(input.context.weightClassId, input.context.epoch)) return;
       const stale =
         error instanceof ApiClientError &&
         [
@@ -177,25 +204,45 @@ export function TournamentMatchesPage({
     },
   });
   const setupDraw = useMutation({
-    mutationFn: () => adminManagementApi.getBracketDrawSetup(tournament.id, selectedId ?? ''),
-    onSuccess: (value) => {
+    mutationFn: (context: {
+      readonly weightClassId: string;
+      readonly epoch: number;
+      readonly signal: AbortSignal;
+    }) =>
+      adminManagementApi.getBracketDrawSetup(tournament.id, context.weightClassId, {
+        signal: context.signal,
+      }),
+    onSuccess: (value, context) => {
+      if (!currentWorkflow(context.weightClassId, context.epoch)) return;
       setDialogError(null);
       setDesignatedByeAthleteIds([]);
       setDrawSetup(value);
       setWorkflow('configuring');
     },
-    onError: (error) => {
+    onError: (error, context) => {
+      if (!currentWorkflow(context.weightClassId, context.epoch)) return;
       setDialogError(getApiErrorMessage(error, 'Không thể chuẩn bị bốc thăm.'));
       setWorkflow('error');
     },
   });
   const confirm = useMutation({
-    mutationFn: () =>
-      adminManagementApi.confirmBracket(tournament.id, selectedId ?? '', {
-        previewToken: preview?.previewToken ?? '',
-        idempotencyKey: confirmationKey ?? '',
-      }),
-    onSuccess: () => {
+    mutationFn: (input: {
+      readonly context: {
+        readonly weightClassId: string;
+        readonly epoch: number;
+        readonly signal: AbortSignal;
+      };
+      readonly previewToken: string;
+      readonly idempotencyKey: string;
+    }) =>
+      adminManagementApi.confirmBracket(
+        tournament.id,
+        input.context.weightClassId,
+        { previewToken: input.previewToken, idempotencyKey: input.idempotencyKey },
+        { signal: input.context.signal },
+      ),
+    onSuccess: (_value, input) => {
+      if (!currentWorkflow(input.context.weightClassId, input.context.epoch)) return;
       setPreview(null);
       setConfirmationKey(null);
       setDialogError(null);
@@ -203,14 +250,15 @@ export function TournamentMatchesPage({
       notifyMutationSuccess('Đã xác nhận nhánh đấu.');
       void Promise.all([
         qc.invalidateQueries({
-          queryKey: bracketQueryKeys.detail(tournament.id, selectedId ?? ''),
+          queryKey: bracketQueryKeys.detail(tournament.id, input.context.weightClassId),
         }),
         qc.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournament.id) }),
         qc.invalidateQueries({ queryKey: tournamentQueryKeys.weightClasses(tournament.id) }),
         qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournament.id, 'athletes'] }),
       ]);
     },
-    onError: (error) => {
+    onError: (error, input) => {
+      if (!currentWorkflow(input.context.weightClassId, input.context.epoch)) return;
       const stale =
         error instanceof ApiClientError &&
         ['BRACKET_ROSTER_CHANGED', 'BRACKET_PREVIEW_EXPIRED', 'BRACKET_PREVIEW_INVALID'].includes(
@@ -387,7 +435,7 @@ export function TournamentMatchesPage({
                   setConfirmedCancelled(false);
                   setDialogError(null);
                   setWorkflow('loadingSetup');
-                  setupDraw.mutate();
+                  if (selectedId) setupDraw.mutate(beginWorkflow(selectedId));
                 }}
                 type="button"
               >
@@ -418,7 +466,13 @@ export function TournamentMatchesPage({
                 }}
                 onConfirm={() => {
                   setWorkflow('confirming');
-                  confirm.mutate();
+                  if (selectedId && confirmationKey) {
+                    confirm.mutate({
+                      context: beginWorkflow(selectedId),
+                      previewToken: preview.previewToken,
+                      idempotencyKey: confirmationKey,
+                    });
+                  }
                 }}
                 onChangeDesignatedAthletes={() => {
                   setPreview(null);
@@ -431,7 +485,13 @@ export function TournamentMatchesPage({
                   setConfirmationKey(null);
                   setDialogError(null);
                   setWorkflow('generatingPreview');
-                  draw.mutate(designatedByeAthleteIds);
+                  if (selectedId && drawSetup) {
+                    draw.mutate({
+                      context: beginWorkflow(selectedId),
+                      setupToken: drawSetup.setupToken,
+                      designatedByeAthleteIds,
+                    });
+                  }
                 }}
                 pending={draw.isPending || confirm.isPending}
                 preview={preview}
@@ -454,7 +514,7 @@ export function TournamentMatchesPage({
                   className="mt-3"
                   onClick={() => {
                     setWorkflow('loadingSetup');
-                    setupDraw.mutate();
+                    if (selectedId) setupDraw.mutate(beginWorkflow(selectedId));
                   }}
                   size="sm"
                   type="button"
@@ -532,14 +592,20 @@ export function TournamentMatchesPage({
           onClose={resetDraw}
           onReload={() => {
             setWorkflow('loadingSetup');
-            setupDraw.mutate();
+            if (selectedId) setupDraw.mutate(beginWorkflow(selectedId));
           }}
           onSubmit={(ids) => {
             setDesignatedByeAthleteIds(ids);
             setDialogError(null);
             setPreview(null);
             setWorkflow('generatingPreview');
-            draw.mutate(ids);
+            if (selectedId) {
+              draw.mutate({
+                context: beginWorkflow(selectedId),
+                setupToken: drawSetup.setupToken,
+                designatedByeAthleteIds: ids,
+              });
+            }
           }}
           pending={workflow === 'generatingPreview'}
           selectedIds={designatedByeAthleteIds}
