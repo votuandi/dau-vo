@@ -26,6 +26,7 @@ describe('validateEnvironment', () => {
       MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS: 10,
       MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS: 100,
       MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS: 60,
+      LEGACY_MATCH_ACCESS_ENABLED: true,
       MATCH_PUBLIC_ID_INITIAL_LENGTH: 6,
       MATCH_SESSION_TTL_SECONDS: 28_800,
       OFFICIAL_SESSION_TTL_SECONDS: 28_800,
@@ -82,6 +83,15 @@ describe('validateEnvironment', () => {
       MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS: 55,
       MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS: 120,
     });
+  });
+
+  it('requires an explicit boolean value for legacy match access', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        LEGACY_MATCH_ACCESS_ENABLED: 'yes',
+      }),
+    ).toThrow('LEGACY_MATCH_ACCESS_ENABLED must be true or false');
   });
 
   it('normalizes isolated official-authentication settings', () => {

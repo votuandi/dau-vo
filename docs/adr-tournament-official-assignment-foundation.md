@@ -18,10 +18,12 @@ snapshot; bracket-round staffing supplies a future source for that snapshot.
 Standalone matches continue to require three referees by default.
 
 This is an additive migration. `MatchAccessCode`, `MatchSession`,
-`RefereeSlot`, and their historical links remain the active scoring path while
-new nullable official-session and assignment references support a staged
-cutover. New votes will ultimately be attributed to an assignment, not the
-three-value legacy slot enum.
+`RefereeSlot`, and their historical links are retained only for historical
+scoring/session compatibility and migration fixtures. New matches create no
+per-match credentials; new votes are attributed to an assignment, not the
+three-value legacy slot enum. The temporary legacy API is explicitly controlled
+by `LEGACY_MATCH_ACCESS_ENABLED`, cannot access assigned matches, and will be
+removed with the legacy tables only in a separately verified destructive release.
 
 Passcodes are stored only as a slow verification hash and a keyed lookup
 digest. Plaintext is never persisted, audited, or returned, except by a future

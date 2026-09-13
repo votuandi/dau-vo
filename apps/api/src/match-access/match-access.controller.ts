@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   Body,
   Controller,
   Get,
@@ -35,6 +36,7 @@ import { MatchSessionGuard } from './match-session.guard';
 // /official-access and tournament official credentials.
 export class MatchAccessController {
   private readonly cookieOptions: CookieOptions;
+  private readonly legacyAccessEnabled: boolean;
 
   constructor(
     @Inject(MatchAccessService)
@@ -42,6 +44,12 @@ export class MatchAccessController {
     @Inject(ConfigService)
     config: ConfigService<EnvironmentVariables, true>,
   ) {
+    this.legacyAccessEnabled = config.getOrThrow(
+      'LEGACY_MATCH_ACCESS_ENABLED',
+      {
+        infer: true,
+      },
+    );
     this.cookieOptions = {
       httpOnly: true,
       path: '/api',
@@ -58,6 +66,7 @@ export class MatchAccessController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<MatchSessionResponse> {
+    this.assertLegacyAccessEnabled();
     const created = await this.matchAccessService.login(
       credentials.matchId,
       credentials.securityCode,
@@ -79,6 +88,7 @@ export class MatchAccessController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<MatchSessionResponse> {
+    this.assertLegacyAccessEnabled();
     const created = await this.matchAccessService.takeover(
       credentials.matchId,
       credentials.securityCode,
@@ -113,6 +123,7 @@ export class MatchAccessController {
   @UseGuards(MatchSessionGuard)
   @Header('Cache-Control', 'no-store')
   session(@Req() request: AuthenticatedMatchRequest): MatchSessionResponse {
+    this.assertLegacyAccessEnabled();
     const matchSession = request.matchSession;
 
     return {
@@ -148,6 +159,15 @@ export class MatchAccessController {
       previousSessionToken !== newSessionToken
     ) {
       await this.matchAccessService.revokeSession(previousSessionToken);
+    }
+  }
+
+  private assertLegacyAccessEnabled(): void {
+    if (!this.legacyAccessEnabled) {
+      throw new ForbiddenException({
+        code: 'LEGACY_MATCH_ACCESS_DISABLED',
+        message: 'Legacy match credential access is disabled',
+      });
     }
   }
 }

@@ -1,9 +1,4 @@
-import {
-  type AthleteColor,
-  type MatchAccessRole,
-  type MatchStatus,
-  type TournamentStatus,
-} from '@/types/shared';
+import { type AthleteColor, type MatchStatus, type TournamentStatus } from '@/types/shared';
 import type { MatchStatePayload } from '@martial-arts-scoring/shared-types';
 import { apiClient } from '@/services/api/client';
 import type { ApiRequestOptions } from '@/services/api/client';
@@ -46,11 +41,6 @@ export interface AdminMatchAthlete {
   readonly updatedAt: string;
 }
 
-export interface AdminMatchAccessCode {
-  readonly role: MatchAccessRole;
-  readonly updatedAt: string;
-}
-
 export interface AdminMatch {
   readonly id: string;
   readonly publicId: string;
@@ -71,12 +61,6 @@ export interface AdminMatch {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly athletes: readonly AdminMatchAthlete[];
-  readonly accessCodes: readonly AdminMatchAccessCode[];
-}
-
-export interface GeneratedAccessCode {
-  readonly role: MatchAccessRole;
-  readonly code: string;
 }
 
 export interface AdminMatchMonitoring {
@@ -284,15 +268,6 @@ interface AthletesResponse {
   readonly totalPages: number;
 }
 
-export interface MatchWithGeneratedCodesResponse extends MatchResponse {
-  readonly accessCodes: readonly GeneratedAccessCode[];
-}
-
-export interface GeneratedCodesResponse {
-  readonly matchId: string;
-  readonly accessCodes: readonly GeneratedAccessCode[];
-}
-
 export interface BracketPreview {
   readonly previewToken: string;
   readonly expiresAt: string;
@@ -439,7 +414,7 @@ export const adminManagementApi = {
       readonly counts: readonly { readonly weightClassId: string | null; readonly count: number }[];
     }>(`admin/tournaments/${encodePathSegment(tournamentId)}/matches/counts`),
   createMatch: (tournamentId: string, input: CreateMatchInput) =>
-    apiClient.post<MatchWithGeneratedCodesResponse>(
+    apiClient.post<MatchResponse>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/matches`,
       input,
     ),
@@ -504,7 +479,7 @@ export const adminManagementApi = {
       options,
     ),
   prepareBracketFixtureMatch: (tournamentId: string, bracketId: string, fixtureId: string) =>
-    apiClient.post<MatchWithGeneratedCodesResponse>(
+    apiClient.post<MatchResponse>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/brackets/${encodePathSegment(bracketId)}/fixtures/${encodePathSegment(fixtureId)}/prepare-match`,
       {},
     ),
@@ -523,16 +498,6 @@ export const adminManagementApi = {
     apiClient.get<AdminMatchMonitoring>(`admin/matches/${encodePathSegment(id)}/monitoring`),
   updateMatch: (id: string, input: UpdateMatchInput) =>
     apiClient.patch<MatchResponse>(`admin/matches/${encodePathSegment(id)}`, input),
-  regenerateAllMatchCodes: (id: string) =>
-    apiClient.post<GeneratedCodesResponse>(
-      `admin/matches/${encodePathSegment(id)}/access-codes/regenerate`,
-      {},
-    ),
-  regenerateMatchCode: (id: string, role: MatchAccessRole) =>
-    apiClient.post<GeneratedCodesResponse>(
-      `admin/matches/${encodePathSegment(id)}/access-codes/${encodePathSegment(role)}/regenerate`,
-      {},
-    ),
   listOrganizations: (tournamentId: string, includeInactive = true) =>
     apiClient.get<OrganizationsResponse>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/organizations?includeInactive=${String(includeInactive)}`,

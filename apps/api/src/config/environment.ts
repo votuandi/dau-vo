@@ -16,6 +16,7 @@ export interface EnvironmentVariables {
   MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS: number;
   MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS: number;
   MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS: number;
+  LEGACY_MATCH_ACCESS_ENABLED: boolean;
   NODE_ENV: NodeEnvironment;
   OFFICIAL_PASSCODE_SECRET: string;
   OFFICIAL_SESSION_SECRET: string;
@@ -98,6 +99,18 @@ function parseNodeEnvironment(value: unknown): NodeEnvironment {
   }
 
   return environment;
+}
+
+function booleanWithDefault(
+  config: Record<string, unknown>,
+  name: keyof EnvironmentVariables,
+  defaultValue: boolean,
+): boolean {
+  const value = config[name];
+  if (value === undefined || value === '') return defaultValue;
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  throw new Error(`${name} must be true or false`);
 }
 
 function requireWebOrigins(config: Record<string, unknown>): readonly string[] {
@@ -234,6 +247,11 @@ export function validateEnvironment(
       config,
       'MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS',
       DEFAULT_MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS,
+    ),
+    LEGACY_MATCH_ACCESS_ENABLED: booleanWithDefault(
+      config,
+      'LEGACY_MATCH_ACCESS_ENABLED',
+      nodeEnvironment === 'test',
     ),
     MATCH_PUBLIC_ID_INITIAL_LENGTH: matchPublicIdInitialLength,
     MATCH_SESSION_SECRET: matchSessionSecret,

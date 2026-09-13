@@ -216,13 +216,12 @@ Production cookies are marked `Secure`, and all environments explicitly use
 Authenticated admins can create, edit, open, list, and archive tournaments under
 `/admin/tournaments`. A tournament can contain matches with exactly one RED and
 one BLUE athlete. Match creation atomically persists the match, both athletes,
-four hashed access credentials, and its audit event.
+the referee-staffing snapshot, and its audit event. It never creates per-match
+official credentials.
 
-Public match IDs use a cryptographically secure human-friendly alphabet. The four
-raw access codes are returned only by match creation or explicit regeneration;
-the database stores bcrypt hashes. Save newly displayed codes immediately.
-Regenerating a code revokes active match sessions associated with its previous
-credential.
+Public match IDs remain cryptographically generated display identifiers. Staff
+authenticate with the tournament public code and their own private passcode;
+the match is then claimed and staffed through assignment controls.
 
 ## Sport catalog and rulesets
 
@@ -289,44 +288,37 @@ See [ADR 0013](docs/adr/0013-sport-group-ruleset-resolution.md) for the
 ruleset-resolution decision and [release readiness](docs/release-readiness.md)
 for migration and operator checks.
 
-## Match participant authentication
+## Tournament official authentication and operations
 
-Referees sign in at `/trong-tai`; inspectors sign in at `/giam-dinh`. Both forms
-send only the public match ID, raw access code, and a browser-generated device ID
-to `POST /api/match-access/login`. The API derives the role and referee slot from
-the verified credential. It never accepts a browser-selected role.
+Display the tournament public code to staff, create referee and inspector records
+from the tournament administration page, and distribute each one-time private
+passcode over a secure out-of-band channel. Referees sign in at `/trong-tai` and
+inspectors at `/giam-dinh` using that code and passcode. An inspector claims a
+match, assigns the configured referee positions, and starts it only after dynamic
+readiness is satisfied. Bracket-round staffing determines the immutable referee
+count for subsequently prepared matches.
 
-Successful login exchanges the access code for a cryptographically random session
-token in an HTTP-only `SameSite=Strict` cookie. Production cookies are also
-`Secure`. Only an HMAC hash of that token is stored in PostgreSQL. Browser storage
-contains a random device ID and the last public match ID only; it never contains a
-raw access code, takeover challenge, or session token. Reload recovery uses
-`GET /api/match-access/session`, and logout both revokes the database session and
-clears the cookie.
+Regenerate a passcode only from official administration and distribute the new
+one-time value immediately. For a stuck assignment, the claimed inspector can
+release or replace it; deactivating an official also releases their active work.
+Passcodes are never returned after their create/regenerate response.
 
-Login and takeover attempts are throttled in Redis before bcrypt work begins.
-Credential and client-address counters use HMAC-derived Redis keys, so neither raw
-match IDs nor access codes are placed in the cache.
+## Legacy match credential transition
 
-PostgreSQL is the ownership authority for a match credential. Login and takeover
-transactions lock the credential row with `SELECT ... FOR UPDATE`, recheck its
-bcrypt hash after acquiring the lock, and inspect the current owner. A partial
-unique index on active, unrevoked sessions provides the final invariant that one
-credential has at most one owner. A two-minute HMAC-signed takeover challenge is
-bound to the match, credential, requesting device, and owner observed at conflict
-time. Under the same row lock, takeover succeeds only if that observed owner is
-still current; concurrent contenders using stale challenges therefore produce one
-winner while the other receives a fresh conflict.
+`MatchAccessCode`, `MatchSession`, `MatchAccessRole`, and `RefereeSlot` remain
+only for historical rows, legacy-session scoring, and migration fixtures. The
+legacy `/api/match-access/*` API is disabled unless
+`LEGACY_MATCH_ACCESS_ENABLED=true`; it is never used by modern UI flows and
+rejects a match with an active assignment. Its cookie is separate from the
+tournament-official cookie. Remove this API, its tables, and its legacy slot
+contracts in a separately reviewed destructive migration after the transition
+window closes and all active legacy sessions have expired.
 
 The participant-auth API consists of:
 
-- `POST /api/match-access/login`
-- `POST /api/match-access/takeover`
-- `POST /api/match-access/logout`
-- `GET /api/match-access/session`
-
-`MatchSessionGuard` is exported by the backend module for future protected match
-participant APIs.
+The normal operational APIs are `/api/official-access/*` and the assignment
+endpoints. PostgreSQL, not Redis, remains the authority for claims, assignments,
+votes, and lifecycle.
 
 ## Realtime match infrastructure
 
@@ -541,11 +533,12 @@ and the creation audit event in a single transaction.
 | `ADMIN_SESSION_TTL_SECONDS`                        | `28800`                           | Fixed Redis lifetime for admin sessions         |
 | `ADMIN_LOGIN_RATE_LIMIT_MAX_ATTEMPTS`              | `5`                               | Login attempts allowed per window               |
 | `ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS`            | `900`                             | Login throttle window in seconds                |
-| `MATCH_SESSION_SECRET`                             | Development placeholder           | HMAC secret for match-session tokens/challenges |
+| `MATCH_SESSION_SECRET`                             | Development placeholder           | Legacy match-session tokens/challenges only     |
 | `MATCH_SESSION_TTL_SECONDS`                        | `28800`                           | Persisted match-session lifetime                |
 | `MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS`    | `10`                              | Attempts per match credential/window            |
 | `MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS`          | `100`                             | Attempts per client address/window              |
 | `MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS`           | `60`                              | Participant-auth throttle window                |
+| `LEGACY_MATCH_ACCESS_ENABLED`                      | `false`                           | Temporary historical match-access compatibility |
 | `OFFICIAL_PASSCODE_SECRET`                         | Development placeholder           | HMAC key for official passcode lookup digests   |
 | `OFFICIAL_SESSION_SECRET`                          | Development placeholder           | Independent HMAC key for official sessions/CAS  |
 | `OFFICIAL_SESSION_TTL_SECONDS`                     | `28800`                           | Persisted tournament-official session lifetime  |

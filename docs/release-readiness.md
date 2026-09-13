@@ -1,5 +1,45 @@
 # Release readiness runbook
 
+## Tournament-official migration cutover
+
+This release completes the application cutover: standalone and bracket-prepared
+matches create no `MatchAccessCode` rows, and no admin API or modern UI exposes
+per-match code regeneration. The legacy `match_access_codes`, `match_sessions`,
+`match_access_role`, and `referee_slot` schema remains deliberately intact for
+historical sessions, votes, audits, and the temporary compatibility window.
+
+Deploy migrations in repository timestamp order, ending with
+`20260913190000_tournament_official_assignment_foundation`,
+`20260913200000_tournament_official_authentication`,
+`20260914090000_dynamic_referee_votes`, and
+`20260914100000_match_assignment_lifecycle_release`:
+
+```powershell
+pnpm --filter @martial-arts-scoring/api prisma migrate status
+pnpm --filter @martial-arts-scoring/api prisma migrate deploy
+```
+
+Do not run a destructive rollback. Recover by restoring a verified pre-deploy
+backup to a new database and shipping a forward repair migration after the
+integrity issue is understood. Validate independent production secrets for admin,
+official passcode lookup, official session, legacy match session, and bracket
+previews before startup.
+
+`LEGACY_MATCH_ACCESS_ENABLED` stays `false` except during a time-limited,
+announced transition. When enabled, its old cookie/API is isolated from the
+official cookie/API and rejects a match with an active official assignment.
+Disable it after legacy sessions expire; remove its schema only in a separately
+reviewed destructive release after an inventory and backup verification.
+
+Operator checklist: display the tournament public code; create officials and
+securely distribute one-time private passcodes; configure bracket-round staffing;
+have an inspector log in, claim, assign, confirm readiness, and start; rotate a
+compromised passcode; release or replace a stuck assignment.
+
+Release note: per-match referee/inspector codes are no longer generated or
+regenerated for new work. Historical credential data remains only for the
+documented compatibility window.
+
 ## Permission matrix
 
 | Capability                                                                   | Guest                         | User                 | Active admin                          | Expired read-only admin                                | Super admin          |
@@ -9,7 +49,7 @@
 | Read own subscription and orders                                             | No                            | Own only             | Own only                              | Own only                                               | Own only             |
 | Quote or activate a subscription                                             | No                            | Own only             | Own only                              | Own only                                               | Own only             |
 | List/read owned administration records                                       | No                            | No                   | Own only                              | Own only, for 12 UTC calendar months after access ends | All                  |
-| Create, change, archive tournaments; change matches; reveal/regenerate codes | No                            | No                   | Own only, active entitlement required | No                                                     | All                  |
+| Create, change, archive tournaments; change matches; manage officials       | No                            | No                   | Own only, active entitlement required | No                                                     | All                  |
 | Super-admin users, entitlements, pricing                                     | No                            | No                   | No                                    | No                                                     | All                  |
 | Public scoreboard Socket.IO state                                            | Yes, match public ID          | Yes                  | Yes                                   | Yes                                                    | Yes                  |
 | Participant Socket.IO controls                                               | Referee/inspector cookie only | Same                 | Same                                  | Same                                                   | Same                 |

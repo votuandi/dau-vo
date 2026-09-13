@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
-import { GeneratedAccessCodesPanel } from '@/components/generated-access-codes-panel';
 import { ClipboardCopyButton } from '@/components/ui/clipboard-copy-button';
 import { AdminMatchMonitoring } from '@/features/admin-management/admin-match-monitoring';
 import { Button } from '@/components/ui/button';
 import {
-  accessCodeRoleLabels,
-  accessCodeRoles,
   formatDateTime,
   getApiErrorMessage,
   inputClassName,
@@ -27,11 +24,10 @@ import {
 import {
   adminManagementApi,
   type AdminMatch,
-  type GeneratedAccessCode,
   type MatchAthleteInput,
   type UpdateMatchInput,
 } from '@/services/api/admin-management';
-import { AthleteColor, type MatchAccessRole } from '@/types/shared';
+import { AthleteColor } from '@/types/shared';
 import { MatchStatus } from '@/types/shared';
 import { useAdminAccessContext } from '@/features/auth/admin-access';
 import { RosterAthleteSelector } from '@/features/admin-management/roster-athlete-selector';
@@ -276,119 +272,6 @@ function MatchEditor({
   );
 }
 
-function AccessCodesManager({
-  match,
-  isReadOnly,
-}: {
-  readonly match: AdminMatch;
-  readonly isReadOnly: boolean;
-}) {
-  const queryClient = useQueryClient();
-  const [generatedCodes, setGeneratedCodes] = useState<readonly GeneratedAccessCode[]>([]);
-
-  const regenerateMutation = useMutation({
-    mutationFn: (role: MatchAccessRole | 'ALL') =>
-      role === 'ALL'
-        ? adminManagementApi.regenerateAllMatchCodes(match.id)
-        : adminManagementApi.regenerateMatchCode(match.id, role),
-    onSuccess: (response) => {
-      setGeneratedCodes(response.accessCodes);
-      notifyMutationSuccess('Tạo lại mã truy cập thành công.');
-      void queryClient.invalidateQueries({ queryKey: matchQueryKeys.detail(match.id) });
-    },
-    onError: (error) => {
-      notifyMutationError(error, 'Không thể tạo lại mã truy cập.');
-    },
-  });
-
-  function regenerate(role: MatchAccessRole | 'ALL') {
-    const label = role === 'ALL' ? 'toàn bộ bốn mã' : `mã ${accessCodeRoleLabels[role]}`;
-    if (
-      window.confirm(`Tạo lại ${label}? Mọi phiên đang dùng mã cũ tương ứng sẽ bị vô hiệu hóa.`)
-    ) {
-      regenerateMutation.reset();
-      setGeneratedCodes([]);
-      regenerateMutation.mutate(role);
-    }
-  }
-
-  return (
-    <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-xl font-black tracking-tight">Mã truy cập trận</h2>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            Hệ thống chỉ lưu mã đã băm. Tạo lại mã sẽ đăng xuất các phiên đang dùng thông tin cũ.
-          </p>
-        </div>
-        <Button
-          disabled={regenerateMutation.isPending || isReadOnly}
-          onClick={() => {
-            regenerate('ALL');
-          }}
-          type="button"
-          variant="destructive"
-        >
-          {regenerateMutation.isPending && regenerateMutation.variables === 'ALL'
-            ? 'Đang tạo lại…'
-            : 'Tạo lại cả 4 mã'}
-        </Button>
-      </div>
-
-      {generatedCodes.length > 0 ? (
-        <div className="mt-6">
-          <GeneratedAccessCodesPanel
-            accessCodes={generatedCodes}
-            matchPublicId={match.publicId}
-            onDismiss={() => {
-              setGeneratedCodes([]);
-            }}
-          />
-        </div>
-      ) : null}
-      {regenerateMutation.isError ? (
-        <p
-          className="mt-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-          role="alert"
-        >
-          {getApiErrorMessage(regenerateMutation.error, 'Không thể tạo lại mã truy cập.')}
-        </p>
-      ) : null}
-
-      <ul className="mt-6 grid gap-3 sm:grid-cols-2">
-        {accessCodeRoles.map((role) => {
-          const metadata = match.accessCodes.find((accessCode) => accessCode.role === role);
-          return (
-            <li className="rounded-xl border border-border p-4" key={role}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-bold">{accessCodeRoleLabels[role]}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {metadata ? `Cập nhật ${formatDateTime(metadata.updatedAt)}` : 'Chưa có mã'}
-                  </p>
-                </div>
-                <Button
-                  disabled={regenerateMutation.isPending || isReadOnly}
-                  onClick={() => {
-                    regenerate(role);
-                  }}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  {regenerateMutation.isPending && regenerateMutation.variables === role
-                    ? 'Đang tạo…'
-                    : 'Tạo lại'}
-                </Button>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-}
-
 export function AdminMatchDetailPage() {
   const { matchId } = useParams<{ matchId: string }>();
   if (!matchId) {
@@ -474,7 +357,6 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
 
       <MatchEditor isReadOnly={isReadOnly} key={match.updatedAt} match={match} />
       <AdminMatchMonitoring matchId={match.id} />
-      <AccessCodesManager isReadOnly={isReadOnly} match={match} />
     </div>
   );
 }
