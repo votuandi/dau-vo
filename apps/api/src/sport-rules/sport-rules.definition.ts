@@ -8,6 +8,11 @@ export interface SportRulesDefinition {
   readonly minimumScoreboardConnections: number;
   readonly roundCount: number;
   readonly refereeMajorityThreshold: number;
+  /** Staffing policy used for brackets and manually prepared matches. */
+  readonly defaultRequiredRefereeCount: number;
+  readonly minimumRequiredRefereeCount: number;
+  readonly requiresOddRefereeCount: boolean;
+  readonly refereeMajority: (refereeCount: number) => number;
   readonly refereePointValue: number;
   readonly inspectorPenaltyValue: number;
   /** Decides a completed match from the server-calculated effective totals. */
@@ -35,6 +40,10 @@ export const oneOnOneCombatRules: SportRulesDefinition = Object.freeze({
         : AthleteColor.BLUE,
   minimumScoreboardConnections: 1,
   refereeMajorityThreshold: 2,
+  defaultRequiredRefereeCount: 3,
+  minimumRequiredRefereeCount: 3,
+  requiresOddRefereeCount: true,
+  refereeMajority: (refereeCount: number) => Math.floor(refereeCount / 2) + 1,
   refereePointValue: 1,
   requiredRefereeSlots: Object.freeze([
     RefereeSlot.REFEREE_1,

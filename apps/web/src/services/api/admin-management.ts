@@ -347,6 +347,7 @@ export interface BracketFixture {
   }[];
 }
 export interface ActiveBracket {
+  readonly activeRefereeCount?: number;
   readonly bracket: {
     readonly id: string;
     readonly status: string;
@@ -387,6 +388,12 @@ export interface ActiveBracket {
       } | null;
       readonly sourceFixtureId: string | null;
     }[];
+  }[];
+  readonly staffing?: readonly {
+    readonly id: string;
+    readonly roundNumber: number;
+    readonly roundLabel: string;
+    readonly requiredRefereeCount: number;
   }[];
 }
 
@@ -475,6 +482,26 @@ export const adminManagementApi = {
     apiClient.post<{ readonly bracket: { readonly id: string; readonly status: 'CANCELLED' } }>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/cancel`,
       { reason },
+    ),
+  updateBracketRoundStaffing: (
+    tournamentId: string,
+    weightClassId: string,
+    roundNumber: number,
+    requiredRefereeCount: number,
+    options?: ApiRequestWithoutBody,
+  ) =>
+    apiClient.patch<{
+      readonly staffing: {
+        readonly id: string;
+        readonly roundNumber: number;
+        readonly roundLabel: string;
+        readonly requiredRefereeCount: number;
+        readonly activeRefereeCount: number;
+      };
+    }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/staffing/${roundNumber}`,
+      { requiredRefereeCount },
+      options,
     ),
   prepareBracketFixtureMatch: (tournamentId: string, bracketId: string, fixtureId: string) =>
     apiClient.post<MatchWithGeneratedCodesResponse>(

@@ -37,6 +37,7 @@ import { BracketDrawSetupDialog } from './bracket-draw-setup-dialog';
 import { bracketQueryKeys } from './query-keys';
 import { WeightClassMatchTabs } from './weight-class-match-tabs';
 import { ManualMatchCreationForm } from './manual-match-creation-form';
+import { BracketStaffingEditor } from './bracket-staffing-editor';
 
 export function TournamentMatchesPage({
   tournament,
@@ -350,6 +351,27 @@ export function TournamentMatchesPage({
       setCancelError(getApiErrorMessage(error, 'Không thể hủy nhánh đấu.'));
     },
   });
+  const staffing = useMutation({
+    mutationFn: (input: {
+      readonly weightClassId: string;
+      readonly roundNumber: number;
+      readonly count: number;
+    }) =>
+      adminManagementApi.updateBracketRoundStaffing(
+        tournament.id,
+        input.weightClassId,
+        input.roundNumber,
+        input.count,
+      ),
+    onSuccess: (_, input) => {
+      if (input.weightClassId !== selectedId) return;
+      void qc.invalidateQueries({
+        queryKey: bracketQueryKeys.detail(tournament.id, input.weightClassId),
+      });
+      notifyMutationSuccess('Đã cập nhật số trọng tài.');
+    },
+    onError: (error) => notifyMutationError(error, 'Không thể cập nhật số trọng tài.'),
+  });
   const counts = useMemo(
     () =>
       new Map(
@@ -532,6 +554,14 @@ export function TournamentMatchesPage({
                 <div className="mt-5">
                   <BracketChart data={bracket.data} />
                 </div>
+                <BracketStaffingEditor
+                  data={bracket.data}
+                  disabled={isReadOnly || bracket.data.bracket.status !== 'ACTIVE'}
+                  pending={staffing.isPending}
+                  onSave={(roundNumber, count) =>
+                    staffing.mutate({ weightClassId: selectedId!, roundNumber, count })
+                  }
+                />
                 <FixtureList
                   data={bracket.data}
                   disabled={isReadOnly || prepare.isPending || cancelBracket.isPending}

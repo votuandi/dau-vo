@@ -11,8 +11,10 @@ import {
   BracketStatus,
   Prisma,
   TournamentStatus,
+  TournamentOfficialRole,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
 import { BracketPreviewService } from './bracket-preview.service';
 import {
   BracketPreviewTokenService,
@@ -36,6 +38,7 @@ const bracketInclude = {
       { initialSide: 'asc' },
     ],
   },
+  roundStaffing: { orderBy: { roundNumber: 'asc' } },
   fixtures: {
     orderBy: [{ roundNumber: 'asc' }, { position: 'asc' }],
     include: {
@@ -62,6 +65,7 @@ export class BracketConfirmationService {
     private readonly previews: BracketPreviewService,
     @Inject(BracketPreviewTokenService)
     private readonly tokens: BracketPreviewTokenService,
+    @Inject(SportRulesRegistry) private readonly sportRules: SportRulesRegistry,
   ) {}
 
   async confirm(
@@ -107,7 +111,10 @@ export class BracketConfirmationService {
         }
         const tournament = await tx.tournament.findUnique({
           where: { id: tournamentId },
-          select: { status: true },
+          select: {
+            status: true,
+            sport: { select: { sportGroup: { select: { code: true } } } },
+          },
         });
         if (!tournament)
           throw new NotFoundException({
@@ -116,6 +123,7 @@ export class BracketConfirmationService {
           });
         if (tournament.status === TournamentStatus.ARCHIVED)
           throw fail('TOURNAMENT_ARCHIVED', 'Tournament is archived');
+        const rules = this.sportRules.resolve(tournament.sport.sportGroup.code);
         const weight = await tx.tournamentWeightClass.findFirst({
           where: { id: weightClassId, tournamentId, isActive: true },
         });
@@ -249,6 +257,13 @@ export class BracketConfirmationService {
           });
           fixtureIds.set(f.id, row.id);
         }
+        await tx.bracketRoundStaffing.createMany({
+          data: Array.from({ length: graph.roundCount }, (_, index) => ({
+            bracketId: bracket.id,
+            roundNumber: index + 1,
+            requiredRefereeCount: rules.defaultRequiredRefereeCount,
+          })),
+        });
         await tx.auditLog.create({
           data: {
             adminUserId: userId,
@@ -328,20 +343,29 @@ export class BracketConfirmationService {
   }
 
   async find(tournamentId: string, weightClassId: string) {
-    const b = await this.prisma.tournamentBracket.findFirst({
-      where: {
-        tournamentId,
-        weightClassId,
-        status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
-      },
-      include: bracketInclude,
-    });
+    const [b, activeRefereeCount] = await this.prisma.$transaction([
+      this.prisma.tournamentBracket.findFirst({
+        where: {
+          tournamentId,
+          weightClassId,
+          status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
+        },
+        include: bracketInclude,
+      }),
+      this.prisma.tournamentOfficial.count({
+        where: {
+          tournamentId,
+          role: TournamentOfficialRole.REFEREE,
+          isActive: true,
+        },
+      }),
+    ]);
     if (!b)
       throw new NotFoundException({
         code: 'BRACKET_NOT_FOUND',
         message: 'No current bracket exists for this weight class',
       });
-    return this.view(b);
+    return { ...this.view(b), activeRefereeCount };
   }
   private get(tx: Prisma.TransactionClient, id: string) {
     return tx.tournamentBracket
@@ -363,7 +387,18 @@ export class BracketConfirmationService {
       },
       entrants: b.entrants,
       fixtures: b.fixtures,
+      staffing: b.roundStaffing.map((staffing) => ({
+        ...staffing,
+        roundLabel: this.roundLabel(staffing.roundNumber, b.roundCount),
+      })),
     };
+  }
+  private roundLabel(roundNumber: number, roundCount: number) {
+    const fromFinal = roundCount - roundNumber;
+    if (fromFinal === 0) return 'Chung kết';
+    if (fromFinal === 1) return 'Bán kết';
+    if (fromFinal === 2) return 'Tứ kết';
+    return `Vòng ${roundNumber}`;
   }
   private graph(
     c: BracketPreviewTokenClaims,
