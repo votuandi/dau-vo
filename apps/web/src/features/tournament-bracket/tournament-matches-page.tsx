@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Dialog } from '@/components/ui/dialog';
 import { GeneratedAccessCodesPanel } from '@/components/generated-access-codes-panel';
 import {
   getApiErrorMessage,
@@ -30,6 +31,7 @@ import { BracketPreviewDialog } from './bracket-preview-dialog';
 import { bracketQueryKeys } from './query-keys';
 import { WeightClassMatchTabs } from './weight-class-match-tabs';
 import { ManualMatchCreationForm } from './manual-match-creation-form';
+import { fixtureStatusLabel, roundLabel } from './bracket-labels';
 
 export function TournamentMatchesPage({
   tournament,
@@ -86,6 +88,12 @@ export function TournamentMatchesPage({
     enabled: Boolean(selectedId),
     retry: false,
   });
+  // Only the documented code means drawing is safe. A failed request is not an absent bracket.
+  const isNoBracket =
+    bracket.isError &&
+    bracket.error instanceof ApiClientError &&
+    bracket.error.status === 404 &&
+    bracket.error.body.code === 'BRACKET_NOT_FOUND';
   const [preview, setPreview] = useState<BracketPreview | null>(null);
   // A key is created once for each user action and survives mutation retries.
   const [confirmationKey, setConfirmationKey] = useState<string | null>(null);
@@ -99,6 +107,8 @@ export function TournamentMatchesPage({
   const [decisionKey, setDecisionKey] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelOpen, setCancelOpen] = useState(false);
+  const winnerReasonRef = useRef<HTMLTextAreaElement>(null);
+  const cancelReasonRef = useRef<HTMLTextAreaElement>(null);
   const draw = useMutation({
     mutationFn: () => adminManagementApi.previewBracket(tournament.id, selectedId ?? ''),
     onSuccess: (value) => {
@@ -122,7 +132,9 @@ export function TournamentMatchesPage({
       setDialogError(null);
       notifyMutationSuccess('Đã xác nhận nhánh đấu.');
       void Promise.all([
-        qc.invalidateQueries({ queryKey: bracketQueryKeys.all }),
+        qc.invalidateQueries({
+          queryKey: bracketQueryKeys.detail(tournament.id, selectedId ?? ''),
+        }),
         qc.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournament.id) }),
         qc.invalidateQueries({ queryKey: tournamentQueryKeys.weightClasses(tournament.id) }),
         qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournament.id, 'athletes'] }),
@@ -135,7 +147,6 @@ export function TournamentMatchesPage({
           error.body.code ?? '',
         );
       if (stale) {
-        setPreview(null);
         setConfirmationKey(null);
         setDialogError(
           'Danh sách vận động viên đã thay đổi hoặc phiên bốc thăm đã hết hạn. Hãy bốc thăm mới.',
@@ -154,7 +165,9 @@ export function TournamentMatchesPage({
       setPreparedMatch(value.match);
       notifyMutationSuccess('Đã chuẩn bị trận đấu.');
       void Promise.all([
-        qc.invalidateQueries({ queryKey: bracketQueryKeys.all }),
+        qc.invalidateQueries({
+          queryKey: bracketQueryKeys.detail(tournament.id, selectedId ?? ''),
+        }),
         qc.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournament.id) }),
         qc.invalidateQueries({ queryKey: ['admin', 'matches', value.match.id] }),
       ]);
@@ -179,7 +192,9 @@ export function TournamentMatchesPage({
       setDecisionKey(null);
       notifyMutationSuccess('Đã xác định người thắng.');
       void Promise.all([
-        qc.invalidateQueries({ queryKey: bracketQueryKeys.all }),
+        qc.invalidateQueries({
+          queryKey: bracketQueryKeys.detail(tournament.id, selectedId ?? ''),
+        }),
         qc.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournament.id) }),
       ]);
     },
@@ -194,7 +209,9 @@ export function TournamentMatchesPage({
       setCancelOpen(false);
       setCancelReason('');
       notifyMutationSuccess('Đã hủy nhánh đấu. Bạn có thể bốc thăm lại.');
-      void qc.invalidateQueries({ queryKey: bracketQueryKeys.all });
+      void qc.invalidateQueries({
+        queryKey: bracketQueryKeys.detail(tournament.id, selectedId ?? ''),
+      });
     },
     onError: (error) => notifyMutationError(error, 'Không thể hủy nhánh đấu.'),
   });
@@ -215,18 +232,22 @@ export function TournamentMatchesPage({
     (athletes.data?.items.length ?? 0) < 2 ||
     tournament.status === TournamentStatus.ARCHIVED ||
     isReadOnly ||
-    bracket.isSuccess;
+    !isNoBracket;
   const reason = isReadOnly
     ? 'Bạn chỉ có quyền xem.'
     : tournament.status === TournamentStatus.ARCHIVED
       ? 'Giải đấu đã lưu trữ.'
-      : bracket.isSuccess
-        ? 'Hạng cân này đã có nhánh đấu được xác nhận.'
-        : athletes.isPending
-          ? 'Đang tải vận động viên.'
-          : !selectedId
-            ? 'Chưa có hạng cân hoạt động.'
-            : 'Cần ít nhất hai vận động viên đang hoạt động.';
+      : athletes.isError
+        ? getApiErrorMessage(athletes.error, 'Không thể tải vận động viên. Hãy thử lại.')
+        : bracket.isSuccess
+          ? 'Hạng cân này đã có nhánh đấu được xác nhận.'
+          : bracket.isError
+            ? getApiErrorMessage(bracket.error, 'Không thể tải nhánh đấu. Hãy thử lại.')
+            : athletes.isPending
+              ? 'Đang tải vận động viên.'
+              : !selectedId
+                ? 'Chưa có hạng cân hoạt động.'
+                : 'Cần ít nhất hai vận động viên đang hoạt động.';
   return (
     <section className="space-y-5 rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
       <div>
@@ -249,6 +270,22 @@ export function TournamentMatchesPage({
         selectedId={selectedId}
         unassignedCount={unassigned}
       />
+      {weights.isError ? (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4" role="alert">
+          <p className="text-sm text-destructive">
+            {getApiErrorMessage(weights.error, 'Không thể tải hạng cân.')}
+          </p>
+          <Button
+            className="mt-3"
+            onClick={() => void weights.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Thử lại
+          </Button>
+        </div>
+      ) : null}
       <div id="weight-class-match-panel" role="tabpanel">
         {selectedId ? (
           <>
@@ -290,6 +327,38 @@ export function TournamentMatchesPage({
               </>
             ) : bracket.isPending ? (
               <div className="mt-5 h-48 animate-pulse rounded-xl bg-muted" />
+            ) : athletes.isError ? (
+              <div
+                className="mt-5 rounded-xl border border-destructive/30 bg-destructive/5 p-4"
+                role="alert"
+              >
+                <p className="text-sm text-destructive">{reason}</p>
+                <Button
+                  className="mt-3"
+                  onClick={() => void athletes.refetch()}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Thử lại
+                </Button>
+              </div>
+            ) : bracket.isError && !isNoBracket ? (
+              <div
+                className="mt-5 rounded-xl border border-destructive/30 bg-destructive/5 p-4"
+                role="alert"
+              >
+                <p className="text-sm text-destructive">{reason}</p>
+                <Button
+                  className="mt-3"
+                  onClick={() => void bracket.refetch()}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Thử lại
+                </Button>
+              </div>
             ) : (
               <p className="mt-5 text-sm text-muted-foreground">{reason}</p>
             )}
@@ -311,102 +380,93 @@ export function TournamentMatchesPage({
         />
       ) : null}
       {decisionFixture ? (
-        <div
-          aria-modal="true"
-          className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-4"
-          role="dialog"
-          aria-labelledby="winner-decision-title"
+        <Dialog
+          description="Xác nhận quyết định hòa này và ghi rõ lý do."
+          initialFocusRef={winnerReasonRef}
+          onClose={() => {
+            setDecisionFixture(null);
+            setDecisionKey(null);
+          }}
+          pending={decide.isPending}
+          title="Chọn người thắng"
         >
-          <div className="w-full max-w-md rounded-xl bg-card p-5 shadow-xl">
-            <h3 className="font-black" id="winner-decision-title">
-              Chọn người thắng
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Xác nhận quyết định hòa này và ghi rõ lý do.
-            </p>
-            <label className="mt-4 block text-sm font-bold" htmlFor="winner-reason">
-              Lý do
-            </label>
-            <textarea
-              className="mt-1 w-full rounded border p-2"
-              id="winner-reason"
-              maxLength={500}
-              onChange={(e) => {
-                setDecisionReason(e.target.value);
+          <label className="mt-4 block text-sm font-bold" htmlFor="winner-reason">
+            Lý do
+          </label>
+          <textarea
+            className="mt-1 w-full rounded border p-2"
+            id="winner-reason"
+            maxLength={500}
+            onChange={(e) => {
+              setDecisionReason(e.target.value);
+            }}
+            value={decisionReason}
+            ref={winnerReasonRef}
+          />
+          <div className="mt-4 flex flex-wrap gap-2">
+            {decisionFixture.slots.map((slot) => {
+              const entrant = slot.resolvedEntrant;
+              return entrant ? (
+                <Button
+                  disabled={decide.isPending || !decisionReason.trim()}
+                  key={slot.side}
+                  onClick={() => {
+                    decide.mutate(entrant.id);
+                  }}
+                  type="button"
+                >
+                  Chọn {entrant.snapshotName}
+                </Button>
+              ) : null;
+            })}
+            <Button
+              disabled={decide.isPending}
+              onClick={() => {
+                setDecisionFixture(null);
+                setDecisionKey(null);
               }}
-              value={decisionReason}
-            />
-            <div className="mt-4 flex flex-wrap gap-2">
-              {decisionFixture.slots.map((slot) => {
-                const entrant = slot.resolvedEntrant;
-                return entrant ? (
-                  <Button
-                    disabled={decide.isPending || !decisionReason.trim()}
-                    key={slot.side}
-                    onClick={() => {
-                      decide.mutate(entrant.id);
-                    }}
-                    type="button"
-                  >
-                    Chọn {entrant.snapshotName}
-                  </Button>
-                ) : null;
-              })}
-              <Button
-                disabled={decide.isPending}
-                onClick={() => {
-                  setDecisionFixture(null);
-                  setDecisionKey(null);
-                }}
-                type="button"
-                variant="outline"
-              >
-                Hủy
-              </Button>
-            </div>
+              type="button"
+              variant="outline"
+            >
+              Hủy
+            </Button>
           </div>
-        </div>
+        </Dialog>
       ) : null}
       {cancelOpen ? (
-        <div
-          aria-modal="true"
-          className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-4"
-          role="dialog"
-          aria-labelledby="cancel-bracket-title"
+        <Dialog
+          description="Thao tác này lưu nhánh cũ vào lịch sử và không xóa mã truy cập hay dữ liệu trận đấu."
+          initialFocusRef={cancelReasonRef}
+          onClose={() => setCancelOpen(false)}
+          pending={cancelBracket.isPending}
+          title="Hủy nhánh đấu?"
         >
-          <div className="w-full max-w-md rounded-xl bg-card p-5 shadow-xl">
-            <h3 className="font-black" id="cancel-bracket-title">
-              Hủy nhánh đấu?
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Thao tác này lưu nhánh cũ vào lịch sử và không xóa mã truy cập hay dữ liệu trận đấu.
-            </p>
-            <textarea
-              className="mt-4 w-full rounded border p-2"
-              maxLength={500}
-              onChange={(e) => setCancelReason(e.target.value)}
-              placeholder="Lý do hủy (bắt buộc)"
-              value={cancelReason}
-            />
-            <div className="mt-4 flex gap-2">
-              <Button
-                disabled={!cancelReason.trim() || cancelBracket.isPending}
-                onClick={() => cancelBracket.mutate()}
-                type="button"
-              >
-                Xác nhận hủy
-              </Button>
-              <Button
-                disabled={cancelBracket.isPending}
-                onClick={() => setCancelOpen(false)}
-                type="button"
-                variant="outline"
-              >
-                Quay lại
-              </Button>
-            </div>
+          <textarea
+            className="mt-4 w-full rounded border p-2"
+            maxLength={500}
+            onChange={(e) => setCancelReason(e.target.value)}
+            placeholder="Lý do hủy (bắt buộc)"
+            ref={cancelReasonRef}
+            value={cancelReason}
+          />
+          <div className="mt-4 flex gap-2">
+            <Button
+              disabled={!cancelReason.trim() || cancelBracket.isPending}
+              onClick={() => cancelBracket.mutate()}
+              type="button"
+            >
+              Xác nhận hủy
+            </Button>
+            <Button
+              disabled={cancelBracket.isPending}
+              onClick={() => setCancelOpen(false)}
+              type="button"
+              variant="outline"
+            >
+              Quay lại
+            </Button>
           </div>
-        </div>
+        </Dialog>
       ) : null}
       <div className="grid items-start gap-6 border-t pt-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <StandaloneMatchList matches={matches} />
@@ -421,6 +481,7 @@ export function TournamentMatchesPage({
       {preview ? (
         <BracketPreviewDialog
           error={dialogError}
+          canConfirm={Boolean(confirmationKey) && !dialogError}
           onCancel={() => {
             if (!confirm.isPending) {
               setPreview(null);
@@ -518,9 +579,7 @@ function FixtureList({
       <h3 className="font-black">Lịch fixture theo vòng</h3>
       {[...groups].map(([round, fixtures]) => (
         <section key={round}>
-          <h4 className="text-sm font-bold">
-            {round === data.bracket.roundCount ? 'Chung kết' : `Vòng ${String(round)}`}
-          </h4>
+          <h4 className="text-sm font-bold">{roundLabel(round, data.bracket.roundCount)}</h4>
           <ul className="mt-2 space-y-2">
             {fixtures.map((f) => {
               const person = (side: 'RED' | 'BLUE') => {
@@ -535,7 +594,7 @@ function FixtureList({
               return (
                 <li className="rounded-xl border p-3" key={f.id}>
                   <div className="font-bold">
-                    {f.displayReference} · {f.status}
+                    {f.displayReference} · {fixtureStatusLabel(f.status)}
                   </div>
                   <p className="text-sm">
                     RED: {person('RED')} — BLUE: {person('BLUE')}

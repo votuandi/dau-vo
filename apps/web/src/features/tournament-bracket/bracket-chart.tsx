@@ -1,4 +1,5 @@
 import type { ActiveBracket, BracketPreview } from '@/services/api/admin-management';
+import { roundLabel } from './bracket-labels';
 
 type ChartData = Pick<BracketPreview, 'rounds' | 'initialEntrants'> | ActiveBracket;
 function preview(data: ChartData): data is Pick<BracketPreview, 'rounds' | 'initialEntrants'> {
@@ -26,7 +27,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
     ? data.rounds
     : Array.from({ length: data.bracket.roundCount }, (_, index) => ({
         roundNumber: index + 1,
-        label: index + 1 === data.bracket.roundCount ? 'Chung kết' : `Vòng ${String(index + 1)}`,
+        label: roundLabel(index + 1, data.bracket.roundCount),
         fixtures: data.fixtures.filter((fixture) => fixture.roundNumber === index + 1),
       }));
   return (
@@ -34,7 +35,9 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
       <div className="flex min-w-max items-stretch gap-5">
         {rounds.map((round) => (
           <section className="w-72 shrink-0" key={round.roundNumber}>
-            <h4 className="mb-3 font-black">{round.label}</h4>
+            <h4 className="sticky left-0 top-0 z-10 mb-3 bg-muted/95 py-1 font-black">
+              {round.label}
+            </h4>
             <div className="flex min-h-full flex-col justify-around gap-4">
               {round.fixtures.map((fixture) => {
                 const activeFixture = preview(data)
