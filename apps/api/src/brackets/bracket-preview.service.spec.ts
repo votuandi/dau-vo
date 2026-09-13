@@ -44,12 +44,10 @@ function subject(count: number) {
     resolve: jest.fn().mockReturnValue({ athleteColors: ['RED', 'BLUE'] }),
   };
   const tokens = {
-    issue: jest
-      .fn()
-      .mockReturnValue({
-        previewToken: 'opaque-token',
-        expiresAt: '2026-09-12T00:05:00.000Z',
-      }),
+    issue: jest.fn().mockReturnValue({
+      previewToken: 'opaque-token',
+      expiresAt: '2026-09-12T00:05:00.000Z',
+    }),
   };
   return {
     prisma,

@@ -407,9 +407,15 @@ export const adminManagementApi = {
       `admin/tournaments/${encodePathSegment(tournamentId)}/brackets/${encodePathSegment(bracketId)}/fixtures/${encodePathSegment(fixtureId)}/prepare-match`,
       {},
     ),
-  decideBracketFixtureWinner: (tournamentId: string, bracketId: string, fixtureId: string, input: { readonly entrantId: string; readonly reason: string; readonly idempotencyKey: string }) =>
+  decideBracketFixtureWinner: (
+    tournamentId: string,
+    bracketId: string,
+    fixtureId: string,
+    input: { readonly entrantId: string; readonly reason: string; readonly idempotencyKey: string },
+  ) =>
     apiClient.post<{ readonly fixtureId: string; readonly winnerEntrantId: string }>(
-      `admin/tournaments/${encodePathSegment(tournamentId)}/brackets/${encodePathSegment(bracketId)}/fixtures/${encodePathSegment(fixtureId)}/decide-winner`, input,
+      `admin/tournaments/${encodePathSegment(tournamentId)}/brackets/${encodePathSegment(bracketId)}/fixtures/${encodePathSegment(fixtureId)}/decide-winner`,
+      input,
     ),
   getMatch: (id: string) => apiClient.get<MatchResponse>(`admin/matches/${encodePathSegment(id)}`),
   getMatchMonitoring: (id: string) =>

@@ -11,7 +11,9 @@ export interface SportRulesDefinition {
   readonly refereePointValue: number;
   readonly inspectorPenaltyValue: number;
   /** Decides a completed match from the server-calculated effective totals. */
-  readonly determineWinner: (totals: Readonly<Record<AthleteColor, number>>) => AthleteColor | null;
+  readonly determineWinner: (
+    totals: Readonly<Record<AthleteColor, number>>,
+  ) => AthleteColor | null;
 }
 
 /** The executable rules for SportGroup.code ONE_ON_ONE_COMBAT. */

@@ -40,7 +40,10 @@ import {
 } from '@/features/tournament-roster/tournament-roster-tabs';
 import { TournamentMatchesPage } from '@/features/tournament-bracket/tournament-matches-page';
 import { RosterAthleteSelector } from '@/features/admin-management/roster-athlete-selector';
-import { tournamentAthletesQueryOptions, tournamentWeightClassesQueryOptions } from '@/features/admin-management/queries';
+import {
+  tournamentAthletesQueryOptions,
+  tournamentWeightClassesQueryOptions,
+} from '@/features/admin-management/queries';
 
 function TournamentEditor({
   tournament,
@@ -302,13 +305,22 @@ function TournamentEditor({
 }
 
 function MatchCard({ match }: { readonly match: AdminMatch }) {
-  return <li className="rounded-xl border p-4"><Link className="font-bold underline" to={`/admin/matches/${match.id}`}>{match.publicId}</Link></li>;
+  return (
+    <li className="rounded-xl border p-4">
+      <Link className="font-bold underline" to={`/admin/matches/${match.id}`}>
+        {match.publicId}
+      </Link>
+    </li>
+  );
 }
 
 export function TournamentMatchesLegacyRemoved({
   tournament,
   isReadOnly,
-}: { readonly tournament: AdminTournament; readonly isReadOnly: boolean }) {
+}: {
+  readonly tournament: AdminTournament;
+  readonly isReadOnly: boolean;
+}) {
   const queryClient = useQueryClient();
   const matchesQuery = useQuery(tournamentMatchesQueryOptions(tournament.id));
   const weightClassesQuery = useQuery(tournamentWeightClassesQueryOptions(tournament.id));

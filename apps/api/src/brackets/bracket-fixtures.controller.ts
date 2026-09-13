@@ -36,7 +36,8 @@ export class BracketFixturesController {
   constructor(
     @Inject(AdminManagementService)
     private readonly management: AdminManagementService,
-    @Inject(BracketOutcomeService) private readonly outcomes: BracketOutcomeService,
+    @Inject(BracketOutcomeService)
+    private readonly outcomes: BracketOutcomeService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
@@ -70,11 +71,29 @@ export class BracketFixturesController {
     @Body() input: DecideBracketWinnerDto,
     @Req() request: AuthenticatedUserRequest,
   ) {
-    await this.management.assertTournamentAccess(tournamentId, request.user, true);
+    await this.management.assertTournamentAccess(
+      tournamentId,
+      request.user,
+      true,
+    );
     return this.prisma.$transaction(async (tx) => {
-      const fixture = await tx.bracketFixture.findFirst({ where: { id: fixtureId, bracketId, bracket: { tournamentId } }, select: { id: true } });
-      if (!fixture) throw new BadRequestException({ code: 'BRACKET_FIXTURE_NOT_FOUND', message: 'Fixture does not belong to bracket' });
-      return this.outcomes.manuallyDecide(tx, fixtureId, input.entrantId, request.user.id, input.reason.trim(), input.idempotencyKey);
+      const fixture = await tx.bracketFixture.findFirst({
+        where: { id: fixtureId, bracketId, bracket: { tournamentId } },
+        select: { id: true },
+      });
+      if (!fixture)
+        throw new BadRequestException({
+          code: 'BRACKET_FIXTURE_NOT_FOUND',
+          message: 'Fixture does not belong to bracket',
+        });
+      return this.outcomes.manuallyDecide(
+        tx,
+        fixtureId,
+        input.entrantId,
+        request.user.id,
+        input.reason.trim(),
+        input.idempotencyKey,
+      );
     });
   }
 }
