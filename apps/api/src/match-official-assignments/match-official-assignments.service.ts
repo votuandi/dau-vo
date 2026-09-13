@@ -97,7 +97,30 @@ export class MatchOfficialAssignmentsService {
       throw new NotFoundException(
         assignmentError('MATCH_NOT_FOUND', 'Match not found'),
       );
-    return { match };
+    const referees = await this.prisma.tournamentOfficial.findMany({
+      where: {
+        tournamentId: identity.tournamentId,
+        role: TournamentOfficialRole.REFEREE,
+      },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        assignments: { where: { releasedAt: null }, select: { matchId: true } },
+      },
+    });
+    return {
+      match,
+      // Connectivity is deliberately not used for assignment authorization.
+      // It is live/ephemeral and is supplied by the match realtime snapshot.
+      referees: referees.map((referee) => ({
+        id: referee.id,
+        name: referee.name,
+        isActive: referee.isActive,
+        assignedMatchId: referee.assignments[0]?.matchId ?? null,
+      })),
+    };
   }
 
   async claim(matchId: string, identity: ValidatedOfficialSession) {
@@ -338,43 +361,74 @@ export class MatchOfficialAssignmentsService {
       );
       return { before, state: await this.stateInTx(tx, matchId) };
     });
-    this.publishRelease(matchId, identity.tournamentId, result.before.map((x) => x.officialId));
+    this.publishRelease(
+      matchId,
+      identity.tournamentId,
+      result.before.map((x) => x.officialId),
+    );
     return result.state;
   }
 
   private publishAssignments(matchId: string, tournamentId: string): void {
-    void this.prisma.match.findUnique({
-      where: { id: matchId },
-      select: {
-        publicId: true,
-        status: true,
-        officialAssignments: {
-          where: { releasedAt: null },
-          select: { id: true, officialId: true, role: true, refereePosition: true },
-        },
-      },
-    }).then((match) => {
-      if (!match) return;
-      this.routing.publishMatchOfficials({ matchId, matchPublicId: match.publicId, tournamentId });
-      for (const assignment of match.officialAssignments) {
-        this.routing.publishAssignment({
-          officialId: assignment.officialId,
-          tournamentId,
-          assignment: {
-            id: assignment.id,
-            role: assignment.role,
-            refereePosition: assignment.refereePosition,
-            match: { id: matchId, publicId: match.publicId, status: match.status },
+    void this.prisma.match
+      .findUnique({
+        where: { id: matchId },
+        select: {
+          publicId: true,
+          status: true,
+          officialAssignments: {
+            where: { releasedAt: null },
+            select: {
+              id: true,
+              officialId: true,
+              role: true,
+              refereePosition: true,
+            },
           },
+        },
+      })
+      .then((match) => {
+        if (!match) return;
+        this.routing.publishMatchOfficials({
+          matchId,
+          matchPublicId: match.publicId,
+          tournamentId,
         });
-      }
-    }).catch(() => undefined);
+        for (const assignment of match.officialAssignments) {
+          this.routing.publishAssignment({
+            officialId: assignment.officialId,
+            tournamentId,
+            assignment: {
+              id: assignment.id,
+              role: assignment.role,
+              refereePosition: assignment.refereePosition,
+              match: {
+                id: matchId,
+                publicId: match.publicId,
+                status: match.status,
+              },
+            },
+          });
+        }
+      })
+      .catch(() => undefined);
   }
 
-  private publishRelease(matchId: string, tournamentId: string, releasedOfficialIds: string[]): void {
-    void this.prisma.match.findUnique({ where: { id: matchId }, select: { publicId: true } })
+  private publishRelease(
+    matchId: string,
+    tournamentId: string,
+    releasedOfficialIds: string[],
+  ): void {
+    void this.prisma.match
+      .findUnique({ where: { id: matchId }, select: { publicId: true } })
       .then((match) => {
-        if (match) this.routing.publishReleased({ matchId, matchPublicId: match.publicId, tournamentId, releasedOfficialIds });
+        if (match)
+          this.routing.publishReleased({
+            matchId,
+            matchPublicId: match.publicId,
+            tournamentId,
+            releasedOfficialIds,
+          });
       })
       .catch(() => undefined);
   }

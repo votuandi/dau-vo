@@ -23,7 +23,7 @@ import { SuperAdminUsersPage } from '@/features/super-admin/users/users-page';
 import { SuperAdminUserDetailPage } from '@/features/super-admin/users/user-detail-page';
 import { SuperAdminSportGroupsPage } from '@/features/super-admin/sports/sport-groups-page';
 import { SuperAdminSportsPage } from '@/features/super-admin/sports/sports-page';
-import { MatchRole } from '@/types/shared';
+import { TournamentOfficialRole } from '@/types/shared';
 import { RoleAwareIndexRedirect } from './role-aware-index-redirect';
 
 export const router = createBrowserRouter([
@@ -111,11 +111,15 @@ export const router = createBrowserRouter([
       },
       {
         path: 'trong-tai',
-        element: <MatchAccessPage expectedRole={MatchRole.REFEREE} key="referee-access" />,
+        element: (
+          <MatchAccessPage expectedRole={TournamentOfficialRole.REFEREE} key="referee-access" />
+        ),
       },
       {
         path: 'giam-dinh',
-        element: <MatchAccessPage expectedRole={MatchRole.INSPECTOR} key="inspector-access" />,
+        element: (
+          <MatchAccessPage expectedRole={TournamentOfficialRole.INSPECTOR} key="inspector-access" />
+        ),
       },
       {
         path: 'bang-diem',
