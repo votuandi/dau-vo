@@ -122,11 +122,21 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
   }
 
   async function preview(tournamentId: string, weightClassId: string) {
+    const drawSetup = await authenticated(
+      request(app.getHttpServer()).get(
+        `/api/admin/tournaments/${tournamentId}/weight-classes/${weightClassId}/bracket/draw-setup`,
+      ),
+    ).expect(200);
     return authenticated(
       request(app.getHttpServer()).post(
         `/api/admin/tournaments/${tournamentId}/weight-classes/${weightClassId}/bracket/preview`,
       ),
-    ).expect(201);
+    )
+      .send({
+        setupToken: (drawSetup.body as { setupToken: string }).setupToken,
+        designatedByeAthleteIds: [],
+      })
+      .expect(201);
   }
 
   async function setup(count = 3) {

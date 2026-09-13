@@ -12,6 +12,7 @@ export interface BracketPreviewTokenClaims {
   tournamentId: string;
   weightClassId: string;
   placements: readonly { drawPosition: number; athleteId: string | null }[];
+  designatedByeAthleteIds: readonly string[];
   rosterFingerprint: string;
   issuedAt: number;
   expiresAt: number;
@@ -83,6 +84,7 @@ export class BracketPreviewTokenService {
       claims.tournamentId !== context.tournamentId ||
       claims.weightClassId !== context.weightClassId ||
       !Array.isArray(claims.placements) ||
+      !Array.isArray(claims.designatedByeAthleteIds) ||
       typeof claims.rosterFingerprint !== 'string' ||
       typeof claims.nonce !== 'string' ||
       !Number.isSafeInteger(claims.issuedAt) ||
@@ -104,7 +106,10 @@ export class BracketPreviewTokenService {
           placement.drawPosition > 0 &&
           (typeof placement.athleteId === 'string' ||
             placement.athleteId === null),
-      )
+      ) ||
+      !claims.designatedByeAthleteIds.every((id) => typeof id === 'string') ||
+      new Set(claims.designatedByeAthleteIds).size !==
+        claims.designatedByeAthleteIds.length
     )
       throw new Error('BRACKET_PREVIEW_INVALID');
     if (claims.expiresAt <= nowSeconds)

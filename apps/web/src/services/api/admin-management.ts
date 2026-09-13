@@ -294,6 +294,17 @@ export interface BracketPreview {
     readonly fixtures: readonly BracketFixture[];
   }[];
 }
+export interface BracketDrawSetup {
+  readonly setupToken: string;
+  readonly expiresAt: string;
+  readonly summary: BracketPreview['summary'];
+  readonly eligibleAthletes: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly organizationName: string | null;
+    readonly imageUrl: string | null;
+  }[];
+}
 export interface BracketFixture {
   readonly id: string;
   readonly displayReference: string;
@@ -398,10 +409,18 @@ export const adminManagementApi = {
       `admin/tournaments/${encodePathSegment(tournamentId)}/matches`,
       input,
     ),
-  previewBracket: (tournamentId: string, weightClassId: string) =>
+  getBracketDrawSetup: (tournamentId: string, weightClassId: string) =>
+    apiClient.get<BracketDrawSetup>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/draw-setup`,
+    ),
+  previewBracket: (
+    tournamentId: string,
+    weightClassId: string,
+    input: { readonly setupToken: string; readonly designatedByeAthleteIds: readonly string[] },
+  ) =>
     apiClient.post<BracketPreview>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/preview`,
-      {},
+      input,
     ),
   confirmBracket: (
     tournamentId: string,

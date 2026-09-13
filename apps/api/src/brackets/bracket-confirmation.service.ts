@@ -297,6 +297,7 @@ export class BracketConfirmationService {
       tournamentId: c.tournamentId,
       weightClassId: c.weightClassId,
       rosterFingerprint: c.rosterFingerprint,
+      designatedByeAthleteIds: [...c.designatedByeAthleteIds].sort(),
       bracketSize: c.placements.length,
       placements: [...c.placements]
         .sort((a, b) => a.drawPosition - b.drawPosition)

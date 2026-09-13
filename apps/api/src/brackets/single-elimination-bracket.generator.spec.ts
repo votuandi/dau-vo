@@ -156,6 +156,84 @@ describe('generateSingleEliminationBracket', () => {
     expect(redraw.initialEntrants).not.toEqual(first.initialEntrants);
   });
 
+  it.each([
+    [29, 0],
+    [29, 1],
+    [29, 2],
+    [29, 3],
+    [31, 0],
+    [31, 1],
+  ])(
+    'guarantees %i-athlete designated byes (%i selections)',
+    (count, selected) => {
+      const ids = athletes(count);
+      const designatedByeAthleteIds = ids.slice(0, selected);
+      const bracket = generateSingleEliminationBracket({
+        athleteIds: ids,
+        designatedByeAthleteIds,
+        randomSource: new SequenceRandomSource([3, 1, 4, 1, 5, 9, 2, 6]),
+      });
+      const byeRecipients = firstRoundPairs(bracket)
+        .filter(([, blue]) => blue === null)
+        .map(([red]) => red);
+
+      expect(byeRecipients).toHaveLength(bracket.byeCount);
+      expect(
+        designatedByeAthleteIds.every((id) => byeRecipients.includes(id)),
+      ).toBe(true);
+      expect(
+        firstRoundPairs(bracket).every(
+          ([red, blue]) => red !== null || blue !== null,
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it('rejects bye designations when no bye exists or they are invalid', () => {
+    for (const count of [32, 64])
+      expect(() =>
+        generateSingleEliminationBracket({
+          athleteIds: athletes(count),
+          designatedByeAthleteIds: ['athlete-1'],
+          randomSource: zeroRandom,
+        }),
+      ).toThrow('Too many designated bye athletes');
+    expect(() =>
+      generateSingleEliminationBracket({
+        athleteIds: athletes(29),
+        designatedByeAthleteIds: ['athlete-1', 'athlete-1'],
+        randomSource: zeroRandom,
+      }),
+    ).toThrow('Designated bye athlete IDs must be unique');
+  });
+
+  it('redraws positions while retaining designated bye recipients', () => {
+    const input = {
+      athleteIds: athletes(29),
+      designatedByeAthleteIds: ['athlete-1', 'athlete-2'],
+    };
+    const first = generateSingleEliminationBracket({
+      ...input,
+      randomSource: new SequenceRandomSource([0, 0, 0, 0, 0, 0]),
+    });
+    const redraw = generateSingleEliminationBracket({
+      ...input,
+      randomSource: new SequenceRandomSource([1, 1, 1, 1, 1, 1]),
+    });
+    const byes = (bracket: GeneratedSingleEliminationBracket) =>
+      firstRoundPairs(bracket)
+        .filter(([, blue]) => blue === null)
+        .map(([red]) => red);
+
+    expect(byes(first)).toEqual(
+      expect.arrayContaining(input.designatedByeAthleteIds),
+    );
+    expect(byes(redraw)).toEqual(
+      expect.arrayContaining(input.designatedByeAthleteIds),
+    );
+    expect(redraw.initialEntrants).not.toEqual(first.initialEntrants);
+  });
+
   it('does not mutate the input athlete array', () => {
     const athleteIds = athletes(5);
     const original = [...athleteIds];

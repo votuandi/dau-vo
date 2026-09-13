@@ -28,6 +28,9 @@ import { ConfirmBracketDto } from './dto/confirm-bracket.dto';
 import { CancelBracketDto } from './dto/cancel-bracket.dto';
 import { BracketCancellationService } from './bracket-cancellation.service';
 import { BracketDrawSetupService } from './bracket-draw-setup.service';
+// Nest reads this class from decorator metadata at runtime.
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+import { PreviewBracketDto } from './dto/preview-bracket.dto';
 
 const uuid = new ParseUUIDPipe({
   exceptionFactory: () => new BadRequestException(INVALID_ID_ERROR),
@@ -68,10 +71,11 @@ export class BracketPreviewController {
   async preview(
     @Param('tournamentId', uuid) tournamentId: string,
     @Param('weightClassId', uuid) weightClassId: string,
+    @Body() input: PreviewBracketDto,
     @Req() request: AuthenticatedUserRequest,
   ) {
     await this.access.assertTournamentAccess(tournamentId, request.user, true);
-    return this.previews.preview(tournamentId, weightClassId);
+    return this.previews.preview(tournamentId, weightClassId, input);
   }
 
   @Post('confirm')

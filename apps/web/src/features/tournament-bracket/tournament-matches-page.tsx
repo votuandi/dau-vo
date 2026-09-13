@@ -22,6 +22,7 @@ import {
   type AdminMatch,
   type AdminTournament,
   type BracketPreview,
+  type BracketDrawSetup,
   type GeneratedAccessCode,
   type ActiveBracket,
 } from '@/services/api/admin-management';
@@ -95,6 +96,8 @@ export function TournamentMatchesPage({
     bracket.error.status === 404 &&
     bracket.error.body.code === 'BRACKET_NOT_FOUND';
   const [preview, setPreview] = useState<BracketPreview | null>(null);
+  const [drawSetup, setDrawSetup] = useState<BracketDrawSetup | null>(null);
+  const [designatedByeAthleteIds, setDesignatedByeAthleteIds] = useState<readonly string[]>([]);
   // A key is created once for each user action and survives mutation retries.
   const [confirmationKey, setConfirmationKey] = useState<string | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
@@ -110,15 +113,31 @@ export function TournamentMatchesPage({
   const winnerReasonRef = useRef<HTMLTextAreaElement>(null);
   const cancelReasonRef = useRef<HTMLTextAreaElement>(null);
   const draw = useMutation({
-    mutationFn: () => adminManagementApi.previewBracket(tournament.id, selectedId ?? ''),
+    mutationFn: async (designatedByeAthleteIds: readonly string[]) => {
+      const setup = await adminManagementApi.getBracketDrawSetup(tournament.id, selectedId ?? '');
+      return adminManagementApi.previewBracket(tournament.id, selectedId ?? '', {
+        setupToken: setup.setupToken,
+        designatedByeAthleteIds,
+      });
+    },
     onSuccess: (value) => {
       setDialogError(null);
+      setDrawSetup(null);
       setPreview(value);
       setConfirmationKey(crypto.randomUUID());
     },
     onError: (error) => {
       notifyMutationError(error, 'Không thể bốc thăm.');
     },
+  });
+  const setupDraw = useMutation({
+    mutationFn: () => adminManagementApi.getBracketDrawSetup(tournament.id, selectedId ?? ''),
+    onSuccess: (value) => {
+      setDialogError(null);
+      setDesignatedByeAthleteIds([]);
+      setDrawSetup(value);
+    },
+    onError: (error) => notifyMutationError(error, 'Không thể chuẩn bị bốc thăm.'),
   });
   const confirm = useMutation({
     mutationFn: () =>
@@ -296,13 +315,13 @@ export function TournamentMatchesPage({
                 <h3 className="font-black">{active.find((x) => x.id === selectedId)?.name}</h3>
               </div>
               <Button
-                disabled={blocked || draw.isPending}
+                disabled={blocked || draw.isPending || setupDraw.isPending}
                 onClick={() => {
-                  draw.mutate();
+                  setupDraw.mutate();
                 }}
                 type="button"
               >
-                {draw.isPending ? 'Đang bốc thăm…' : 'Bốc thăm, chia nhánh đấu'}
+                {setupDraw.isPending ? 'Đang chuẩn bị…' : 'Bốc thăm, chia nhánh đấu'}
               </Button>
               {bracket.data?.bracket.status === 'ACTIVE' && !isReadOnly ? (
                 <Button
@@ -316,13 +335,68 @@ export function TournamentMatchesPage({
                 </Button>
               ) : null}
             </div>
-            {preview ? (
+            {drawSetup && !preview ? (
+              <section className="mt-5 rounded-xl border border-primary/30 bg-primary/5 p-4">
+                <h4 className="font-black">Chọn VĐV đặc cách</h4>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Chọn tối đa {drawSetup.summary.byeCount} VĐV nhận đặc cách; các vị trí và lựa chọn
+                  còn lại vẫn được bốc ngẫu nhiên.
+                </p>
+                {drawSetup.summary.byeCount > 0 ? (
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {drawSetup.eligibleAthletes.map((athlete) => {
+                      const checked = designatedByeAthleteIds.includes(athlete.id);
+                      return (
+                        <label
+                          className="flex items-center gap-2 rounded border bg-background p-2 text-sm"
+                          key={athlete.id}
+                        >
+                          <input
+                            checked={checked}
+                            disabled={
+                              !checked &&
+                              designatedByeAthleteIds.length >= drawSetup.summary.byeCount
+                            }
+                            onChange={() => {
+                              setDesignatedByeAthleteIds((current) =>
+                                checked
+                                  ? current.filter((id) => id !== athlete.id)
+                                  : [...current, athlete.id],
+                              );
+                            }}
+                            type="checkbox"
+                          />
+                          <span>{athlete.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    Số lượng VĐV vừa đủ, không có đặc cách.
+                  </p>
+                )}
+                <div className="mt-4 flex justify-end gap-3">
+                  <Button onClick={() => setDrawSetup(null)} type="button" variant="outline">
+                    Hủy bỏ
+                  </Button>
+                  <Button
+                    disabled={draw.isPending}
+                    onClick={() => draw.mutate(designatedByeAthleteIds)}
+                    type="button"
+                  >
+                    {draw.isPending ? 'Đang bốc thăm…' : 'Xem trước kết quả'}
+                  </Button>
+                </div>
+              </section>
+            ) : preview ? (
               <BracketPreviewPanel
                 error={dialogError}
                 canConfirm={Boolean(confirmationKey) && !dialogError}
                 onCancel={() => {
                   if (!confirm.isPending) {
                     setPreview(null);
+                    setDrawSetup(null);
                     setConfirmationKey(null);
                     setDialogError(null);
                   }
@@ -331,7 +405,7 @@ export function TournamentMatchesPage({
                   confirm.mutate();
                 }}
                 onRedraw={() => {
-                  draw.mutate();
+                  draw.mutate(designatedByeAthleteIds);
                 }}
                 pending={draw.isPending || confirm.isPending}
                 preview={preview}

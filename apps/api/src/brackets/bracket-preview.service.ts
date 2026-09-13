@@ -15,6 +15,8 @@ import {
   generateSingleEliminationBracket,
 } from './single-elimination-bracket.generator';
 import { BracketPreviewTokenService } from './bracket-preview-token.service';
+import { BracketDrawSetupTokenService } from './bracket-draw-setup-token.service';
+import type { PreviewBracketDto } from './dto/preview-bracket.dto';
 import { MAX_BRACKET_ATHLETES, summarizeBracket } from './bracket-summary';
 
 const TOURNAMENT_NOT_FOUND = {
@@ -33,9 +35,15 @@ export class BracketPreviewService {
     @Inject(SportRulesRegistry) private readonly sportRules: SportRulesRegistry,
     @Inject(BracketPreviewTokenService)
     private readonly tokens: BracketPreviewTokenService,
+    @Inject(BracketDrawSetupTokenService)
+    private readonly setupTokens: BracketDrawSetupTokenService,
   ) {}
 
-  async preview(tournamentId: string, weightClassId: string) {
+  async preview(
+    tournamentId: string,
+    weightClassId: string,
+    input: PreviewBracketDto,
+  ) {
     const tournament = await this.prisma.tournament.findFirst({
       where: { id: tournamentId, softDeletedAt: null },
       select: {
@@ -117,8 +125,41 @@ export class BracketPreviewService {
         code: 'BRACKET_ATHLETE_LIMIT_EXCEEDED',
         message: `Bracket cannot contain more than ${MAX_BRACKET_ATHLETES} athletes`,
       });
+    const rosterFingerprint = this.rosterFingerprint(athletes);
+    try {
+      this.setupTokens.verify(input.setupToken, {
+        tournamentId,
+        weightClassId,
+        rosterFingerprint,
+      });
+    } catch (error) {
+      const code =
+        error instanceof Error && error.message === 'BRACKET_DRAW_SETUP_EXPIRED'
+          ? error.message
+          : 'BRACKET_DRAW_SETUP_INVALID';
+      throw new ConflictException({
+        code,
+        message:
+          code === 'BRACKET_DRAW_SETUP_EXPIRED'
+            ? 'Bracket draw setup has expired'
+            : 'Bracket draw setup is invalid or the eligible roster changed',
+      });
+    }
+    const eligibleIds = new Set(athletes.map((athlete) => athlete.id));
+    const summary = summarizeBracket(athletes.length);
+    if (input.designatedByeAthleteIds.some((id) => !eligibleIds.has(id)))
+      throw new ConflictException({
+        code: 'BRACKET_BYE_ATHLETE_INELIGIBLE',
+        message: 'Every designated bye athlete must be currently eligible',
+      });
+    if (input.designatedByeAthleteIds.length > summary.byeCount)
+      throw new ConflictException({
+        code: 'BRACKET_BYE_SELECTION_EXCESSIVE',
+        message: `At most ${summary.byeCount} athletes may be designated for a bye`,
+      });
     const generated = generateSingleEliminationBracket({
       athleteIds: athletes.map(({ id }) => id),
+      designatedByeAthleteIds: input.designatedByeAthleteIds,
       randomSource: cryptoRandomSource,
       maxAthletes: MAX_BRACKET_ATHLETES,
     });
@@ -131,12 +172,12 @@ export class BracketPreviewService {
           : this.snapshot(byId.get(placement.athleteId)!),
       isBye: placement.athleteId === null,
     }));
-    const rosterFingerprint = this.rosterFingerprint(athletes);
     const token = this.tokens.issue({
       tournamentId,
       weightClassId,
       placements: generated.initialEntrants,
       rosterFingerprint,
+      designatedByeAthleteIds: [...input.designatedByeAthleteIds].sort(),
     });
     return {
       previewToken: token.previewToken,

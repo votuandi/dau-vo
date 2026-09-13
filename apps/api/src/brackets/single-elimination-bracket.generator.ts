@@ -16,6 +16,8 @@ export const cryptoRandomSource: RandomSource = {
 
 export interface GenerateBracketInput {
   athleteIds: readonly string[];
+  /** Athletes that must receive a first-round bye when byes are available. */
+  designatedByeAthleteIds?: readonly string[];
   randomSource: RandomSource;
   /** A caller-controlled operational limit; omitted means no additional cap. */
   maxAthletes?: number;
@@ -98,12 +100,31 @@ export function generateSingleEliminationBracket(
 
   const summary = summarizeBracket(input.athleteIds.length);
   const { bracketSize, byeCount } = summary;
-  const shuffledAthletes = fisherYatesShuffle(
+  const designatedByeAthleteIds = input.designatedByeAthleteIds ?? [];
+  assertValidDesignatedByes(
     input.athleteIds,
+    designatedByeAthleteIds,
+    byeCount,
+  );
+  const designated = new Set(designatedByeAthleteIds);
+  const remainingAthletes = input.athleteIds.filter(
+    (id) => !designated.has(id),
+  );
+  // Select the unconstrained recipients independently and uniformly, then
+  // randomize both recipient positions and the remaining pairings.
+  const additionalByeRecipients = fisherYatesShuffle(
+    remainingAthletes,
+    input.randomSource,
+  ).slice(0, byeCount - designatedByeAthleteIds.length);
+  const byeRecipients = fisherYatesShuffle(
+    [...designatedByeAthleteIds, ...additionalByeRecipients],
     input.randomSource,
   );
-  const byeRecipients = shuffledAthletes.slice(0, byeCount);
-  const contestEntrants = shuffledAthletes.slice(byeCount);
+  const byeRecipientIds = new Set(byeRecipients);
+  const contestEntrants = fisherYatesShuffle(
+    input.athleteIds.filter((id) => !byeRecipientIds.has(id)),
+    input.randomSource,
+  );
   const byePairPositions = chooseByePairPositions(
     bracketSize / 2,
     byeCount,
@@ -117,6 +138,19 @@ export function generateSingleEliminationBracket(
   );
 
   return buildSingleEliminationBracket(initialEntrants);
+}
+
+function assertValidDesignatedByes(
+  athleteIds: readonly string[],
+  designatedByeAthleteIds: readonly string[],
+  byeCount: number,
+): void {
+  if (new Set(designatedByeAthleteIds).size !== designatedByeAthleteIds.length)
+    throw new Error('Designated bye athlete IDs must be unique.');
+  if (designatedByeAthleteIds.some((id) => !athleteIds.includes(id)))
+    throw new Error('Designated bye athletes must be in the bracket.');
+  if (designatedByeAthleteIds.length > byeCount)
+    throw new Error('Too many designated bye athletes.');
 }
 
 /** Builds the durable graph from a previously authenticated preview draw. */

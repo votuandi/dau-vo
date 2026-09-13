@@ -26,6 +26,7 @@ import { DecideBracketWinnerDto } from './dto/decide-bracket-winner.dto';
 import { BracketCancellationService } from './bracket-cancellation.service';
 import { BracketDrawSetupService } from './bracket-draw-setup.service';
 import { CancelBracketDto } from './dto/cancel-bracket.dto';
+import { PreviewBracketDto } from './dto/preview-bracket.dto';
 import { MatchListQueryDto } from '../admin-management/dto/match-list-query.dto';
 
 const tournamentId = '11111111-1111-4111-8111-111111111111';
@@ -128,6 +129,13 @@ describe('bracket and match-filter controller validation', () => {
         'cancel',
       ),
     ).toContain(CancelBracketDto);
+    expect(
+      Reflect.getMetadata(
+        'design:paramtypes',
+        BracketPreviewController.prototype,
+        'preview',
+      ),
+    ).toContain(PreviewBracketDto);
     expect(
       Reflect.getMetadata(
         'design:paramtypes',

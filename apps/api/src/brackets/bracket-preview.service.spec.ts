@@ -49,12 +49,14 @@ function subject(count: number) {
       expiresAt: '2026-09-12T00:05:00.000Z',
     }),
   };
+  const setupTokens = { verify: jest.fn() };
   return {
     prisma,
     service: new BracketPreviewService(
       prisma as unknown as PrismaService,
       rules as unknown as SportRulesRegistry,
       tokens as unknown as BracketPreviewTokenService,
+      setupTokens as never,
     ),
   };
 }
@@ -70,7 +72,10 @@ describe('BracketPreviewService', () => {
     'previews %i eligible athletes without a persistence write',
     async (count, bracketSize, byeCount, roundCount, totalFixtureCount) => {
       const { prisma, service } = subject(count);
-      const result = await service.preview(tournamentId, weightClassId);
+      const result = await service.preview(tournamentId, weightClassId, {
+        setupToken: 'setup-token',
+        designatedByeAthleteIds: [],
+      });
 
       expect(result.summary).toEqual({
         athleteCount: count,
@@ -102,7 +107,10 @@ describe('BracketPreviewService', () => {
     prisma.tournamentBracket.findFirst.mockResolvedValue({ id: 'current' });
 
     await expect(
-      service.preview(tournamentId, weightClassId),
+      service.preview(tournamentId, weightClassId, {
+        setupToken: 'setup-token',
+        designatedByeAthleteIds: [],
+      }),
     ).rejects.toMatchObject({
       response: { code: 'BRACKET_ALREADY_EXISTS' },
     });
