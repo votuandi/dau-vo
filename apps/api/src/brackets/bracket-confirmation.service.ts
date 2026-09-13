@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   ConflictException,
   Inject,
@@ -8,7 +7,6 @@ import {
 import { createHash } from 'node:crypto';
 import {
   AuditEventType,
-  AthleteColor,
   BracketFixtureStatus,
   BracketStatus,
   Prisma,
@@ -21,9 +19,39 @@ import {
   type BracketPreviewTokenClaims,
 } from './bracket-preview-token.service';
 import type { ConfirmBracketDto } from './dto/confirm-bracket.dto';
+import {
+  buildSingleEliminationBracket,
+  type GeneratedSingleEliminationBracket,
+} from './single-elimination-bracket.generator';
 
 const fail = (code: string, message: string) =>
   new ConflictException({ code, message });
+
+const bracketInclude = {
+  championEntrant: true,
+  entrants: {
+    orderBy: [
+      { initialRoundNumber: 'asc' },
+      { initialFixturePosition: 'asc' },
+      { initialSide: 'asc' },
+    ],
+  },
+  fixtures: {
+    orderBy: [{ roundNumber: 'asc' }, { position: 'asc' }],
+    include: {
+      slots: {
+        orderBy: { side: 'asc' },
+        include: { directEntrant: true, resolvedEntrant: true },
+      },
+      match: { select: { id: true, publicId: true, status: true } },
+      winnerEntrant: true,
+    },
+  },
+} satisfies Prisma.TournamentBracketInclude;
+
+type BracketViewRecord = Prisma.TournamentBracketGetPayload<{
+  include: typeof bracketInclude;
+}>;
 
 @Injectable()
 export class BracketConfirmationService {
@@ -67,7 +95,7 @@ export class BracketConfirmationService {
         await tx.$queryRaw`SELECT id FROM tournament_weight_classes WHERE id = ${weightClassId}::uuid AND tournament_id = ${tournamentId}::uuid FOR UPDATE`;
         const existing = await tx.tournamentBracket.findUnique({
           where: { confirmationKey: input.idempotencyKey },
-          include: this.include,
+          include: bracketInclude,
         });
         if (existing) {
           if (existing.confirmationFingerprint !== fingerprint)
@@ -136,6 +164,15 @@ export class BracketConfirmationService {
           );
         const graph = this.graph(claims, new Set(athletes.map((a) => a.id)));
         const byId = new Map(athletes.map((a) => [a.id, a]));
+        const openingByAthleteId = new Map(
+          graph.fixtures.flatMap((fixture) =>
+            fixture.slots.flatMap((slot) =>
+              slot.source.kind === 'ENTRANT'
+                ? [[slot.source.entrantId, fixture] as const]
+                : [],
+            ),
+          ),
+        );
         const bracket = await tx.tournamentBracket.create({
           data: {
             tournamentId,
@@ -151,7 +188,7 @@ export class BracketConfirmationService {
                 .filter((p) => p.athleteId)
                 .map((p) => {
                   const a = byId.get(p.athleteId!)!;
-                  const at = graph.opening.get(p.drawPosition)!;
+                  const at = openingByAthleteId.get(p.athleteId!)!;
                   const paired =
                     claims.placements[
                       p.drawPosition % 2 === 0
@@ -164,9 +201,13 @@ export class BracketConfirmationService {
                     snapshotBirthYear: a.birthYear,
                     snapshotOrganization: a.organization?.name ?? null,
                     snapshotImagePath: a.imagePath,
-                    initialRoundNumber: at.round,
+                    initialRoundNumber: at.roundNumber,
                     initialFixturePosition: at.position,
-                    initialSide: at.side,
+                    initialSide: at.slots.find(
+                      (slot) =>
+                        slot.source.kind === 'ENTRANT' &&
+                        slot.source.entrantId === p.athleteId,
+                    )!.side,
                     receivedBye: paired?.athleteId === null,
                   };
                 }),
@@ -179,19 +220,28 @@ export class BracketConfirmationService {
         );
         const fixtureIds = new Map<string, string>();
         for (const f of graph.fixtures) {
-          const slots = (f.slots as any[]).map((s: any) => ({
+          const slots = f.slots.map((s) => ({
             side: s.side,
-            directEntrantId: s.athleteId ? entrants.get(s.athleteId)! : null,
-            sourceFixtureId: s.source ? fixtureIds.get(s.source)! : null,
-            resolvedEntrantId: s.athleteId ? entrants.get(s.athleteId)! : null,
+            directEntrantId:
+              s.source.kind === 'ENTRANT'
+                ? entrants.get(s.source.entrantId)!
+                : null,
+            sourceFixtureId:
+              s.source.kind === 'FIXTURE_WINNER'
+                ? fixtureIds.get(s.source.fixtureId)!
+                : null,
+            resolvedEntrantId:
+              s.source.kind === 'ENTRANT'
+                ? entrants.get(s.resolvedEntrantId!)!
+                : null,
           }));
           const row = await tx.bracketFixture.create({
             data: {
               bracketId: bracket.id,
-              roundNumber: f.round,
+              roundNumber: f.roundNumber,
               position: f.position,
-              displayReference: `R${f.round}-M${String(f.position).padStart(2, '0')}`,
-              status: slots.every((s: any) => s.resolvedEntrantId)
+              displayReference: f.displayReference,
+              status: slots.every((s) => s.resolvedEntrantId)
                 ? BracketFixtureStatus.READY
                 : BracketFixtureStatus.PENDING_PARTICIPANTS,
               slots: { create: slots },
@@ -221,7 +271,7 @@ export class BracketConfirmationService {
         // request after our initial lookup. Replay it, never create/audit again.
         const winner = await this.prisma.tournamentBracket.findUnique({
           where: { confirmationKey: input.idempotencyKey },
-          include: this.include,
+          include: bracketInclude,
         });
         if (winner) {
           if (winner.confirmationFingerprint === fingerprint)
@@ -283,7 +333,7 @@ export class BracketConfirmationService {
         weightClassId,
         status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
       },
-      include: this.include,
+      include: bracketInclude,
     });
     if (!b)
       throw new NotFoundException({
@@ -294,31 +344,10 @@ export class BracketConfirmationService {
   }
   private get(tx: Prisma.TransactionClient, id: string) {
     return tx.tournamentBracket
-      .findUniqueOrThrow({ where: { id }, include: this.include })
+      .findUniqueOrThrow({ where: { id }, include: bracketInclude })
       .then((b) => this.view(b));
   }
-  private readonly include: Prisma.TournamentBracketInclude = {
-    championEntrant: true,
-    entrants: {
-      orderBy: [
-        { initialRoundNumber: 'asc' },
-        { initialFixturePosition: 'asc' },
-        { initialSide: 'asc' },
-      ],
-    },
-    fixtures: {
-      orderBy: [{ roundNumber: 'asc' }, { position: 'asc' }],
-      include: {
-        slots: {
-          orderBy: { side: 'asc' },
-          include: { directEntrant: true, resolvedEntrant: true },
-        },
-        match: { select: { id: true, publicId: true, status: true } },
-        winnerEntrant: true,
-      },
-    },
-  };
-  private view(b: any) {
+  private view(b: BracketViewRecord) {
     return {
       bracket: {
         id: b.id,
@@ -335,7 +364,10 @@ export class BracketConfirmationService {
       fixtures: b.fixtures,
     };
   }
-  private graph(c: BracketPreviewTokenClaims, eligible: Set<string>) {
+  private graph(
+    c: BracketPreviewTokenClaims,
+    eligible: Set<string>,
+  ): GeneratedSingleEliminationBracket {
     const ids = c.placements
       .map((p) => p.athleteId)
       .filter((x): x is string => x !== null);
@@ -347,54 +379,10 @@ export class BracketConfirmationService {
       ids.some((id) => !eligible.has(id))
     )
       throw fail('BRACKET_GRAPH_INVALID', 'Bracket preview graph is invalid');
-    let nodes: any[] = c.placements.map((p, i) =>
-      p.athleteId ? { athleteId: p.athleteId, draw: i + 1 } : null,
-    );
-    const fixtures: any[] = [];
-    const opening = new Map<number, any>();
-    let round = 1;
-    while (nodes.length > 1) {
-      const next: any[] = [];
-      for (let i = 0; i < nodes.length; i += 2) {
-        const a = nodes[i],
-          b = nodes[i + 1];
-        if (!a && !b)
-          throw fail('BRACKET_GRAPH_INVALID', 'Bracket has a double bye');
-        if (!a || !b) {
-          next.push(a ?? b);
-          continue;
-        }
-        const f = {
-          id: `r${round}-m${i / 2 + 1}`,
-          round,
-          position: i / 2 + 1,
-          slots: [
-            { side: AthleteColor.RED, athleteId: a.athleteId, source: a.id },
-            { side: AthleteColor.BLUE, athleteId: b.athleteId, source: b.id },
-          ],
-        };
-        fixtures.push(f);
-        if (a.draw)
-          opening.set(a.draw, {
-            round,
-            position: f.position,
-            side: AthleteColor.RED,
-            bye: !b,
-          });
-        if (b.draw)
-          opening.set(b.draw, {
-            round,
-            position: f.position,
-            side: AthleteColor.BLUE,
-            bye: !a,
-          });
-        next.push({ id: f.id });
-      }
-      nodes = next;
-      round++;
+    try {
+      return buildSingleEliminationBracket(c.placements);
+    } catch {
+      throw fail('BRACKET_GRAPH_INVALID', 'Bracket preview graph is invalid');
     }
-    if (fixtures.length !== ids.length - 1)
-      throw fail('BRACKET_GRAPH_INVALID', 'Bracket fixture count is invalid');
-    return { fixtures, opening, roundCount: round - 1 };
   }
 }

@@ -258,8 +258,12 @@ separate audited remediation is approved.
 Confirmed brackets are stored in `tournament_brackets`, `bracket_entrants`,
 `bracket_fixtures`, and `bracket_slots`. The authoritative operational link is
 the nullable, unique `matches.bracket_fixture_id`; existing and manually
-created matches leave it null. `tournament_brackets_one_active_per_weight_class_key`
-is a PostgreSQL partial unique index because Prisma cannot model it.
+created matches leave it null. `tournament_brackets_one_current_per_weight_class_key`
+is a PostgreSQL partial unique index over `ACTIVE` and `COMPLETED` brackets
+because Prisma cannot model it. Migration `20260913160000_bracket_query_index_cleanup`
+removes only indexes duplicated exactly by those unique constraints; it does not
+change the current-bracket, fixture-order, linked-match, roster-eligibility, or
+filtered-match query access paths.
 
 The migration uses a check constraint for exactly one slot source and direct
 slot resolution, plus a trigger to ensure slot sources, resolutions, and

@@ -8,6 +8,12 @@ export {
 } from './enums';
 
 export { RealtimeEvent } from './realtime';
+export {
+  bracketFixtureStatusLabel,
+  bracketRoundLabel,
+  isBracketFixtureAwaitingWinner,
+} from './bracket-presentation';
+export type { BracketFixtureState } from './bracket-presentation';
 export type {
   MatchPresenceEntry,
   MatchReadiness,

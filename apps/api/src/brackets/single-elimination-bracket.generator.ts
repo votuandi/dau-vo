@@ -1,4 +1,5 @@
 import { randomInt } from 'node:crypto';
+import { bracketRoundLabel } from '@martial-arts-scoring/shared-types';
 
 export type BracketSide = 'RED' | 'BLUE';
 
@@ -94,12 +95,8 @@ export function generateSingleEliminationBracket(
 ): GeneratedSingleEliminationBracket {
   assertValidAthletes(input.athleteIds, input.maxAthletes);
 
-  const athleteCount = input.athleteIds.length;
-  const bracketSize = nextPowerOfTwo(athleteCount);
-  const byeCount = bracketSize - athleteCount;
-  const roundCount = Math.log2(bracketSize);
-  const firstRoundMatchCount = athleteCount - bracketSize / 2;
-  const totalFixtureCount = athleteCount - 1;
+  const bracketSize = nextPowerOfTwo(input.athleteIds.length);
+  const byeCount = bracketSize - input.athleteIds.length;
   const shuffledAthletes = fisherYatesShuffle(
     input.athleteIds,
     input.randomSource,
@@ -118,6 +115,34 @@ export function generateSingleEliminationBracket(
     contestEntrants,
   );
 
+  return buildSingleEliminationBracket(initialEntrants);
+}
+
+/** Builds the durable graph from a previously authenticated preview draw. */
+export function buildSingleEliminationBracket(
+  initialEntrants: readonly BracketEntrantPlacement[],
+): GeneratedSingleEliminationBracket {
+  const athleteIds = initialEntrants.flatMap((placement) =>
+    placement.athleteId === null ? [] : [placement.athleteId],
+  );
+  if (
+    initialEntrants.length < 2 ||
+    initialEntrants.length & (initialEntrants.length - 1) ||
+    athleteIds.length < 2 ||
+    new Set(athleteIds).size !== athleteIds.length ||
+    initialEntrants.some(
+      (placement, index) => placement.drawPosition !== index + 1,
+    )
+  ) {
+    throw new Error('Bracket placements are invalid.');
+  }
+
+  const athleteCount = athleteIds.length;
+  const bracketSize = initialEntrants.length;
+  const byeCount = bracketSize - athleteCount;
+  const roundCount = Math.log2(bracketSize);
+  const firstRoundMatchCount = athleteCount - bracketSize / 2;
+  const totalFixtureCount = athleteCount - 1;
   const fixtures: MutableFixture[] = [];
   const fixturesByRound = new Map<number, MutableFixture[]>();
   let advancements = initialEntrants.map(toAdvancement);
@@ -160,7 +185,7 @@ export function generateSingleEliminationBracket(
     roundCount,
     firstRoundMatchCount,
     totalFixtureCount,
-    initialEntrants,
+    initialEntrants: [...initialEntrants],
     rounds,
     fixtures,
   };
@@ -339,16 +364,8 @@ function createRounds(
     const roundNumber = index + 1;
     return {
       roundNumber,
-      label: roundLabel(roundNumber, roundCount),
+      label: bracketRoundLabel(roundNumber, roundCount),
       fixtures: fixturesByRound.get(roundNumber) ?? [],
     };
   });
-}
-
-function roundLabel(roundNumber: number, roundCount: number): string {
-  const roundsFromFinal = roundCount - roundNumber;
-  if (roundsFromFinal === 0) return 'Chung kết';
-  if (roundsFromFinal === 1) return 'Bán kết';
-  if (roundsFromFinal === 2) return 'Tứ kết';
-  return `Vòng ${roundNumber}`;
 }

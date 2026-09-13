@@ -441,7 +441,6 @@ model Match {
   @@index([tournamentId], map: "matches_tournament_id_idx")
   @@index([tournamentId, weightClassId], map: "matches_tournament_id_weight_class_id_idx")
   @@index([status], map: "matches_status_idx")
-  @@index([bracketFixtureId], map: "matches_bracket_fixture_id_idx")
   @@map("matches")
 }
 
@@ -518,7 +517,6 @@ model BracketFixture {
   sourceSlots     BracketSlot[]        @relation("BracketSlotSourceFixture")
 
   @@unique([bracketId, roundNumber, position], map: "bracket_fixtures_bracket_id_round_number_position_key")
-  @@index([bracketId, roundNumber, position], map: "bracket_fixtures_bracket_id_round_number_position_idx")
   @@index([winnerEntrantId], map: "bracket_fixtures_winner_entrant_id_idx")
   @@map("bracket_fixtures")
 }

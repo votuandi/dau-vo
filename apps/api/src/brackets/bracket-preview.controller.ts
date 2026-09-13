@@ -23,6 +23,8 @@ import { BracketConfirmationService } from './bracket-confirmation.service';
 // Nest reads this class from decorator metadata at runtime.
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { ConfirmBracketDto } from './dto/confirm-bracket.dto';
+// Nest reads this class from decorator metadata at runtime.
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { CancelBracketDto } from './dto/cancel-bracket.dto';
 import { BracketCancellationService } from './bracket-cancellation.service';
 

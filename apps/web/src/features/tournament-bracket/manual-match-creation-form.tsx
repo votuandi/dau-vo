@@ -1,4 +1,4 @@
-import { useEffect, useState, type SyntheticEvent } from 'react';
+import { useEffect, useMemo, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -48,7 +48,7 @@ export function ManualMatchCreationForm({
     }),
     enabled: Boolean(weightClass),
   });
-  const athletes = athletesQuery.data?.items ?? [];
+  const athletes = useMemo(() => athletesQuery.data?.items ?? [], [athletesQuery.data?.items]);
   useEffect(() => {
     setRedAthleteId(null);
     setBlueAthleteId(null);
@@ -60,13 +60,17 @@ export function ManualMatchCreationForm({
     if (blueAthleteId && !ids.has(blueAthleteId)) setBlueAthleteId(null);
   }, [athletes, blueAthleteId, redAthleteId]);
   const create = useMutation({
-    mutationFn: () =>
-      adminManagementApi.createMatch(tournament.id, {
+    mutationFn: () => {
+      if (!redAthleteId || !blueAthleteId) {
+        throw new Error('Chọn đủ hai vận động viên trước khi tạo trận đấu.');
+      }
+      return adminManagementApi.createMatch(tournament.id, {
         athletes: [
-          { color: AthleteColor.RED, athleteId: redAthleteId! },
-          { color: AthleteColor.BLUE, athleteId: blueAthleteId! },
+          { color: AthleteColor.RED, athleteId: redAthleteId },
+          { color: AthleteColor.BLUE, athleteId: blueAthleteId },
         ],
-      }),
+      });
+    },
     onSuccess: (response) => {
       setCreated(response);
       setRedAthleteId(null);
@@ -127,7 +131,9 @@ export function ManualMatchCreationForm({
           excludedAthleteId={blueAthleteId}
           label="Góc Đỏ (RED)"
           loading={athletesQuery.isPending}
-          onChange={(id) => setRedAthleteId(id || null)}
+          onChange={(id) => {
+            setRedAthleteId(id || null);
+          }}
           selectedAthleteId={redAthleteId}
           weightClassName={weightClass?.name}
         />
@@ -138,7 +144,9 @@ export function ManualMatchCreationForm({
           excludedAthleteId={redAthleteId}
           label="Góc Xanh (BLUE)"
           loading={athletesQuery.isPending}
-          onChange={(id) => setBlueAthleteId(id || null)}
+          onChange={(id) => {
+            setBlueAthleteId(id || null);
+          }}
           selectedAthleteId={blueAthleteId}
           weightClassName={weightClass?.name}
         />
@@ -172,7 +180,9 @@ export function ManualMatchCreationForm({
           <GeneratedAccessCodesPanel
             accessCodes={created.accessCodes}
             matchPublicId={created.match.publicId}
-            onDismiss={() => setCreated(null)}
+            onDismiss={() => {
+              setCreated(null);
+            }}
             title={`Mã truy cập trận ${created.match.publicId}`}
           />
           <Link

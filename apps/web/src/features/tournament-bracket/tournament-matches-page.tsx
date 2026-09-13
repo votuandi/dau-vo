@@ -213,7 +213,9 @@ export function TournamentMatchesPage({
         queryKey: bracketQueryKeys.detail(tournament.id, selectedId ?? ''),
       });
     },
-    onError: (error) => notifyMutationError(error, 'Không thể hủy nhánh đấu.'),
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể hủy nhánh đấu.');
+    },
   });
   const counts = useMemo(
     () =>
@@ -302,8 +304,14 @@ export function TournamentMatchesPage({
               >
                 {draw.isPending ? 'Đang bốc thăm…' : 'Bốc thăm, chia nhánh đấu'}
               </Button>
-              {bracket.data && bracket.data.bracket.status === 'ACTIVE' && !isReadOnly ? (
-                <Button onClick={() => setCancelOpen(true)} type="button" variant="outline">
+              {bracket.data?.bracket.status === 'ACTIVE' && !isReadOnly ? (
+                <Button
+                  onClick={() => {
+                    setCancelOpen(true);
+                  }}
+                  type="button"
+                  variant="outline"
+                >
                   Hủy / bốc thăm lại
                 </Button>
               ) : null}
@@ -343,7 +351,7 @@ export function TournamentMatchesPage({
                   Thử lại
                 </Button>
               </div>
-            ) : bracket.isError && !isNoBracket ? (
+            ) : (
               <div
                 className="mt-5 rounded-xl border border-destructive/30 bg-destructive/5 p-4"
                 role="alert"
@@ -359,8 +367,6 @@ export function TournamentMatchesPage({
                   Thử lại
                 </Button>
               </div>
-            ) : (
-              <p className="mt-5 text-sm text-muted-foreground">{reason}</p>
             )}
           </>
         ) : (
@@ -437,14 +443,18 @@ export function TournamentMatchesPage({
         <Dialog
           description="Thao tác này lưu nhánh cũ vào lịch sử và không xóa mã truy cập hay dữ liệu trận đấu."
           initialFocusRef={cancelReasonRef}
-          onClose={() => setCancelOpen(false)}
+          onClose={() => {
+            setCancelOpen(false);
+          }}
           pending={cancelBracket.isPending}
           title="Hủy nhánh đấu?"
         >
           <textarea
             className="mt-4 w-full rounded border p-2"
             maxLength={500}
-            onChange={(e) => setCancelReason(e.target.value)}
+            onChange={(e) => {
+              setCancelReason(e.target.value);
+            }}
             placeholder="Lý do hủy (bắt buộc)"
             ref={cancelReasonRef}
             value={cancelReason}
@@ -452,14 +462,18 @@ export function TournamentMatchesPage({
           <div className="mt-4 flex gap-2">
             <Button
               disabled={!cancelReason.trim() || cancelBracket.isPending}
-              onClick={() => cancelBracket.mutate()}
+              onClick={() => {
+                cancelBracket.mutate();
+              }}
               type="button"
             >
               Xác nhận hủy
             </Button>
             <Button
               disabled={cancelBracket.isPending}
-              onClick={() => setCancelOpen(false)}
+              onClick={() => {
+                setCancelOpen(false);
+              }}
               type="button"
               variant="outline"
             >

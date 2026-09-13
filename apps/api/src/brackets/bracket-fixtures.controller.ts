@@ -67,6 +67,7 @@ export class BracketFixturesController {
   }
 
   @Post(':fixtureId/decide-winner')
+  @Header('Cache-Control', 'no-store')
   async decideWinner(
     @Param('tournamentId', uuid) tournamentId: string,
     @Param('bracketId', uuid) bracketId: string,
