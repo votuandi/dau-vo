@@ -92,20 +92,31 @@ export interface PresenceUpdatedPayload {
 }
 
 export interface MatchStartReadinessDetails {
-  referee1Connected: boolean;
-  referee2Connected: boolean;
-  referee3Connected: boolean;
+  requiredRefereeCount?: number;
+  assignedRefereeCount?: number;
+  connectedRefereeCount?: number;
+  referees: Array<{
+    officialId: string;
+    name: string;
+    position: number;
+    assigned: boolean;
+    connected: boolean;
+  }>;
+  inspector: { officialId: string | null; assigned: boolean; connected: boolean };
+  missingRequirements: string[];
   scoreboardConnectedCount: number;
 }
 
 export interface MatchReadiness {
   canStartRound: boolean;
-  missingRequirements: Array<'REFEREE_1' | 'REFEREE_2' | 'REFEREE_3' | 'SCOREBOARD'>;
-  referees: {
-    REFEREE_1: boolean;
-    REFEREE_2: boolean;
-    REFEREE_3: boolean;
+  missingRequirements: string[];
+  requiredRefereeCount?: number;
+  assignedRefereeCount?: number;
+  connectedRefereeCount?: number;
+  referees: MatchStartReadinessDetails['referees'] | {
+    REFEREE_1: boolean; REFEREE_2: boolean; REFEREE_3: boolean;
   };
+  inspector?: MatchStartReadinessDetails['inspector'];
   scoreboardConnectedCount: number;
 }
 
@@ -307,7 +318,10 @@ export interface VoteSubmitError {
 export interface VoteAcceptedPayload {
   athlete: AthleteColor;
   matchPublicId: string;
-  refereeSlot: RefereeSlot;
+  assignmentId?: string;
+  refereePosition?: number;
+  /** Present only when rendering historical three-slot votes. */
+  refereeSlot?: RefereeSlot;
   scoringWindowId: string;
   serverReceivedAt: string;
 }
@@ -341,7 +355,9 @@ export interface ScoringWindowResolvedPayload {
   matchPublicId: string;
   votes: Array<{
     athlete: AthleteColor;
-    refereeSlot: RefereeSlot;
+    assignmentId: string | null;
+    refereePosition: number | null;
+    refereeSlot?: RefereeSlot | null;
     serverReceivedAt: string;
   }>;
   window: {

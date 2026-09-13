@@ -286,12 +286,7 @@ export class RealtimeGateway
       );
       return { error: ROUND_START_FAILED_ERROR, ok: false };
     }
-    if (
-      !readiness.referee1Connected ||
-      !readiness.referee2Connected ||
-      !readiness.referee3Connected ||
-      readiness.scoreboardConnectedCount < 1
-    ) {
+    if (readiness.missingRequirements.length > 0) {
       return {
         error: { ...MATCH_PARTICIPANTS_NOT_READY_ERROR, details: readiness },
         ok: false,
@@ -587,6 +582,36 @@ export class RealtimeGateway
   ): Promise<VoteSubmitResponse> {
     if (this.isScoreboardSocket(client)) {
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    }
+    if (client.data.connectionKind === 'official') {
+      const official = await this.revalidateOfficial(client);
+      const assignment = official?.assignment;
+      if (!official || !assignment || assignment.role !== 'REFEREE')
+        return { error: VOTE_FORBIDDEN_ERROR, ok: false };
+      if (!this.isVotePayload(payload))
+        return { error: VOTE_INVALID_ATHLETE_ERROR, ok: false };
+      try {
+        const transition = await this.scoring.submitVote({
+          athlete: payload.athlete,
+          matchId: assignment.match.id,
+          officialSessionId: official.sessionId,
+        });
+        if (transition.resolvedBeforeAcceptance)
+          await this.publishScoringResolution(transition.resolvedBeforeAcceptance);
+        if (transition.opened)
+          this.server.to(matchRoom(transition.opened.matchPublicId)).emit(RealtimeEvent.SCORING_WINDOW_OPENED, transition.opened);
+        client.emit(RealtimeEvent.VOTE_ACCEPTED, transition.accepted);
+        return { ok: true, vote: transition.accepted };
+      } catch (error: unknown) {
+        if (error instanceof DuplicateRefereeVoteError) return { error: VOTE_ALREADY_SUBMITTED_ERROR, ok: false };
+        if (error instanceof InactiveVoteSessionError) return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+        if (error instanceof MatchNotRunningForVoteError) return { error: VOTE_MATCH_NOT_RUNNING_ERROR, ok: false };
+        if (error instanceof RoundPausedForVoteError) return { error: ROUND_PAUSED_ERROR, ok: false };
+        if (error instanceof RoundEndedForVoteError) return { error: VOTE_ROUND_ENDED_ERROR, ok: false };
+        if (error instanceof PriorScoringWindowPendingError) return { error: VOTE_SCORING_WINDOW_PENDING_ERROR, ok: false };
+        this.logger.error({ error, assignmentId: assignment.id }, 'Assigned referee vote failed');
+        return { error: VOTE_FAILED_ERROR, ok: false };
+      }
     }
     const identity = await this.revalidate(client);
 

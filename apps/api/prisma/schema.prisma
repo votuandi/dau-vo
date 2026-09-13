@@ -805,9 +805,11 @@ model RefereeVote {
   id                   String        @id(map: "referee_votes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   scoringWindowId      String        @map("scoring_window_id") @db.Uuid
   matchId              String        @map("match_id") @db.Uuid
-  refereeSlot          RefereeSlot   @map("referee_slot")
+  // Legacy votes retain their slot. Assignment-backed votes deliberately do
+  // not manufacture one of the old three slots.
+  refereeSlot          RefereeSlot?  @map("referee_slot")
   athleteColor         AthleteColor  @map("athlete_color")
-  sessionId            String        @map("session_id") @db.Uuid
+  sessionId            String?       @map("session_id") @db.Uuid
   assignmentId         String?       @map("assignment_id") @db.Uuid
   serverReceivedAt     DateTime      @default(now()) @map("server_received_at") @db.Timestamptz(3)
   clientPressedAt      DateTime?     @map("client_pressed_at") @db.Timestamptz(3)
@@ -816,10 +818,9 @@ model RefereeVote {
   createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   scoringWindow        ScoringWindow @relation(fields: [scoringWindowId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "referee_votes_scoring_window_id_fkey")
   match                Match         @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "referee_votes_match_id_fkey")
-  session              MatchSession  @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "referee_votes_session_id_fkey")
+  session              MatchSession? @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "referee_votes_session_id_fkey")
   assignment           MatchOfficialAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "referee_votes_assignment_id_fkey")
 
-  @@unique([scoringWindowId, refereeSlot], map: "referee_votes_scoring_window_id_referee_slot_key")
   @@index([scoringWindowId], map: "referee_votes_scoring_window_id_idx")
   @@index([matchId], map: "referee_votes_match_id_idx")
   @@index([sessionId], map: "referee_votes_session_id_idx")
