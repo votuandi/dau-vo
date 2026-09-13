@@ -189,7 +189,7 @@ model User {
   createdPricingPlanVersions PricingPlanVersion[] @relation("PricingPlanVersionCreator")
   adminEntitlement           AdminEntitlement?
   subscriptionOrders         SubscriptionOrder[]
-  confirmedBrackets          TournamentBracket[] @relation("TournamentBracketConfirmedBy")
+  confirmedBrackets          TournamentBracket[]  @relation("TournamentBracketConfirmedBy")
 
   @@map("users")
 }
@@ -212,7 +212,7 @@ model Tournament {
   createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   matches        Match[]
-  organizations          TournamentOrganization[]
+  organizations  TournamentOrganization[]
   weightClasses  TournamentWeightClass[]
   athletes       TournamentAthlete[]
   brackets       TournamentBracket[]
@@ -231,12 +231,12 @@ model Tournament {
 // that makes an image unreachable, then deleted only after an idempotent storage
 // delete succeeds. This keeps object I/O outside database transactions.
 model MediaDeletion {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  storageKey  String   @unique(map: "media_deletions_storage_key_key") @map("storage_key") @db.VarChar(1024)
-  reason      String   @db.VarChar(100)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  attempts    Int      @default(0)
-  lastError   String?  @map("last_error") @db.Text
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  storageKey  String    @unique(map: "media_deletions_storage_key_key") @map("storage_key") @db.VarChar(1024)
+  reason      String    @db.VarChar(100)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  attempts    Int       @default(0)
+  lastError   String?   @map("last_error") @db.Text
   lastTriedAt DateTime? @map("last_tried_at") @db.Timestamptz(3)
 
   @@index([createdAt], map: "media_deletions_created_at_idx")
@@ -312,8 +312,8 @@ model PricingPlanVersion {
   baseAmountVnd                Int                   @map("base_amount_vnd")
   baseDurationMonths           Int                   @map("base_duration_months")
   baseTournamentLimit          Int                   @map("base_tournament_limit")
-  durationAddonUnitAmountVnd           Int                   @map("duration_addon_unit_amount_vnd")
-  tournamentAddonUnitAmountVnd         Int                   @map("tournament_addon_unit_amount_vnd")
+  durationAddonUnitAmountVnd   Int                   @map("duration_addon_unit_amount_vnd")
+  tournamentAddonUnitAmountVnd Int                   @map("tournament_addon_unit_amount_vnd")
   active                       Boolean               @default(false)
   activatedAt                  DateTime?             @map("activated_at") @db.Timestamptz(3)
   createdByUserId              String?               @map("created_by_user_id") @db.Uuid
@@ -386,22 +386,22 @@ model TournamentWeightClass {
 }
 
 model TournamentAthlete {
-  id            String                @id(map: "tournament_athletes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tournamentId  String                @map("tournament_id") @db.Uuid
-  organizationId        String?               @map("organization_id") @db.Uuid
-  weightClassId String                @map("weight_class_id") @db.Uuid
-  name          String                @db.VarChar(255)
-  birthYear     Int                   @map("birth_year") @db.SmallInt
-  details       String?               @db.Text
-  imagePath     String?               @map("image_path") @db.VarChar(1024)
-  isActive      Boolean               @default(true) @map("is_active")
-  deactivatedAt DateTime?             @map("deactivated_at") @db.Timestamptz(3)
-  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  tournament    Tournament            @relation(fields: [tournamentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  organization          TournamentOrganization?       @relation(fields: [tournamentId, organizationId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade)
-  weightClass   TournamentWeightClass @relation(fields: [tournamentId, weightClassId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade)
-  matchAthletes MatchAthlete[]
+  id              String                  @id(map: "tournament_athletes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tournamentId    String                  @map("tournament_id") @db.Uuid
+  organizationId  String?                 @map("organization_id") @db.Uuid
+  weightClassId   String                  @map("weight_class_id") @db.Uuid
+  name            String                  @db.VarChar(255)
+  birthYear       Int                     @map("birth_year") @db.SmallInt
+  details         String?                 @db.Text
+  imagePath       String?                 @map("image_path") @db.VarChar(1024)
+  isActive        Boolean                 @default(true) @map("is_active")
+  deactivatedAt   DateTime?               @map("deactivated_at") @db.Timestamptz(3)
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tournament      Tournament              @relation(fields: [tournamentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  organization    TournamentOrganization? @relation(fields: [tournamentId, organizationId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade)
+  weightClass     TournamentWeightClass   @relation(fields: [tournamentId, weightClassId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade)
+  matchAthletes   MatchAthlete[]
   bracketEntrants BracketEntrant[]
 
   @@unique([tournamentId, id], map: "tournament_athletes_tournament_id_id_key")
@@ -412,33 +412,33 @@ model TournamentAthlete {
 }
 
 model Match {
-  id               String                 @id(map: "matches_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  publicId         String                 @unique(map: "matches_public_id_key") @map("public_id") @db.VarChar(32)
-  tournamentId     String                 @map("tournament_id") @db.Uuid
-  weightClassId    String?                @map("weight_class_id") @db.Uuid
-  bracketFixtureId String?                @unique(map: "matches_bracket_fixture_id_key") @map("bracket_fixture_id") @db.Uuid
-  status           MatchStatus            @default(WAITING)
-  currentRound     Int?                   @map("current_round") @db.SmallInt
-  roundDurationMs  Int                    @map("round_duration_ms")
-  breakDurationMs  Int                    @map("break_duration_ms")
-  startedAt        DateTime?              @map("started_at") @db.Timestamptz(3)
-  finishedAt       DateTime?              @map("finished_at") @db.Timestamptz(3)
-  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt        DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  tournament       Tournament             @relation(fields: [tournamentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "matches_tournament_id_fkey")
-  weightClass      TournamentWeightClass? @relation(fields: [tournamentId, weightClassId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade, map: "matches_tournament_weight_class_id_fkey")
-  athletes         MatchAthlete[] @relation("MatchAthletesByMatchId")
-  athletesByTournament MatchAthlete[] @relation("MatchAthletesByTournament")
-  accessCodes      MatchAccessCode[]
-  sessions         MatchSession[]
-  rounds           Round[]
-  resultOperations MatchResultOperation[]
-  scoringWindows   ScoringWindow[]
-  refereeVotes     RefereeVote[]
-  scoreEvents      ScoreEvent[]
-  penalties        Penalty[]
-  auditLogs        AuditLog[]
-  bracketFixture   BracketFixture?        @relation("BracketFixtureMatch", fields: [bracketFixtureId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "matches_bracket_fixture_id_fkey")
+  id                   String                 @id(map: "matches_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  publicId             String                 @unique(map: "matches_public_id_key") @map("public_id") @db.VarChar(32)
+  tournamentId         String                 @map("tournament_id") @db.Uuid
+  weightClassId        String?                @map("weight_class_id") @db.Uuid
+  bracketFixtureId     String?                @unique(map: "matches_bracket_fixture_id_key") @map("bracket_fixture_id") @db.Uuid
+  status               MatchStatus            @default(WAITING)
+  currentRound         Int?                   @map("current_round") @db.SmallInt
+  roundDurationMs      Int                    @map("round_duration_ms")
+  breakDurationMs      Int                    @map("break_duration_ms")
+  startedAt            DateTime?              @map("started_at") @db.Timestamptz(3)
+  finishedAt           DateTime?              @map("finished_at") @db.Timestamptz(3)
+  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tournament           Tournament             @relation(fields: [tournamentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "matches_tournament_id_fkey")
+  weightClass          TournamentWeightClass? @relation(fields: [tournamentId, weightClassId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade, map: "matches_tournament_weight_class_id_fkey")
+  athletes             MatchAthlete[]         @relation("MatchAthletesByMatchId")
+  athletesByTournament MatchAthlete[]         @relation("MatchAthletesByTournament")
+  accessCodes          MatchAccessCode[]
+  sessions             MatchSession[]
+  rounds               Round[]
+  resultOperations     MatchResultOperation[]
+  scoringWindows       ScoringWindow[]
+  refereeVotes         RefereeVote[]
+  scoreEvents          ScoreEvent[]
+  penalties            Penalty[]
+  auditLogs            AuditLog[]
+  bracketFixture       BracketFixture?        @relation("BracketFixtureMatch", fields: [bracketFixtureId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "matches_bracket_fixture_id_fkey")
 
   @@unique([id, tournamentId], map: "matches_id_tournament_id_key")
   @@index([tournamentId], map: "matches_tournament_id_idx")
@@ -449,28 +449,28 @@ model Match {
 
 // Confirmed bracket aggregate. Preview data is intentionally never represented here.
 model TournamentBracket {
-  id                 String        @id(map: "tournament_brackets_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tournamentId       String        @map("tournament_id") @db.Uuid
-  weightClassId      String        @map("weight_class_id") @db.Uuid
-  status             BracketStatus @default(ACTIVE)
-  athleteCount       Int           @map("athlete_count")
-  bracketSize        Int           @map("bracket_size")
-  roundCount         Int           @map("round_count")
-  confirmationKey    String        @unique(map: "tournament_brackets_confirmation_key_key") @map("confirmation_key") @db.VarChar(255)
-  confirmationFingerprint String   @default("") @map("confirmation_fingerprint") @db.Char(64)
-  confirmedByUserId  String?       @map("confirmed_by_user_id") @db.Uuid
-  confirmedAt        DateTime      @default(now()) @map("confirmed_at") @db.Timestamptz(3)
-  completedAt        DateTime?     @map("completed_at") @db.Timestamptz(3)
-  cancelledAt        DateTime?     @map("cancelled_at") @db.Timestamptz(3)
-  championEntrantId  String?       @map("champion_entrant_id") @db.Uuid
-  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  tournament         Tournament    @relation(fields: [tournamentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "tournament_brackets_tournament_id_fkey")
-  weightClass        TournamentWeightClass @relation(fields: [tournamentId, weightClassId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade, map: "tournament_brackets_weight_class_id_fkey")
-  confirmedBy        User?         @relation("TournamentBracketConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "tournament_brackets_confirmed_by_user_id_fkey")
-  entrants           BracketEntrant[]
-  fixtures           BracketFixture[]
-  championEntrant    BracketEntrant? @relation("TournamentBracketChampion", fields: [championEntrantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  id                      String                @id(map: "tournament_brackets_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tournamentId            String                @map("tournament_id") @db.Uuid
+  weightClassId           String                @map("weight_class_id") @db.Uuid
+  status                  BracketStatus         @default(ACTIVE)
+  athleteCount            Int                   @map("athlete_count")
+  bracketSize             Int                   @map("bracket_size")
+  roundCount              Int                   @map("round_count")
+  confirmationKey         String                @unique(map: "tournament_brackets_confirmation_key_key") @map("confirmation_key") @db.VarChar(255)
+  confirmationFingerprint String                @default("") @map("confirmation_fingerprint") @db.Char(64)
+  confirmedByUserId       String?               @map("confirmed_by_user_id") @db.Uuid
+  confirmedAt             DateTime              @default(now()) @map("confirmed_at") @db.Timestamptz(3)
+  completedAt             DateTime?             @map("completed_at") @db.Timestamptz(3)
+  cancelledAt             DateTime?             @map("cancelled_at") @db.Timestamptz(3)
+  championEntrantId       String?               @map("champion_entrant_id") @db.Uuid
+  createdAt               DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tournament              Tournament            @relation(fields: [tournamentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "tournament_brackets_tournament_id_fkey")
+  weightClass             TournamentWeightClass @relation(fields: [tournamentId, weightClassId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade, map: "tournament_brackets_weight_class_id_fkey")
+  confirmedBy             User?                 @relation("TournamentBracketConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "tournament_brackets_confirmed_by_user_id_fkey")
+  entrants                BracketEntrant[]
+  fixtures                BracketFixture[]
+  championEntrant         BracketEntrant?       @relation("TournamentBracketChampion", fields: [championEntrantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([id, tournamentId], map: "tournament_brackets_id_tournament_id_key")
   @@index([tournamentId, weightClassId], map: "tournament_brackets_tournament_id_weight_class_id_idx")
@@ -478,23 +478,23 @@ model TournamentBracket {
 }
 
 model BracketEntrant {
-  id                     String            @id(map: "bracket_entrants_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  bracketId              String            @map("bracket_id") @db.Uuid
-  athleteId              String            @map("athlete_id") @db.Uuid
-  snapshotName           String            @map("snapshot_name") @db.VarChar(255)
-  snapshotBirthYear      Int               @map("snapshot_birth_year") @db.SmallInt
-  snapshotOrganization   String?           @map("snapshot_organization") @db.VarChar(255)
-  snapshotImagePath      String?           @map("snapshot_image_path") @db.VarChar(1024)
-  initialRoundNumber     Int               @map("initial_round_number") @db.SmallInt
-  initialFixturePosition Int?              @map("initial_fixture_position") @db.SmallInt
-  initialSide            AthleteColor?     @map("initial_side")
-  receivedBye            Boolean           @default(false) @map("received_bye")
-  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
-  bracket                TournamentBracket @relation(fields: [bracketId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "bracket_entrants_bracket_id_fkey")
-  athlete                TournamentAthlete @relation(fields: [athleteId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "bracket_entrants_athlete_id_fkey")
-  directSlots            BracketSlot[]     @relation("BracketSlotDirectEntrant")
-  resolvedSlots          BracketSlot[]     @relation("BracketSlotResolvedEntrant")
-  wonFixtures            BracketFixture[]  @relation("BracketFixtureWinner")
+  id                     String              @id(map: "bracket_entrants_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bracketId              String              @map("bracket_id") @db.Uuid
+  athleteId              String              @map("athlete_id") @db.Uuid
+  snapshotName           String              @map("snapshot_name") @db.VarChar(255)
+  snapshotBirthYear      Int                 @map("snapshot_birth_year") @db.SmallInt
+  snapshotOrganization   String?             @map("snapshot_organization") @db.VarChar(255)
+  snapshotImagePath      String?             @map("snapshot_image_path") @db.VarChar(1024)
+  initialRoundNumber     Int                 @map("initial_round_number") @db.SmallInt
+  initialFixturePosition Int?                @map("initial_fixture_position") @db.SmallInt
+  initialSide            AthleteColor?       @map("initial_side")
+  receivedBye            Boolean             @default(false) @map("received_bye")
+  createdAt              DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  bracket                TournamentBracket   @relation(fields: [bracketId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "bracket_entrants_bracket_id_fkey")
+  athlete                TournamentAthlete   @relation(fields: [athleteId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "bracket_entrants_athlete_id_fkey")
+  directSlots            BracketSlot[]       @relation("BracketSlotDirectEntrant")
+  resolvedSlots          BracketSlot[]       @relation("BracketSlotResolvedEntrant")
+  wonFixtures            BracketFixture[]    @relation("BracketFixtureWinner")
   championOf             TournamentBracket[] @relation("TournamentBracketChampion")
 
   @@unique([bracketId, athleteId], map: "bracket_entrants_bracket_id_athlete_id_key")
@@ -503,21 +503,21 @@ model BracketEntrant {
 }
 
 model BracketFixture {
-  id              String               @id(map: "bracket_fixtures_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  bracketId       String               @map("bracket_id") @db.Uuid
-  roundNumber     Int                  @map("round_number") @db.SmallInt
-  position        Int                  @db.SmallInt
-  displayReference String               @map("display_reference") @db.VarChar(64)
-  status          BracketFixtureStatus @default(PENDING_PARTICIPANTS)
-  winnerEntrantId String?              @map("winner_entrant_id") @db.Uuid
-  winnerDecision  Json?                @map("winner_decision") @db.JsonB
-  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  bracket         TournamentBracket    @relation(fields: [bracketId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "bracket_fixtures_bracket_id_fkey")
-  match           Match?               @relation("BracketFixtureMatch")
-  winnerEntrant   BracketEntrant?      @relation("BracketFixtureWinner", fields: [winnerEntrantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "bracket_fixtures_winner_entrant_id_fkey")
-  slots           BracketSlot[]
-  sourceSlots     BracketSlot[]        @relation("BracketSlotSourceFixture")
+  id                               String                             @id(map: "bracket_fixtures_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bracketId                        String                             @map("bracket_id") @db.Uuid
+  roundNumber                      Int                                @map("round_number") @db.SmallInt
+  position                         Int                                @db.SmallInt
+  displayReference                 String                             @map("display_reference") @db.VarChar(64)
+  status                           BracketFixtureStatus               @default(PENDING_PARTICIPANTS)
+  winnerEntrantId                  String?                            @map("winner_entrant_id") @db.Uuid
+  winnerDecision                   Json?                              @map("winner_decision") @db.JsonB
+  createdAt                        DateTime                           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                        DateTime                           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  bracket                          TournamentBracket                  @relation(fields: [bracketId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "bracket_fixtures_bracket_id_fkey")
+  match                            Match?                             @relation("BracketFixtureMatch")
+  winnerEntrant                    BracketEntrant?                    @relation("BracketFixtureWinner", fields: [winnerEntrantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "bracket_fixtures_winner_entrant_id_fkey")
+  slots                            BracketSlot[]
+  sourceSlots                      BracketSlot[]                      @relation("BracketSlotSourceFixture")
   winnerDecisionIdempotencyRecords BracketWinnerDecisionIdempotency[]
 
   @@unique([bracketId, roundNumber, position], map: "bracket_fixtures_bracket_id_round_number_position_key")
@@ -526,14 +526,14 @@ model BracketFixture {
 }
 
 model BracketWinnerDecisionIdempotency {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  fixtureId      String   @map("fixture_id") @db.Uuid
-  key            String   @unique(map: "bracket_winner_decision_idempotency_key_key") @db.VarChar(255)
-  entrantId      String   @map("entrant_id") @db.Uuid
-  requestFingerprint String @default("") @map("request_fingerprint") @db.Char(64)
-  response       Json     @db.JsonB
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  fixture        BracketFixture @relation(fields: [fixtureId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "bracket_winner_decision_idempotency_fixture_id_fkey")
+  id                 String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fixtureId          String         @map("fixture_id") @db.Uuid
+  key                String         @unique(map: "bracket_winner_decision_idempotency_key_key") @db.VarChar(255)
+  entrantId          String         @map("entrant_id") @db.Uuid
+  requestFingerprint String         @default("") @map("request_fingerprint") @db.Char(64)
+  response           Json           @db.JsonB
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  fixture            BracketFixture @relation(fields: [fixtureId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "bracket_winner_decision_idempotency_fixture_id_fkey")
 
   @@map("bracket_winner_decision_idempotency")
 }
@@ -580,20 +580,20 @@ model MatchResultOperation {
 }
 
 model MatchAthlete {
-  id           String             @id(map: "match_athletes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId      String             @map("match_id") @db.Uuid
-  tournamentId String             @map("tournament_id") @db.Uuid
-  athleteId    String?            @map("athlete_id") @db.Uuid
-  name         String             @db.VarChar(255)
-  organization String?            @db.VarChar(255)
-  color        AthleteColor
-  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  match        Match              @relation("MatchAthletesByMatchId", fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "match_athletes_match_id_fkey")
-  matchByTournament Match          @relation("MatchAthletesByTournament", fields: [matchId, tournamentId], references: [id, tournamentId], onDelete: Cascade, onUpdate: Cascade, map: "match_athletes_match_tournament_id_fkey")
-  athlete      TournamentAthlete? @relation(fields: [tournamentId, athleteId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade, map: "match_athletes_tournament_athlete_id_fkey")
-  scoreEvents  ScoreEvent[]
-  penalties    Penalty[]
+  id                String             @id(map: "match_athletes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId           String             @map("match_id") @db.Uuid
+  tournamentId      String             @map("tournament_id") @db.Uuid
+  athleteId         String?            @map("athlete_id") @db.Uuid
+  name              String             @db.VarChar(255)
+  organization      String?            @db.VarChar(255)
+  color             AthleteColor
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  match             Match              @relation("MatchAthletesByMatchId", fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "match_athletes_match_id_fkey")
+  matchByTournament Match              @relation("MatchAthletesByTournament", fields: [matchId, tournamentId], references: [id, tournamentId], onDelete: Cascade, onUpdate: Cascade, map: "match_athletes_match_tournament_id_fkey")
+  athlete           TournamentAthlete? @relation(fields: [tournamentId, athleteId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade, map: "match_athletes_tournament_athlete_id_fkey")
+  scoreEvents       ScoreEvent[]
+  penalties         Penalty[]
 
   @@unique([matchId, color], map: "match_athletes_match_id_color_key")
   @@index([tournamentId, athleteId], map: "match_athletes_tournament_id_athlete_id_idx")

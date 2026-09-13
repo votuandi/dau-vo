@@ -56,6 +56,7 @@ import { BracketsModule } from './brackets/brackets.module';
               'req.body.password',
               'req.body.securityCode',
               'req.body.takeoverToken',
+              'req.body.setupToken',
               'req.body.previewToken',
               'res.headers.set-cookie',
             ],

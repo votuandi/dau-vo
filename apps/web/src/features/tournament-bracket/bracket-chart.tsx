@@ -3,8 +3,8 @@ import type {
   BracketFixture,
   BracketPreview,
 } from '@/services/api/admin-management';
+import { bracketRoundLabel } from '@martial-arts-scoring/shared-types';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { roundLabel } from './bracket-labels';
 import { bracketPresentation, isBracketPreview } from './bracket-graph';
 
 type ChartData = Pick<BracketPreview, 'rounds' | 'initialEntrants'> | ActiveBracket;
@@ -48,7 +48,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
     ? data.rounds
     : Array.from({ length: data.bracket.roundCount }, (_, index) => ({
         roundNumber: index + 1,
-        label: roundLabel(index + 1, data.bracket.roundCount),
+        label: bracketRoundLabel(index + 1, data.bracket.roundCount),
         fixtures: data.fixtures.filter((fixture) => fixture.roundNumber === index + 1),
       }));
 
@@ -75,7 +75,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
             return [
               {
                 key: `${edge.sourceFixtureId}:${edge.targetFixtureId}:${edge.targetSide}`,
-                d: `M ${startX} ${startY} H ${middleX} V ${endY} H ${endX}`,
+                d: `M ${String(startX)} ${String(startY)} H ${String(middleX)} V ${String(endY)} H ${String(endX)}`,
               },
             ];
           }),
@@ -87,10 +87,14 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
       typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(schedule);
     if (observer) {
       if (contentRef.current) observer.observe(contentRef.current);
-      fixtureRefs.current.forEach((element) => observer.observe(element));
-      slotRefs.current.forEach((element) => observer.observe(element));
+      fixtureRefs.current.forEach((element) => {
+        observer.observe(element);
+      });
+      slotRefs.current.forEach((element) => {
+        observer.observe(element);
+      });
     }
-    document.fonts?.ready.then(schedule).catch(() => undefined);
+    document.fonts.ready.then(schedule).catch(() => undefined);
     return () => {
       cancelAnimationFrame(frame);
       observer?.disconnect();

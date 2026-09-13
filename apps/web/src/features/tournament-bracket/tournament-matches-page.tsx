@@ -27,13 +27,16 @@ import {
   type ActiveBracket,
 } from '@/services/api/admin-management';
 import { TournamentStatus } from '@/types/shared';
+import {
+  bracketFixtureStatusLabel as fixtureStatusLabel,
+  bracketRoundLabel as roundLabel,
+} from '@martial-arts-scoring/shared-types';
 import { BracketChart } from './bracket-chart';
 import { BracketPreviewPanel } from './bracket-preview-dialog';
 import { BracketDrawSetupDialog } from './bracket-draw-setup-dialog';
 import { bracketQueryKeys } from './query-keys';
 import { WeightClassMatchTabs } from './weight-class-match-tabs';
 import { ManualMatchCreationForm } from './manual-match-creation-form';
-import { fixtureStatusLabel, roundLabel } from './bracket-labels';
 
 export function TournamentMatchesPage({
   tournament,

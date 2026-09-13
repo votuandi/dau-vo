@@ -14,13 +14,16 @@ function fixtureGraph(athleteCount: number) {
   }[] = [];
   let previous: string[] = [];
   for (let round = 1, count = size / 2; count >= 1; round += 1, count /= 2) {
-    const ids = Array.from({ length: count }, (_, index) => `r${round}-${index + 1}`);
+    const ids = Array.from(
+      { length: count },
+      (_, index) => `r${String(round)}-${String(index + 1)}`,
+    );
     ids.forEach((id, index) => {
       const sources: [string | null, string | null] =
         round === 1 ? [null, null] : [previous[index * 2] ?? null, previous[index * 2 + 1] ?? null];
       fixtures.push({
         id,
-        displayReference: `T${round}-${index + 1}`,
+        displayReference: `T${String(round)}-${String(index + 1)}`,
         round,
         slots: [
           { side: 'RED', sourceId: sources[0] },
@@ -39,7 +42,7 @@ function previewFor(athleteCount: number): Pick<BracketPreview, 'rounds' | 'init
     initialEntrants: [],
     rounds: [...new Set(fixtures.map((fixture) => fixture.round))].map((roundNumber) => ({
       roundNumber,
-      label: `R${roundNumber}`,
+      label: `R${String(roundNumber)}`,
       fixtures: fixtures
         .filter((fixture) => fixture.round === roundNumber)
         .map((fixture) => ({

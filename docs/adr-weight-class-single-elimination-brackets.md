@@ -189,18 +189,21 @@ The web component keeps this token only in React component memory: it is not
 placed in a URL, query cache, local/session storage, telemetry, or logs.
 Redraw requests a new preview; Cancel simply discards it.
 
-The token is authenticated encryption (for example a versioned AEAD envelope
-with key ID and rotation support), not a client-readable signed JSON blob. Its
-protected claims are token ID, tournament ID, weight-class ID, exact randomized
-arrangement, canonical roster fingerprint, issued-at, expiry, and issuer/audience.
-It has a five-minute maximum lifetime, is verified with server time and
-constant-time authentication, and is never logged. Confirmation accepts the
-token only in the body over authenticated HTTPS, recomputes the canonical
-eligible roster fingerprint under lock, and rejects changes or expiry. In the
-same transaction it creates the bracket and records the SHA-256 token hash on
-the bracket; retries with the same idempotency key replay, while replay under a
-new key conflicts because the active-bracket index and stored token hash make
-the preview consumed.
+Preview tokens are versioned, HMAC-authenticated bearer envelopes. They carry
+the exact randomized arrangement, tournament and weight-class IDs, canonical
+roster fingerprint, designated-bye IDs, issued-at, expiry, and a random nonce.
+They are integrity protected (including a constant-time MAC comparison), but
+are deliberately not a secrecy boundary: the same arrangement is returned to
+the authorized administrator in the preview response. They have a five-minute
+maximum lifetime, are verified against server time and URL scope, are accepted
+only in an authenticated HTTPS POST body, and are redacted from HTTP logs.
+Neither setup nor preview tokens are persisted, returned by a GET endpoint,
+placed in audit metadata, URL/query state, browser storage, telemetry, or
+durable JSON. Confirmation recomputes the canonical eligible-roster fingerprint
+under the tournament and weight-class locks and rejects changed or expired
+claims. Its idempotency fingerprint hashes semantic claims rather than storing
+the raw token; a replay with another key conflicts through the current-bracket
+unique index.
 
 ### API surface and UI scope
 
@@ -227,16 +230,54 @@ only bcrypt hashes are persisted. Preparing a fixture invokes that same path;
 listing a fixture or fetching a match never returns codes. A bracket-linked
 match rejects athlete replacement with `BRACKET_MATCH_ATHLETES_IMMUTABLE`.
 
+### Implemented boundaries, formulae, and presentation model
+
+Draw setup is an eligibility snapshot and authorization-to-randomize boundary;
+it returns the complete, server-filtered eligible roster and a five-minute setup
+token, but it does not randomize or write. Preview is a separate ephemeral
+randomization boundary: it validates that setup token against the fresh roster,
+returns a proposed graph plus a five-minute preview token, and also performs no
+write. Confirm is the sole persistence boundary. Closing either dialog, redraw,
+or an expired token discards only in-memory client state.
+
+For `n` eligible athletes, `2 <= n <= 64`, `bracketSize = 2^ceil(log2(n))`,
+`byeCount = bracketSize - n`, `roundCount = log2(bracketSize)`,
+`totalFixtureCount = n - 1`, and first-round fixtures are
+`n - bracketSize / 2`. A designated bye must be a unique currently eligible
+athlete and there may be no more designated recipients than `byeCount`. The
+remaining recipients and all positions are chosen with cryptographic random
+selection. Every bye occupies a distinct opening pair, so neither a double-bye
+fixture nor an empty branch is created. A recipient advances directly to its
+first logical fixture; it is never materialized as a one-person `Match`.
+
+`ACTIVE` and `COMPLETED` are _current_ statuses: together they enforce one
+current bracket per tournament/weight class and lock entrant eligibility.
+`CANCELLED` is historical and releases that roster/weight-class lock. Cancellation
+is permitted only before any linked match has operational history; it preserves
+the bracket, match, credential hashes, and audit records rather than deleting
+them. A confirmed entrant cannot be deactivated or moved while its bracket is
+current; snapshot display fields remain intentionally editable on the roster.
+
+The client chart is a presentation projection, not a second draw engine. It
+derives only fixture-to-slot edges from `sourceFixtureId`/`FIXTURE_WINNER`, and
+uses the shared round/status-label module. Connector geometry is measured after
+render and on resize; the bounded 64-athlete draw has at most 63 fixture cards
+and 62 connectors. The client never reconstructs placement, bye, or lifecycle
+rules.
+
 ### Concurrency, errors, and audit
 
-Every bracket mutation uses a Prisma transaction and locks the tournament row
-first, then the weight-class row, bracket row, fixtures in ascending
-`roundNumber, position`, and matches by UUID. Roster athlete/weight-class
-mutations take the same tournament/weight-class lock before checking bracket
-references. This prevents confirmation racing an athlete move/deactivation,
-and prevents completion, prepare, reset, and winner decision from producing
-two downstream values. Unique constraints remain the final arbiter and are
-translated to stable conflicts.
+Confirmation, cancellation, preparation, and roster create/update take a
+Prisma transaction and lock tournament first; operations that address a weight
+class lock it next, and preparation then locks bracket and fixture. Match
+finish/reset/undo first lock their operational match, then outcome propagation
+locks the affected fixture and direct downstream fixtures in lexical UUID
+order. Manual decision uses that same fixture/downstream order. This is the
+intentional transaction boundary: no result path takes a tournament lock after
+it holds a fixture lock, avoiding an inverted dependency with preparation.
+Roster mutations take tournament then weight-class locks before checking current
+bracket references. The current-bracket and fixture/match unique constraints
+remain the final arbiters and are translated to stable conflicts.
 
 All new domain failures are structured `{ code, message, details? }`, follow
 the existing uppercase error-code convention, and use 400 for malformed input,
