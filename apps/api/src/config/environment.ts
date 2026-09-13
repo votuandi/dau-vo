@@ -18,6 +18,11 @@ export interface EnvironmentVariables {
   MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS: number;
   NODE_ENV: NodeEnvironment;
   OFFICIAL_PASSCODE_SECRET: string;
+  OFFICIAL_SESSION_SECRET: string;
+  OFFICIAL_SESSION_TTL_SECONDS: number;
+  OFFICIAL_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS: number;
+  OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS: number;
+  OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS: number;
   REDIS_URL: string;
   ROUND_DURATION_MS: number;
   WEB_ORIGIN: readonly string[];
@@ -31,10 +36,15 @@ const DEFAULT_MATCH_PUBLIC_ID_INITIAL_LENGTH = 6;
 const DEFAULT_MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS = 10;
 const DEFAULT_MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS = 100;
 const DEFAULT_MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS = 60;
+const DEFAULT_OFFICIAL_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS = 10;
+const DEFAULT_OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS = 100;
+const DEFAULT_OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS = 60;
 const TEST_BRACKET_PREVIEW_SECRET =
   'test-only-bracket-preview-secret-not-for-production';
 const TEST_OFFICIAL_PASSCODE_SECRET =
   'test-only-official-passcode-secret-not-for-production';
+const TEST_OFFICIAL_SESSION_SECRET =
+  'test-only-official-session-secret-not-for-production';
 
 function requireString(
   config: Record<string, unknown>,
@@ -135,6 +145,12 @@ export function validateEnvironment(
       config.OFFICIAL_PASSCODE_SECRET === '')
       ? TEST_OFFICIAL_PASSCODE_SECRET
       : requireString(config, 'OFFICIAL_PASSCODE_SECRET');
+  const officialSessionSecret =
+    nodeEnvironment === 'test' &&
+    (config.OFFICIAL_SESSION_SECRET === undefined ||
+      config.OFFICIAL_SESSION_SECRET === '')
+      ? TEST_OFFICIAL_SESSION_SECRET
+      : requireString(config, 'OFFICIAL_SESSION_SECRET');
   const matchPublicIdInitialLength = positiveIntegerWithDefault(
     config,
     'MATCH_PUBLIC_ID_INITIAL_LENGTH',
@@ -165,6 +181,11 @@ export function validateEnvironment(
   if (nodeEnvironment === 'production' && officialPasscodeSecret.length < 32) {
     throw new Error(
       'OFFICIAL_PASSCODE_SECRET must contain at least 32 characters in production',
+    );
+  }
+  if (nodeEnvironment === 'production' && officialSessionSecret.length < 32) {
+    throw new Error(
+      'OFFICIAL_SESSION_SECRET must contain at least 32 characters in production',
     );
   }
 
@@ -223,6 +244,28 @@ export function validateEnvironment(
     ),
     NODE_ENV: nodeEnvironment,
     OFFICIAL_PASSCODE_SECRET: officialPasscodeSecret,
+    OFFICIAL_SESSION_SECRET: officialSessionSecret,
+    OFFICIAL_SESSION_TTL_SECONDS: positiveIntegerWithDefault(
+      config,
+      'OFFICIAL_SESSION_TTL_SECONDS',
+      DEFAULT_MATCH_SESSION_TTL_SECONDS,
+    ),
+    OFFICIAL_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS:
+      positiveIntegerWithDefault(
+        config,
+        'OFFICIAL_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS',
+        DEFAULT_OFFICIAL_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS,
+      ),
+    OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS: positiveIntegerWithDefault(
+      config,
+      'OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS',
+      DEFAULT_OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS,
+    ),
+    OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS: positiveIntegerWithDefault(
+      config,
+      'OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS',
+      DEFAULT_OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS,
+    ),
     REDIS_URL: requireString(config, 'REDIS_URL'),
     ROUND_DURATION_MS: requirePositiveInteger(config, 'ROUND_DURATION_MS'),
     WEB_ORIGIN: requireWebOrigins(config),

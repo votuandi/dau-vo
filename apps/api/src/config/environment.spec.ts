@@ -8,6 +8,7 @@ const validEnvironment: Record<string, unknown> = {
   DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/scoring',
   MATCH_SESSION_SECRET: 'match-test-secret',
   OFFICIAL_PASSCODE_SECRET: 'official-passcode-test-secret',
+  OFFICIAL_SESSION_SECRET: 'official-session-test-secret',
   NODE_ENV: 'test',
   REDIS_URL: 'redis://localhost:6379',
   ROUND_DURATION_MS: '120000',
@@ -27,6 +28,10 @@ describe('validateEnvironment', () => {
       MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS: 60,
       MATCH_PUBLIC_ID_INITIAL_LENGTH: 6,
       MATCH_SESSION_TTL_SECONDS: 28_800,
+      OFFICIAL_SESSION_TTL_SECONDS: 28_800,
+      OFFICIAL_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS: 10,
+      OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS: 100,
+      OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS: 60,
       ROUND_DURATION_MS: 120_000,
     });
   });
@@ -76,6 +81,23 @@ describe('validateEnvironment', () => {
       MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS: 7,
       MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS: 55,
       MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS: 120,
+    });
+  });
+
+  it('normalizes isolated official-authentication settings', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        OFFICIAL_SESSION_TTL_SECONDS: '7200',
+        OFFICIAL_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS: '4',
+        OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS: '40',
+        OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS: '90',
+      }),
+    ).toMatchObject({
+      OFFICIAL_SESSION_TTL_SECONDS: 7200,
+      OFFICIAL_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS: 4,
+      OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS: 40,
+      OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS: 90,
     });
   });
 

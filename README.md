@@ -530,28 +530,34 @@ and the creation audit event in a single transaction.
 
 ## Environment variables
 
-| Variable                                        | Example/default                   | Purpose                                         |
-| ----------------------------------------------- | --------------------------------- | ----------------------------------------------- |
-| `DATABASE_URL`                                  | PostgreSQL URL in `.env.example`  | Prisma database connection                      |
-| `REDIS_URL`                                     | `redis://localhost:6379`          | Redis connection and admin-session storage      |
-| `API_PORT`                                      | `3000`                            | API listen port                                 |
-| `WEB_ORIGIN`                                    | `http://localhost:5173`           | Allowed credentialed browser origin             |
-| `VITE_SOCKET_PATH`                              | `/api/socket.io`                  | Browser and server Socket.IO handshake path     |
-| `ADMIN_SESSION_SECRET`                          | Development placeholder           | HMAC secret for admin-session identifiers       |
-| `ADMIN_SESSION_TTL_SECONDS`                     | `28800`                           | Fixed Redis lifetime for admin sessions         |
-| `ADMIN_LOGIN_RATE_LIMIT_MAX_ATTEMPTS`           | `5`                               | Login attempts allowed per window               |
-| `ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS`         | `900`                             | Login throttle window in seconds                |
-| `MATCH_SESSION_SECRET`                          | Development placeholder           | HMAC secret for match-session tokens/challenges |
-| `MATCH_SESSION_TTL_SECONDS`                     | `28800`                           | Persisted match-session lifetime                |
-| `MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS` | `10`                              | Attempts per match credential/window            |
-| `MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS`       | `100`                             | Attempts per client address/window              |
-| `MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS`        | `60`                              | Participant-auth throttle window                |
-| `MATCH_PUBLIC_ID_INITIAL_LENGTH`                | `6`                               | Initial human-friendly public match ID length   |
-| `INITIAL_SUPER_ADMIN_PASSWORD`                  | `dauvo@123` (non-production only) | Required non-default secret for production seed |
-| `ROUND_DURATION_MS`                             | `120000`                          | Round duration in milliseconds                  |
-| `BREAK_DURATION_MS`                             | `60000`                           | Break duration in milliseconds                  |
+| Variable                                           | Example/default                   | Purpose                                         |
+| -------------------------------------------------- | --------------------------------- | ----------------------------------------------- |
+| `DATABASE_URL`                                     | PostgreSQL URL in `.env.example`  | Prisma database connection                      |
+| `REDIS_URL`                                        | `redis://localhost:6379`          | Redis connection and admin-session storage      |
+| `API_PORT`                                         | `3000`                            | API listen port                                 |
+| `WEB_ORIGIN`                                       | `http://localhost:5173`           | Allowed credentialed browser origin             |
+| `VITE_SOCKET_PATH`                                 | `/api/socket.io`                  | Browser and server Socket.IO handshake path     |
+| `ADMIN_SESSION_SECRET`                             | Development placeholder           | HMAC secret for admin-session identifiers       |
+| `ADMIN_SESSION_TTL_SECONDS`                        | `28800`                           | Fixed Redis lifetime for admin sessions         |
+| `ADMIN_LOGIN_RATE_LIMIT_MAX_ATTEMPTS`              | `5`                               | Login attempts allowed per window               |
+| `ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS`            | `900`                             | Login throttle window in seconds                |
+| `MATCH_SESSION_SECRET`                             | Development placeholder           | HMAC secret for match-session tokens/challenges |
+| `MATCH_SESSION_TTL_SECONDS`                        | `28800`                           | Persisted match-session lifetime                |
+| `MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS`    | `10`                              | Attempts per match credential/window            |
+| `MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS`          | `100`                             | Attempts per client address/window              |
+| `MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS`           | `60`                              | Participant-auth throttle window                |
+| `OFFICIAL_PASSCODE_SECRET`                         | Development placeholder           | HMAC key for official passcode lookup digests   |
+| `OFFICIAL_SESSION_SECRET`                          | Development placeholder           | Independent HMAC key for official sessions/CAS  |
+| `OFFICIAL_SESSION_TTL_SECONDS`                     | `28800`                           | Persisted tournament-official session lifetime  |
+| `OFFICIAL_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS` | `10`                              | Attempts per official credential/window         |
+| `OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS`       | `100`                             | Attempts per client address/window              |
+| `OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS`        | `60`                              | Official-auth throttle window                   |
+| `MATCH_PUBLIC_ID_INITIAL_LENGTH`                   | `6`                               | Initial human-friendly public match ID length   |
+| `INITIAL_SUPER_ADMIN_PASSWORD`                     | `dauvo@123` (non-production only) | Required non-default secret for production seed |
+| `ROUND_DURATION_MS`                                | `120000`                          | Round duration in milliseconds                  |
+| `BREAK_DURATION_MS`                                | `60000`                           | Break duration in milliseconds                  |
 
-Use independent, randomly generated session secrets outside local development.
+Use independent, randomly generated session and passcode-digest secrets outside local development. `OFFICIAL_PASSCODE_SECRET` and `OFFICIAL_SESSION_SECRET` must be different from each other and from the legacy match/admin session keys; rotating either invalidates the corresponding lookup or sessions.
 Match timing has one configuration source: change `BREAK_DURATION_MS` rather than
 embedding a break duration in application code.
 

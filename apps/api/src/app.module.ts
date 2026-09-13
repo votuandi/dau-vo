@@ -23,6 +23,7 @@ import { MediaModule } from './media/media.module';
 import { TournamentRosterModule } from './tournament-roster/tournament-roster.module';
 import { BracketsModule } from './brackets/brackets.module';
 import { TournamentOfficialsModule } from './tournament-officials/tournament-officials.module';
+import { OfficialAccessModule } from './official-access/official-access.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { TournamentOfficialsModule } from './tournament-officials/tournament-off
               'req.headers.cookie',
               'req.body.password',
               'req.body.securityCode',
+              'req.body.privatePasscode',
               'req.body.takeoverToken',
               'req.body.setupToken',
               'req.body.previewToken',
@@ -81,6 +83,7 @@ import { TournamentOfficialsModule } from './tournament-officials/tournament-off
     TournamentRosterModule,
     BracketsModule,
     TournamentOfficialsModule,
+    OfficialAccessModule,
   ],
 })
 export class AppModule {}

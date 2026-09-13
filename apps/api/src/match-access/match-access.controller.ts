@@ -31,6 +31,8 @@ import {
 import { MatchSessionGuard } from './match-session.guard';
 
 @Controller('match-access')
+// Deprecated compatibility controller. New operational authentication uses
+// /official-access and tournament official credentials.
 export class MatchAccessController {
   private readonly cookieOptions: CookieOptions;
 
