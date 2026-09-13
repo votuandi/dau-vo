@@ -6,6 +6,7 @@ import {
   MatchRole,
   PrismaClient,
   RefereeSlot,
+  TournamentOfficialRole,
 } from '@prisma/client';
 import { config as loadEnvironment } from 'dotenv';
 
@@ -98,6 +99,7 @@ async function createMatchFixture(): Promise<void> {
       id: fixture.tournamentId,
       name: 'Database constraint test tournament',
       ownerUserId: fixture.tournamentId,
+      publicCode: 'TESTTOURN01',
       sportId: DEFAULT_SPORT.id,
     },
   });
@@ -147,6 +149,101 @@ describe('database unique constraints', () => {
         },
       }),
     ).rejects.toMatchObject({ code: 'P2002' });
+  });
+
+  it('enforces official assignment lifecycle, role, and tournament boundaries', async () => {
+    await prisma.user.create({
+      data: {
+        id: fixture.otherTournamentId,
+        normalizedUsername: 'official-assignment-other-owner',
+        passwordHash: 'hash',
+        username: 'official-assignment-other-owner',
+      },
+    });
+    await prisma.tournament.create({
+      data: {
+        id: fixture.otherTournamentId,
+        name: 'Other official assignment tournament',
+        ownerUserId: fixture.otherTournamentId,
+        publicCode: 'TESTOFFIC02',
+        sportId: DEFAULT_SPORT.id,
+      },
+    });
+    const referee = await prisma.tournamentOfficial.create({
+      data: {
+        name: 'Referee one',
+        normalizedName: 'referee one',
+        passcodeHash: 'hash',
+        passcodeLookupDigest: 'a'.repeat(64),
+        role: TournamentOfficialRole.REFEREE,
+        tournamentId: fixture.tournamentId,
+      },
+    });
+    const inspector = await prisma.tournamentOfficial.create({
+      data: {
+        name: 'Inspector one',
+        normalizedName: 'inspector one',
+        passcodeHash: 'hash',
+        passcodeLookupDigest: 'b'.repeat(64),
+        role: TournamentOfficialRole.INSPECTOR,
+        tournamentId: fixture.tournamentId,
+      },
+    });
+    const otherReferee = await prisma.tournamentOfficial.create({
+      data: {
+        name: 'Other referee',
+        normalizedName: 'other referee',
+        passcodeHash: 'hash',
+        passcodeLookupDigest: 'c'.repeat(64),
+        role: TournamentOfficialRole.REFEREE,
+        tournamentId: fixture.otherTournamentId,
+      },
+    });
+
+    await prisma.matchOfficialAssignment.create({
+      data: {
+        assignedByInspectorId: inspector.id,
+        matchId: fixture.matchId,
+        officialId: referee.id,
+        refereePosition: 1,
+        role: TournamentOfficialRole.REFEREE,
+        tournamentId: fixture.tournamentId,
+      },
+    });
+    await expect(
+      prisma.matchOfficialAssignment.create({
+        data: {
+          matchId: fixture.matchId,
+          officialId: referee.id,
+          refereePosition: 2,
+          role: TournamentOfficialRole.REFEREE,
+          tournamentId: fixture.tournamentId,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2002' });
+    await expect(
+      prisma.matchOfficialAssignment.create({
+        data: {
+          matchId: fixture.matchId,
+          officialId: otherReferee.id,
+          refereePosition: 2,
+          role: TournamentOfficialRole.REFEREE,
+          tournamentId: fixture.tournamentId,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2003' });
+    await expect(
+      prisma.$executeRaw`
+        INSERT INTO "match_official_assignments" ("match_id", "tournament_id", "official_id", "role", "referee_position")
+        VALUES (${fixture.matchId}::uuid, ${fixture.tournamentId}::uuid, ${inspector.id}::uuid, 'REFEREE', 2)
+      `,
+    ).rejects.toMatchObject({ code: 'P2010', meta: { code: '23514' } });
+    await expect(
+      prisma.match.update({
+        data: { requiredRefereeCount: 0 },
+        where: { id: fixture.matchId },
+      }),
+    ).rejects.toThrow('matches_required_referee_count_positive_check');
   });
 
   it('enforces active-bracket uniqueness and bracket sizing checks', async () => {
@@ -273,6 +370,7 @@ describe('database unique constraints', () => {
         id: fixture.otherTournamentId,
         name: 'Other roster tournament',
         ownerUserId: fixture.otherTournamentId,
+        publicCode: 'TESTTOURN02',
         sportId: DEFAULT_SPORT.id,
       },
     });

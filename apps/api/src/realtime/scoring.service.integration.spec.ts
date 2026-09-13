@@ -51,6 +51,7 @@ describe('ScoringService (PostgreSQL integration)', () => {
       data: {
         name: `${TEST_PREFIX}-${randomBytes(5).toString('hex')}`,
         ownerUserId: '00000000-0000-4000-8000-000000000001',
+        publicCode: `S${randomBytes(5).toString('hex').toUpperCase()}`,
         sportId: DEFAULT_SPORT.id,
       },
       select: { id: true },

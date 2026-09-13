@@ -470,6 +470,7 @@ describe('Realtime match infrastructure (integration)', () => {
       data: {
         name: `${TEST_PREFIX}-tournament`,
         ownerUserId: '00000000-0000-4000-8000-000000000001',
+        publicCode: `R${randomBytes(5).toString('hex').toUpperCase()}`,
         sportId: DEFAULT_SPORT.id,
       },
       select: { id: true },

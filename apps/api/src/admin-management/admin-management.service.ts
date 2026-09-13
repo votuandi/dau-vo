@@ -74,6 +74,7 @@ import {
 
 const ACCESS_CODE_HASH_COST = 12;
 const PUBLIC_ID_GENERATION_ATTEMPTS = 8;
+const TOURNAMENT_PUBLIC_CODE_GENERATION_ATTEMPTS = 8;
 
 const tournamentSelect = {
   createdAt: true,
@@ -86,6 +87,7 @@ const tournamentSelect = {
   startDate: true,
   status: true,
   sportId: true,
+  publicCode: true,
   sport: {
     select: {
       id: true,
@@ -298,73 +300,103 @@ export class AdminManagementService {
     const endDate = this.parseDate(input.endDate, 'endDate');
     this.assertDateRange(startDate, endDate);
 
-    return this.prisma.$transaction(async (transaction) => {
-      const actor = await transaction.user.findUniqueOrThrow({
-        where: { id: adminUserId },
-        select: { role: true },
-      });
-      if (actor.role !== UserRole.SUPER_ADMIN) {
-        await transaction.$queryRaw`SELECT id FROM admin_entitlements WHERE user_id = ${adminUserId}::uuid FOR UPDATE`;
-        const entitlement = await transaction.adminEntitlement.findUnique({
-          where: { userId: adminUserId },
+    for (
+      let attempt = 1;
+      attempt <= TOURNAMENT_PUBLIC_CODE_GENERATION_ATTEMPTS;
+      attempt += 1
+    ) {
+      const publicCode =
+        this.credentialGenerator.generateTournamentPublicCode();
+      try {
+        return await this.prisma.$transaction(async (transaction) => {
+          const actor = await transaction.user.findUniqueOrThrow({
+            where: { id: adminUserId },
+            select: { role: true },
+          });
+          if (actor.role !== UserRole.SUPER_ADMIN) {
+            await transaction.$queryRaw`SELECT id FROM admin_entitlements WHERE user_id = ${adminUserId}::uuid FOR UPDATE`;
+            const entitlement = await transaction.adminEntitlement.findUnique({
+              where: { userId: adminUserId },
+            });
+            const now = new Date();
+            if (
+              entitlement === null ||
+              !isActiveAdminState(
+                calculateAdminAccessState(actor.role, entitlement, now),
+              )
+            ) {
+              throw new ConflictException({
+                code:
+                  entitlement === null
+                    ? 'ADMIN_SUBSCRIPTION_REQUIRED'
+                    : 'ADMIN_SUBSCRIPTION_EXPIRED',
+              });
+            }
+            const used = await transaction.tournament.count({
+              where: { ownerUserId: adminUserId },
+            });
+            if (used >= entitlement.tournamentLimit)
+              throw new ConflictException({ code: 'TOURNAMENT_LIMIT_REACHED' });
+          }
+          await transaction.$queryRaw`SELECT id FROM sports WHERE id = ${input.sportId}::uuid FOR UPDATE`;
+          const sport = await transaction.sport.findUnique({
+            where: { id: input.sportId },
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              isActive: true,
+              sportGroup: { select: { id: true, code: true, name: true } },
+            },
+          });
+          if (sport === null)
+            throw new NotFoundException(SPORT_NOT_FOUND_ERROR);
+          if (!sport.isActive)
+            throw new ConflictException(SPORT_INACTIVE_ERROR);
+          const tournament = await transaction.tournament.create({
+            data: {
+              description: this.optionalTrimmedText(input.description),
+              endDate,
+              location: this.optionalTrimmedText(input.location),
+              name,
+              ownerUserId: adminUserId,
+              publicCode,
+              sportId: sport.id,
+              startDate,
+              status: input.status,
+            },
+            select: tournamentSelect,
+          });
+
+          await transaction.auditLog.create({
+            data: {
+              adminUserId,
+              eventType: AuditEventType.TOURNAMENT_CREATED,
+              metadata: {
+                tournamentId: tournament.id,
+                sportId: sport.id,
+                sport,
+              },
+            },
+            select: { id: true },
+          });
+
+          return tournament;
         });
-        const now = new Date();
-        if (
-          entitlement === null ||
-          !isActiveAdminState(
-            calculateAdminAccessState(actor.role, entitlement, now),
-          )
-        ) {
+      } catch (error: unknown) {
+        if (!this.isTournamentPublicCodeCollision(error)) throw error;
+        if (attempt === TOURNAMENT_PUBLIC_CODE_GENERATION_ATTEMPTS) {
           throw new ConflictException({
-            code:
-              entitlement === null
-                ? 'ADMIN_SUBSCRIPTION_REQUIRED'
-                : 'ADMIN_SUBSCRIPTION_EXPIRED',
+            code: 'TOURNAMENT_PUBLIC_CODE_COLLISION',
+            message: 'Could not allocate a unique tournament public code',
           });
         }
-        const used = await transaction.tournament.count({
-          where: { ownerUserId: adminUserId },
-        });
-        if (used >= entitlement.tournamentLimit)
-          throw new ConflictException({ code: 'TOURNAMENT_LIMIT_REACHED' });
       }
-      await transaction.$queryRaw`SELECT id FROM sports WHERE id = ${input.sportId}::uuid FOR UPDATE`;
-      const sport = await transaction.sport.findUnique({
-        where: { id: input.sportId },
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          isActive: true,
-          sportGroup: { select: { id: true, code: true, name: true } },
-        },
-      });
-      if (sport === null) throw new NotFoundException(SPORT_NOT_FOUND_ERROR);
-      if (!sport.isActive) throw new ConflictException(SPORT_INACTIVE_ERROR);
-      const tournament = await transaction.tournament.create({
-        data: {
-          description: this.optionalTrimmedText(input.description),
-          endDate,
-          location: this.optionalTrimmedText(input.location),
-          name,
-          ownerUserId: adminUserId,
-          sportId: sport.id,
-          startDate,
-          status: input.status,
-        },
-        select: tournamentSelect,
-      });
+    }
 
-      await transaction.auditLog.create({
-        data: {
-          adminUserId,
-          eventType: AuditEventType.TOURNAMENT_CREATED,
-          metadata: { tournamentId: tournament.id, sportId: sport.id, sport },
-        },
-        select: { id: true },
-      });
-
-      return tournament;
+    throw new ConflictException({
+      code: 'TOURNAMENT_PUBLIC_CODE_COLLISION',
+      message: 'Could not allocate a unique tournament public code',
     });
   }
 
@@ -617,7 +649,14 @@ export class AdminManagementService {
               publicId,
               roundDurationMs: input.roundDurationMs ?? this.roundDurationMs,
               tournamentId,
-              weightClassId: athletes[0]!.weightClassId,
+              weightClass: {
+                connect: {
+                  tournamentId_id: {
+                    id: athletes[0]!.weightClassId,
+                    tournamentId,
+                  },
+                },
+              },
             },
             select: matchSelect,
           });
@@ -742,7 +781,14 @@ export class AdminManagementService {
             data: {
               publicId,
               tournamentId,
-              weightClassId: fixture.bracket.weightClassId,
+              weightClass: {
+                connect: {
+                  tournamentId_id: {
+                    id: fixture.bracket.weightClassId,
+                    tournamentId,
+                  },
+                },
+              },
               bracketFixtureId: fixture.id,
               roundDurationMs: this.roundDurationMs,
               breakDurationMs: this.breakDurationMs,
@@ -1382,6 +1428,18 @@ export class AdminManagementService {
 
     const target = String(error.meta?.target ?? '').toLowerCase();
     return target.includes('public_id') || target.includes('publicid');
+  }
+
+  private isTournamentPublicCodeCollision(error: unknown): boolean {
+    if (
+      !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+      error.code !== 'P2002'
+    ) {
+      return false;
+    }
+
+    const target = String(error.meta?.target ?? '').toLowerCase();
+    return target.includes('public_code') || target.includes('publiccode');
   }
 
   private requirePreparedCode(

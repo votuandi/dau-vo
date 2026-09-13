@@ -38,6 +38,7 @@ const requiredAccessRoles = [
 
 interface TournamentView {
   id: string;
+  publicCode: string;
   name: string;
   description: string | null;
   location: string | null;
@@ -560,6 +561,31 @@ describe('Admin tournament and match management (integration)', () => {
         AuditEventType.TOURNAMENT_UPDATED,
       ]),
     );
+  });
+
+  it('generates human-friendly tournament public codes and retries collisions', async () => {
+    const existing = await createTournament('public-code-collision');
+    expect(existing.publicCode).toMatch(
+      /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{10}$/,
+    );
+    let replacement = credentialGenerator.generateTournamentPublicCode();
+    while (replacement === existing.publicCode) {
+      replacement = credentialGenerator.generateTournamentPublicCode();
+    }
+    const spy = jest
+      .spyOn(credentialGenerator, 'generateTournamentPublicCode')
+      .mockReturnValueOnce(existing.publicCode)
+      .mockReturnValueOnce(replacement);
+    try {
+      await expect(
+        createTournament('public-code-retry'),
+      ).resolves.toMatchObject({
+        publicCode: replacement,
+      });
+      expect(spy).toHaveBeenCalledTimes(2);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('rejects null for optional fields that are not nullable', async () => {

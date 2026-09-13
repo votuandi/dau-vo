@@ -451,6 +451,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
         data: {
           name: `${TEST_PREFIX}-tournament`,
           ownerUserId: '00000000-0000-4000-8000-000000000001',
+          publicCode: `L${randomBytes(5).toString('hex').toUpperCase()}`,
           sportId: DEFAULT_SPORT.id,
         },
         select: { id: true },
