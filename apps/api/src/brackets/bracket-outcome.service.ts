@@ -125,7 +125,14 @@ export class BracketOutcomeService {
         },
       },
     });
-    if (!fixture.winnerEntrantId) return;
+    // A tie is an outcome too.  It has not populated a downstream slot, but
+    // it does persist a score snapshot and prevents processFinishedMatch from
+    // evaluating a later replay.  Treat it exactly like a propagated outcome
+    // for the purpose of the preparation boundary and retraction.
+    const hasOutcome =
+      fixture.winnerEntrantId !== null ||
+      fixture.status === BracketFixtureStatus.AWAITING_WINNER;
+    if (!hasOutcome) return;
     const downstreamSlots = fixture.sourceSlots;
     const prepared = downstreamSlots.find(
       (slot) => slot.fixture.match !== null,
@@ -146,6 +153,10 @@ export class BracketOutcomeService {
         status: BracketFixtureStatus.MATCH_PREPARED,
       },
     });
+    // An awaiting-winner fixture has not advanced anyone, so there is no
+    // downstream state to clear.  For an advanced result, clear only the
+    // value supplied by this fixture (the prepared-match guard above makes
+    // this reversible without touching operational matches or credentials).
     for (const slot of downstreamSlots) {
       await tx.bracketSlot.update({
         where: { id: slot.id },

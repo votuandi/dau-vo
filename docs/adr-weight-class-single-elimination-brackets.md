@@ -105,15 +105,17 @@ rejects key reuse with a different digest.
 
 ```mermaid
 stateDiagram-v2
-  [*] --> PENDING
-  PENDING --> READY: both slots resolved
-  READY --> PREPARED: admin prepares match
-  PREPARED --> IN_PROGRESS: existing lifecycle starts
-  IN_PROGRESS --> COMPLETED: rules determine winner
-  IN_PROGRESS --> AWAITING_WINNER_DECISION: tied effective score
-  AWAITING_WINNER_DECISION --> COMPLETED: audited admin decision
-  COMPLETED --> PENDING: permitted upstream retraction/undo
-  PENDING --> CANCELLED: bracket cancellation
+  [*] --> PENDING_PARTICIPANTS
+  PENDING_PARTICIPANTS --> READY: both slots resolved
+  READY --> MATCH_PREPARED: admin prepares linked match and credentials
+  MATCH_PREPARED --> COMPLETED: decisive effective score; propagate winner
+  MATCH_PREPARED --> AWAITING_WINNER: tied effective score; store snapshot
+  AWAITING_WINNER --> COMPLETED: audited manual tie decision; propagate winner
+  COMPLETED --> MATCH_PREPARED: reset/cancel result; clear decision and propagation
+  AWAITING_WINNER --> MATCH_PREPARED: reset/cancel result; clear tie snapshot
+  MATCH_PREPARED --> COMPLETED: undo restores decisive score events
+  MATCH_PREPARED --> AWAITING_WINNER: undo restores tied score events
+  PENDING_PARTICIPANTS --> CANCELLED: bracket cancellation
   READY --> CANCELLED: bracket cancellation
 ```
 
@@ -138,13 +140,24 @@ and all reachable downstream fixtures in round/position order, writes only a
 previously-null identical resolved slot, and is idempotent. A child becomes
 ready only after both slots resolve; it is never automatically prepared.
 
-Result cancellation/reset/undo retains the standalone behavior. For a
-bracket-linked match, retracting an upstream result is permitted only while its
-downstream fixture has no materialized `Match`. The transaction clears and
-recomputes affected unresolved progression (including automatic byes) and
-re-evaluates winner state after undo. If any affected downstream fixture has a
-match, reject with `BRACKET_DOWNSTREAM_MATCH_PREPARED`; do not mutate either
-result. This rule applies before existing reset data is changed.
+Result cancellation/reset/undo retains the standalone behavior: standalone
+matches have no bracket propagation to retract or restore. For a bracket-linked
+match, reset/cancellation retracts either a completed winner or an awaiting
+tie decision. It clears `winnerEntrantId` and `winnerDecision` (including the
+tied-score snapshot), returns the fixture to `MATCH_PREPARED`, and keeps the
+same linked `Match` and access credentials. A completed winner also clears its
+unprepared downstream slot(s), returning affected downstream fixtures to
+`PENDING_PARTICIPANTS` where a participant is again unresolved.
+
+Retraction is permitted only while its downstream fixture has no materialized
+`Match`. If any affected downstream fixture has a prepared match, reject with
+`BRACKET_DOWNSTREAM_MATCH_PREPARED` before changing result data; the existing
+downstream match, credentials, slots, and audit history are never altered.
+Undo restores score events before restoring the finished match state and then
+runs the same idempotent outcome calculation as normal completion. It therefore
+recreates exactly one decisive propagation or one fresh `AWAITING_WINNER`
+snapshot. Fixture rows are locked in lexical UUID order on all outcome paths;
+the operational match row is locked by the lifecycle transaction first.
 
 ### Preview and confirmation
 
