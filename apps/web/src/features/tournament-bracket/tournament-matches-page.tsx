@@ -120,6 +120,9 @@ export function TournamentMatchesPage({
   const [decisionKey, setDecisionKey] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  // Prevent a stale successful query from flashing a bracket after cancellation.
+  const [confirmedCancelled, setConfirmedCancelled] = useState(false);
   const drawWeightClassRef = useRef(selectedId);
   const winnerReasonRef = useRef<HTMLTextAreaElement>(null);
   const cancelReasonRef = useRef<HTMLTextAreaElement>(null);
@@ -134,6 +137,9 @@ export function TournamentMatchesPage({
   useEffect(() => {
     if (drawWeightClassRef.current !== selectedId) {
       resetDraw();
+      setCancelOpen(false);
+      setCancelError(null);
+      setConfirmedCancelled(false);
       drawWeightClassRef.current = selectedId;
     }
   }, [selectedId]);
@@ -273,16 +279,24 @@ export function TournamentMatchesPage({
     onSuccess: () => {
       setCancelOpen(false);
       setCancelReason('');
-      notifyMutationSuccess('Đã hủy nhánh đấu. Bạn có thể bốc thăm lại.');
+      setCancelError(null);
+      setConfirmedCancelled(true);
+      qc.removeQueries({
+        queryKey: bracketQueryKeys.detail(tournament.id, selectedId ?? ''),
+        exact: true,
+      });
       void Promise.all([
         qc.invalidateQueries({
           queryKey: bracketQueryKeys.detail(tournament.id, selectedId ?? ''),
         }),
         qc.invalidateQueries({ queryKey: tournamentQueryKeys.weightClasses(tournament.id) }),
+        qc.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournament.id) }),
+        qc.invalidateQueries({ queryKey: tournamentQueryKeys.matchCounts(tournament.id) }),
+        qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournament.id, 'athletes'] }),
       ]);
     },
     onError: (error) => {
-      notifyMutationError(error, 'Không thể hủy nhánh đấu.');
+      setCancelError(getApiErrorMessage(error, 'Không thể hủy nhánh đấu.'));
     },
   });
   const counts = useMemo(
@@ -367,6 +381,8 @@ export function TournamentMatchesPage({
               <Button
                 disabled={blocked || draw.isPending || setupDraw.isPending}
                 onClick={() => {
+                  setConfirmedCancelled(false);
+                  setDialogError(null);
                   setWorkflow('loadingSetup');
                   setupDraw.mutate();
                 }}
@@ -376,7 +392,9 @@ export function TournamentMatchesPage({
               </Button>
               {bracket.data?.bracket.status === 'ACTIVE' && !isReadOnly ? (
                 <Button
+                  disabled={cancelBracket.isPending}
                   onClick={() => {
+                    setCancelError(null);
                     setCancelOpen(true);
                   }}
                   type="button"
@@ -392,11 +410,7 @@ export function TournamentMatchesPage({
                 canConfirm={Boolean(confirmationKey) && !dialogError}
                 onCancel={() => {
                   if (!confirm.isPending) {
-                    setPreview(null);
-                    setDrawSetup(null);
-                    setConfirmationKey(null);
-                    setDialogError(null);
-                    setWorkflow('idle');
+                    resetDraw();
                   }
                 }}
                 onConfirm={() => {
@@ -409,13 +423,47 @@ export function TournamentMatchesPage({
                   setWorkflow('configuring');
                 }}
                 onRedraw={() => {
+                  // The old randomized result must not remain visible during a redraw.
                   setPreview(null);
+                  setConfirmationKey(null);
+                  setDialogError(null);
                   setWorkflow('generatingPreview');
                   draw.mutate(designatedByeAthleteIds);
                 }}
                 pending={draw.isPending || confirm.isPending}
                 preview={preview}
               />
+            ) : workflow === 'generatingPreview' ? (
+              <div
+                aria-label="Đang tạo bản xem trước nhánh đấu"
+                className="mt-5 h-72 animate-pulse rounded-xl bg-muted"
+                role="status"
+              >
+                <span className="sr-only">Đang tạo bản xem trước nhánh đấu.</span>
+              </div>
+            ) : workflow === 'error' && !drawSetup ? (
+              <div
+                className="mt-5 rounded-xl border border-destructive/30 bg-destructive/5 p-4"
+                role="alert"
+              >
+                <p className="text-sm text-destructive">{dialogError}</p>
+                <Button
+                  className="mt-3"
+                  onClick={() => {
+                    setWorkflow('loadingSetup');
+                    setupDraw.mutate();
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Thử lại
+                </Button>
+              </div>
+            ) : confirmedCancelled || isNoBracket ? (
+              <p className="mt-5 rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+                Hạng cân này chưa được bốc thăm chia nhánh đấu
+              </p>
             ) : bracket.data ? (
               <>
                 <div className="mt-5">
@@ -423,7 +471,7 @@ export function TournamentMatchesPage({
                 </div>
                 <FixtureList
                   data={bracket.data}
-                  disabled={isReadOnly || prepare.isPending}
+                  disabled={isReadOnly || prepare.isPending || cancelBracket.isPending}
                   onPrepare={(id) => {
                     prepare.mutate(id);
                   }}
@@ -579,6 +627,11 @@ export function TournamentMatchesPage({
             ref={cancelReasonRef}
             value={cancelReason}
           />
+          {cancelError ? (
+            <p className="mt-3 text-sm text-destructive" role="alert">
+              {cancelError}
+            </p>
+          ) : null}
           <div className="mt-4 flex gap-2">
             <Button
               disabled={!cancelReason.trim() || cancelBracket.isPending}
@@ -602,6 +655,19 @@ export function TournamentMatchesPage({
           </div>
         </Dialog>
       ) : null}
+      <p aria-atomic="true" aria-live="polite" className="sr-only">
+        {workflow === 'loadingSetup'
+          ? 'Đang chuẩn bị bốc thăm.'
+          : workflow === 'generatingPreview'
+            ? 'Đang tạo bản xem trước nhánh đấu.'
+            : workflow === 'reviewingPreview'
+              ? 'Bản xem trước nhánh đấu đã sẵn sàng.'
+              : cancelBracket.isPending
+                ? 'Đang hủy nhánh đấu.'
+                : confirmedCancelled
+                  ? 'Đã hủy nhánh đấu.'
+                  : ''}
+      </p>
       <div className="grid items-start gap-6 border-t pt-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <StandaloneMatchList matches={matches} />
         <ManualMatchCreationForm
