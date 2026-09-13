@@ -209,7 +209,7 @@ export class OrganizationService {
           where: {
             tournamentId,
             weightClassId: id,
-            status: BracketStatus.ACTIVE,
+            status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
           },
         }),
       ]);
@@ -327,7 +327,9 @@ export class OrganizationService {
                 where: {
                   tournamentId,
                   weightClassId: id,
-                  status: BracketStatus.ACTIVE,
+                  status: {
+                    in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED],
+                  },
                 },
               }),
             ]);

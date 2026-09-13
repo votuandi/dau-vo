@@ -8,6 +8,7 @@ import { BracketPreviewService } from './bracket-preview.service';
 import { BracketPreviewTokenService } from './bracket-preview-token.service';
 import { BracketConfirmationService } from './bracket-confirmation.service';
 import { BracketFixturesController } from './bracket-fixtures.controller';
+import { BracketCancellationService } from './bracket-cancellation.service';
 
 @Module({
   imports: [AdminManagementModule, AuthModule, PrismaModule, SportRulesModule],
@@ -16,6 +17,7 @@ import { BracketFixturesController } from './bracket-fixtures.controller';
     BracketPreviewService,
     BracketPreviewTokenService,
     BracketConfirmationService,
+    BracketCancellationService,
   ],
 })
 export class BracketsModule {}

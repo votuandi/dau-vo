@@ -105,13 +105,13 @@ export class BracketConfirmationService {
             where: {
               tournamentId,
               weightClassId,
-              status: BracketStatus.ACTIVE,
+              status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
             },
           })
         )
           throw fail(
             'BRACKET_ALREADY_EXISTS',
-            'An active bracket already exists for this weight class',
+            'A current bracket already exists for this weight class',
           );
         const athletes = await tx.tournamentAthlete.findMany({
           where: {
@@ -233,13 +233,17 @@ export class BracketConfirmationService {
 
   async find(tournamentId: string, weightClassId: string) {
     const b = await this.prisma.tournamentBracket.findFirst({
-      where: { tournamentId, weightClassId, status: BracketStatus.ACTIVE },
+      where: {
+        tournamentId,
+        weightClassId,
+        status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
+      },
       include: this.include,
     });
     if (!b)
       throw new NotFoundException({
         code: 'BRACKET_NOT_FOUND',
-        message: 'No active bracket exists for this weight class',
+        message: 'No current bracket exists for this weight class',
       });
     return this.view(b);
   }

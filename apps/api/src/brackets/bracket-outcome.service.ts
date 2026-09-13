@@ -304,7 +304,7 @@ export class BracketOutcomeService {
           data: { status: BracketFixtureStatus.READY },
         });
     }
-    if (fixture.roundNumber === fixture.bracket.roundCount)
+    if (fixture.roundNumber === fixture.bracket.roundCount) {
       await tx.tournamentBracket.update({
         where: { id: fixture.bracketId },
         data: {
@@ -313,6 +313,18 @@ export class BracketOutcomeService {
           championEntrantId: entrantId,
         },
       });
+      await tx.auditLog.create({
+        data: {
+          eventType: AuditEventType.BRACKET_COMPLETED,
+          metadata: {
+            bracketId: fixture.bracketId,
+            tournamentId: fixture.bracket.tournamentId,
+            weightClassId: fixture.bracket.weightClassId,
+            championEntrantId: entrantId,
+          },
+        },
+      });
+    }
     await tx.auditLog.create({
       data: {
         eventType:

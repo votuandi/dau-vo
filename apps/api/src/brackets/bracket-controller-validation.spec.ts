@@ -23,6 +23,8 @@ import { BracketPreviewController } from './bracket-preview.controller';
 import { BracketPreviewService } from './bracket-preview.service';
 import { ConfirmBracketDto } from './dto/confirm-bracket.dto';
 import { DecideBracketWinnerDto } from './dto/decide-bracket-winner.dto';
+import { BracketCancellationService } from './bracket-cancellation.service';
+import { CancelBracketDto } from './dto/cancel-bracket.dto';
 import { MatchListQueryDto } from '../admin-management/dto/match-list-query.dto';
 
 const tournamentId = '11111111-1111-4111-8111-111111111111';
@@ -64,6 +66,10 @@ describe('bracket and match-filter controller validation', () => {
         { provide: TournamentImageService, useValue: {} },
         { provide: BracketPreviewService, useValue: { preview: jest.fn() } },
         { provide: BracketConfirmationService, useValue: confirmations },
+        {
+          provide: BracketCancellationService,
+          useValue: { cancel: jest.fn() },
+        },
         { provide: BracketOutcomeService, useValue: outcomes },
         { provide: PrismaService, useValue: prisma },
       ],
@@ -116,10 +122,26 @@ describe('bracket and match-filter controller validation', () => {
     expect(
       Reflect.getMetadata(
         'design:paramtypes',
+        BracketPreviewController.prototype,
+        'cancel',
+      ),
+    ).toContain(CancelBracketDto);
+    expect(
+      Reflect.getMetadata(
+        'design:paramtypes',
         AdminTournamentsController.prototype,
         'listMatches',
       ),
     ).toContain(MatchListQueryDto);
+  });
+
+  it('rejects an empty cancellation reason', async () => {
+    await request(app.getHttpServer())
+      .post(
+        `/api/admin/tournaments/${tournamentId}/weight-classes/${weightClassId}/bracket/cancel`,
+      )
+      .send({ reason: '   ' })
+      .expect(400);
   });
 
   it.each([

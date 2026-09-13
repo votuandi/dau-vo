@@ -86,6 +86,8 @@ export function TournamentMatchesPage({
     null,
   );
   const [decisionReason, setDecisionReason] = useState('');
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelOpen, setCancelOpen] = useState(false);
   const draw = useMutation({
     mutationFn: () => adminManagementApi.previewBracket(tournament.id, selectedId ?? ''),
     onSuccess: (value) => {
@@ -170,6 +172,17 @@ export function TournamentMatchesPage({
       notifyMutationError(error, 'Không thể xác định người thắng. Trạng thái có thể đã thay đổi.');
     },
   });
+  const cancelBracket = useMutation({
+    mutationFn: () =>
+      adminManagementApi.cancelBracket(tournament.id, selectedId ?? '', cancelReason.trim()),
+    onSuccess: () => {
+      setCancelOpen(false);
+      setCancelReason('');
+      notifyMutationSuccess('Đã hủy nhánh đấu. Bạn có thể bốc thăm lại.');
+      void qc.invalidateQueries({ queryKey: bracketQueryKeys.all });
+    },
+    onError: (error) => notifyMutationError(error, 'Không thể hủy nhánh đấu.'),
+  });
   const counts = useMemo(
     () =>
       new Map<string, number>(
@@ -238,6 +251,11 @@ export function TournamentMatchesPage({
               >
                 {draw.isPending ? 'Đang bốc thăm…' : 'Bốc thăm, chia nhánh đấu'}
               </Button>
+              {bracket.data && bracket.data.bracket.status === 'ACTIVE' && !isReadOnly ? (
+                <Button onClick={() => setCancelOpen(true)} type="button" variant="outline">
+                  Hủy / bốc thăm lại
+                </Button>
+              ) : null}
             </div>
             {bracket.data ? (
               <>
@@ -328,6 +346,47 @@ export function TournamentMatchesPage({
                 variant="outline"
               >
                 Hủy
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {cancelOpen ? (
+        <div
+          aria-modal="true"
+          className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-4"
+          role="dialog"
+          aria-labelledby="cancel-bracket-title"
+        >
+          <div className="w-full max-w-md rounded-xl bg-card p-5 shadow-xl">
+            <h3 className="font-black" id="cancel-bracket-title">
+              Hủy nhánh đấu?
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Thao tác này lưu nhánh cũ vào lịch sử và không xóa mã truy cập hay dữ liệu trận đấu.
+            </p>
+            <textarea
+              className="mt-4 w-full rounded border p-2"
+              maxLength={500}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="Lý do hủy (bắt buộc)"
+              value={cancelReason}
+            />
+            <div className="mt-4 flex gap-2">
+              <Button
+                disabled={!cancelReason.trim() || cancelBracket.isPending}
+                onClick={() => cancelBracket.mutate()}
+                type="button"
+              >
+                Xác nhận hủy
+              </Button>
+              <Button
+                disabled={cancelBracket.isPending}
+                onClick={() => setCancelOpen(false)}
+                type="button"
+                variant="outline"
+              >
+                Quay lại
               </Button>
             </div>
           </div>

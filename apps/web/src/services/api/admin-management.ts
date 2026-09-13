@@ -402,6 +402,11 @@ export const adminManagementApi = {
     apiClient.get<ActiveBracket>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket`,
     ),
+  cancelBracket: (tournamentId: string, weightClassId: string, reason: string) =>
+    apiClient.post<{ readonly bracket: { readonly id: string; readonly status: 'CANCELLED' } }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/cancel`,
+      { reason },
+    ),
   prepareBracketFixtureMatch: (tournamentId: string, bracketId: string, fixtureId: string) =>
     apiClient.post<MatchWithGeneratedCodesResponse>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/brackets/${encodePathSegment(bracketId)}/fixtures/${encodePathSegment(fixtureId)}/prepare-match`,

@@ -46,7 +46,7 @@ export const ATHLETE_UPDATE_EMPTY = {
 export const ATHLETE_IN_ACTIVE_BRACKET = {
   code: 'ATHLETE_IN_ACTIVE_BRACKET',
   message:
-    'Athlete eligibility cannot be changed while the active bracket exists. Cancel or reset the bracket first.',
+    'Athlete eligibility cannot be changed while a current bracket exists. Cancel or reset the bracket first.',
 };
 export const INVALID_BIRTH_YEAR = {
   code: 'INVALID_BIRTH_YEAR',

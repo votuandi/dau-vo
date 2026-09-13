@@ -95,4 +95,22 @@ describe('BracketPreviewService', () => {
       service.rosterFingerprint([...entrants].reverse()),
     );
   });
+
+  it('rejects a preview when a completed bracket is still current', async () => {
+    const { prisma, service } = subject(2);
+    prisma.tournamentBracket.findFirst.mockResolvedValue({ id: 'current' });
+
+    await expect(
+      service.preview(tournamentId, weightClassId),
+    ).rejects.toMatchObject({
+      response: { code: 'BRACKET_ALREADY_EXISTS' },
+    });
+    expect(prisma.tournamentBracket.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: { in: ['ACTIVE', 'COMPLETED'] },
+        }),
+      }),
+    );
+  });
 });

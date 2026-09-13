@@ -156,7 +156,9 @@ export class AthleteService {
         const activeEntrant = await tx.bracketEntrant.findFirst({
           where: {
             athleteId: id,
-            bracket: { status: BracketStatus.ACTIVE },
+            bracket: {
+              status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
+            },
           },
           select: { id: true },
         });

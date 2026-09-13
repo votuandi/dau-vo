@@ -71,13 +71,17 @@ export class BracketPreviewService {
       throw error;
     }
     const activeBracket = await this.prisma.tournamentBracket.findFirst({
-      where: { tournamentId, weightClassId, status: BracketStatus.ACTIVE },
+      where: {
+        tournamentId,
+        weightClassId,
+        status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
+      },
       select: { id: true },
     });
     if (activeBracket)
       throw new ConflictException({
-        code: 'BRACKET_ALREADY_ACTIVE',
-        message: 'An active bracket already exists for this weight class',
+        code: 'BRACKET_ALREADY_EXISTS',
+        message: 'A current bracket already exists for this weight class',
       });
     const athletes = await this.prisma.tournamentAthlete.findMany({
       where: {

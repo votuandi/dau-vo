@@ -23,6 +23,8 @@ import { BracketConfirmationService } from './bracket-confirmation.service';
 // Nest reads this class from decorator metadata at runtime.
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { ConfirmBracketDto } from './dto/confirm-bracket.dto';
+import { CancelBracketDto } from './dto/cancel-bracket.dto';
+import { BracketCancellationService } from './bracket-cancellation.service';
 
 const uuid = new ParseUUIDPipe({
   exceptionFactory: () => new BadRequestException(INVALID_ID_ERROR),
@@ -41,6 +43,8 @@ export class BracketPreviewController {
     private readonly previews: BracketPreviewService,
     @Inject(BracketConfirmationService)
     private readonly confirmations: BracketConfirmationService,
+    @Inject(BracketCancellationService)
+    private readonly cancellations: BracketCancellationService,
   ) {}
 
   @Post('preview')
@@ -79,5 +83,22 @@ export class BracketPreviewController {
   ) {
     await this.access.assertTournamentAccess(tournamentId, request.user);
     return this.confirmations.find(tournamentId, weightClassId);
+  }
+
+  @Post('cancel')
+  @Header('Cache-Control', 'no-store')
+  async cancel(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Param('weightClassId', uuid) weightClassId: string,
+    @Body() input: CancelBracketDto,
+    @Req() request: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, request.user, true);
+    return this.cancellations.cancel(
+      tournamentId,
+      weightClassId,
+      request.user.id,
+      input.reason,
+    );
   }
 }
