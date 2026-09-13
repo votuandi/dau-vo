@@ -17,6 +17,7 @@ export interface EnvironmentVariables {
   MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS: number;
   MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS: number;
   NODE_ENV: NodeEnvironment;
+  OFFICIAL_PASSCODE_SECRET: string;
   REDIS_URL: string;
   ROUND_DURATION_MS: number;
   WEB_ORIGIN: readonly string[];
@@ -32,6 +33,8 @@ const DEFAULT_MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS = 100;
 const DEFAULT_MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS = 60;
 const TEST_BRACKET_PREVIEW_SECRET =
   'test-only-bracket-preview-secret-not-for-production';
+const TEST_OFFICIAL_PASSCODE_SECRET =
+  'test-only-official-passcode-secret-not-for-production';
 
 function requireString(
   config: Record<string, unknown>,
@@ -126,6 +129,12 @@ export function validateEnvironment(
       ? TEST_BRACKET_PREVIEW_SECRET
       : requireString(config, 'BRACKET_PREVIEW_SECRET');
   const matchSessionSecret = requireString(config, 'MATCH_SESSION_SECRET');
+  const officialPasscodeSecret =
+    nodeEnvironment === 'test' &&
+    (config.OFFICIAL_PASSCODE_SECRET === undefined ||
+      config.OFFICIAL_PASSCODE_SECRET === '')
+      ? TEST_OFFICIAL_PASSCODE_SECRET
+      : requireString(config, 'OFFICIAL_PASSCODE_SECRET');
   const matchPublicIdInitialLength = positiveIntegerWithDefault(
     config,
     'MATCH_PUBLIC_ID_INITIAL_LENGTH',
@@ -151,6 +160,11 @@ export function validateEnvironment(
   if (nodeEnvironment === 'production' && matchSessionSecret.length < 32) {
     throw new Error(
       'MATCH_SESSION_SECRET must contain at least 32 characters in production',
+    );
+  }
+  if (nodeEnvironment === 'production' && officialPasscodeSecret.length < 32) {
+    throw new Error(
+      'OFFICIAL_PASSCODE_SECRET must contain at least 32 characters in production',
     );
   }
 
@@ -208,6 +222,7 @@ export function validateEnvironment(
       DEFAULT_MATCH_SESSION_TTL_SECONDS,
     ),
     NODE_ENV: nodeEnvironment,
+    OFFICIAL_PASSCODE_SECRET: officialPasscodeSecret,
     REDIS_URL: requireString(config, 'REDIS_URL'),
     ROUND_DURATION_MS: requirePositiveInteger(config, 'ROUND_DURATION_MS'),
     WEB_ORIGIN: requireWebOrigins(config),

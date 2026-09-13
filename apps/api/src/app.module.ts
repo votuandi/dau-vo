@@ -22,6 +22,7 @@ import { SuperAdminModule } from './super-admin/super-admin.module';
 import { MediaModule } from './media/media.module';
 import { TournamentRosterModule } from './tournament-roster/tournament-roster.module';
 import { BracketsModule } from './brackets/brackets.module';
+import { TournamentOfficialsModule } from './tournament-officials/tournament-officials.module';
 
 @Module({
   imports: [
@@ -79,6 +80,7 @@ import { BracketsModule } from './brackets/brackets.module';
     MediaModule,
     TournamentRosterModule,
     BracketsModule,
+    TournamentOfficialsModule,
   ],
 })
 export class AppModule {}

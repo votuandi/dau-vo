@@ -7,6 +7,7 @@ const validEnvironment: Record<string, unknown> = {
   BRACKET_PREVIEW_SECRET: 'bracket-preview-test-secret',
   DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/scoring',
   MATCH_SESSION_SECRET: 'match-test-secret',
+  OFFICIAL_PASSCODE_SECRET: 'official-passcode-test-secret',
   NODE_ENV: 'test',
   REDIS_URL: 'redis://localhost:6379',
   ROUND_DURATION_MS: '120000',
