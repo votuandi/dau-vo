@@ -5,7 +5,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AuditEventType, Prisma, TournamentStatus } from '@prisma/client';
+import {
+  AuditEventType,
+  BracketStatus,
+  Prisma,
+  TournamentStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type {
   CreateRosterItemDto,
@@ -44,12 +49,27 @@ const weightClassSelect = {
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.TournamentWeightClassSelect;
+const weightClassListSelect = {
+  ...weightClassSelect,
+  _count: {
+    select: {
+      brackets: {
+        where: {
+          status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
+        },
+      },
+    },
+  },
+} satisfies Prisma.TournamentWeightClassSelect;
 export type OrganizationView = Prisma.TournamentOrganizationGetPayload<{
   select: typeof organizationSelect;
 }>;
 export type WeightClassView = Prisma.TournamentWeightClassGetPayload<{
   select: typeof weightClassSelect;
 }>;
+export type WeightClassListView = WeightClassView & {
+  hasCurrentBracket: boolean;
+};
 type RosterView = OrganizationView | WeightClassView;
 
 @Injectable()
@@ -68,12 +88,16 @@ export class OrganizationService {
   async listWeightClasses(
     tournamentId: string,
     includeInactive: boolean,
-  ): Promise<WeightClassView[]> {
-    return this.prisma.tournamentWeightClass.findMany({
+  ): Promise<WeightClassListView[]> {
+    const rows = await this.prisma.tournamentWeightClass.findMany({
       where: { tournamentId, ...(includeInactive ? {} : { isActive: true }) },
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
-      select: weightClassSelect,
+      select: weightClassListSelect,
     });
+    return rows.map(({ _count, ...weightClass }) => ({
+      ...weightClass,
+      hasCurrentBracket: _count.brackets > 0,
+    }));
   }
   async getOrganization(
     tournamentId: string,
@@ -195,13 +219,21 @@ export class OrganizationService {
       });
       if (!before) throw new NotFoundException(WEIGHT_CLASS_NOT_FOUND);
       if (!before.isActive) return before;
-      const [athletes, matches] = await Promise.all([
+      const [athletes, matches, brackets] = await Promise.all([
         tx.tournamentAthlete.count({
           where: { tournamentId, weightClassId: id, isActive: true },
         }),
         tx.match.count({ where: { tournamentId, weightClassId: id } }),
+        tx.tournamentBracket.count({
+          where: {
+            tournamentId,
+            weightClassId: id,
+            status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
+          },
+        }),
       ]);
-      if (athletes || matches) throw new ConflictException(WEIGHT_CLASS_IN_USE);
+      if (athletes || matches || brackets)
+        throw new ConflictException(WEIGHT_CLASS_IN_USE);
       const after = await tx.tournamentWeightClass.update({
         where: { id },
         data: { isActive: false, deactivatedAt: new Date() },
@@ -240,11 +272,13 @@ export class OrganizationService {
         const row =
           kind === 'organization'
             ? await tx.tournamentOrganization.create({
-                data: data as Prisma.TournamentOrganizationCreateInput,
+                // The transaction stores the scalar tournament foreign key directly.
+                data: data as Prisma.TournamentOrganizationUncheckedCreateInput,
                 select: organizationSelect,
               })
             : await tx.tournamentWeightClass.create({
-                data: data as Prisma.TournamentWeightClassCreateInput,
+                // The transaction stores the scalar tournament foreign key directly.
+                data: data as Prisma.TournamentWeightClassUncheckedCreateInput,
                 select: weightClassSelect,
               });
         await this.audit(
@@ -303,13 +337,22 @@ export class OrganizationService {
               data: { organizationId: null },
             });
           } else {
-            const [athletes, matches] = await Promise.all([
+            const [athletes, matches, brackets] = await Promise.all([
               tx.tournamentAthlete.count({
                 where: { tournamentId, weightClassId: id, isActive: true },
               }),
               tx.match.count({ where: { tournamentId, weightClassId: id } }),
+              tx.tournamentBracket.count({
+                where: {
+                  tournamentId,
+                  weightClassId: id,
+                  status: {
+                    in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED],
+                  },
+                },
+              }),
             ]);
-            if (athletes || matches)
+            if (athletes || matches || brackets)
               throw new ConflictException(WEIGHT_CLASS_IN_USE);
           }
         }

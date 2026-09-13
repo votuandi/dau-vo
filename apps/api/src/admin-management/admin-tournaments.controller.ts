@@ -12,6 +12,7 @@ import {
   Post,
   Put,
   Req,
+  Query,
   UploadedFile,
   UseFilters,
   UseGuards,
@@ -35,6 +36,9 @@ import {
 // These classes must remain runtime imports for Nest validation metadata.
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { CreateMatchDto } from './dto/match.dto';
+// These classes must remain runtime imports for Nest validation metadata.
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+import { MatchListQueryDto } from './dto/match-list-query.dto';
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { CreateTournamentDto, UpdateTournamentDto } from './dto/tournament.dto';
 import { IMAGE_MAX_BYTES } from '../media/image-storage';
@@ -155,10 +159,24 @@ export class AdminTournamentsController {
   @Get(':tournamentId/matches')
   async listMatches(
     @Param('tournamentId', uuidPipe) tournamentId: string,
+    @Query() query: MatchListQueryDto,
     @Req() request: AuthenticatedUserRequest,
   ): Promise<MatchListResponse> {
     await this.management.assertTournamentAccess(tournamentId, request.user);
-    return { matches: await this.management.listMatches(tournamentId) };
+    return { matches: await this.management.listMatches(tournamentId, query) };
+  }
+
+  @Get(':tournamentId/matches/counts')
+  async countMatches(
+    @Param('tournamentId', uuidPipe) tournamentId: string,
+    @Req() request: AuthenticatedUserRequest,
+  ): Promise<{
+    counts: Array<{ weightClassId: string | null; count: number }>;
+  }> {
+    await this.management.assertTournamentAccess(tournamentId, request.user);
+    return {
+      counts: await this.management.countMatchesByWeightClass(tournamentId),
+    };
   }
 
   @Post(':tournamentId/matches')

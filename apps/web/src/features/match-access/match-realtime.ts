@@ -150,6 +150,8 @@ function getResultCancellationErrorMessage(
       return 'Chỉ giám định viên được phép hủy kết quả.';
     case 'RESULT_CANCELLATION_INVALID_STATE':
       return 'Không thể hủy kết quả từ trạng thái hiện tại. Dữ liệu mới nhất đang được tải lại.';
+    case 'BRACKET_PROGRESSION_LOCKED':
+      return 'Không thể đặt lại kết quả vì trận đấu vòng tiếp theo đã được chuẩn bị. Hãy liên hệ quản trị viên.';
     case 'RESULT_CANCELLATION_FAILED':
       return fallback;
   }
@@ -168,6 +170,8 @@ function getResultCancellationUndoErrorMessage(
       return 'Chỉ giám định viên được phép hoàn tác kết quả.';
     case 'RESET_UNDO_NOT_ALLOWED':
       return 'Không thể hoàn tác vì trận đấu đã có hoạt động mới hoặc thao tác này đã được hoàn tác.';
+    case 'BRACKET_PROGRESSION_LOCKED':
+      return 'Không thể hoàn tác vì trận đấu vòng tiếp theo đã được chuẩn bị.';
     case 'RESET_UNDO_FAILED':
       return fallback;
   }

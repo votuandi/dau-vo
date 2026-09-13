@@ -25,6 +25,7 @@ import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
+import { BracketOutcomeService } from '../brackets/bracket-outcome.service';
 import {
   InactiveRoundStartSessionError,
   InactiveRoundControlSessionError,
@@ -130,6 +131,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
     private readonly prisma: PrismaService,
     @Inject(SportRulesRegistry)
     private readonly sportRules: SportRulesRegistry,
+    @Inject(BracketOutcomeService)
+    private readonly bracketOutcomes: BracketOutcomeService,
   ) {}
 
   onModuleDestroy(): void {
@@ -480,6 +483,20 @@ export class MatchLifecycleService implements OnModuleDestroy {
         if (roundNumbers.length === 0) {
           throw new InvalidResultCancellationStateError(match.status);
         }
+        // The Match row is already locked.  Outcome retraction then acquires
+        // the upstream/downstream fixture pair in its global UUID order.
+        // A prepared next match is a hard boundary: do not destroy its
+        // credentials or silently detach its entrants.
+        if (match.status === MatchStatus.FINISHED) {
+          await this.bracketOutcomes.retractFinishedMatch(
+            transaction,
+            input.matchId,
+            {
+              sessionId: input.sessionId,
+              reason: entireMatch ? 'MATCH_RESET' : 'ROUND_RESET',
+            },
+          );
+        }
         const nextStatus = roundNumbers.includes(1)
           ? MatchStatus.WAITING
           : MatchStatus.BREAK;
@@ -700,6 +717,15 @@ export class MatchLifecycleService implements OnModuleDestroy {
           },
           where: { id: operation.id },
         });
+        // Restoring a finished bracket match restores the authoritative score
+        // events first, then runs the same idempotent automatic outcome path
+        // used when the match originally finished.
+        if (operation.previousStatus === MatchStatus.FINISHED) {
+          await this.bracketOutcomes.processFinishedMatch(
+            transaction,
+            input.matchId,
+          );
+        }
         await transaction.auditLog.create({
           data: {
             eventType:
@@ -908,6 +934,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
             : null;
 
         if (matchFinished !== null) {
+          await this.bracketOutcomes.processFinishedMatch(transaction, matchId);
           await transaction.auditLog.create({
             data: {
               eventType: AuditEventType.MATCH_FINISHED,

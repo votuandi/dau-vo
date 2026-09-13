@@ -6,6 +6,7 @@ export const tournamentQueryKeys = {
   all: ['admin', 'tournaments'] as const,
   detail: (id: string) => ['admin', 'tournaments', id] as const,
   matches: (id: string) => ['admin', 'tournaments', id, 'matches'] as const,
+  matchCounts: (id: string) => ['admin', 'tournaments', id, 'matches', 'counts'] as const,
   organizations: (id: string) => ['admin', 'tournaments', id, 'organizations'] as const,
   weightClasses: (id: string) => ['admin', 'tournaments', id, 'weight-classes'] as const,
   athletes: (id: string, filters: AthleteListInput) =>
@@ -57,10 +58,20 @@ export function tournamentAthletesQueryOptions(id: string, filters: AthleteListI
   });
 }
 
-export function tournamentMatchesQueryOptions(id: string) {
+export function tournamentMatchesQueryOptions(
+  id: string,
+  filters: { readonly weightClassId?: string; readonly unassigned?: true } = {},
+) {
   return queryOptions({
-    queryKey: tournamentQueryKeys.matches(id),
-    queryFn: () => adminManagementApi.listMatches(id),
+    queryKey: [...tournamentQueryKeys.matches(id), filters],
+    queryFn: () => adminManagementApi.listMatches(id, filters),
+  });
+}
+
+export function tournamentMatchCountsQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: tournamentQueryKeys.matchCounts(id),
+    queryFn: () => adminManagementApi.countMatches(id),
   });
 }
 

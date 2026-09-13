@@ -1,16 +1,13 @@
-import { useEffect, useMemo, useState, type SyntheticEvent } from 'react';
+import { useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useParams } from 'react-router-dom';
-import { GeneratedAccessCodesPanel } from '@/components/generated-access-codes-panel';
 import { Button } from '@/components/ui/button';
 import { DateInput } from '@/components/ui/date-input';
 import { TournamentImage, TournamentImagePicker } from '@/components/tournament-image';
 import {
-  athleteColorLabels,
   formatDate,
   getApiErrorMessage,
   inputClassName,
-  matchStatusLabels,
   notifyMutationError,
   notifyMutationSuccess,
   textAreaClassName,
@@ -19,7 +16,6 @@ import {
   tournamentStatuses,
 } from '@/features/admin-management/presentation';
 import {
-  matchQueryKeys,
   tournamentMatchesQueryOptions,
   activeSportsQueryOptions,
   tournamentQueryKeys,
@@ -27,24 +23,17 @@ import {
 } from '@/features/admin-management/queries';
 import {
   adminManagementApi,
-  type AdminMatch,
   type AdminTournament,
-  type GeneratedAccessCode,
-  type MatchAthleteInput,
   type UpdateTournamentInput,
 } from '@/services/api/admin-management';
-import { AthleteColor, TournamentStatus } from '@/types/shared';
+import { TournamentStatus } from '@/types/shared';
 import { useAdminAccessContext } from '@/features/auth/admin-access';
 import {
   AthletesPage,
   RosterItemsPage,
   TournamentTabs,
 } from '@/features/tournament-roster/tournament-roster-tabs';
-import { RosterAthleteSelector } from '@/features/admin-management/roster-athlete-selector';
-import {
-  tournamentAthletesQueryOptions,
-  tournamentWeightClassesQueryOptions,
-} from '@/features/admin-management/queries';
+import { TournamentMatchesPage } from '@/features/tournament-bracket/tournament-matches-page';
 
 function TournamentEditor({
   tournament,
@@ -305,312 +294,6 @@ function TournamentEditor({
   );
 }
 
-function MatchCard({ match }: { readonly match: AdminMatch }) {
-  return (
-    <li className="rounded-xl border border-border p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              className="font-mono text-xl font-black tracking-wider hover:underline"
-              to={`/admin/matches/${match.id}`}
-            >
-              {match.publicId}
-            </Link>
-            <span className="rounded-full border border-primary/10 bg-accent px-2.5 py-1 text-xs font-bold text-accent-foreground">
-              {matchStatusLabels[match.status]}
-            </span>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm">
-            <span className="font-semibold">
-              {match.weightClass?.name ?? 'Hạng cân chưa xác định'}
-            </span>
-            {match.athletes.map((athlete) => (
-              <span key={athlete.id}>
-                <span
-                  className={
-                    athlete.color === AthleteColor.RED
-                      ? 'font-bold text-red-700'
-                      : 'font-bold text-blue-700'
-                  }
-                >
-                  {athleteColorLabels[athlete.color]}:
-                </span>{' '}
-                {athlete.name}
-              </span>
-            ))}
-          </div>
-        </div>
-        <Button asChild size="sm" variant="outline">
-          <Link to={`/admin/matches/${match.id}`}>Quản lý trận</Link>
-        </Button>
-      </div>
-    </li>
-  );
-}
-
-function TournamentMatches({
-  tournament,
-  isReadOnly,
-}: {
-  readonly tournament: AdminTournament;
-  readonly isReadOnly: boolean;
-}) {
-  const queryClient = useQueryClient();
-  const matchesQuery = useQuery(tournamentMatchesQueryOptions(tournament.id));
-  const weightClassesQuery = useQuery(tournamentWeightClassesQueryOptions(tournament.id));
-  const [weightClassId, setWeightClassId] = useState('');
-  const athletesQuery = useQuery({
-    ...tournamentAthletesQueryOptions(tournament.id, {
-      isActive: true,
-      page: 1,
-      pageSize: 100,
-      ...(weightClassId ? { weightClassId } : {}),
-    }),
-    enabled: Boolean(weightClassId),
-  });
-  const [redAthleteId, setRedAthleteId] = useState<string | null>(null);
-  const [blueAthleteId, setBlueAthleteId] = useState<string | null>(null);
-  const [validationError, setValidationError] = useState<string | null>(null);
-  const [generatedCodes, setGeneratedCodes] = useState<readonly GeneratedAccessCode[]>([]);
-  const [newMatch, setNewMatch] = useState<AdminMatch | null>(null);
-
-  const createMutation = useMutation({
-    mutationFn: (athletes: readonly [MatchAthleteInput, MatchAthleteInput]) =>
-      adminManagementApi.createMatch(tournament.id, { athletes }),
-    onSuccess: (response) => {
-      setGeneratedCodes(response.accessCodes);
-      setNewMatch(response.match);
-      setRedAthleteId(null);
-      setBlueAthleteId(null);
-      queryClient.setQueryData(matchQueryKeys.detail(response.match.id), { match: response.match });
-      notifyMutationSuccess('Tạo trận đấu thành công.');
-      void queryClient.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournament.id) });
-    },
-    onError: (error) => {
-      notifyMutationError(error, 'Không thể tạo trận đấu.');
-      void queryClient.invalidateQueries({
-        queryKey: tournamentQueryKeys.athletes(tournament.id, {}),
-      });
-    },
-  });
-
-  function handleCreate(event: SyntheticEvent<HTMLFormElement>) {
-    event.preventDefault();
-    createMutation.reset();
-    if (!redAthleteId || !blueAthleteId) {
-      setValidationError('Chọn một vận động viên cho mỗi góc.');
-      return;
-    }
-
-    setValidationError(null);
-    createMutation.mutate([
-      { color: AthleteColor.RED, athleteId: redAthleteId },
-      { color: AthleteColor.BLUE, athleteId: blueAthleteId },
-    ]);
-  }
-
-  const activeWeightClasses = useMemo(
-    () => weightClassesQuery.data?.weightClasses.filter(({ isActive }) => isActive) ?? [],
-    [weightClassesQuery.data?.weightClasses],
-  );
-  const eligibleAthletes = useMemo(
-    () => athletesQuery.data?.items ?? [],
-    [athletesQuery.data?.items],
-  );
-  const selectedWeightClass = activeWeightClasses.find(({ id }) => id === weightClassId);
-  useEffect(() => {
-    if (!weightClassId && activeWeightClasses.length > 0)
-      setWeightClassId(activeWeightClasses[0]?.id ?? '');
-  }, [activeWeightClasses, weightClassId]);
-  useEffect(() => {
-    const ids = new Set(eligibleAthletes.map(({ id }) => id));
-    if (redAthleteId && !ids.has(redAthleteId)) setRedAthleteId(null);
-    if (blueAthleteId && !ids.has(blueAthleteId)) setBlueAthleteId(null);
-  }, [eligibleAthletes, redAthleteId, blueAthleteId]);
-  useEffect(() => {
-    if (redAthleteId && redAthleteId === blueAthleteId) setBlueAthleteId(null);
-  }, [blueAthleteId, redAthleteId]);
-
-  return (
-    <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-xl font-black tracking-tight">Các trận đấu</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Mỗi trận được tạo cùng đúng hai vận động viên và bốn mã truy cập.
-          </p>
-        </div>
-        {matchesQuery.isSuccess ? (
-          <span className="text-sm font-semibold text-muted-foreground">
-            {matchesQuery.data.matches.length} trận
-          </span>
-        ) : null}
-      </div>
-
-      {generatedCodes.length > 0 && newMatch ? (
-        <div className="mt-6">
-          <GeneratedAccessCodesPanel
-            accessCodes={generatedCodes}
-            matchPublicId={newMatch.publicId}
-            onDismiss={() => {
-              setGeneratedCodes([]);
-            }}
-            title={`Mã truy cập trận ${newMatch.publicId}`}
-          />
-          <Button asChild className="mt-3" size="sm" variant="outline">
-            <Link to={`/admin/matches/${newMatch.id}`}>Mở trận {newMatch.publicId}</Link>
-          </Button>
-        </div>
-      ) : null}
-
-      <div className="mt-6 grid items-start gap-7 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div>
-          {matchesQuery.isPending ? (
-            <p className="text-sm text-muted-foreground">Đang tải danh sách trận…</p>
-          ) : null}
-          {matchesQuery.isError ? (
-            <div
-              className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
-              role="alert"
-            >
-              <p>{getApiErrorMessage(matchesQuery.error, 'Không thể tải danh sách trận.')}</p>
-              <Button
-                className="mt-3"
-                onClick={() => void matchesQuery.refetch()}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                Thử lại
-              </Button>
-            </div>
-          ) : null}
-          {matchesQuery.isSuccess && matchesQuery.data.matches.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-              Chưa có trận đấu nào.
-            </div>
-          ) : null}
-          {matchesQuery.isSuccess && matchesQuery.data.matches.length > 0 ? (
-            <ul className="space-y-3">
-              {matchesQuery.data.matches.map((match) => (
-                <MatchCard key={match.id} match={match} />
-              ))}
-            </ul>
-          ) : null}
-        </div>
-
-        <form className="rounded-xl bg-muted/60 p-4" noValidate onSubmit={handleCreate}>
-          <h3 className="font-black">Tạo trận mới</h3>
-          <fieldset className="mt-4 space-y-4" disabled={createMutation.isPending || isReadOnly}>
-            <legend className="sr-only">Hai vận động viên</legend>
-            <label className="block text-sm font-semibold" htmlFor="match-weight-class">
-              Hạng cân
-            </label>
-            <select
-              className={inputClassName}
-              id="match-weight-class"
-              onChange={(event) => {
-                setWeightClassId(event.target.value);
-                setRedAthleteId(null);
-                setBlueAthleteId(null);
-              }}
-              value={weightClassId}
-            >
-              <option value="">Chọn hạng cân</option>
-              {activeWeightClasses.map((weightClass) => (
-                <option key={weightClass.id} value={weightClass.id}>
-                  {weightClass.name}
-                </option>
-              ))}
-            </select>
-            {activeWeightClasses.length === 0 ? (
-              <p className="rounded-lg border border-dashed p-3 text-sm">
-                Chưa có hạng cân hoạt động.{' '}
-                <Link
-                  className="font-bold underline"
-                  to={`/admin/tournaments/${tournament.id}/weight-classes`}
-                >
-                  Quản lý hạng cân
-                </Link>
-              </p>
-            ) : null}
-            {weightClassId && !athletesQuery.isPending && eligibleAthletes.length < 2 ? (
-              <p className="rounded-lg border border-dashed p-3 text-sm">
-                Hạng cân này cần ít nhất hai vận động viên đang hoạt động.{' '}
-                <Link
-                  className="font-bold underline"
-                  to={`/admin/tournaments/${tournament.id}/athletes`}
-                >
-                  Quản lý vận động viên
-                </Link>
-              </p>
-            ) : null}
-            <RosterAthleteSelector
-              athletes={eligibleAthletes}
-              color={AthleteColor.RED}
-              disabled={eligibleAthletes.length < 2}
-              excludedAthleteId={blueAthleteId}
-              label="Góc Đỏ (RED)"
-              loading={athletesQuery.isPending}
-              onChange={(id) => {
-                setRedAthleteId(id || null);
-              }}
-              selectedAthleteId={redAthleteId}
-              weightClassName={selectedWeightClass?.name}
-            />
-            <RosterAthleteSelector
-              athletes={eligibleAthletes}
-              color={AthleteColor.BLUE}
-              disabled={eligibleAthletes.length < 2}
-              excludedAthleteId={redAthleteId}
-              label="Góc Xanh (BLUE)"
-              loading={athletesQuery.isPending}
-              onChange={(id) => {
-                setBlueAthleteId(id || null);
-              }}
-              selectedAthleteId={blueAthleteId}
-              weightClassName={selectedWeightClass?.name}
-            />
-          </fieldset>
-
-          {validationError ? (
-            <p className="mt-4 text-sm text-destructive" role="alert">
-              {validationError}
-            </p>
-          ) : null}
-          {createMutation.isError ? (
-            <p
-              className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-              role="alert"
-            >
-              {getApiErrorMessage(createMutation.error, 'Không thể tạo trận đấu.')}
-            </p>
-          ) : null}
-          <Button
-            className="mt-4 w-full"
-            disabled={
-              createMutation.isPending ||
-              tournament.status === TournamentStatus.ARCHIVED ||
-              isReadOnly ||
-              !redAthleteId ||
-              !blueAthleteId ||
-              eligibleAthletes.length < 2
-            }
-            type="submit"
-          >
-            {createMutation.isPending
-              ? 'Đang tạo trận…'
-              : tournament.status === TournamentStatus.ARCHIVED
-                ? 'Giải đã lưu trữ'
-                : 'Tạo trận và mã truy cập'}
-          </Button>
-        </form>
-      </div>
-    </section>
-  );
-}
-
 export function AdminTournamentDetailPage() {
   const { tournamentId } = useParams<{ tournamentId: string }>();
 
@@ -705,7 +388,7 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
         />
       ) : null}
       {active === 'matches' ? (
-        <TournamentMatches isReadOnly={isReadOnly} tournament={tournament} />
+        <TournamentMatchesPage isReadOnly={isReadOnly} tournament={tournament} />
       ) : null}
       {active === 'weight-classes' ? (
         <RosterItemsPage

@@ -13,7 +13,12 @@ import type {
   CreateAthleteDto,
   UpdateAthleteDto,
 } from './dto/roster.dto';
-import { ROSTER_TOURNAMENT_ARCHIVED } from './tournament-roster.errors';
+import {
+  ATHLETE_IN_ACTIVE_BRACKET,
+  ROSTER_TOURNAMENT_ARCHIVED,
+  WEIGHT_CLASS_BRACKET_LOCKED,
+} from './tournament-roster.errors';
+import { BracketStatus } from '@prisma/client';
 
 export const ATHLETE_CLOCK = Symbol('ATHLETE_CLOCK');
 export interface AthleteClock {
@@ -112,6 +117,7 @@ export class AthleteService {
         tournamentId,
         input.weightClassId,
         input.organizationId,
+        true,
       );
       const row = await tx.tournamentAthlete.create({
         data: {
@@ -142,7 +148,29 @@ export class AthleteService {
         select: view,
       });
       if (!before) throw new NotFoundException(NOT_FOUND);
+      // Entrant fields are a confirmed eligibility contract.  Profile fields
+      // remain editable because matches and brackets use their own snapshots.
+      const changesEligibility =
+        (input.isActive === false && before.isActive) ||
+        (input.weightClassId !== undefined &&
+          input.weightClassId !== before.weightClassId);
+      if (changesEligibility) {
+        const activeEntrant = await tx.bracketEntrant.findFirst({
+          where: {
+            athleteId: id,
+            bracket: {
+              status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
+            },
+          },
+          select: { id: true },
+        });
+        if (activeEntrant)
+          throw new ConflictException(ATHLETE_IN_ACTIVE_BRACKET);
+      }
       const restoring = input.isActive === true && !before.isActive;
+      const moving =
+        input.weightClassId !== undefined &&
+        input.weightClassId !== before.weightClassId;
       // Deactivated athletes are deliberately editable; restoring always revalidates their assignments.
       const assignments =
         input.weightClassId !== undefined ||
@@ -155,6 +183,7 @@ export class AthleteService {
               input.organizationId === undefined
                 ? before.organizationId
                 : input.organizationId,
+              moving || restoring,
             )
           : {};
       const birthYear =
@@ -201,12 +230,29 @@ export class AthleteService {
     tournamentId: string,
     weightClassId: string,
     organizationId: string | null | undefined,
+    lockBracket = false,
   ) {
+    // The caller already holds the tournament lock. Locking this row next is
+    // the same order used by bracket confirmation, so a roster write and a
+    // confirmation cannot observe different rosters.
+    if (lockBracket)
+      await tx.$queryRaw`SELECT id FROM tournament_weight_classes WHERE id = ${weightClassId}::uuid AND tournament_id = ${tournamentId}::uuid FOR UPDATE`;
     const weight = await tx.tournamentWeightClass.findFirst({
       where: { id: weightClassId, tournamentId, isActive: true },
       select: { id: true },
     });
     if (!weight) throw new NotFoundException(RELATED_NOT_FOUND);
+    if (lockBracket) {
+      const current = await tx.tournamentBracket.findFirst({
+        where: {
+          tournamentId,
+          weightClassId,
+          status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
+        },
+        select: { id: true },
+      });
+      if (current) throw new ConflictException(WEIGHT_CLASS_BRACKET_LOCKED);
+    }
     if (organizationId) {
       const organization = await tx.tournamentOrganization.findFirst({
         where: { id: organizationId, tournamentId, isActive: true },

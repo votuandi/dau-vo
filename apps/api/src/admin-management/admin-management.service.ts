@@ -9,6 +9,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   AuditEventType,
+  BracketFixtureStatus,
+  BracketStatus,
   Prisma,
   TournamentStatus,
   UserRole,
@@ -37,6 +39,7 @@ import {
   MATCH_ATHLETE_INACTIVE_ERROR,
   MATCH_ATHLETE_NOT_FOUND_ERROR,
   MATCH_ATHLETE_REPLACEMENT_UNSAFE_ERROR,
+  BRACKET_MATCH_PARTICIPANTS_IMMUTABLE_ERROR,
   MATCH_ATHLETE_ORGANIZATION_ERROR,
   MATCH_ATHLETE_WEIGHT_CLASS_ERROR,
   INVALID_MATCH_ERROR,
@@ -58,6 +61,7 @@ import type {
   MatchAthleteDto,
   UpdateMatchDto,
 } from './dto/match.dto';
+import type { MatchListQueryDto } from './dto/match-list-query.dto';
 import type {
   CreateTournamentDto,
   UpdateTournamentDto,
@@ -115,6 +119,7 @@ const matchSelect = {
     },
   },
   breakDurationMs: true,
+  bracketFixtureId: true,
   createdAt: true,
   currentRound: true,
   finishedAt: true,
@@ -509,14 +514,52 @@ export class AdminManagementService {
     });
   }
 
-  async listMatches(tournamentId: string): Promise<MatchView[]> {
+  async listMatches(
+    tournamentId: string,
+    query: MatchListQueryDto = {},
+  ): Promise<MatchView[]> {
     await this.requireTournament(tournamentId);
+    if (query.weightClassId && query.unassigned === 'true')
+      throw new BadRequestException({
+        code: 'INVALID_MATCH_FILTER',
+        message: 'weightClassId and unassigned cannot be combined',
+      });
+    if (query.weightClassId) {
+      const weight = await this.prisma.tournamentWeightClass.findFirst({
+        where: { id: query.weightClassId, tournamentId },
+        select: { id: true },
+      });
+      if (!weight)
+        throw new NotFoundException({
+          code: 'WEIGHT_CLASS_NOT_FOUND',
+          message: 'Weight class not found',
+        });
+    }
 
     return this.prisma.match.findMany({
       orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       select: matchSelect,
+      where: {
+        tournamentId,
+        ...(query.weightClassId ? { weightClassId: query.weightClassId } : {}),
+        ...(query.unassigned === 'true' ? { weightClassId: null } : {}),
+      },
+    });
+  }
+
+  async countMatchesByWeightClass(
+    tournamentId: string,
+  ): Promise<Array<{ weightClassId: string | null; count: number }>> {
+    await this.requireTournament(tournamentId);
+    const counts = await this.prisma.match.groupBy({
+      by: ['weightClassId'],
+      _count: { _all: true },
       where: { tournamentId },
     });
+    return counts.map((item) => ({
+      weightClassId: item.weightClassId,
+      count: item._count._all,
+    }));
   }
 
   async createMatch(
@@ -618,6 +661,156 @@ export class AdminManagementService {
     throw new ConflictException(PUBLIC_MATCH_ID_COLLISION_ERROR);
   }
 
+  /** Materializes the immutable operational match for one ready bracket fixture. */
+  async prepareBracketFixtureMatch(
+    tournamentId: string,
+    bracketId: string,
+    fixtureId: string,
+    adminUserId: string,
+  ): Promise<CreatedMatchResult> {
+    for (
+      let attempt = 1;
+      attempt <= PUBLIC_ID_GENERATION_ATTEMPTS;
+      attempt += 1
+    ) {
+      const publicId = this.credentialGenerator.generatePublicId(
+        this.publicIdInitialLength,
+      );
+      try {
+        const result = await this.prisma.$transaction(async (tx) => {
+          // This order is shared by every fixture transition: tournament, bracket, fixture.
+          await tx.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId}::uuid FOR UPDATE`;
+          await tx.$queryRaw`SELECT id FROM tournament_brackets WHERE id = ${bracketId}::uuid FOR UPDATE`;
+          await tx.$queryRaw`SELECT id FROM bracket_fixtures WHERE id = ${fixtureId}::uuid FOR UPDATE`;
+          const tournament = await tx.tournament.findUnique({
+            where: { id: tournamentId },
+            select: {
+              status: true,
+              sport: { select: { sportGroup: { select: { code: true } } } },
+            },
+          });
+          if (!tournament)
+            throw new NotFoundException(TOURNAMENT_NOT_FOUND_ERROR);
+          if (tournament.status === TournamentStatus.ARCHIVED)
+            throw new ConflictException(TOURNAMENT_ARCHIVED_ERROR);
+          const fixture = await tx.bracketFixture.findFirst({
+            where: {
+              id: fixtureId,
+              bracketId,
+              bracket: { tournamentId, status: BracketStatus.ACTIVE },
+            },
+            include: {
+              match: { select: { id: true } },
+              bracket: { select: { weightClassId: true } },
+              slots: { include: { resolvedEntrant: true } },
+            },
+          });
+          if (!fixture)
+            throw new NotFoundException({
+              code: 'BRACKET_FIXTURE_NOT_FOUND',
+              message: 'Fixture does not belong to this active bracket',
+            });
+          if (fixture.match)
+            throw new ConflictException({
+              code: 'BRACKET_MATCH_ALREADY_PREPARED',
+              message: 'Fixture already has an operational match',
+            });
+          if (fixture.status !== BracketFixtureStatus.READY)
+            throw new ConflictException({
+              code: 'BRACKET_FIXTURE_NOT_READY',
+              message: 'Fixture participants are not ready',
+            });
+          const red = fixture.slots.find(
+            (slot) => slot.side === 'RED',
+          )?.resolvedEntrant;
+          const blue = fixture.slots.find(
+            (slot) => slot.side === 'BLUE',
+          )?.resolvedEntrant;
+          if (!red || !blue)
+            throw new ConflictException({
+              code: 'BRACKET_FIXTURE_PARTICIPANTS_UNRESOLVED',
+              message: 'Fixture participants are unresolved',
+            });
+          if (red.athleteId === blue.athleteId)
+            throw new ConflictException({
+              code: 'DUPLICATE_MATCH_ATHLETE',
+              message: 'Fixture must contain distinct entrants',
+            });
+          const rules = this.resolveRules(tournament.sport.sportGroup.code);
+          const accessCodes = await this.prepareAccessCodes(rules.accessRoles);
+          const created = await tx.match.create({
+            data: {
+              publicId,
+              tournamentId,
+              weightClassId: fixture.bracket.weightClassId,
+              bracketFixtureId: fixture.id,
+              roundDurationMs: this.roundDurationMs,
+              breakDurationMs: this.breakDurationMs,
+              accessCodes: {
+                create: accessCodes.map(({ codeHash, role }) => ({
+                  codeHash,
+                  role,
+                })),
+              },
+              athletes: {
+                create: [
+                  {
+                    color: 'RED',
+                    athleteId: red.athleteId,
+                    name: red.snapshotName,
+                    organization: red.snapshotOrganization,
+                    tournamentId,
+                  },
+                  {
+                    color: 'BLUE',
+                    athleteId: blue.athleteId,
+                    name: blue.snapshotName,
+                    organization: blue.snapshotOrganization,
+                    tournamentId,
+                  },
+                ],
+              },
+            },
+            select: matchSelect,
+          });
+          await tx.bracketFixture.update({
+            where: { id: fixture.id },
+            data: { status: BracketFixtureStatus.MATCH_PREPARED },
+          });
+          await tx.auditLog.create({
+            data: {
+              adminUserId,
+              eventType: AuditEventType.BRACKET_MATCH_PREPARED,
+              matchId: created.id,
+              metadata: {
+                tournamentId,
+                bracketId,
+                fixtureId,
+                publicId,
+                entrantIds: [red.id, blue.id],
+                athleteIds: [red.athleteId, blue.athleteId],
+              },
+            },
+            select: { id: true },
+          });
+          return { created, accessCodes };
+        });
+        return {
+          match: result.created,
+          accessCodes: result.accessCodes.map(({ code, role }) => ({
+            code,
+            role,
+          })),
+        };
+      } catch (error: unknown) {
+        if (!this.isPublicIdCollision(error)) throw error;
+        if (attempt === PUBLIC_ID_GENERATION_ATTEMPTS)
+          throw new ConflictException(PUBLIC_MATCH_ID_COLLISION_ERROR);
+      }
+    }
+    throw new ConflictException(PUBLIC_MATCH_ID_COLLISION_ERROR);
+  }
+
   async getMatch(id: string): Promise<MatchView> {
     const match = await this.prisma.match.findUnique({
       select: matchSelect,
@@ -713,6 +906,7 @@ export class AdminManagementService {
           tournamentId: true,
           status: true,
           weightClassId: true,
+          bracketFixtureId: true,
           athletes: { select: { athleteId: true } },
           tournament: {
             select: {
@@ -729,6 +923,10 @@ export class AdminManagementService {
       let athletes:
         Awaited<ReturnType<typeof this.prepareRosterAthletes>> | undefined;
       if (input.athletes !== undefined) {
+        if (existing.bracketFixtureId !== null)
+          throw new ConflictException(
+            BRACKET_MATCH_PARTICIPANTS_IMMUTABLE_ERROR,
+          );
         this.assertAthleteColors(
           input.athletes,
           this.resolveRules(existing.tournament.sport.sportGroup.code)
