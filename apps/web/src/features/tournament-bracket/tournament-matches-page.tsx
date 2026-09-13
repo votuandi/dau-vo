@@ -87,6 +87,8 @@ export function TournamentMatchesPage({
     retry: false,
   });
   const [preview, setPreview] = useState<BracketPreview | null>(null);
+  // A key is created once for each user action and survives mutation retries.
+  const [confirmationKey, setConfirmationKey] = useState<string | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [generatedCodes, setGeneratedCodes] = useState<readonly GeneratedAccessCode[]>([]);
   const [preparedMatch, setPreparedMatch] = useState<AdminMatch | null>(null);
@@ -94,6 +96,7 @@ export function TournamentMatchesPage({
     null,
   );
   const [decisionReason, setDecisionReason] = useState('');
+  const [decisionKey, setDecisionKey] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelOpen, setCancelOpen] = useState(false);
   const draw = useMutation({
@@ -101,6 +104,7 @@ export function TournamentMatchesPage({
     onSuccess: (value) => {
       setDialogError(null);
       setPreview(value);
+      setConfirmationKey(crypto.randomUUID());
     },
     onError: (error) => {
       notifyMutationError(error, 'Không thể bốc thăm.');
@@ -110,10 +114,11 @@ export function TournamentMatchesPage({
     mutationFn: () =>
       adminManagementApi.confirmBracket(tournament.id, selectedId ?? '', {
         previewToken: preview?.previewToken ?? '',
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey: confirmationKey ?? '',
       }),
     onSuccess: () => {
       setPreview(null);
+      setConfirmationKey(null);
       setDialogError(null);
       notifyMutationSuccess('Đã xác nhận nhánh đấu.');
       void Promise.all([
@@ -131,6 +136,7 @@ export function TournamentMatchesPage({
         );
       if (stale) {
         setPreview(null);
+        setConfirmationKey(null);
         setDialogError(
           'Danh sách vận động viên đã thay đổi hoặc phiên bốc thăm đã hết hạn. Hãy bốc thăm mới.',
         );
@@ -164,12 +170,13 @@ export function TournamentMatchesPage({
         tournament.id,
         bracket.data.bracket.id,
         decisionFixture.id,
-        { entrantId, reason: decisionReason.trim(), idempotencyKey: crypto.randomUUID() },
+        { entrantId, reason: decisionReason.trim(), idempotencyKey: decisionKey ?? '' },
       );
     },
     onSuccess: () => {
       setDecisionFixture(null);
       setDecisionReason('');
+      setDecisionKey(null);
       notifyMutationSuccess('Đã xác định người thắng.');
       void Promise.all([
         qc.invalidateQueries({ queryKey: bracketQueryKeys.all }),
@@ -277,6 +284,7 @@ export function TournamentMatchesPage({
                   }}
                   onDecide={(fixture) => {
                     setDecisionFixture(fixture);
+                    setDecisionKey(crypto.randomUUID());
                   }}
                 />
               </>
@@ -348,6 +356,7 @@ export function TournamentMatchesPage({
                 disabled={decide.isPending}
                 onClick={() => {
                   setDecisionFixture(null);
+                  setDecisionKey(null);
                 }}
                 type="button"
                 variant="outline"
@@ -415,6 +424,7 @@ export function TournamentMatchesPage({
           onCancel={() => {
             if (!confirm.isPending) {
               setPreview(null);
+              setConfirmationKey(null);
               setDialogError(null);
             }
           }}

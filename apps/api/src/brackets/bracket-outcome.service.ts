@@ -6,6 +6,7 @@ import {
   MatchStatus,
 } from '@prisma/client';
 import { Prisma, type AthleteColor } from '@prisma/client';
+import { createHash } from 'node:crypto';
 import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
 
 export class BracketProgressionLockedError extends Error {
@@ -209,14 +210,23 @@ export class BracketOutcomeService {
     reason: string,
     idempotencyKey: string,
   ) {
+    const requestFingerprint = this.manualDecisionFingerprint(
+      fixtureId,
+      entrantId,
+      reason,
+    );
+    // Serialize decisions for this fixture before checking the idempotency row.
+    // Otherwise two same-key calls can both miss it and one can observe the
+    // winner mutation before it learns that it is merely a retry.
+    await this.lockFixtureAndDownstream(tx, fixtureId);
     const existing = await tx.bracketWinnerDecisionIdempotency.findUnique({
-      where: { fixtureId_key: { fixtureId, key: idempotencyKey } },
+      where: { key: idempotencyKey },
     });
     if (existing) {
-      if (existing.entrantId !== entrantId)
+      if (existing.requestFingerprint !== requestFingerprint)
         throw new ConflictException({
           code: 'IDEMPOTENCY_KEY_CONFLICT',
-          message: 'Idempotency key was used for another entrant',
+          message: 'Idempotency key was used for a different winner decision',
         });
       return existing.response;
     }
@@ -251,10 +261,22 @@ export class BracketOutcomeService {
         fixtureId,
         key: idempotencyKey,
         entrantId,
+        requestFingerprint,
         response: result as Prisma.InputJsonValue,
       },
     });
     return result;
+  }
+
+  manualDecisionFingerprint(
+    fixtureId: string,
+    entrantId: string,
+    reason: string,
+  ) {
+    // Reasons are normalized before this service and are meaningful audit data.
+    return createHash('sha256')
+      .update(JSON.stringify({ fixtureId, entrantId, reason: reason.trim() }))
+      .digest('hex');
   }
 
   private async decide(

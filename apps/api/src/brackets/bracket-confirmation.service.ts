@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import {
   AuditEventType,
   AthleteColor,
@@ -59,6 +60,7 @@ export class BracketConfirmationService {
           : 'Bracket preview is invalid',
       );
     }
+    const fingerprint = this.fingerprint(claims);
     try {
       return await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId}::uuid FOR UPDATE`;
@@ -68,13 +70,7 @@ export class BracketConfirmationService {
           include: this.include,
         });
         if (existing) {
-          if (
-            existing.tournamentId !== tournamentId ||
-            existing.weightClassId !== weightClassId ||
-            existing.athleteCount !==
-              claims.placements.filter((p) => p.athleteId).length ||
-            existing.bracketSize !== claims.placements.length
-          )
+          if (existing.confirmationFingerprint !== fingerprint)
             throw fail(
               'BRACKET_CONFIRMATION_KEY_REUSED',
               'Idempotency key was used for a different confirmation',
@@ -148,6 +144,7 @@ export class BracketConfirmationService {
             bracketSize: claims.placements.length,
             roundCount: graph.roundCount,
             confirmationKey: input.idempotencyKey,
+            confirmationFingerprint: fingerprint,
             confirmedByUserId: userId,
             entrants: {
               create: claims.placements
@@ -219,16 +216,64 @@ export class BracketConfirmationService {
         return this.get(tx, bracket.id);
       });
     } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2002'
-      )
+      if (this.isConfirmationKeyConflict(e)) {
+        // A concurrent transaction may have committed this exact logical
+        // request after our initial lookup. Replay it, never create/audit again.
+        const winner = await this.prisma.tournamentBracket.findUnique({
+          where: { confirmationKey: input.idempotencyKey },
+          include: this.include,
+        });
+        if (winner) {
+          if (winner.confirmationFingerprint === fingerprint)
+            return this.view(winner);
+          throw fail(
+            'BRACKET_CONFIRMATION_KEY_REUSED',
+            'Idempotency key was used for a different confirmation',
+          );
+        }
+      }
+      if (this.isCurrentBracketConflict(e))
         throw fail(
           'BRACKET_ALREADY_EXISTS',
           'An active bracket already exists for this weight class',
         );
       throw e;
     }
+  }
+
+  /** Hash stable, semantic claims; token nonce/timestamps are deliberately excluded. */
+  private fingerprint(c: BracketPreviewTokenClaims): string {
+    const payload = JSON.stringify({
+      tournamentId: c.tournamentId,
+      weightClassId: c.weightClassId,
+      rosterFingerprint: c.rosterFingerprint,
+      bracketSize: c.placements.length,
+      placements: [...c.placements]
+        .sort((a, b) => a.drawPosition - b.drawPosition)
+        .map(({ drawPosition, athleteId }) => [drawPosition, athleteId]),
+    });
+    return createHash('sha256').update(payload).digest('hex');
+  }
+
+  private isConfirmationKeyConflict(error: unknown): boolean {
+    return this.uniqueTarget(error).includes(
+      'tournament_brackets_confirmation_key_key',
+    );
+  }
+
+  private isCurrentBracketConflict(error: unknown): boolean {
+    return this.uniqueTarget(error).includes(
+      'tournament_brackets_one_current_per_weight_class_key',
+    );
+  }
+
+  private uniqueTarget(error: unknown): string {
+    if (
+      !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+      error.code !== 'P2002'
+    )
+      return '';
+    return JSON.stringify(error.meta?.target ?? '');
   }
 
   async find(tournamentId: string, weightClassId: string) {

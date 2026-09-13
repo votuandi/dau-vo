@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Controller,
   Header,
   HttpCode,
@@ -11,7 +12,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 import {
   AdminManagementService,
   type CreatedMatchResult,
@@ -78,24 +79,54 @@ export class BracketFixturesController {
       request.user,
       true,
     );
-    return this.prisma.$transaction(async (tx) => {
-      const fixture = await tx.bracketFixture.findFirst({
-        where: { id: fixtureId, bracketId, bracket: { tournamentId } },
-        select: { id: true },
-      });
-      if (!fixture)
-        throw new BadRequestException({
-          code: 'BRACKET_FIXTURE_NOT_FOUND',
-          message: 'Fixture does not belong to bracket',
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const fixture = await tx.bracketFixture.findFirst({
+          where: { id: fixtureId, bracketId, bracket: { tournamentId } },
+          select: { id: true },
         });
-      return this.outcomes.manuallyDecide(
-        tx,
+        if (!fixture)
+          throw new BadRequestException({
+            code: 'BRACKET_FIXTURE_NOT_FOUND',
+            message: 'Fixture does not belong to bracket',
+          });
+        return this.outcomes.manuallyDecide(
+          tx,
+          fixtureId,
+          input.entrantId,
+          request.user.id,
+          input.reason,
+          input.idempotencyKey,
+        );
+      });
+    } catch (error) {
+      if (!this.isWinnerDecisionKeyConflict(error)) throw error;
+      const winner =
+        await this.prisma.bracketWinnerDecisionIdempotency.findUnique({
+          where: { key: input.idempotencyKey },
+        });
+      if (!winner) throw error;
+      const fingerprint = this.outcomes.manualDecisionFingerprint(
         fixtureId,
         input.entrantId,
-        request.user.id,
         input.reason,
-        input.idempotencyKey,
       );
-    });
+      if (winner.requestFingerprint !== fingerprint)
+        throw new ConflictException({
+          code: 'IDEMPOTENCY_KEY_CONFLICT',
+          message: 'Idempotency key was used for a different winner decision',
+        });
+      return winner.response;
+    }
+  }
+
+  private isWinnerDecisionKeyConflict(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002' &&
+      JSON.stringify(error.meta?.target ?? '').includes(
+        'bracket_winner_decision_idempotency_key_key',
+      )
+    );
   }
 }

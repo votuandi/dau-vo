@@ -455,6 +455,7 @@ model TournamentBracket {
   bracketSize        Int           @map("bracket_size")
   roundCount         Int           @map("round_count")
   confirmationKey    String        @unique(map: "tournament_brackets_confirmation_key_key") @map("confirmation_key") @db.VarChar(255)
+  confirmationFingerprint String   @map("confirmation_fingerprint") @db.Char(64)
   confirmedByUserId  String?       @map("confirmed_by_user_id") @db.Uuid
   confirmedAt        DateTime      @default(now()) @map("confirmed_at") @db.Timestamptz(3)
   completedAt        DateTime?     @map("completed_at") @db.Timestamptz(3)
@@ -525,12 +526,12 @@ model BracketFixture {
 model BracketWinnerDecisionIdempotency {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   fixtureId      String   @map("fixture_id") @db.Uuid
-  key            String   @db.VarChar(255)
+  key            String   @unique(map: "bracket_winner_decision_idempotency_key_key") @db.VarChar(255)
   entrantId      String   @map("entrant_id") @db.Uuid
+  requestFingerprint String @map("request_fingerprint") @db.Char(64)
   response       Json     @db.JsonB
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  @@unique([fixtureId, key], map: "bracket_winner_decision_idempotency_fixture_id_key_key")
   @@map("bracket_winner_decision_idempotency")
 }
 
