@@ -1,4 +1,5 @@
 import type { ConfigService } from '@nestjs/config';
+import { createHmac } from 'node:crypto';
 import type { EnvironmentVariables } from '../config/environment';
 import { BracketPreviewTokenService } from './bracket-preview-token.service';
 
@@ -52,7 +53,7 @@ describe('BracketPreviewTokenService', () => {
     const [payload, signature] = issued.previewToken.split('.');
     expect(() =>
       tokens.verify(
-        `${payload}.x${signature?.slice(1)}`,
+        `${payload}x.${signature}`,
         { tournamentId, weightClassId },
         now,
       ),
@@ -71,5 +72,38 @@ describe('BracketPreviewTokenService', () => {
         new Date('2026-09-12T12:05:00.000Z'),
       ),
     ).toThrow('BRACKET_PREVIEW_EXPIRED');
+  });
+
+  it.each([
+    ['future-issued', { issuedAt: Math.floor(now.getTime() / 1000) + 1 }],
+    ['invalid fingerprint', { rosterFingerprint: 'not-a-sha256-fingerprint' }],
+    ['invalid placement', { placements: [{ drawPosition: 0, athleteId: 1 }] }],
+  ])('rejects signed tokens with %s claims', (unused, override) => {
+    const tokens = service();
+    const claims = {
+      version: 1,
+      tournamentId,
+      weightClassId,
+      placements: [{ drawPosition: 1, athleteId: tournamentId }],
+      rosterFingerprint: 'a'.repeat(64),
+      issuedAt: 1_789_948_800,
+      expiresAt: 1_789_949_100,
+      nonce: 'nonce',
+      ...override,
+    };
+    const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
+    const signature = createHmac(
+      'sha256',
+      'preview-secret-that-is-independent-and-long-enough',
+    )
+      .update(payload)
+      .digest('base64url');
+    expect(() =>
+      tokens.verify(
+        `${payload}.${signature}`,
+        { tournamentId, weightClassId },
+        now,
+      ),
+    ).toThrow('BRACKET_PREVIEW_INVALID');
   });
 });

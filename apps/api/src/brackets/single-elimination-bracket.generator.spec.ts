@@ -38,6 +38,8 @@ describe('generateSingleEliminationBracket', () => {
     [29, 32, 3, 5, 28],
     [31, 32, 1, 5, 30],
     [32, 32, 0, 5, 31],
+    [33, 64, 31, 6, 32],
+    [63, 64, 1, 6, 62],
     [64, 64, 0, 6, 63],
   ])(
     'constructs correct bracket calculations for %i athletes',
@@ -64,6 +66,8 @@ describe('generateSingleEliminationBracket', () => {
     [29, 13],
     [31, 15],
     [32, 16],
+    [33, 1],
+    [63, 31],
     [64, 32],
   ])(
     'has %i athletes and %i actual first-round fixtures',
@@ -157,6 +161,23 @@ describe('generateSingleEliminationBracket', () => {
     const original = [...athleteIds];
     generate(athleteIds);
     expect(athleteIds).toEqual(original);
+  });
+
+  it('honors the caller-configured athlete maximum', () => {
+    expect(() =>
+      generateSingleEliminationBracket({
+        athleteIds: athletes(65),
+        maxAthletes: 64,
+        randomSource: zeroRandom,
+      }),
+    ).toThrow('Bracket cannot contain more than 64 athletes.');
+    expect(
+      generateSingleEliminationBracket({
+        athleteIds: athletes(64),
+        maxAthletes: 64,
+        randomSource: zeroRandom,
+      }).athleteCount,
+    ).toBe(64);
   });
 });
 

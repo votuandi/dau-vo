@@ -89,7 +89,25 @@ export class BracketPreviewTokenService {
       !Number.isSafeInteger(claims.expiresAt)
     )
       throw new Error('BRACKET_PREVIEW_INVALID');
-    if (claims.expiresAt <= Math.floor(now.getTime() / 1000))
+    const nowSeconds = Math.floor(now.getTime() / 1000);
+    if (
+      claims.issuedAt > nowSeconds ||
+      claims.expiresAt <= claims.issuedAt ||
+      claims.expiresAt - claims.issuedAt > TOKEN_TTL_SECONDS ||
+      !/^[a-f0-9]{64}$/i.test(claims.rosterFingerprint) ||
+      !claims.nonce ||
+      !claims.placements.every(
+        (placement) =>
+          placement !== null &&
+          typeof placement === 'object' &&
+          Number.isSafeInteger(placement.drawPosition) &&
+          placement.drawPosition > 0 &&
+          (typeof placement.athleteId === 'string' ||
+            placement.athleteId === null),
+      )
+    )
+      throw new Error('BRACKET_PREVIEW_INVALID');
+    if (claims.expiresAt <= nowSeconds)
       throw new Error('BRACKET_PREVIEW_EXPIRED');
     return claims;
   }

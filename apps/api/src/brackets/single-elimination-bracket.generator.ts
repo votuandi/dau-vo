@@ -15,6 +15,8 @@ export const cryptoRandomSource: RandomSource = {
 export interface GenerateBracketInput {
   athleteIds: readonly string[];
   randomSource: RandomSource;
+  /** A caller-controlled operational limit; omitted means no additional cap. */
+  maxAthletes?: number;
 }
 
 export interface BracketEntrantPlacement {
@@ -90,7 +92,7 @@ interface MutableFixture extends GeneratedBracketFixture {
 export function generateSingleEliminationBracket(
   input: GenerateBracketInput,
 ): GeneratedSingleEliminationBracket {
-  assertValidAthletes(input.athleteIds);
+  assertValidAthletes(input.athleteIds, input.maxAthletes);
 
   const athleteCount = input.athleteIds.length;
   const bracketSize = nextPowerOfTwo(athleteCount);
@@ -164,7 +166,10 @@ export function generateSingleEliminationBracket(
   };
 }
 
-function assertValidAthletes(athleteIds: readonly string[]): void {
+function assertValidAthletes(
+  athleteIds: readonly string[],
+  maxAthletes?: number,
+): void {
   if (athleteIds.length < 2) {
     throw new Error(
       'At least two athletes are required to generate a bracket.',
@@ -172,6 +177,19 @@ function assertValidAthletes(athleteIds: readonly string[]): void {
   }
   if (new Set(athleteIds).size !== athleteIds.length) {
     throw new Error('Athlete IDs must be unique.');
+  }
+  if (
+    maxAthletes !== undefined &&
+    (!Number.isSafeInteger(maxAthletes) || maxAthletes < 2)
+  ) {
+    throw new Error(
+      'Maximum athlete count must be an integer of at least two.',
+    );
+  }
+  if (maxAthletes !== undefined && athleteIds.length > maxAthletes) {
+    throw new Error(
+      `Bracket cannot contain more than ${maxAthletes} athletes.`,
+    );
   }
 }
 
