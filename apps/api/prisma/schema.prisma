@@ -280,8 +280,10 @@ model AdminEntitlement {
   manualAdjustmentMetadata Json?                  @map("manual_adjustment_metadata") @db.JsonB
   createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  user                     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                     User                   @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "admin_entitlements_user_id_fkey")
 
+  @@index([status, activeUntil], map: "admin_entitlements_status_active_until_idx")
+  @@index([adminAccessEndedAt], map: "admin_entitlements_admin_access_ended_at_idx")
   @@map("admin_entitlements")
 }
 
@@ -425,7 +427,8 @@ model Match {
   updatedAt        DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   tournament       Tournament             @relation(fields: [tournamentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "matches_tournament_id_fkey")
   weightClass      TournamentWeightClass? @relation(fields: [tournamentId, weightClassId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade, map: "matches_tournament_weight_class_id_fkey")
-  athletes         MatchAthlete[]
+  athletes         MatchAthlete[] @relation("MatchAthletesByMatchId")
+  athletesByTournament MatchAthlete[] @relation("MatchAthletesByTournament")
   accessCodes      MatchAccessCode[]
   sessions         MatchSession[]
   rounds           Round[]
@@ -454,7 +457,7 @@ model TournamentBracket {
   bracketSize        Int           @map("bracket_size")
   roundCount         Int           @map("round_count")
   confirmationKey    String        @unique(map: "tournament_brackets_confirmation_key_key") @map("confirmation_key") @db.VarChar(255)
-  confirmationFingerprint String   @map("confirmation_fingerprint") @db.Char(64)
+  confirmationFingerprint String   @default("") @map("confirmation_fingerprint") @db.Char(64)
   confirmedByUserId  String?       @map("confirmed_by_user_id") @db.Uuid
   confirmedAt        DateTime      @default(now()) @map("confirmed_at") @db.Timestamptz(3)
   completedAt        DateTime?     @map("completed_at") @db.Timestamptz(3)
@@ -515,6 +518,7 @@ model BracketFixture {
   winnerEntrant   BracketEntrant?      @relation("BracketFixtureWinner", fields: [winnerEntrantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "bracket_fixtures_winner_entrant_id_fkey")
   slots           BracketSlot[]
   sourceSlots     BracketSlot[]        @relation("BracketSlotSourceFixture")
+  winnerDecisionIdempotencyRecords BracketWinnerDecisionIdempotency[]
 
   @@unique([bracketId, roundNumber, position], map: "bracket_fixtures_bracket_id_round_number_position_key")
   @@index([winnerEntrantId], map: "bracket_fixtures_winner_entrant_id_idx")
@@ -526,9 +530,10 @@ model BracketWinnerDecisionIdempotency {
   fixtureId      String   @map("fixture_id") @db.Uuid
   key            String   @unique(map: "bracket_winner_decision_idempotency_key_key") @db.VarChar(255)
   entrantId      String   @map("entrant_id") @db.Uuid
-  requestFingerprint String @map("request_fingerprint") @db.Char(64)
+  requestFingerprint String @default("") @map("request_fingerprint") @db.Char(64)
   response       Json     @db.JsonB
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  fixture        BracketFixture @relation(fields: [fixtureId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "bracket_winner_decision_idempotency_fixture_id_fkey")
 
   @@map("bracket_winner_decision_idempotency")
 }
@@ -584,7 +589,8 @@ model MatchAthlete {
   color        AthleteColor
   createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  match        Match              @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "match_athletes_match_id_fkey")
+  match        Match              @relation("MatchAthletesByMatchId", fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "match_athletes_match_id_fkey")
+  matchByTournament Match          @relation("MatchAthletesByTournament", fields: [matchId, tournamentId], references: [id, tournamentId], onDelete: Cascade, onUpdate: Cascade, map: "match_athletes_match_tournament_id_fkey")
   athlete      TournamentAthlete? @relation(fields: [tournamentId, athleteId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade, map: "match_athletes_tournament_athlete_id_fkey")
   scoreEvents  ScoreEvent[]
   penalties    Penalty[]

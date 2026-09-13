@@ -354,6 +354,18 @@ describe('database unique constraints', () => {
         },
       }),
     ).rejects.toMatchObject({ code: 'P2003' });
+    await expect(
+      prisma.matchAthlete.create({
+        data: {
+          color: AthleteColor.RED,
+          id: fixture.duplicateAthleteId,
+          matchId: fixture.matchId,
+          name: 'Cross tournament snapshot',
+          organization: 'Club',
+          tournamentId: fixture.otherTournamentId,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2003' });
     await prisma.matchAthlete.create({
       data: {
         id: fixture.athleteId,
@@ -419,5 +431,114 @@ describe('database unique constraints', () => {
         },
       }),
     ).rejects.toMatchObject({ code: 'P2002' });
+  });
+
+  it('retains repaired foreign keys, entitlement indexes, and fixture decision cleanup', async () => {
+    const databaseObjects = await prisma.$queryRaw<Array<{ name: string }>>`
+      SELECT conname AS name FROM pg_constraint
+      WHERE conname IN (
+        'match_athletes_match_tournament_id_fkey',
+        'bracket_winner_decision_idempotency_fixture_id_fkey'
+      )
+      UNION ALL
+      SELECT indexname AS name FROM pg_indexes
+      WHERE schemaname = current_schema()
+        AND indexname IN (
+          'admin_entitlements_status_active_until_idx',
+          'admin_entitlements_admin_access_ended_at_idx',
+          'tournament_brackets_one_current_per_weight_class_key'
+        )
+    `;
+    expect(
+      databaseObjects.map((databaseObject) => databaseObject.name),
+    ).toEqual(
+      expect.arrayContaining([
+        'match_athletes_match_tournament_id_fkey',
+        'bracket_winner_decision_idempotency_fixture_id_fkey',
+        'admin_entitlements_status_active_until_idx',
+        'admin_entitlements_admin_access_ended_at_idx',
+        'tournament_brackets_one_current_per_weight_class_key',
+      ]),
+    );
+
+    const weightClass = await prisma.tournamentWeightClass.create({
+      data: {
+        tournamentId: fixture.tournamentId,
+        name: 'Decision cleanup class',
+        normalizedName: 'decision cleanup class',
+      },
+    });
+    const athletes = await Promise.all(
+      ['One', 'Two'].map((name) =>
+        prisma.tournamentAthlete.create({
+          data: {
+            tournamentId: fixture.tournamentId,
+            weightClassId: weightClass.id,
+            name,
+            birthYear: 2000,
+          },
+        }),
+      ),
+    );
+    const bracket = await prisma.tournamentBracket.create({
+      data: {
+        tournamentId: fixture.tournamentId,
+        weightClassId: weightClass.id,
+        athleteCount: 2,
+        bracketSize: 2,
+        roundCount: 1,
+        confirmationKey: 'database-constraint-decision-cleanup',
+        confirmationFingerprint: 'a'.repeat(64),
+      },
+    });
+    const entrants = await Promise.all(
+      athletes.map((athlete, index) =>
+        prisma.bracketEntrant.create({
+          data: {
+            bracketId: bracket.id,
+            athleteId: athlete.id,
+            initialRoundNumber: 1,
+            initialFixturePosition: 1,
+            initialSide: index === 0 ? AthleteColor.RED : AthleteColor.BLUE,
+            snapshotBirthYear: athlete.birthYear,
+            snapshotName: athlete.name,
+          },
+        }),
+      ),
+    );
+    const bracketFixture = await prisma.bracketFixture.create({
+      data: {
+        bracketId: bracket.id,
+        displayReference: 'F1',
+        position: 1,
+        roundNumber: 1,
+        slots: {
+          create: entrants.map((entrant, index) => ({
+            directEntrantId: entrant.id,
+            resolvedEntrantId: entrant.id,
+            side: index === 0 ? AthleteColor.RED : AthleteColor.BLUE,
+          })),
+        },
+      },
+    });
+    const decision = await prisma.bracketWinnerDecisionIdempotency.create({
+      data: {
+        fixtureId: bracketFixture.id,
+        entrantId: entrants[0]!.id,
+        key: 'database-constraint-decision-cleanup-key',
+        requestFingerprint: 'b'.repeat(64),
+        response: {},
+      },
+    });
+
+    await prisma.bracketFixture.delete({ where: { id: bracketFixture.id } });
+    await expect(
+      prisma.bracketWinnerDecisionIdempotency.findUnique({
+        where: { id: decision.id },
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      prisma.tournamentBracket.delete({ where: { id: bracket.id } }),
+    ).resolves.toBeDefined();
   });
 });

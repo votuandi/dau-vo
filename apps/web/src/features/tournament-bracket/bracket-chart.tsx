@@ -1,4 +1,8 @@
-import type { ActiveBracket, BracketPreview } from '@/services/api/admin-management';
+import type {
+  ActiveBracket,
+  BracketFixture,
+  BracketPreview,
+} from '@/services/api/admin-management';
 import { roundLabel } from './bracket-labels';
 
 type ChartData = Pick<BracketPreview, 'rounds' | 'initialEntrants'> | ActiveBracket;
@@ -6,8 +10,9 @@ function preview(data: ChartData): data is Pick<BracketPreview, 'rounds' | 'init
   return 'rounds' in data;
 }
 export function BracketChart({ data }: { readonly data: ChartData }) {
+  const isPreview = preview(data);
   const entrantById = new Map(
-    preview(data)
+    isPreview
       ? data.initialEntrants.flatMap((x) =>
           x.athlete && x.athleteId ? [[x.athleteId, x.athlete] as const] : [],
         )
@@ -23,7 +28,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
             ] as const,
         ),
   );
-  const rounds = preview(data)
+  const rounds = isPreview
     ? data.rounds
     : Array.from({ length: data.bracket.roundCount }, (_, index) => ({
         roundNumber: index + 1,
@@ -49,16 +54,20 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                       {fixture.displayReference}
                     </p>
                     {fixture.slots.map((slot) => {
-                      const isPreviewSlot = 'resolvedEntrantId' in slot;
-                      const entrant = isPreviewSlot
-                        ? slot.resolvedEntrantId
-                          ? entrantById.get(slot.resolvedEntrantId)
+                      // Confirmed slots retain Prisma's `resolvedEntrantId`
+                      // scalar, so it cannot distinguish preview and persisted
+                      // responses. The outer payload shape does.
+                      const previewSlot = slot as BracketFixture['slots'][number];
+                      const activeSlot = slot as ActiveBracket['fixtures'][number]['slots'][number];
+                      const entrant = isPreview
+                        ? previewSlot.resolvedEntrantId
+                          ? entrantById.get(previewSlot.resolvedEntrantId)
                           : undefined
-                        : (slot.resolvedEntrant ?? slot.directEntrant);
+                        : (activeSlot.resolvedEntrant ?? activeSlot.directEntrant);
                       const waiting =
-                        !entrant && !isPreviewSlot && slot.sourceFixtureId
+                        !entrant && !isPreview && activeSlot.sourceFixtureId
                           ? `Chờ thắng trận`
-                          : !entrant && isPreviewSlot && slot.source.kind === 'FIXTURE_WINNER'
+                          : !entrant && isPreview && previewSlot.source.kind === 'FIXTURE_WINNER'
                             ? 'Chờ thắng trận'
                             : 'Đặc cách';
                       return (

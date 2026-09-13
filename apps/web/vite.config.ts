@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 
 const workspaceRoot = fileURLToPath(new URL('../..', import.meta.url));
+const sharedTypesSource = fileURLToPath(
+  new URL('../../packages/shared-types/src/index.ts', import.meta.url),
+);
 
 function environmentValue(value: string | undefined, fallback: string): string {
   const normalized = value?.trim();
@@ -29,13 +32,13 @@ export default defineConfig(({ mode }) => {
       },
     },
     envDir: workspaceRoot,
-    optimizeDeps: {
-      include: ['@martial-arts-scoring/shared-types'],
-    },
     plugins: [react()],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
+        // Resolve this workspace package from source.  Pre-bundling its dist
+        // output can leave a running dev server with stale runtime exports.
+        '@martial-arts-scoring/shared-types': sharedTypesSource,
       },
     },
     server: {
