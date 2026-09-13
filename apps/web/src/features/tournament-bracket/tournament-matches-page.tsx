@@ -27,7 +27,7 @@ import {
 } from '@/services/api/admin-management';
 import { TournamentStatus } from '@/types/shared';
 import { BracketChart } from './bracket-chart';
-import { BracketPreviewDialog } from './bracket-preview-dialog';
+import { BracketPreviewPanel } from './bracket-preview-dialog';
 import { bracketQueryKeys } from './query-keys';
 import { WeightClassMatchTabs } from './weight-class-match-tabs';
 import { ManualMatchCreationForm } from './manual-match-creation-form';
@@ -316,7 +316,27 @@ export function TournamentMatchesPage({
                 </Button>
               ) : null}
             </div>
-            {bracket.data ? (
+            {preview ? (
+              <BracketPreviewPanel
+                error={dialogError}
+                canConfirm={Boolean(confirmationKey) && !dialogError}
+                onCancel={() => {
+                  if (!confirm.isPending) {
+                    setPreview(null);
+                    setConfirmationKey(null);
+                    setDialogError(null);
+                  }
+                }}
+                onConfirm={() => {
+                  confirm.mutate();
+                }}
+                onRedraw={() => {
+                  draw.mutate();
+                }}
+                pending={draw.isPending || confirm.isPending}
+                preview={preview}
+              />
+            ) : bracket.data ? (
               <>
                 <div className="mt-5">
                   <BracketChart data={bracket.data} />
@@ -492,27 +512,6 @@ export function TournamentMatchesPage({
           }
         />
       </div>
-      {preview ? (
-        <BracketPreviewDialog
-          error={dialogError}
-          canConfirm={Boolean(confirmationKey) && !dialogError}
-          onCancel={() => {
-            if (!confirm.isPending) {
-              setPreview(null);
-              setConfirmationKey(null);
-              setDialogError(null);
-            }
-          }}
-          onConfirm={() => {
-            confirm.mutate();
-          }}
-          onRedraw={() => {
-            draw.mutate();
-          }}
-          pending={draw.isPending || confirm.isPending}
-          preview={preview}
-        />
-      ) : null}
     </section>
   );
 }

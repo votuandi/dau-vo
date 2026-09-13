@@ -1,10 +1,8 @@
-import { useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Dialog } from '@/components/ui/dialog';
 import { BracketChart } from './bracket-chart';
 import type { BracketPreview } from '@/services/api/admin-management';
 
-export function BracketPreviewDialog({
+export function BracketPreviewPanel({
   preview,
   pending,
   error,
@@ -21,16 +19,19 @@ export function BracketPreviewDialog({
   readonly onRedraw: () => void;
   readonly onCancel: () => void;
 }) {
-  const ref = useRef<HTMLButtonElement>(null);
   return (
-    <Dialog
-      className="max-w-6xl"
-      description="Kiểm tra kết quả bốc thăm trước khi xác nhận."
-      initialFocusRef={ref}
-      onClose={onCancel}
-      pending={pending}
-      title="Xem trước nhánh đấu"
+    <section
+      aria-labelledby="bracket-preview-title"
+      className="mt-5 rounded-xl border border-primary/30 bg-primary/5 p-4 sm:p-5"
     >
+      <div>
+        <h4 className="font-black" id="bracket-preview-title">
+          Xem trước nhánh đấu
+        </h4>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Kiểm tra kết quả bốc thăm trước khi xác nhận.
+        </p>
+      </div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <dl className="grid grid-cols-2 gap-x-5 gap-y-1 text-sm">
           <div>
@@ -69,10 +70,10 @@ export function BracketPreviewDialog({
         <Button disabled={pending} onClick={onRedraw} type="button" variant="outline">
           {pending ? 'Đang bốc…' : 'Bốc thăm lại'}
         </Button>
-        <Button disabled={pending || !canConfirm} onClick={onConfirm} ref={ref} type="button">
+        <Button disabled={pending || !canConfirm} onClick={onConfirm} type="button">
           {pending ? 'Đang xác nhận…' : 'Đồng ý'}
         </Button>
       </div>
-    </Dialog>
+    </section>
   );
 }
