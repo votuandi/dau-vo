@@ -36,7 +36,9 @@ import {
 // These classes must remain runtime imports for Nest validation metadata.
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { CreateMatchDto } from './dto/match.dto';
-import type { MatchListQueryDto } from './dto/match-list-query.dto';
+// These classes must remain runtime imports for Nest validation metadata.
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+import { MatchListQueryDto } from './dto/match-list-query.dto';
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { CreateTournamentDto, UpdateTournamentDto } from './dto/tournament.dto';
 import { IMAGE_MAX_BYTES } from '../media/image-storage';

@@ -23,7 +23,9 @@ import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { BracketOutcomeService } from './bracket-outcome.service';
 import { PrismaService } from '../prisma/prisma.service';
-import type { DecideBracketWinnerDto } from './dto/decide-bracket-winner.dto';
+// Nest reads this class from decorator metadata at runtime.
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+import { DecideBracketWinnerDto } from './dto/decide-bracket-winner.dto';
 
 const uuid = new ParseUUIDPipe({
   exceptionFactory: () => new BadRequestException(INVALID_ID_ERROR),
@@ -91,7 +93,7 @@ export class BracketFixturesController {
         fixtureId,
         input.entrantId,
         request.user.id,
-        input.reason.trim(),
+        input.reason,
         input.idempotencyKey,
       );
     });

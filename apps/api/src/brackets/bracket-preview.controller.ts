@@ -20,7 +20,9 @@ import { AdminManagementService } from '../admin-management/admin-management.ser
 import { INVALID_ID_ERROR } from '../admin-management/admin-management.errors';
 import { BracketPreviewService } from './bracket-preview.service';
 import { BracketConfirmationService } from './bracket-confirmation.service';
-import type { ConfirmBracketDto } from './dto/confirm-bracket.dto';
+// Nest reads this class from decorator metadata at runtime.
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+import { ConfirmBracketDto } from './dto/confirm-bracket.dto';
 
 const uuid = new ParseUUIDPipe({
   exceptionFactory: () => new BadRequestException(INVALID_ID_ERROR),
