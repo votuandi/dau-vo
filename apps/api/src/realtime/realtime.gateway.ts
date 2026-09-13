@@ -37,6 +37,9 @@ import {
 import type { Server } from 'socket.io';
 
 import { MATCH_SESSION_COOKIE } from '../match-access/match-access.constants';
+import { OFFICIAL_SESSION_COOKIE } from '../official-access/official-access.constants';
+import { OfficialAccessService } from '../official-access/official-access.service';
+import { RealtimeOfficialRoutingService } from './realtime-official-routing.service';
 import { BracketProgressionLockedError } from '../brackets/bracket-outcome.service';
 import { MatchAccessService } from '../match-access/match-access.service';
 import {
@@ -110,7 +113,9 @@ import {
   VOTE_ROUND_ENDED_ERROR,
   VOTE_SCORING_WINDOW_PENDING_ERROR,
   matchRoom,
+  officialRoom,
   scoreboardRoom,
+  tournamentRoom,
 } from './realtime.constants';
 import { RealtimeMatchStateService } from './realtime-match-state.service';
 import { RealtimeSessionRegistryService } from './realtime-session-registry.service';
@@ -142,6 +147,10 @@ export class RealtimeGateway
   constructor(
     @Inject(MatchAccessService)
     private readonly matchAccess: MatchAccessService,
+    @Inject(OfficialAccessService)
+    private readonly officialAccess: OfficialAccessService,
+    @Inject(RealtimeOfficialRoutingService)
+    private readonly officialRouting: RealtimeOfficialRoutingService,
     @Inject(RealtimeMatchStateService)
     private readonly matchState: RealtimeMatchStateService,
     @Inject(RealtimeSessionRegistryService)
@@ -155,6 +164,7 @@ export class RealtimeGateway
   ) {}
 
   afterInit(server: Server): void {
+    this.officialRouting.bind(this.server);
     server.use((socket, next) => {
       void this.authenticate(socket as RealtimeSocket).then(
         () => next(),
@@ -179,6 +189,11 @@ export class RealtimeGateway
   async handleConnection(client: RealtimeSocket): Promise<void> {
     if (client.data.connectionKind === 'scoreboard') {
       await this.connectScoreboard(client);
+      return;
+    }
+
+    if (client.data.connectionKind === 'official') {
+      await this.connectOfficial(client);
       return;
     }
 
@@ -741,6 +756,11 @@ export class RealtimeGateway
       }
       return;
     }
+    if (client.data.connectionKind === 'official') {
+      const identity = client.data.officialIdentity;
+      if (identity) await this.sessionRegistry.unregister(identity.sessionId, client.id);
+      return;
+    }
     const identity = client.data.identity;
 
     if (identity === undefined) {
@@ -784,6 +804,14 @@ export class RealtimeGateway
     client.emit(RealtimeEvent.MATCH_STATE, snapshot);
   }
 
+  @SubscribeMessage(RealtimeEvent.OFFICIAL_ASSIGNMENT_SNAPSHOT_REQUEST)
+  async officialAssignmentSnapshotRequest(
+    @ConnectedSocket() client: RealtimeSocket,
+  ): Promise<void> {
+    const snapshot = await this.revalidateOfficial(client);
+    if (snapshot) client.emit(RealtimeEvent.OFFICIAL_ASSIGNMENT_SNAPSHOT, snapshot);
+  }
+
   @SubscribeMessage(RealtimeEvent.PUBLIC_MATCH_STATE_REQUEST)
   async publicMatchStateRequest(
     @ConnectedSocket() client: RealtimeSocket,
@@ -809,6 +837,25 @@ export class RealtimeGateway
       );
       client.data.connectionKind = 'scoreboard';
       client.data.scoreboardMatchPublicId = snapshot.match.publicId;
+      return;
+    }
+
+    const officialToken = this.readCookie(
+      client.handshake.headers.cookie,
+      OFFICIAL_SESSION_COOKIE,
+    );
+    if (officialToken !== undefined) {
+      const official = await this.officialAccess.resolveSession(officialToken);
+      if (official === null) throw new Error('Invalid official session cookie');
+      client.data.connectionKind = 'official';
+      client.data.officialSessionToken = officialToken;
+      client.data.officialIdentity = {
+        officialId: official.officialId,
+        sessionId: official.sessionId,
+        tournamentId: official.tournamentId,
+      };
+      client.data.officialMatchPublicId = official.activeAssignment?.match.publicId;
+      client.data.revoked = false;
       return;
     }
 
@@ -869,6 +916,52 @@ export class RealtimeGateway
     const socketIdentity = this.socketIdentity(resolved);
     client.data.identity = socketIdentity;
     return socketIdentity;
+  }
+
+  private async connectOfficial(client: RealtimeSocket): Promise<void> {
+    const snapshot = await this.revalidateOfficial(client);
+    if (!snapshot || this.isSocketUnavailable(client)) return;
+    const identity = client.data.officialIdentity;
+    if (!identity) return;
+    await this.sessionRegistry.registerOfficial({
+      officialId: identity.officialId,
+      sessionId: identity.sessionId,
+      socketId: client.id,
+      revoke: () => this.revokeSocket(client),
+      matchPublicId: snapshot.assignment?.match.publicId ?? null,
+    });
+    await client.join(officialRoom(identity.officialId));
+    await client.join(tournamentRoom(identity.tournamentId));
+    if (snapshot.assignment) await client.join(matchRoom(snapshot.assignment.match.publicId));
+    client.emit(RealtimeEvent.OFFICIAL_ASSIGNMENT_SNAPSHOT, snapshot);
+  }
+
+  private async revalidateOfficial(client: RealtimeSocket) {
+    const original = client.data.officialIdentity;
+    const token = client.data.officialSessionToken;
+    if (client.data.revoked || !original || !token) {
+      this.revokeSocket(client);
+      return null;
+    }
+    const resolved = await this.officialAccess.resolveSession(token);
+    if (!resolved || resolved.sessionId !== original.sessionId || resolved.officialId !== original.officialId || resolved.tournamentId !== original.tournamentId) {
+      this.sessionRegistry.revokeSessions([original.sessionId]);
+      this.revokeSocket(client);
+      return null;
+    }
+    const nextMatch = resolved.activeAssignment?.match.publicId ?? null;
+    const previousMatch = client.data.officialMatchPublicId;
+    if (previousMatch && previousMatch !== nextMatch) await client.leave(matchRoom(previousMatch));
+    if (nextMatch && previousMatch !== nextMatch) await client.join(matchRoom(nextMatch));
+    client.data.officialMatchPublicId = nextMatch ?? undefined;
+    await this.sessionRegistry.updateOfficialAssignment(original.sessionId, client.id, nextMatch);
+    return {
+      assignment: resolved.activeAssignment,
+      official: resolved.official,
+      sessionId: resolved.sessionId,
+      status: resolved.status,
+      tournament: resolved.tournament,
+    };
   }
 
   private async broadcastPresence(

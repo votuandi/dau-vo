@@ -87,6 +87,7 @@ export function createMatchSnapshot(overrides: Partial<MatchStatePayload> = {}):
       connected: true,
       connectedSocketCount: 1,
     })),
+    officials: [],
     readiness: {
       canStartRound: true,
       missingRequirements: [],

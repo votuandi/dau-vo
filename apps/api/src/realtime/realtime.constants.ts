@@ -141,6 +141,14 @@ export function matchRoom(publicMatchId: string): string {
   return `match:${publicMatchId}`;
 }
 
+export function officialRoom(officialId: string): string {
+  return `official:${officialId}`;
+}
+
+export function tournamentRoom(tournamentId: string): string {
+  return `tournament:${tournamentId}`;
+}
+
 /** Public sockets are isolated from participant broadcasts and commands. */
 export function scoreboardRoom(publicMatchId: string): string {
   return `scoreboard:${publicMatchId}`;

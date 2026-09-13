@@ -17,6 +17,11 @@ export {
 export type { BracketFixtureState } from './bracket-presentation';
 export type {
   MatchPresenceEntry,
+  MatchOfficialPresenceEntry,
+  OfficialAssignmentSnapshot,
+  OfficialAssignmentUpdatedPayload,
+  MatchOfficialsUpdatedPayload,
+  MatchAssignmentReleasedPayload,
   MatchReadiness,
   MatchStartReadinessDetails,
   MatchFinishedPayload,

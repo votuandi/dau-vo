@@ -29,7 +29,42 @@ export const RealtimeEvent = {
   VOTE_ACCEPTED: 'vote:accepted',
   VOTE_REJECTED: 'vote:rejected',
   VOTE_SUBMIT: 'vote:submit',
+  OFFICIAL_ASSIGNMENT_UPDATED: 'official:assignment-updated',
+  OFFICIAL_STATUS_UPDATED: 'official:status-updated',
+  MATCH_OFFICIALS_UPDATED: 'match:officials-updated',
+  MATCH_ASSIGNMENT_RELEASED: 'match:assignment-released',
+  OFFICIAL_ASSIGNMENT_SNAPSHOT_REQUEST: 'official:assignment-snapshot:request',
+  OFFICIAL_ASSIGNMENT_SNAPSHOT: 'official:assignment-snapshot',
 } as const;
+
+export interface OfficialAssignmentSnapshot {
+  assignment: {
+    id: string;
+    match: { id: string; publicId: string; status: string };
+    refereePosition: number | null;
+    role: 'REFEREE' | 'INSPECTOR';
+  } | null;
+  official: { id: string; name: string; role: 'REFEREE' | 'INSPECTOR' };
+  sessionId: string;
+  status: 'IN_MATCH' | 'READY';
+  tournament: { id: string; name: string; publicCode: string };
+}
+
+export interface OfficialAssignmentUpdatedPayload {
+  assignment: OfficialAssignmentSnapshot['assignment'];
+  officialId: string;
+  tournamentId: string;
+}
+
+export interface MatchOfficialsUpdatedPayload {
+  matchId: string;
+  matchPublicId: string;
+  tournamentId: string;
+}
+
+export interface MatchAssignmentReleasedPayload extends MatchOfficialsUpdatedPayload {
+  releasedOfficialIds: string[];
+}
 
 export interface MatchPresenceEntry {
   accessRole: MatchAccessRole;
@@ -38,8 +73,19 @@ export interface MatchPresenceEntry {
   connectedSocketCount: number;
 }
 
+export interface MatchOfficialPresenceEntry {
+  activeSession: boolean;
+  connected: boolean;
+  connectedSocketCount: number;
+  name: string;
+  officialId: string;
+  refereePosition: number | null;
+  role: 'REFEREE' | 'INSPECTOR';
+}
+
 export interface PresenceUpdatedPayload {
   matchPublicId: string;
+  officials: MatchOfficialPresenceEntry[];
   presence: MatchPresenceEntry[];
   scoreboardConnectedCount: number;
   updatedAt: string;
@@ -117,6 +163,7 @@ export interface MatchStatePayload {
   generatedAt: string;
   match: MatchStateIdentity;
   presence: MatchPresenceEntry[];
+  officials: MatchOfficialPresenceEntry[];
   readiness: MatchReadiness;
   scoreboardConnectedCount: number;
   /** Present only on a direct `match:state:request` response. */

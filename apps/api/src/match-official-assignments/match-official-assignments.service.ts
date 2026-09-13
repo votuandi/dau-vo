@@ -15,13 +15,18 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ValidatedOfficialSession } from '../official-access/official-access.types';
 import { assignmentError } from './match-official-assignments.errors';
+import { RealtimeOfficialRoutingService } from '../realtime/realtime-official-routing.service';
 
 type Tx = Prisma.TransactionClient;
 const unstarted = { status: 'WAITING' as const, startedAt: null };
 
 @Injectable()
 export class MatchOfficialAssignmentsService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(RealtimeOfficialRoutingService)
+    private readonly routing: RealtimeOfficialRoutingService,
+  ) {}
 
   async list(identity: ValidatedOfficialSession) {
     this.inspector(identity);
@@ -38,8 +43,8 @@ export class MatchOfficialAssignmentsService {
       select: {
         id: true,
         publicId: true,
-        requiredRefereeCount: true,
         status: true,
+        requiredRefereeCount: true,
         athletes: {
           orderBy: { color: 'asc' },
           select: { color: true, name: true },
@@ -96,7 +101,7 @@ export class MatchOfficialAssignmentsService {
 
   async claim(matchId: string, identity: ValidatedOfficialSession) {
     this.inspector(identity);
-    return this.transaction(async (tx) => {
+    const result = await this.transaction(async (tx) => {
       await this.lockMatch(tx, matchId);
       await this.lockOfficials(tx, [identity.officialId]);
       await this.lockAssignments(tx, matchId);
@@ -143,6 +148,8 @@ export class MatchOfficialAssignmentsService {
       }
       return this.stateInTx(tx, matchId);
     });
+    this.publishAssignments(matchId, identity.tournamentId);
+    return result;
   }
 
   async confirm(
@@ -155,7 +162,7 @@ export class MatchOfficialAssignmentsService {
       throw new ConflictException(
         assignmentError('REFEREE_COUNT_MISMATCH', 'Referees must be distinct'),
       );
-    return this.transaction(async (tx) => {
+    const result = await this.transaction(async (tx) => {
       await this.lockMatch(tx, matchId);
       await this.lockOfficials(tx, [identity.officialId, ...refereeIds]);
       await this.lockAssignments(tx, matchId);
@@ -284,11 +291,13 @@ export class MatchOfficialAssignmentsService {
       );
       return this.stateInTx(tx, matchId);
     });
+    this.publishAssignments(matchId, identity.tournamentId);
+    return result;
   }
 
   async release(matchId: string, identity: ValidatedOfficialSession) {
     this.inspector(identity);
-    return this.transaction(async (tx) => {
+    const result = await this.transaction(async (tx) => {
       await this.lockMatch(tx, matchId);
       await this.lockOfficials(tx, [identity.officialId]);
       await this.lockAssignments(tx, matchId);
@@ -326,8 +335,47 @@ export class MatchOfficialAssignmentsService {
         identity,
         { before },
       );
-      return this.stateInTx(tx, matchId);
+      return { before, state: await this.stateInTx(tx, matchId) };
     });
+    this.publishRelease(matchId, identity.tournamentId, result.before.map((x) => x.officialId));
+    return result.state;
+  }
+
+  private publishAssignments(matchId: string, tournamentId: string): void {
+    void this.prisma.match.findUnique({
+      where: { id: matchId },
+      select: {
+        publicId: true,
+        status: true,
+        officialAssignments: {
+          where: { releasedAt: null },
+          select: { id: true, officialId: true, role: true, refereePosition: true },
+        },
+      },
+    }).then((match) => {
+      if (!match) return;
+      this.routing.publishMatchOfficials({ matchId, matchPublicId: match.publicId, tournamentId });
+      for (const assignment of match.officialAssignments) {
+        this.routing.publishAssignment({
+          officialId: assignment.officialId,
+          tournamentId,
+          assignment: {
+            id: assignment.id,
+            role: assignment.role,
+            refereePosition: assignment.refereePosition,
+            match: { id: matchId, publicId: match.publicId, status: match.status },
+          },
+        });
+      }
+    }).catch(() => undefined);
+  }
+
+  private publishRelease(matchId: string, tournamentId: string, releasedOfficialIds: string[]): void {
+    void this.prisma.match.findUnique({ where: { id: matchId }, select: { publicId: true } })
+      .then((match) => {
+        if (match) this.routing.publishReleased({ matchId, matchPublicId: match.publicId, tournamentId, releasedOfficialIds });
+      })
+      .catch(() => undefined);
   }
 
   private inspector(identity: ValidatedOfficialSession) {

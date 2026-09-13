@@ -18,6 +18,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { EnvironmentVariables } from '../config/environment';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { RealtimeSessionRegistryService } from '../realtime/realtime-session-registry.service';
 import {
   INVALID_OFFICIAL_CREDENTIALS_ERROR,
   INVALID_OFFICIAL_TAKEOVER_ERROR,
@@ -79,6 +80,7 @@ type Acquisition =
       kind: 'created';
       session: ValidatedOfficialSession;
       sessionToken: string;
+      revokedSessionId: string | null;
     };
 
 @Injectable()
@@ -94,6 +96,8 @@ export class OfficialAccessService {
     @Inject(ConfigService) config: ConfigService<EnvironmentVariables, true>,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RedisService) private readonly redis: RedisService,
+    @Inject(RealtimeSessionRegistryService)
+    private readonly realtimeSessions: RealtimeSessionRegistryService,
   ) {
     this.passcodeSecret = config.getOrThrow('OFFICIAL_PASSCODE_SECRET', {
       infer: true,
@@ -151,6 +155,7 @@ export class OfficialAccessService {
         },
         HttpStatus.CONFLICT,
       );
+    if (result.revokedSessionId) this.realtimeSessions.revokeSessions([result.revokedSessionId]);
     return result;
   }
 
@@ -192,15 +197,21 @@ export class OfficialAccessService {
         },
         HttpStatus.CONFLICT,
       );
+    if (result.revokedSessionId) this.realtimeSessions.revokeSessions([result.revokedSessionId]);
     return result;
   }
 
   async revokeSession(token: string): Promise<void> {
     if (!TOKEN_PATTERN.test(token)) return;
-    await this.prisma.tournamentOfficialSession.updateMany({
+    const sessions = await this.prisma.tournamentOfficialSession.findMany({
       where: { tokenHash: this.tokenHash(token), active: true },
+      select: { id: true },
+    });
+    await this.prisma.tournamentOfficialSession.updateMany({
+      where: { id: { in: sessions.map((session) => session.id) } },
       data: { active: false, revokedAt: new Date() },
     });
+    this.realtimeSessions.revokeSessions(sessions.map((session) => session.id));
   }
 
   async resolveSession(
@@ -314,6 +325,7 @@ export class OfficialAccessService {
           kind: 'created',
           session: this.present(session),
           sessionToken: token,
+          revokedSessionId: owner?.id ?? null,
         };
       },
       { maxWait: 5000, timeout: 15000 },

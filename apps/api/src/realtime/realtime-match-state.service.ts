@@ -4,6 +4,7 @@ import {
   MatchAccessRole as SharedMatchAccessRole,
   MatchStatus as SharedMatchStatus,
   type MatchPresenceEntry,
+  type MatchOfficialPresenceEntry,
   type MatchReadiness,
   type MatchStartReadinessDetails,
   type PublicMatchStatePayload,
@@ -151,6 +152,7 @@ export class RealtimeMatchStateService {
         status: this.sharedMatchStatus(match.status),
       },
       presence: presenceState.presence,
+      officials: presenceState.officials,
       readiness: this.readinessFromPresence(presenceState),
       scoreboardConnectedCount: presenceState.scoreboardConnectedCount,
       ...(viewerState === undefined ? {} : { viewer: viewerState }),
@@ -354,6 +356,7 @@ export class RealtimeMatchStateService {
   }
 
   private readinessFromPresence(presenceState: {
+    officials: MatchOfficialPresenceEntry[];
     presence: MatchPresenceEntry[];
     scoreboardConnectedCount: number;
   }): MatchReadiness {
@@ -399,10 +402,11 @@ export class RealtimeMatchStateService {
     matchId: string,
     matchPublicId: string,
   ): Promise<{
+    officials: MatchOfficialPresenceEntry[];
     presence: MatchPresenceEntry[];
     scoreboardConnectedCount: number;
   }> {
-    const [activeOwners, scoreboardConnectedCount] = await Promise.all([
+    const [activeOwners, scoreboardConnectedCount, officialAssignments] = await Promise.all([
       this.prisma.matchSession.findMany({
         select: { accessCode: { select: { role: true } } },
         where: {
@@ -413,6 +417,21 @@ export class RealtimeMatchStateService {
         },
       }),
       this.sessionRegistry.scoreboardConnectedCount(matchPublicId),
+      this.prisma.matchOfficialAssignment.findMany({
+        where: { matchId, releasedAt: null },
+        orderBy: [{ role: 'asc' }, { refereePosition: 'asc' }],
+        select: {
+          officialId: true,
+          role: true,
+          refereePosition: true,
+          official: {
+            select: {
+              name: true,
+              sessions: { where: { active: true, revokedAt: null, expiresAt: { gt: new Date() } }, select: { id: true } },
+            },
+          },
+        },
+      }),
     ]);
     const activeRoles = new Set<string>(
       activeOwners.map(({ accessCode }) => accessCode.role),
@@ -435,7 +454,19 @@ export class RealtimeMatchStateService {
       }),
     );
 
-    return { presence, scoreboardConnectedCount };
+    const officials = await Promise.all(officialAssignments.map(async (assignment) => {
+      const connectedSocketCount = await this.sessionRegistry.officialConnectedSocketCount(matchPublicId, assignment.officialId);
+      return {
+        activeSession: assignment.official.sessions.length > 0,
+        connected: connectedSocketCount > 0,
+        connectedSocketCount,
+        name: assignment.official.name,
+        officialId: assignment.officialId,
+        refereePosition: assignment.refereePosition,
+        role: assignment.role,
+      };
+    }));
+    return { officials, presence, scoreboardConnectedCount };
   }
 
   private sharedAccessRole(role: MatchAccessRole): SharedMatchAccessRole {

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { MatchAccessModule } from '../match-access/match-access.module';
+import { OfficialAccessModule } from '../official-access/official-access.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RealtimeCoreModule } from './realtime-core.module';
 import { SportRulesModule } from '../sport-rules/sport-rules.module';
@@ -14,6 +15,7 @@ import { ScoringService } from './scoring.service';
   exports: [RealtimeMatchStateService],
   imports: [
     MatchAccessModule,
+    OfficialAccessModule,
     PrismaModule,
     RealtimeCoreModule,
     SportRulesModule,
