@@ -672,6 +672,7 @@ export function AthletesPage({
   const weightClasses = weights.data?.weightClasses ?? [];
   const organizationsList = organizations.data?.organizations ?? [];
   const activeWeights = weightClasses.filter((x) => x.isActive);
+  const activeUnlockedWeights = activeWeights.filter((x) => !x.hasCurrentBracket);
   function updateParam(key: string, value: string) {
     setParams((old) => {
       const n = new URLSearchParams(old);
@@ -760,11 +761,12 @@ export function AthletesPage({
       {!readOnly &&
         (activeWeights.length ? (
           <Button
+            disabled={!activeUnlockedWeights.length}
             onClick={() => {
               setDraft({
                 name: '',
                 birthYear: new Date().getFullYear(),
-                weightClassId: activeWeights[0]?.id ?? '',
+                weightClassId: activeUnlockedWeights[0]?.id ?? '',
                 organizationId: null,
                 details: null,
                 file: null,
@@ -781,6 +783,11 @@ export function AthletesPage({
             <Link to={`/admin/tournaments/${tournamentId}/weight-classes`}>Tạo hạng cân trước</Link>
           </Button>
         ))}
+      {!readOnly && activeWeights.length > 0 && !activeUnlockedWeights.length ? (
+        <p className="text-sm text-muted-foreground">
+          Không thể thêm vận động viên vì tất cả hạng cân đang hoạt động đã được chia nhánh đấu.
+        </p>
+      ) : null}
       {draft ? (
         <form
           className="grid gap-3 rounded-xl border p-4"
@@ -839,11 +846,21 @@ export function AthletesPage({
               value={draft.weightClassId}
             >
               {activeWeights.map((x) => (
-                <option key={x.id} value={x.id}>
+                <option
+                  disabled={x.hasCurrentBracket && x.id !== editing?.weightClassId}
+                  key={x.id}
+                  value={x.id}
+                >
                   {x.name}
+                  {x.hasCurrentBracket ? ' — Đã chia nhánh đấu' : ''}
                 </option>
               ))}
             </select>
+            {activeWeights.some((x) => x.hasCurrentBracket) ? (
+              <span className="block text-xs text-muted-foreground">
+                Hạng cân đã được chia nhánh đấu
+              </span>
+            ) : null}
           </label>
           <label>
             Đơn vị tham gia

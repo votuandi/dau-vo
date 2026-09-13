@@ -274,9 +274,12 @@ export function TournamentMatchesPage({
       setCancelOpen(false);
       setCancelReason('');
       notifyMutationSuccess('Đã hủy nhánh đấu. Bạn có thể bốc thăm lại.');
-      void qc.invalidateQueries({
-        queryKey: bracketQueryKeys.detail(tournament.id, selectedId ?? ''),
-      });
+      void Promise.all([
+        qc.invalidateQueries({
+          queryKey: bracketQueryKeys.detail(tournament.id, selectedId ?? ''),
+        }),
+        qc.invalidateQueries({ queryKey: tournamentQueryKeys.weightClasses(tournament.id) }),
+      ]);
     },
     onError: (error) => {
       notifyMutationError(error, 'Không thể hủy nhánh đấu.');

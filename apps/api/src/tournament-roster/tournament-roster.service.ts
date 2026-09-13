@@ -49,12 +49,27 @@ const weightClassSelect = {
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.TournamentWeightClassSelect;
+const weightClassListSelect = {
+  ...weightClassSelect,
+  _count: {
+    select: {
+      brackets: {
+        where: {
+          status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
+        },
+      },
+    },
+  },
+} satisfies Prisma.TournamentWeightClassSelect;
 export type OrganizationView = Prisma.TournamentOrganizationGetPayload<{
   select: typeof organizationSelect;
 }>;
 export type WeightClassView = Prisma.TournamentWeightClassGetPayload<{
   select: typeof weightClassSelect;
 }>;
+export type WeightClassListView = WeightClassView & {
+  hasCurrentBracket: boolean;
+};
 type RosterView = OrganizationView | WeightClassView;
 
 @Injectable()
@@ -73,12 +88,16 @@ export class OrganizationService {
   async listWeightClasses(
     tournamentId: string,
     includeInactive: boolean,
-  ): Promise<WeightClassView[]> {
-    return this.prisma.tournamentWeightClass.findMany({
+  ): Promise<WeightClassListView[]> {
+    const rows = await this.prisma.tournamentWeightClass.findMany({
       where: { tournamentId, ...(includeInactive ? {} : { isActive: true }) },
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
-      select: weightClassSelect,
+      select: weightClassListSelect,
     });
+    return rows.map(({ _count, ...weightClass }) => ({
+      ...weightClass,
+      hasCurrentBracket: _count.brackets > 0,
+    }));
   }
   async getOrganization(
     tournamentId: string,

@@ -383,4 +383,69 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
       prisma.tournamentBracket.count({ where: { tournamentId } }),
     ).resolves.toBe(1);
   });
+
+  it('locks roster additions and moves while preserving profile edits, then unlocks on cancellation', async () => {
+    const { athleteIds, tournamentId, weightClassId } = await setup(2);
+    const otherWeightClassId = await createWeightClass(
+      tournamentId,
+      'unlocked',
+    );
+    const [outsideAthleteId] = await createAthletes(
+      tournamentId,
+      otherWeightClassId,
+      1,
+    );
+    const previewBody = (await preview(tournamentId, weightClassId))
+      .body as PreviewResponse;
+    const bracketPath = `/api/admin/tournaments/${tournamentId}/weight-classes/${weightClassId}/bracket`;
+    await authenticated(
+      request(app.getHttpServer()).post(`${bracketPath}/confirm`),
+    )
+      .send({
+        idempotencyKey: `${prefix}-roster-lock`,
+        previewToken: previewBody.previewToken,
+      })
+      .expect(201);
+
+    const blockedCreate = await authenticated(
+      request(app.getHttpServer()).post(
+        `/api/admin/tournaments/${tournamentId}/athletes`,
+      ),
+    )
+      .send({ birthYear: 2000, name: `${prefix}-blocked`, weightClassId })
+      .expect(409);
+    expect(blockedCreate.body).toEqual(
+      expect.objectContaining({ code: 'WEIGHT_CLASS_BRACKET_LOCKED' }),
+    );
+    const blockedMove = await authenticated(
+      request(app.getHttpServer()).patch(
+        `/api/admin/tournaments/${tournamentId}/athletes/${outsideAthleteId}`,
+      ),
+    )
+      .send({ weightClassId })
+      .expect(409);
+    expect(blockedMove.body).toEqual(
+      expect.objectContaining({ code: 'WEIGHT_CLASS_BRACKET_LOCKED' }),
+    );
+    await authenticated(
+      request(app.getHttpServer()).patch(
+        `/api/admin/tournaments/${tournamentId}/athletes/${athleteIds[0]}`,
+      ),
+    )
+      .send({ name: `${prefix}-renamed` })
+      .expect(200);
+
+    await authenticated(
+      request(app.getHttpServer()).post(`${bracketPath}/cancel`),
+    )
+      .send({ reason: 'Correcting roster' })
+      .expect(201);
+    await authenticated(
+      request(app.getHttpServer()).post(
+        `/api/admin/tournaments/${tournamentId}/athletes`,
+      ),
+    )
+      .send({ birthYear: 2000, name: `${prefix}-allowed`, weightClassId })
+      .expect(201);
+  });
 });

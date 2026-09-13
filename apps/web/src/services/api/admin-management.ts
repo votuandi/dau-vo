@@ -171,6 +171,9 @@ export interface TournamentRosterItem {
   readonly createdAt: string;
   readonly updatedAt: string;
 }
+export interface TournamentWeightClass extends TournamentRosterItem {
+  readonly hasCurrentBracket: boolean;
+}
 export interface TournamentOrganization extends TournamentRosterItem {
   readonly location: string | null;
   readonly imagePath: string | null;
@@ -245,7 +248,7 @@ interface OrganizationsResponse {
   readonly organizations: readonly TournamentOrganization[];
 }
 interface WeightClassesResponse {
-  readonly weightClasses: readonly TournamentRosterItem[];
+  readonly weightClasses: readonly TournamentWeightClass[];
 }
 interface AthleteResponse {
   readonly athlete: TournamentAthlete;
