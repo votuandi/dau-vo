@@ -39,7 +39,6 @@ export function Dialog({
       if (!focusable?.length) return;
       const first = focusable.item(0);
       const last = focusable.item(focusable.length - 1);
-      if (!first || !last) return;
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();

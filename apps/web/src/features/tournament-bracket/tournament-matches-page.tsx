@@ -29,6 +29,7 @@ import {
 import { TournamentStatus } from '@/types/shared';
 import { BracketChart } from './bracket-chart';
 import { BracketPreviewPanel } from './bracket-preview-dialog';
+import { BracketDrawSetupDialog } from './bracket-draw-setup-dialog';
 import { bracketQueryKeys } from './query-keys';
 import { WeightClassMatchTabs } from './weight-class-match-tabs';
 import { ManualMatchCreationForm } from './manual-match-creation-form';
@@ -95,6 +96,15 @@ export function TournamentMatchesPage({
     bracket.error instanceof ApiClientError &&
     bracket.error.status === 404 &&
     bracket.error.body.code === 'BRACKET_NOT_FOUND';
+  type DrawWorkflow =
+    | 'idle'
+    | 'loadingSetup'
+    | 'configuring'
+    | 'generatingPreview'
+    | 'reviewingPreview'
+    | 'confirming'
+    | 'error';
+  const [workflow, setWorkflow] = useState<DrawWorkflow>('idle');
   const [preview, setPreview] = useState<BracketPreview | null>(null);
   const [drawSetup, setDrawSetup] = useState<BracketDrawSetup | null>(null);
   const [designatedByeAthleteIds, setDesignatedByeAthleteIds] = useState<readonly string[]>([]);
@@ -110,24 +120,51 @@ export function TournamentMatchesPage({
   const [decisionKey, setDecisionKey] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelOpen, setCancelOpen] = useState(false);
+  const drawWeightClassRef = useRef(selectedId);
   const winnerReasonRef = useRef<HTMLTextAreaElement>(null);
   const cancelReasonRef = useRef<HTMLTextAreaElement>(null);
+  const resetDraw = () => {
+    setWorkflow('idle');
+    setPreview(null);
+    setDrawSetup(null);
+    setDesignatedByeAthleteIds([]);
+    setConfirmationKey(null);
+    setDialogError(null);
+  };
+  useEffect(() => {
+    if (drawWeightClassRef.current !== selectedId) {
+      resetDraw();
+      drawWeightClassRef.current = selectedId;
+    }
+  }, [selectedId]);
   const draw = useMutation({
     mutationFn: async (designatedByeAthleteIds: readonly string[]) => {
-      const setup = await adminManagementApi.getBracketDrawSetup(tournament.id, selectedId ?? '');
+      if (!drawSetup) throw new Error('Draw setup is unavailable');
       return adminManagementApi.previewBracket(tournament.id, selectedId ?? '', {
-        setupToken: setup.setupToken,
+        setupToken: drawSetup.setupToken,
         designatedByeAthleteIds,
       });
     },
     onSuccess: (value) => {
       setDialogError(null);
-      setDrawSetup(null);
       setPreview(value);
       setConfirmationKey(crypto.randomUUID());
+      setWorkflow('reviewingPreview');
     },
     onError: (error) => {
-      notifyMutationError(error, 'Không thể bốc thăm.');
+      const stale =
+        error instanceof ApiClientError &&
+        [
+          'BRACKET_ROSTER_CHANGED',
+          'BRACKET_DRAW_SETUP_EXPIRED',
+          'BRACKET_DRAW_SETUP_INVALID',
+        ].includes(error.body.code ?? '');
+      setDialogError(
+        stale
+          ? 'Danh sách vận động viên đã thay đổi hoặc phiên thiết lập đã hết hạn.'
+          : getApiErrorMessage(error, 'Không thể bốc thăm.'),
+      );
+      setWorkflow('error');
     },
   });
   const setupDraw = useMutation({
@@ -136,8 +173,12 @@ export function TournamentMatchesPage({
       setDialogError(null);
       setDesignatedByeAthleteIds([]);
       setDrawSetup(value);
+      setWorkflow('configuring');
     },
-    onError: (error) => notifyMutationError(error, 'Không thể chuẩn bị bốc thăm.'),
+    onError: (error) => {
+      setDialogError(getApiErrorMessage(error, 'Không thể chuẩn bị bốc thăm.'));
+      setWorkflow('error');
+    },
   });
   const confirm = useMutation({
     mutationFn: () =>
@@ -149,6 +190,7 @@ export function TournamentMatchesPage({
       setPreview(null);
       setConfirmationKey(null);
       setDialogError(null);
+      setWorkflow('idle');
       notifyMutationSuccess('Đã xác nhận nhánh đấu.');
       void Promise.all([
         qc.invalidateQueries({
@@ -170,7 +212,11 @@ export function TournamentMatchesPage({
         setDialogError(
           'Danh sách vận động viên đã thay đổi hoặc phiên bốc thăm đã hết hạn. Hãy bốc thăm mới.',
         );
-      } else setDialogError(getApiErrorMessage(error, 'Không thể xác nhận nhánh đấu.'));
+        setWorkflow('error');
+      } else {
+        setDialogError(getApiErrorMessage(error, 'Không thể xác nhận nhánh đấu.'));
+        setWorkflow('reviewingPreview');
+      }
     },
   });
   const prepare = useMutation({
@@ -281,6 +327,7 @@ export function TournamentMatchesPage({
         classes={active}
         counts={counts}
         onSelect={(id) => {
+          resetDraw();
           setParams((old) => {
             const next = new URLSearchParams(old);
             if (id) next.set('weightClassId', id);
@@ -317,6 +364,7 @@ export function TournamentMatchesPage({
               <Button
                 disabled={blocked || draw.isPending || setupDraw.isPending}
                 onClick={() => {
+                  setWorkflow('loadingSetup');
                   setupDraw.mutate();
                 }}
                 type="button"
@@ -335,61 +383,7 @@ export function TournamentMatchesPage({
                 </Button>
               ) : null}
             </div>
-            {drawSetup && !preview ? (
-              <section className="mt-5 rounded-xl border border-primary/30 bg-primary/5 p-4">
-                <h4 className="font-black">Chọn VĐV đặc cách</h4>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Chọn tối đa {drawSetup.summary.byeCount} VĐV nhận đặc cách; các vị trí và lựa chọn
-                  còn lại vẫn được bốc ngẫu nhiên.
-                </p>
-                {drawSetup.summary.byeCount > 0 ? (
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {drawSetup.eligibleAthletes.map((athlete) => {
-                      const checked = designatedByeAthleteIds.includes(athlete.id);
-                      return (
-                        <label
-                          className="flex items-center gap-2 rounded border bg-background p-2 text-sm"
-                          key={athlete.id}
-                        >
-                          <input
-                            checked={checked}
-                            disabled={
-                              !checked &&
-                              designatedByeAthleteIds.length >= drawSetup.summary.byeCount
-                            }
-                            onChange={() => {
-                              setDesignatedByeAthleteIds((current) =>
-                                checked
-                                  ? current.filter((id) => id !== athlete.id)
-                                  : [...current, athlete.id],
-                              );
-                            }}
-                            type="checkbox"
-                          />
-                          <span>{athlete.name}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="mt-3 text-sm text-muted-foreground">
-                    Số lượng VĐV vừa đủ, không có đặc cách.
-                  </p>
-                )}
-                <div className="mt-4 flex justify-end gap-3">
-                  <Button onClick={() => setDrawSetup(null)} type="button" variant="outline">
-                    Hủy bỏ
-                  </Button>
-                  <Button
-                    disabled={draw.isPending}
-                    onClick={() => draw.mutate(designatedByeAthleteIds)}
-                    type="button"
-                  >
-                    {draw.isPending ? 'Đang bốc thăm…' : 'Xem trước kết quả'}
-                  </Button>
-                </div>
-              </section>
-            ) : preview ? (
+            {preview && ['reviewingPreview', 'confirming'].includes(workflow) ? (
               <BracketPreviewPanel
                 error={dialogError}
                 canConfirm={Boolean(confirmationKey) && !dialogError}
@@ -399,12 +393,21 @@ export function TournamentMatchesPage({
                     setDrawSetup(null);
                     setConfirmationKey(null);
                     setDialogError(null);
+                    setWorkflow('idle');
                   }
                 }}
                 onConfirm={() => {
+                  setWorkflow('confirming');
                   confirm.mutate();
                 }}
+                onChangeDesignatedAthletes={() => {
+                  setPreview(null);
+                  setDialogError(null);
+                  setWorkflow('configuring');
+                }}
                 onRedraw={() => {
+                  setPreview(null);
+                  setWorkflow('generatingPreview');
                   draw.mutate(designatedByeAthleteIds);
                 }}
                 pending={draw.isPending || confirm.isPending}
@@ -469,6 +472,26 @@ export function TournamentMatchesPage({
           </p>
         )}
       </div>
+      {drawSetup && ['configuring', 'generatingPreview', 'error'].includes(workflow) ? (
+        <BracketDrawSetupDialog
+          error={dialogError}
+          onClose={resetDraw}
+          onReload={() => {
+            setWorkflow('loadingSetup');
+            setupDraw.mutate();
+          }}
+          onSubmit={(ids) => {
+            setDesignatedByeAthleteIds(ids);
+            setDialogError(null);
+            setPreview(null);
+            setWorkflow('generatingPreview');
+            draw.mutate(ids);
+          }}
+          pending={workflow === 'generatingPreview'}
+          selectedIds={designatedByeAthleteIds}
+          setup={drawSetup}
+        />
+      ) : null}
       {generatedCodes.length && preparedMatch ? (
         <GeneratedAccessCodesPanel
           accessCodes={generatedCodes}

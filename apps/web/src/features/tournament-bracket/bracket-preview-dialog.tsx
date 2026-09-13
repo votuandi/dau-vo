@@ -10,6 +10,7 @@ export function BracketPreviewPanel({
   onConfirm,
   onRedraw,
   onCancel,
+  onChangeDesignatedAthletes,
 }: {
   readonly preview: BracketPreview;
   readonly pending: boolean;
@@ -18,6 +19,7 @@ export function BracketPreviewPanel({
   readonly onConfirm: () => void;
   readonly onRedraw: () => void;
   readonly onCancel: () => void;
+  readonly onChangeDesignatedAthletes: () => void;
 }) {
   return (
     <section
@@ -69,6 +71,14 @@ export function BracketPreviewPanel({
         </Button>
         <Button disabled={pending} onClick={onRedraw} type="button" variant="outline">
           {pending ? 'Đang bốc…' : 'Bốc thăm lại'}
+        </Button>
+        <Button
+          disabled={pending}
+          onClick={onChangeDesignatedAthletes}
+          type="button"
+          variant="outline"
+        >
+          Thay đổi VĐV đặc cách
         </Button>
         <Button disabled={pending || !canConfirm} onClick={onConfirm} type="button">
           {pending ? 'Đang xác nhận…' : 'Đồng ý'}
