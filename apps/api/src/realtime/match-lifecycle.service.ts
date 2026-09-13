@@ -26,6 +26,8 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
 import { BracketOutcomeService } from '../brackets/bracket-outcome.service';
+import { MatchOfficialAssignmentLifecycleService } from '../match-official-assignments/match-official-assignment-lifecycle.service';
+import { RealtimeOfficialRoutingService } from './realtime-official-routing.service';
 import {
   InactiveRoundStartSessionError,
   InactiveRoundControlSessionError,
@@ -94,6 +96,7 @@ export interface RoundEndedTransition {
   matchFinished: MatchFinishedPayload | null;
   matchId: string;
   payload: RoundEndedPayload;
+  releasedOfficialIds: string[];
 }
 
 export interface RoundControlTransition {
@@ -133,6 +136,10 @@ export class MatchLifecycleService implements OnModuleDestroy {
     private readonly sportRules: SportRulesRegistry,
     @Inject(BracketOutcomeService)
     private readonly bracketOutcomes: BracketOutcomeService,
+    @Inject(MatchOfficialAssignmentLifecycleService)
+    private readonly assignmentLifecycle: MatchOfficialAssignmentLifecycleService,
+    @Inject(RealtimeOfficialRoutingService)
+    private readonly officialRouting: RealtimeOfficialRoutingService,
   ) {}
 
   onModuleDestroy(): void {
@@ -602,6 +609,16 @@ export class MatchLifecycleService implements OnModuleDestroy {
           },
           where: { id: input.matchId },
         });
+        const releasedOfficialIds = await this.assignmentLifecycle.releaseForTransition(
+          transaction,
+          {
+            from: match.status,
+            matchId: input.matchId,
+            occurredAt: clock.serverNow,
+            sessionId: input.sessionId,
+            to: nextStatus,
+          },
+        );
         return {
           matchId: input.matchId,
           payload: {
@@ -610,11 +627,17 @@ export class MatchLifecycleService implements OnModuleDestroy {
             roundNumbers,
             status: this.sharedStatus(nextStatus),
           },
+          releasedOfficialIds,
         };
       },
       { maxWait: TRANSACTION_MAX_WAIT_MS, timeout: TRANSACTION_TIMEOUT_MS },
     );
     this.cancelExpiration(input.matchId);
+    this.publishAssignmentRelease(
+      result.matchId,
+      result.payload.matchPublicId,
+      result.releasedOfficialIds,
+    );
     return result;
   }
 
@@ -824,6 +847,12 @@ export class MatchLifecycleService implements OnModuleDestroy {
       return;
     }
 
+    this.publishAssignmentRelease(
+      decision.transition.matchId,
+      decision.transition.payload.matchPublicId,
+      decision.transition.releasedOfficialIds,
+    );
+
     try {
       await this.expirationListener?.(decision.transition);
     } catch (error: unknown) {
@@ -910,6 +939,15 @@ export class MatchLifecycleService implements OnModuleDestroy {
           select: { id: true },
           where: { id: matchId },
         });
+        const releasedOfficialIds = await this.assignmentLifecycle.releaseForTransition(
+          transaction,
+          {
+            from: match.status,
+            matchId,
+            occurredAt: endedAt,
+            to: nextStatus,
+          },
+        );
         await transaction.auditLog.create({
           data: {
             eventType: AuditEventType.ROUND_ENDED,
@@ -958,6 +996,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
               round: this.sharedRound(endedRound),
               status: this.sharedStatus(nextStatus),
             },
+            releasedOfficialIds,
           },
         };
       },
@@ -1013,6 +1052,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
       FROM "match_sessions" AS match_session
       INNER JOIN "match_access_codes" AS access_code
         ON access_code."id" = match_session."access_code_id"
+      LEFT JOIN "match_official_assignments" AS assignment
+        ON assignment."id" = match_session."assignment_id"
       WHERE match_session."id" = ${sessionId}::uuid
         AND match_session."match_id" = ${matchId}::uuid
         AND match_session."active" = true
@@ -1021,6 +1062,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
         AND match_session."token_hash" = ${sessionTokenHash}
         AND match_session."role" = 'INSPECTOR'
         AND access_code."access_role" = 'INSPECTOR'
+        AND (match_session."assignment_id" IS NULL OR assignment."released_at" IS NULL)
       FOR UPDATE OF match_session
     `;
 
@@ -1197,5 +1239,26 @@ export class MatchLifecycleService implements OnModuleDestroy {
 
     clearTimeout(scheduled.timer);
     this.scheduledExpirations.delete(matchId);
+  }
+
+  private publishAssignmentRelease(
+    matchId: string,
+    matchPublicId: string,
+    releasedOfficialIds: string[],
+  ): void {
+    if (releasedOfficialIds.length === 0) return;
+    void this.prisma.match
+      .findUnique({ where: { id: matchId }, select: { tournamentId: true } })
+      .then((match) => {
+        if (match) {
+          this.officialRouting.publishReleased({
+            matchId,
+            matchPublicId,
+            releasedOfficialIds,
+            tournamentId: match.tournamentId,
+          });
+        }
+      })
+      .catch(() => undefined);
   }
 }

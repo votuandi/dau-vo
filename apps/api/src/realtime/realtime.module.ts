@@ -10,6 +10,7 @@ import { RealtimeMatchStateService } from './realtime-match-state.service';
 import { MatchLifecycleService } from './match-lifecycle.service';
 import { PenaltyService } from './penalty.service';
 import { ScoringService } from './scoring.service';
+import { MatchOfficialAssignmentsModule } from '../match-official-assignments/match-official-assignments.module';
 
 @Module({
   exports: [RealtimeMatchStateService],
@@ -19,6 +20,7 @@ import { ScoringService } from './scoring.service';
     PrismaModule,
     RealtimeCoreModule,
     SportRulesModule,
+    MatchOfficialAssignmentsModule,
   ],
   providers: [
     MatchLifecycleService,

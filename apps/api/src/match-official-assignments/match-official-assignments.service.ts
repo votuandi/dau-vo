@@ -16,6 +16,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { ValidatedOfficialSession } from '../official-access/official-access.types';
 import { assignmentError } from './match-official-assignments.errors';
 import { RealtimeOfficialRoutingService } from '../realtime/realtime-official-routing.service';
+import { inspectorReleaseReason } from './match-official-assignment-lifecycle.service';
 
 type Tx = Prisma.TransactionClient;
 const unstarted = { status: 'WAITING' as const, startedAt: null };
@@ -325,7 +326,7 @@ export class MatchOfficialAssignmentsService {
         where: { matchId, releasedAt: null },
         data: {
           releasedAt: new Date(),
-          releaseReason: MatchOfficialAssignmentReleaseReason.REPLACED,
+          releaseReason: inspectorReleaseReason,
         },
       });
       await this.audit(
