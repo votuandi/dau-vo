@@ -166,6 +166,19 @@ export class AdminTournamentsController {
     return { matches: await this.management.listMatches(tournamentId, query) };
   }
 
+  @Get(':tournamentId/matches/counts')
+  async countMatches(
+    @Param('tournamentId', uuidPipe) tournamentId: string,
+    @Req() request: AuthenticatedUserRequest,
+  ): Promise<{
+    counts: Array<{ weightClassId: string | null; count: number }>;
+  }> {
+    await this.management.assertTournamentAccess(tournamentId, request.user);
+    return {
+      counts: await this.management.countMatchesByWeightClass(tournamentId),
+    };
+  }
+
   @Post(':tournamentId/matches')
   @Header('Cache-Control', 'no-store')
   async createMatch(

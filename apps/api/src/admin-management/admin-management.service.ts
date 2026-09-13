@@ -547,6 +547,21 @@ export class AdminManagementService {
     });
   }
 
+  async countMatchesByWeightClass(
+    tournamentId: string,
+  ): Promise<Array<{ weightClassId: string | null; count: number }>> {
+    await this.requireTournament(tournamentId);
+    const counts = await this.prisma.match.groupBy({
+      by: ['weightClassId'],
+      _count: { _all: true },
+      where: { tournamentId },
+    });
+    return counts.map((item) => ({
+      weightClassId: item.weightClassId,
+      count: item._count._all,
+    }));
+  }
+
   async createMatch(
     tournamentId: string,
     input: CreateMatchDto,

@@ -10,6 +10,7 @@ import {
 } from '@/features/admin-management/presentation';
 import {
   tournamentAthletesQueryOptions,
+  tournamentMatchCountsQueryOptions,
   tournamentMatchesQueryOptions,
   tournamentQueryKeys,
   tournamentWeightClassesQueryOptions,
@@ -28,6 +29,7 @@ import { BracketChart } from './bracket-chart';
 import { BracketPreviewDialog } from './bracket-preview-dialog';
 import { bracketQueryKeys } from './query-keys';
 import { WeightClassMatchTabs } from './weight-class-match-tabs';
+import { ManualMatchCreationForm } from './manual-match-creation-form';
 
 export function TournamentMatchesPage({
   tournament,
@@ -39,7 +41,6 @@ export function TournamentMatchesPage({
   const [params, setParams] = useSearchParams();
   const qc = useQueryClient();
   const weights = useQuery(tournamentWeightClassesQueryOptions(tournament.id));
-  const matches = useQuery(tournamentMatchesQueryOptions(tournament.id));
   const active = useMemo(
     () => weights.data?.weightClasses.filter((x) => x.isActive) ?? [],
     [weights.data],
@@ -51,6 +52,13 @@ export function TournamentMatchesPage({
       : active.some((x) => x.id === selectedParam)
         ? selectedParam
         : (active[0]?.id ?? null);
+  const matches = useQuery(
+    tournamentMatchesQueryOptions(
+      tournament.id,
+      selectedId ? { weightClassId: selectedId } : { unassigned: true },
+    ),
+  );
+  const matchCounts = useQuery(tournamentMatchCountsQueryOptions(tournament.id));
   useEffect(() => {
     if (weights.isSuccess && selectedParam !== '__unassigned' && selectedId !== selectedParam)
       setParams(
@@ -185,14 +193,13 @@ export function TournamentMatchesPage({
   });
   const counts = useMemo(
     () =>
-      new Map<string, number>(
-        matches.data?.matches.reduce((map, match) => {
-          const key = match.weightClassId ?? '__unassigned';
-          map.set(key, (map.get(key) ?? 0) + 1);
-          return map;
-        }, new Map<string, number>()) ?? [],
+      new Map(
+        matchCounts.data?.counts.map(({ weightClassId, count }) => [
+          weightClassId ?? '__unassigned',
+          count,
+        ]) ?? [],
       ),
-    [matches.data],
+    [matchCounts.data],
   );
   const unassigned = counts.get('__unassigned') ?? 0;
   const blocked =
@@ -392,22 +399,15 @@ export function TournamentMatchesPage({
           </div>
         </div>
       ) : null}
-      <div className="border-t pt-5">
-        <h3 className="font-black">Trận riêng lẻ</h3>
-        {matches.data?.matches
-          .filter(
-            (m) =>
-              !m.bracketFixtureId &&
-              (selectedId ? m.weightClassId === selectedId : m.weightClassId === null),
-          )
-          .map((match) => (
-            <li className="mt-3 rounded-lg border p-3" key={match.id}>
-              <Link className="font-bold underline" to={`/admin/matches/${match.id}`}>
-                {match.publicId}
-              </Link>{' '}
-              · {match.athletes.map((a) => a.name).join(' — ')}
-            </li>
-          ))}
+      <div className="grid items-start gap-6 border-t pt-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <StandaloneMatchList matches={matches} />
+        <ManualMatchCreationForm
+          isReadOnly={isReadOnly}
+          tournament={tournament}
+          weightClass={
+            selectedId ? (active.find((weight) => weight.id === selectedId) ?? null) : null
+          }
+        />
       </div>
       {preview ? (
         <BracketPreviewDialog
@@ -429,6 +429,63 @@ export function TournamentMatchesPage({
         />
       ) : null}
     </section>
+  );
+}
+
+function StandaloneMatchList({
+  matches,
+}: {
+  readonly matches: ReturnType<
+    typeof useQuery<Awaited<ReturnType<typeof adminManagementApi.listMatches>>>
+  >;
+}) {
+  if (matches.isPending)
+    return (
+      <div className="space-y-3">
+        <h3 className="font-black">Trận riêng lẻ</h3>
+        <div className="h-16 animate-pulse rounded-xl bg-muted" />
+        <div className="h-16 animate-pulse rounded-xl bg-muted" />
+      </div>
+    );
+  if (matches.isError)
+    return (
+      <div role="alert">
+        <h3 className="font-black">Trận riêng lẻ</h3>
+        <p className="mt-2 text-sm text-destructive">
+          {getApiErrorMessage(matches.error, 'Không thể tải danh sách trận.')}
+        </p>
+        <Button
+          className="mt-3"
+          onClick={() => void matches.refetch()}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Thử lại
+        </Button>
+      </div>
+    );
+  const standalone = matches.data.matches.filter((match) => !match.bracketFixtureId);
+  return (
+    <div>
+      <h3 className="font-black">Trận riêng lẻ</h3>
+      {standalone.length === 0 ? (
+        <p className="mt-3 rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+          Chưa có trận riêng lẻ trong hạng cân này.
+        </p>
+      ) : (
+        <ul className="mt-3 space-y-3">
+          {standalone.map((match) => (
+            <li className="rounded-lg border p-3" key={match.id}>
+              <Link className="font-bold underline" to={`/admin/matches/${match.id}`}>
+                {match.publicId}
+              </Link>{' '}
+              · {match.athletes.map((athlete) => athlete.name).join(' — ')}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

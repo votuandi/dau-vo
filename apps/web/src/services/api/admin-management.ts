@@ -377,8 +377,22 @@ export const adminManagementApi = {
     apiClient.delete<undefined>(`admin/tournaments/${encodePathSegment(id)}/image`),
   archiveTournament: (id: string) =>
     apiClient.delete<TournamentResponse>(`admin/tournaments/${encodePathSegment(id)}`),
-  listMatches: (tournamentId: string) =>
-    apiClient.get<MatchesResponse>(`admin/tournaments/${encodePathSegment(tournamentId)}/matches`),
+  listMatches: (
+    tournamentId: string,
+    filters: { readonly weightClassId?: string; readonly unassigned?: true } = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (filters.weightClassId) params.set('weightClassId', filters.weightClassId);
+    if (filters.unassigned) params.set('unassigned', 'true');
+    const suffix = params.size ? `?${params.toString()}` : '';
+    return apiClient.get<MatchesResponse>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/matches${suffix}`,
+    );
+  },
+  countMatches: (tournamentId: string) =>
+    apiClient.get<{
+      readonly counts: readonly { readonly weightClassId: string | null; readonly count: number }[];
+    }>(`admin/tournaments/${encodePathSegment(tournamentId)}/matches/counts`),
   createMatch: (tournamentId: string, input: CreateMatchInput) =>
     apiClient.post<MatchWithGeneratedCodesResponse>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/matches`,
