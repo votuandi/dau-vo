@@ -24,6 +24,7 @@ import { TournamentRosterModule } from './tournament-roster/tournament-roster.mo
 import { BracketsModule } from './brackets/brackets.module';
 import { TournamentOfficialsModule } from './tournament-officials/tournament-officials.module';
 import { OfficialAccessModule } from './official-access/official-access.module';
+import { MatchOfficialAssignmentsModule } from './match-official-assignments/match-official-assignments.module';
 
 @Module({
   imports: [
@@ -84,6 +85,7 @@ import { OfficialAccessModule } from './official-access/official-access.module';
     BracketsModule,
     TournamentOfficialsModule,
     OfficialAccessModule,
+    MatchOfficialAssignmentsModule,
   ],
 })
 export class AppModule {}

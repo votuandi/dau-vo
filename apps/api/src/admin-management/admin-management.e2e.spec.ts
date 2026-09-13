@@ -780,11 +780,12 @@ describe('Admin tournament and match management (integration)', () => {
     ).toBe(0);
   });
 
-  it('atomically creates a match with two athletes and four one-time raw codes', async () => {
+  it('atomically creates a match with two athletes, staffing snapshot, and no modern codes', async () => {
     const tournament = await createTournament('match-create');
     const creation = await createMatch(tournament.id, 'match-create', {
       breakDurationMs: 45_000,
       roundDurationMs: 90_000,
+      requiredRefereeCount: 3,
     });
 
     expect(creation.match).toMatchObject({
@@ -812,29 +813,12 @@ describe('Admin tournament and match management (integration)', () => {
       ]),
     );
 
-    expect(creation.accessCodes).toHaveLength(4);
-    expect(creation.accessCodes.map(({ role }) => role).sort()).toEqual(
-      [...requiredAccessRoles].sort(),
-    );
-    for (const accessCode of creation.accessCodes) {
-      expect(accessCode.code).toMatch(
-        /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}(?:-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}){3}$/,
-      );
-    }
+    expect(creation.accessCodes).toEqual([]);
 
     const storedCodes = await prisma.matchAccessCode.findMany({
       where: { matchId: creation.match.id },
     });
-    expect(storedCodes).toHaveLength(4);
-    await Promise.all(
-      creation.accessCodes.map(async ({ code, role }) => {
-        const stored = storedCodes.find((candidate) => candidate.role === role);
-
-        expect(stored).toBeDefined();
-        expect(stored?.codeHash).not.toBe(code);
-        await expect(compare(code, stored?.codeHash ?? '')).resolves.toBe(true);
-      }),
-    );
+    expect(storedCodes).toHaveLength(0);
 
     const listResponse = await authenticated(
       request(app.getHttpServer()).get(
@@ -1132,7 +1116,7 @@ describe('Admin tournament and match management (integration)', () => {
       const creation = await createMatch(tournament.id, 'collision-retry');
 
       expect(creation.match.publicId).toBe(retryPublicId);
-      expect(creation.accessCodes).toHaveLength(4);
+      expect(creation.accessCodes).toEqual([]);
       expect(generatorSpy).toHaveBeenCalledTimes(2);
     } finally {
       generatorSpy.mockRestore();

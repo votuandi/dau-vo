@@ -127,6 +127,7 @@ const matchSelect = {
   finishedAt: true,
   id: true,
   publicId: true,
+  requiredRefereeCount: true,
   roundDurationMs: true,
   startedAt: true,
   status: true,
@@ -169,6 +170,7 @@ export interface GeneratedAccessCode {
 }
 
 export interface CreatedMatchResult {
+  /** Kept as an empty compatibility field while legacy code regeneration remains readable. */
   accessCodes: GeneratedAccessCode[];
   match: MatchView;
 }
@@ -634,31 +636,24 @@ export class AdminManagementService {
             tournamentId,
             input.athletes,
           );
-          const accessCodes = await this.prepareAccessCodes(rules.accessRoles);
-
           const created = await transaction.match.create({
             data: {
-              accessCodes: {
-                create: accessCodes.map(({ codeHash, role }) => ({
-                  codeHash,
-                  role,
-                })),
-              },
-              athletes: { create: athletes },
               breakDurationMs: input.breakDurationMs ?? this.breakDurationMs,
               publicId,
               roundDurationMs: input.roundDurationMs ?? this.roundDurationMs,
+              requiredRefereeCount: rules.defaultRequiredRefereeCount,
               tournamentId,
-              weightClass: {
-                connect: {
-                  tournamentId_id: {
-                    id: athletes[0]!.weightClassId,
-                    tournamentId,
-                  },
-                },
-              },
+              weightClassId: athletes[0]!.weightClassId,
             },
-            select: matchSelect,
+            select: { id: true },
+          });
+          await transaction.matchAthlete.createMany({
+            data: athletes.map(
+              ({ weightClassId: _weightClassId, ...athlete }) => ({
+                ...athlete,
+                matchId: created.id,
+              }),
+            ),
           });
 
           await transaction.auditLog.create({
@@ -676,15 +671,12 @@ export class AdminManagementService {
             select: { id: true },
           });
 
-          return { accessCodes, created };
+          return { createdId: created.id };
         });
 
         return {
-          accessCodes: match.accessCodes.map(({ code, role }) => ({
-            code,
-            role,
-          })),
-          match: match.created,
+          accessCodes: [],
+          match: await this.getMatch(match.createdId),
         };
       } catch (error: unknown) {
         if (!this.isPublicIdCollision(error)) {
@@ -775,49 +767,51 @@ export class AdminManagementService {
               code: 'DUPLICATE_MATCH_ATHLETE',
               message: 'Fixture must contain distinct entrants',
             });
-          const rules = this.resolveRules(tournament.sport.sportGroup.code);
-          const accessCodes = await this.prepareAccessCodes(rules.accessRoles);
+          const staffing = await tx.bracketRoundStaffing.findUnique({
+            where: {
+              bracketId_roundNumber: {
+                bracketId,
+                roundNumber: fixture.roundNumber,
+              },
+            },
+            select: { requiredRefereeCount: true },
+          });
+          if (!staffing)
+            throw new ConflictException({
+              code: 'BRACKET_ROUND_STAFFING_NOT_FOUND',
+              message: 'Bracket round staffing is missing',
+            });
           const created = await tx.match.create({
             data: {
               publicId,
               tournamentId,
-              weightClass: {
-                connect: {
-                  tournamentId_id: {
-                    id: fixture.bracket.weightClassId,
-                    tournamentId,
-                  },
-                },
-              },
+              weightClassId: fixture.bracket.weightClassId,
               bracketFixtureId: fixture.id,
               roundDurationMs: this.roundDurationMs,
               breakDurationMs: this.breakDurationMs,
-              accessCodes: {
-                create: accessCodes.map(({ codeHash, role }) => ({
-                  codeHash,
-                  role,
-                })),
-              },
-              athletes: {
-                create: [
-                  {
-                    color: 'RED',
-                    athleteId: red.athleteId,
-                    name: red.snapshotName,
-                    organization: red.snapshotOrganization,
-                    tournamentId,
-                  },
-                  {
-                    color: 'BLUE',
-                    athleteId: blue.athleteId,
-                    name: blue.snapshotName,
-                    organization: blue.snapshotOrganization,
-                    tournamentId,
-                  },
-                ],
-              },
+              requiredRefereeCount: staffing.requiredRefereeCount,
             },
-            select: matchSelect,
+            select: { id: true },
+          });
+          await tx.matchAthlete.createMany({
+            data: [
+              {
+                color: 'RED',
+                athleteId: red.athleteId,
+                name: red.snapshotName,
+                organization: red.snapshotOrganization,
+                tournamentId,
+                matchId: created.id,
+              },
+              {
+                color: 'BLUE',
+                athleteId: blue.athleteId,
+                name: blue.snapshotName,
+                organization: blue.snapshotOrganization,
+                tournamentId,
+                matchId: created.id,
+              },
+            ],
           });
           await tx.bracketFixture.update({
             where: { id: fixture.id },
@@ -839,14 +833,11 @@ export class AdminManagementService {
             },
             select: { id: true },
           });
-          return { created, accessCodes };
+          return { createdId: created.id };
         });
         return {
-          match: result.created,
-          accessCodes: result.accessCodes.map(({ code, role }) => ({
-            code,
-            role,
-          })),
+          accessCodes: [],
+          match: await this.getMatch(result.createdId),
         };
       } catch (error: unknown) {
         if (!this.isPublicIdCollision(error)) throw error;
