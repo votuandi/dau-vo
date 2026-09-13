@@ -5,6 +5,7 @@ export {
   MatchStatus,
   RefereeSlot,
   TournamentStatus,
+  TournamentOfficialRole,
 } from './enums';
 
 export { RealtimeEvent } from './realtime';

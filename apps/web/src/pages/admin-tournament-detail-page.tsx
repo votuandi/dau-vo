@@ -34,6 +34,8 @@ import {
   TournamentTabs,
 } from '@/features/tournament-roster/tournament-roster-tabs';
 import { TournamentMatchesPage } from '@/features/tournament-bracket/tournament-matches-page';
+import { TournamentOfficialsPage } from '@/features/tournament-officials/tournament-officials-page';
+import { TournamentOfficialRole } from '@/types/shared';
 
 function TournamentEditor({
   tournament,
@@ -348,7 +350,9 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
       : tail === 'weight-classes' ||
           tail === 'organizations' ||
           tail === 'athletes' ||
-          tail === 'matches'
+          tail === 'matches' ||
+          tail === 'referees' ||
+          tail === 'inspectors'
         ? tail
         : 'info';
 
@@ -407,6 +411,20 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
       {active === 'athletes' ? (
         <AthletesPage
           readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED}
+          tournamentId={tournamentId}
+        />
+      ) : null}
+      {active === 'referees' ? (
+        <TournamentOfficialsPage
+          readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED}
+          role={TournamentOfficialRole.REFEREE}
+          tournamentId={tournamentId}
+        />
+      ) : null}
+      {active === 'inspectors' ? (
+        <TournamentOfficialsPage
+          readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED}
+          role={TournamentOfficialRole.INSPECTOR}
           tournamentId={tournamentId}
         />
       ) : null}

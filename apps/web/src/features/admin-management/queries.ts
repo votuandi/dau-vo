@@ -1,6 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
 import { adminManagementApi } from '@/services/api/admin-management';
 import type { AthleteListInput } from '@/services/api/admin-management';
+import { TournamentOfficialRole } from '@/types/shared';
 
 export const tournamentQueryKeys = {
   all: ['admin', 'tournaments'] as const,
@@ -11,6 +12,7 @@ export const tournamentQueryKeys = {
   weightClasses: (id: string) => ['admin', 'tournaments', id, 'weight-classes'] as const,
   athletes: (id: string, filters: AthleteListInput) =>
     ['admin', 'tournaments', id, 'athletes', filters] as const,
+  officials: (id: string, role: string) => ['admin', 'tournaments', id, 'officials', role] as const,
 };
 
 export const sportQueryKeys = {
@@ -36,6 +38,13 @@ export function tournamentQueryOptions(id: string) {
   return queryOptions({
     queryKey: tournamentQueryKeys.detail(id),
     queryFn: () => adminManagementApi.getTournament(id),
+  });
+}
+
+export function tournamentOfficialsQueryOptions(id: string, role: TournamentOfficialRole) {
+  return queryOptions({
+    queryKey: tournamentQueryKeys.officials(id, role),
+    queryFn: () => adminManagementApi.listOfficials(id, { role }),
   });
 }
 
