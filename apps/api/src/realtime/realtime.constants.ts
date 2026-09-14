@@ -145,6 +145,11 @@ export function officialRoom(officialId: string): string {
   return `official:${officialId}`;
 }
 
+/** A session room lets post-commit revocation reach every API instance. */
+export function sessionRoom(sessionId: string): string {
+  return `session:${sessionId}`;
+}
+
 export function tournamentRoom(tournamentId: string): string {
   return `tournament:${tournamentId}`;
 }

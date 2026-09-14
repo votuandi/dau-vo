@@ -15,7 +15,7 @@ import {
   TournamentStatus,
 } from '@prisma/client';
 import { hash } from 'bcryptjs';
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHmac, randomInt } from 'node:crypto';
 import type { EnvironmentVariables } from '../config/environment';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeSessionRegistryService } from '../realtime/realtime-session-registry.service';
@@ -98,7 +98,9 @@ export class TournamentOfficialsService {
       this.prisma.tournamentOfficial.count({ where }),
     ]);
     return {
-      officials: officials.map((official) => this.present(official)),
+      officials: await Promise.all(
+        officials.map((official) => this.present(official)),
+      ),
       page,
       pageSize,
       total,
@@ -146,7 +148,7 @@ export class TournamentOfficialsService {
           );
           return created;
         });
-        return { official: this.present(official), passcode };
+        return { official: await this.present(official), passcode };
       } catch (error) {
         if (
           this.isUnique(error, 'passcode_lookup_digest') &&
@@ -210,19 +212,28 @@ export class TournamentOfficialsService {
             this.safe(after),
           );
           if (input.isActive === false && before.isActive) {
+            const revokedSessions = await tx.tournamentOfficialSession.findMany(
+              {
+                where: { officialId, active: true },
+                select: { id: true },
+              },
+            );
             await tx.tournamentOfficialSession.updateMany({
-              where: { officialId, active: true },
+              where: { id: { in: revokedSessions.map(({ id }) => id) } },
               data: { active: false, revokedAt: new Date() },
             });
-            return { official: after, revokeOfficial: true };
+            return {
+              official: after,
+              revokedSessionIds: revokedSessions.map(({ id }) => id),
+            };
           }
-          return { official: after, revokeOfficial: false };
+          return { official: after, revokedSessionIds: [] as string[] };
         } catch (error) {
           this.translateUnique(error);
         }
       })
-      .then(async ({ official, revokeOfficial }) => {
-        if (revokeOfficial) await this.revokeOfficialSockets(officialId);
+      .then(async ({ official, revokedSessionIds }) => {
+        this.realtimeSessions.revokeSessions(revokedSessionIds);
         return this.present(official);
       });
   }
@@ -253,8 +264,12 @@ export class TournamentOfficialsService {
               passcodeLookupDigest: this.digest(passcode),
             },
           });
-          await tx.tournamentOfficialSession.updateMany({
+          const revokedSessions = await tx.tournamentOfficialSession.findMany({
             where: { officialId, active: true },
+            select: { id: true },
+          });
+          await tx.tournamentOfficialSession.updateMany({
+            where: { id: { in: revokedSessions.map(({ id }) => id) } },
             data: { active: false, revokedAt: new Date() },
           });
           await this.audit(
@@ -266,10 +281,13 @@ export class TournamentOfficialsService {
             this.safe(current),
             this.safe(current),
           );
-          return this.require(tournamentId, officialId, tx);
+          return {
+            official: await this.require(tournamentId, officialId, tx),
+            revokedSessionIds: revokedSessions.map(({ id }) => id),
+          };
         });
-        await this.revokeOfficialSockets(officialId);
-        return { official: this.present(official), passcode };
+        this.realtimeSessions.revokeSessions(official.revokedSessionIds);
+        return { official: await this.present(official.official), passcode };
       } catch (error) {
         if (
           this.isUnique(error, 'passcode_lookup_digest') &&
@@ -334,19 +352,6 @@ export class TournamentOfficialsService {
       });
   }
 
-  private async revokeOfficialSockets(officialId: string) {
-    const sessions = await this.prisma.matchSession.findMany({
-      where: { officialSession: { officialId }, active: true },
-      select: { id: true },
-    });
-    if (sessions.length) {
-      await this.prisma.matchSession.updateMany({
-        where: { id: { in: sessions.map(({ id }) => id) } },
-        data: { active: false, revokedAt: new Date() },
-      });
-      this.realtimeSessions.revokeSessions(sessions.map(({ id }) => id));
-    }
-  }
   private async require(
     tournamentId: string,
     id: string,
@@ -376,7 +381,7 @@ export class TournamentOfficialsService {
     if (tournament.status === TournamentStatus.ARCHIVED)
       throw new ConflictException(OFFICIAL_TOURNAMENT_ARCHIVED);
   }
-  private present(row: OfficialRow) {
+  private async present(row: OfficialRow) {
     const assignment = row.assignments[0];
     return {
       id: row.id,
@@ -388,7 +393,7 @@ export class TournamentOfficialsService {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       status: !row.isActive ? 'DISABLED' : assignment ? 'IN_MATCH' : 'READY',
-      connected: false,
+      connected: await this.realtimeSessions.isOfficialConnected(row.id),
       currentMatch: assignment ? assignment.match : null,
     };
   }
@@ -431,8 +436,8 @@ export class TournamentOfficialsService {
   }
   private passcode() {
     return Array.from(
-      randomBytes(10),
-      (byte) => alphabet[byte % alphabet.length],
+      { length: 10 },
+      () => alphabet[randomInt(alphabet.length)],
     ).join('');
   }
   private digest(passcode: string) {

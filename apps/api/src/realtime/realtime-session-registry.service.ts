@@ -1,7 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { MatchAccessRole } from '@prisma/client';
+import { RealtimeEvent } from '@martial-arts-scoring/shared-types';
+import type { Server } from 'socket.io';
 
 import { RedisService } from '../redis/redis.service';
+import { SESSION_REVOKED_EVENT, sessionRoom } from './realtime.constants';
+import type {
+  ClientToServerEvents,
+  ServerToClientEvents,
+} from './realtime.types';
 
 const PRESENCE_TTL_SECONDS = 24 * 60 * 60;
 
@@ -22,6 +29,8 @@ interface OfficialConnectionRegistration {
 
 @Injectable()
 export class RealtimeSessionRegistryService {
+  private server: Server<ClientToServerEvents, ServerToClientEvents> | null =
+    null;
   private readonly connectionsBySession = new Map<
     string,
     Map<string, RealtimeConnectionRegistration>
@@ -33,6 +42,10 @@ export class RealtimeSessionRegistryService {
   >();
 
   constructor(@Inject(RedisService) private readonly redis: RedisService) {}
+
+  bind(server: Server<ClientToServerEvents, ServerToClientEvents>): void {
+    this.server = server;
+  }
 
   async register(registration: RealtimeConnectionRegistration): Promise<void> {
     const sessionConnections =
@@ -50,6 +63,11 @@ export class RealtimeSessionRegistryService {
     const officialSockets = this.officialConnections.get(sessionId);
     const officialRegistration = officialSockets?.get(socketId);
     if (officialSockets?.delete(socketId)) {
+      await this.redis.incrementByWithExpiry(
+        this.officialOnlineKey(officialRegistration!.officialId),
+        -1,
+        PRESENCE_TTL_SECONDS,
+      );
       if (officialRegistration?.matchPublicId) {
         await this.redis.incrementByWithExpiry(
           this.officialPresenceKey(
@@ -95,6 +113,11 @@ export class RealtimeSessionRegistryService {
     if (sockets.has(registration.socketId)) return;
     sockets.set(registration.socketId, registration);
     this.officialConnections.set(registration.sessionId, sockets);
+    await this.redis.incrementByWithExpiry(
+      this.officialOnlineKey(registration.officialId),
+      1,
+      PRESENCE_TTL_SECONDS,
+    );
     if (registration.matchPublicId) {
       await this.redis.incrementByWithExpiry(
         this.officialPresenceKey(
@@ -144,6 +167,11 @@ export class RealtimeSessionRegistryService {
     );
     const count = Number(value);
     return Number.isSafeInteger(count) && count > 0 ? count : 0;
+  }
+
+  async isOfficialConnected(officialId: string): Promise<boolean> {
+    const value = await this.redis.get(this.officialOnlineKey(officialId));
+    return Number.isSafeInteger(Number(value)) && Number(value) > 0;
   }
 
   async connectedSocketCount(
@@ -216,6 +244,14 @@ export class RealtimeSessionRegistryService {
     for (const connection of connections) {
       connection.revoke();
     }
+    // Redis-adapter room fan-out invalidates sockets owned by sibling API
+    // instances. PostgreSQL is already committed and remains authoritative.
+    for (const sessionId of sessionIds) {
+      this.server
+        ?.to(sessionRoom(sessionId))
+        .emit(RealtimeEvent.SESSION_REVOKED, SESSION_REVOKED_EVENT);
+      this.server?.in(sessionRoom(sessionId)).disconnectSockets(true);
+    }
   }
 
   private presenceKey(
@@ -234,5 +270,9 @@ export class RealtimeSessionRegistryService {
     officialId: string,
   ): string {
     return `realtime:official-presence:${matchPublicId}:${officialId}`;
+  }
+
+  private officialOnlineKey(officialId: string): string {
+    return `realtime:official-online:${officialId}`;
   }
 }

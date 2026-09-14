@@ -25,7 +25,9 @@ import {
   getClientAddress,
   readOfficialSessionToken,
 } from './official-access.utils';
-import type {
+// Nest reads design:paramtypes at runtime; type-only imports erase DTOs.
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+import {
   OfficialAccessLoginDto,
   OfficialAccessTakeoverDto,
 } from './dto/official-access-login.dto';

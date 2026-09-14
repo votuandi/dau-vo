@@ -114,6 +114,7 @@ import {
   VOTE_SCORING_WINDOW_PENDING_ERROR,
   matchRoom,
   officialRoom,
+  sessionRoom,
   scoreboardRoom,
   tournamentRoom,
 } from './realtime.constants';
@@ -165,6 +166,7 @@ export class RealtimeGateway
 
   afterInit(server: Server): void {
     this.officialRouting.bind(this.server);
+    this.sessionRegistry.bind(this.server);
     server.use((socket, next) => {
       void this.authenticate(socket as RealtimeSocket).then(
         () => next(),
@@ -971,6 +973,7 @@ export class RealtimeGateway
       revoke: () => this.revokeSocket(client),
       matchPublicId: snapshot.assignment?.match.publicId ?? null,
     });
+    await client.join(sessionRoom(identity.sessionId));
     await client.join(officialRoom(identity.officialId));
     await client.join(tournamentRoom(identity.tournamentId));
     if (snapshot.assignment)
