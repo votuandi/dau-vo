@@ -49,6 +49,9 @@ export class BracketRoundStaffingService {
             code: 'TOURNAMENT_ARCHIVED',
             message: 'Tournament is archived',
           });
+        // Global official/staffing order: tournament, officials by UUID, then
+        // bracket staffing. This shares the first lock with match preparation.
+        await tx.$queryRaw`SELECT id FROM tournament_officials WHERE tournament_id = ${tournamentId}::uuid AND role = 'REFEREE' ORDER BY id FOR UPDATE`;
         let policy;
         try {
           policy = this.rules.resolve(tournament.sport.sportGroup.code);

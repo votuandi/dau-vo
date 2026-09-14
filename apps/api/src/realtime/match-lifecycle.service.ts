@@ -1255,6 +1255,11 @@ export class MatchLifecycleService implements OnModuleDestroy {
           });
         }
       })
-      .catch(() => undefined);
+      .catch((error: unknown) =>
+        this.logger.error(
+          { error, matchId, matchPublicId, releasedOfficialIds },
+          'Committed official assignment release publication failed',
+        ),
+      );
   }
 }

@@ -676,6 +676,9 @@ export class AdminManagementService {
           await tx.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId}::uuid FOR UPDATE`;
           await tx.$queryRaw`SELECT id FROM tournament_brackets WHERE id = ${bracketId}::uuid FOR UPDATE`;
           await tx.$queryRaw`SELECT id FROM bracket_fixtures WHERE id = ${fixtureId}::uuid FOR UPDATE`;
+          // Lock the staffing snapshot before reading it so a concurrent
+          // staffing update cannot alter the count while this match is made.
+          await tx.$queryRaw`SELECT id FROM bracket_round_staffing WHERE bracket_id = ${bracketId}::uuid ORDER BY round_number FOR UPDATE`;
           const tournament = await tx.tournament.findUnique({
             where: { id: tournamentId },
             select: {

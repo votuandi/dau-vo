@@ -175,6 +175,9 @@ export class TournamentOfficialsService {
     return this.prisma
       .$transaction(async (tx) => {
         await this.lockMutableTournament(tx, tournamentId);
+        // The tournament lock serializes staffing changes; this row lock is
+        // required before either active-assignment or active-state checks.
+        await this.lockOfficial(tx, officialId);
         const before = await this.require(tournamentId, officialId, tx);
         if (input.role !== undefined && input.role !== before.role)
           throw new ConflictException(ROLE_CHANGE_NOT_ALLOWED);
@@ -380,6 +383,9 @@ export class TournamentOfficialsService {
       });
     if (tournament.status === TournamentStatus.ARCHIVED)
       throw new ConflictException(OFFICIAL_TOURNAMENT_ARCHIVED);
+  }
+  private async lockOfficial(tx: Prisma.TransactionClient, officialId: string) {
+    await tx.$queryRaw`SELECT id FROM tournament_officials WHERE id = ${officialId}::uuid FOR UPDATE`;
   }
   private async present(row: OfficialRow) {
     const assignment = row.assignments[0];

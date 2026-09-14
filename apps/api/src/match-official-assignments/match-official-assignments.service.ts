@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -23,6 +24,7 @@ const unstarted = { status: 'WAITING' as const, startedAt: null };
 
 @Injectable()
 export class MatchOfficialAssignmentsService {
+  private readonly logger = new Logger(MatchOfficialAssignmentsService.name);
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RealtimeOfficialRoutingService)
@@ -126,10 +128,16 @@ export class MatchOfficialAssignmentsService {
   async claim(matchId: string, identity: ValidatedOfficialSession) {
     this.inspector(identity);
     const result = await this.transaction(async (tx) => {
+      await this.lockTournament(tx, identity.tournamentId);
       await this.lockMatch(tx, matchId);
       await this.lockOfficials(tx, [identity.officialId]);
       await this.lockAssignments(tx, matchId);
       const match = await this.activeMatch(tx, matchId, identity.tournamentId);
+      await this.requireActiveInspector(
+        tx,
+        identity.officialId,
+        identity.tournamentId,
+      );
       const inspector = await tx.matchOfficialAssignment.findFirst({
         where: {
           matchId,
@@ -172,7 +180,7 @@ export class MatchOfficialAssignmentsService {
       }
       return this.stateInTx(tx, matchId);
     });
-    this.publishAssignments(matchId, identity.tournamentId);
+    this.publishAssignments(matchId, identity.tournamentId, []);
     return result;
   }
 
@@ -187,10 +195,21 @@ export class MatchOfficialAssignmentsService {
         assignmentError('REFEREE_COUNT_MISMATCH', 'Referees must be distinct'),
       );
     const result = await this.transaction(async (tx) => {
+      await this.lockTournament(tx, identity.tournamentId);
       await this.lockMatch(tx, matchId);
-      await this.lockOfficials(tx, [identity.officialId, ...refereeIds]);
+      const currentOfficialIds = await this.activeOfficialIds(tx, matchId);
+      await this.lockOfficials(tx, [
+        identity.officialId,
+        ...refereeIds,
+        ...currentOfficialIds,
+      ]);
       await this.lockAssignments(tx, matchId);
       const match = await this.activeMatch(tx, matchId, identity.tournamentId);
+      await this.requireActiveInspector(
+        tx,
+        identity.officialId,
+        identity.tournamentId,
+      );
       if (refereeIds.length !== match.requiredRefereeCount)
         throw new ConflictException(
           assignmentError(
@@ -275,13 +294,35 @@ export class MatchOfficialAssignmentsService {
           releasedAt: null,
         },
         orderBy: { refereePosition: 'asc' },
-        select: { officialId: true, refereePosition: true },
+        select: { id: true, officialId: true, refereePosition: true },
       });
+      const after = refereeIds.map((officialId, index) => ({
+        officialId,
+        refereePosition: index + 1,
+      }));
+      // Keep a durable assignment whenever its official and position are
+      // unchanged. This avoids invalidating an otherwise valid session.
+      const retained = before.filter((old) =>
+        after.some(
+          (next) =>
+            next.officialId === old.officialId &&
+            next.refereePosition === old.refereePosition,
+        ),
+      );
+      const replaced = before.filter(
+        (old) => !retained.some((kept) => kept.id === old.id),
+      );
+      const added = after.filter(
+        (next) =>
+          !retained.some(
+            (kept) =>
+              kept.officialId === next.officialId &&
+              kept.refereePosition === next.refereePosition,
+          ),
+      );
       await tx.matchOfficialAssignment.updateMany({
         where: {
-          matchId,
-          role: TournamentOfficialRole.REFEREE,
-          releasedAt: null,
+          id: { in: replaced.map((assignment) => assignment.id) },
         },
         data: {
           releasedAt: new Date(),
@@ -289,12 +330,12 @@ export class MatchOfficialAssignmentsService {
         },
       });
       await tx.matchOfficialAssignment.createMany({
-        data: refereeIds.map((officialId, index) => ({
+        data: added.map(({ officialId, refereePosition }) => ({
           matchId,
           tournamentId: match.tournamentId,
           officialId,
           role: TournamentOfficialRole.REFEREE,
-          refereePosition: index + 1,
+          refereePosition,
           assignedByInspectorId: identity.officialId,
         })),
       });
@@ -307,25 +348,52 @@ export class MatchOfficialAssignmentsService {
         identity,
         {
           before,
-          after: refereeIds.map((officialId, index) => ({
+          after,
+          retained: retained.map(({ officialId, refereePosition }) => ({
             officialId,
-            refereePosition: index + 1,
+            refereePosition,
           })),
+          removed: replaced.map(({ officialId, refereePosition }) => ({
+            officialId,
+            refereePosition,
+          })),
+          added,
         },
       );
-      return this.stateInTx(tx, matchId);
+      return {
+        state: await this.stateInTx(tx, matchId),
+        removedOfficialIds: replaced
+          .filter(
+            (old) => !after.some((next) => next.officialId === old.officialId),
+          )
+          .map(({ officialId }) => officialId),
+      };
     });
-    this.publishAssignments(matchId, identity.tournamentId);
-    return result;
+    this.publishAssignments(
+      matchId,
+      identity.tournamentId,
+      result.removedOfficialIds,
+    );
+    return result.state;
   }
 
   async release(matchId: string, identity: ValidatedOfficialSession) {
     this.inspector(identity);
     const result = await this.transaction(async (tx) => {
+      await this.lockTournament(tx, identity.tournamentId);
       await this.lockMatch(tx, matchId);
-      await this.lockOfficials(tx, [identity.officialId]);
+      const currentOfficialIds = await this.activeOfficialIds(tx, matchId);
+      await this.lockOfficials(tx, [
+        identity.officialId,
+        ...currentOfficialIds,
+      ]);
       await this.lockAssignments(tx, matchId);
       await this.activeMatch(tx, matchId, identity.tournamentId);
+      await this.requireActiveInspector(
+        tx,
+        identity.officialId,
+        identity.tournamentId,
+      );
       const owner = await tx.matchOfficialAssignment.findFirst({
         where: {
           matchId,
@@ -369,7 +437,11 @@ export class MatchOfficialAssignmentsService {
     return result.state;
   }
 
-  private publishAssignments(matchId: string, tournamentId: string): void {
+  private publishAssignments(
+    matchId: string,
+    tournamentId: string,
+    releasedOfficialIds: string[],
+  ): void {
     void this.prisma.match
       .findUnique({
         where: { id: matchId },
@@ -394,6 +466,13 @@ export class MatchOfficialAssignmentsService {
           matchPublicId: match.publicId,
           tournamentId,
         });
+        if (releasedOfficialIds.length > 0)
+          this.routing.publishReleased({
+            matchId,
+            matchPublicId: match.publicId,
+            tournamentId,
+            releasedOfficialIds,
+          });
         for (const assignment of match.officialAssignments) {
           this.routing.publishAssignment({
             officialId: assignment.officialId,
@@ -411,7 +490,12 @@ export class MatchOfficialAssignmentsService {
           });
         }
       })
-      .catch(() => undefined);
+      .catch((error: unknown) =>
+        this.logger.error(
+          { error, matchId, tournamentId, releasedOfficialIds },
+          'Committed official assignment publication failed',
+        ),
+      );
   }
 
   private publishRelease(
@@ -430,7 +514,12 @@ export class MatchOfficialAssignmentsService {
             releasedOfficialIds,
           });
       })
-      .catch(() => undefined);
+      .catch((error: unknown) =>
+        this.logger.error(
+          { error, matchId, tournamentId, releasedOfficialIds },
+          'Committed official release publication failed',
+        ),
+      );
   }
 
   private inspector(identity: ValidatedOfficialSession) {
@@ -442,7 +531,14 @@ export class MatchOfficialAssignmentsService {
   private transaction<T>(work: (tx: Tx) => Promise<T>) {
     return this.prisma.$transaction(work, { maxWait: 5000, timeout: 15000 });
   }
-  // Global lock order: match, inspector/current inspector, officials by UUID, assignments by stable ID.
+  /**
+   * Global assignment lock order: tournament, match, officials (UUID order),
+   * then assignment rows (stable ID order). Administration and staffing take
+   * the tournament lock first too; never acquire an earlier lock afterwards.
+   */
+  private async lockTournament(tx: Tx, id: string) {
+    await tx.$queryRaw`SELECT id FROM tournaments WHERE id = ${id}::uuid FOR UPDATE`;
+  }
   private async lockMatch(tx: Tx, id: string) {
     await tx.$queryRaw`SELECT id FROM matches WHERE id = ${id}::uuid FOR UPDATE`;
   }
@@ -452,6 +548,32 @@ export class MatchOfficialAssignmentsService {
   }
   private async lockAssignments(tx: Tx, matchId: string) {
     await tx.$queryRaw`SELECT id FROM match_official_assignments WHERE match_id = ${matchId}::uuid ORDER BY id FOR UPDATE`;
+  }
+  private async activeOfficialIds(tx: Tx, matchId: string): Promise<string[]> {
+    const assignments = await tx.matchOfficialAssignment.findMany({
+      where: { matchId, releasedAt: null },
+      select: { officialId: true },
+    });
+    return assignments.map(({ officialId }) => officialId);
+  }
+  private async requireActiveInspector(
+    tx: Tx,
+    officialId: string,
+    tournamentId: string,
+  ) {
+    const official = await tx.tournamentOfficial.findFirst({
+      where: {
+        id: officialId,
+        tournamentId,
+        role: TournamentOfficialRole.INSPECTOR,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    if (!official)
+      throw new ForbiddenException(
+        assignmentError('OFFICIAL_INACTIVE', 'Inspector is inactive'),
+      );
   }
   private async activeMatch(tx: Tx, id: string, tournamentId: string) {
     const match = await tx.match.findFirst({
