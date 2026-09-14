@@ -15,6 +15,7 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
 import { activeRoundElapsedMs } from './round-timing';
+import { auditActor, type InspectorCommandIdentity } from './command-identity';
 import {
   InactivePenaltySessionError,
   MatchNotRunningForPenaltyError,
@@ -67,16 +68,28 @@ export class PenaltyService {
   async addPenalty(input: {
     athlete: AthleteColor;
     matchId: string;
-    sessionId: string;
+    identity?: InspectorCommandIdentity;
+    /** Legacy service callers retained during the migration. */
+    sessionId?: string;
   }): Promise<PenaltyTransition> {
+    const identity =
+      input.identity ??
+      (input.sessionId
+        ? {
+            kind: 'legacy' as const,
+            sessionId: input.sessionId,
+            sessionTokenHash: '',
+          }
+        : null);
+    if (!identity) throw new InactivePenaltySessionError();
     return this.prisma.$transaction(
       async (transaction) => {
         await this.lockMatch(transaction, input.matchId);
         const rules = await this.rulesForMatch(transaction, input.matchId);
-        await this.lockActiveInspectorSession(
+        await this.lockActiveInspectorIdentity(
           transaction,
           input.matchId,
-          input.sessionId,
+          identity,
         );
         const clock = await this.serverClock(transaction);
         const match = await transaction.match.findUniqueOrThrow({
@@ -114,7 +127,8 @@ export class PenaltyService {
           data: {
             athleteId: athlete.id,
             createdAt: clock.serverNow,
-            createdBySessionId: input.sessionId,
+            createdBySessionId:
+              identity.kind === 'legacy' ? identity.sessionId : null,
             matchId: input.matchId,
             roundNumber: activeRound.roundNumber,
             value: rules.inspectorPenaltyValue,
@@ -155,8 +169,11 @@ export class PenaltyService {
               roundNumber: activeRound.roundNumber,
               value: penalty.value,
               violationCount,
+              ...(identity.kind === 'official'
+                ? { assignmentId: identity.assignmentId }
+                : {}),
             },
-            sessionId: input.sessionId,
+            ...auditActor(identity),
           },
           select: { id: true },
         });
@@ -237,17 +254,37 @@ export class PenaltyService {
     return this.sportRules.resolve(match.tournament.sport.sportGroup.code);
   }
 
-  private async lockActiveInspectorSession(
+  private async lockActiveInspectorIdentity(
     transaction: Prisma.TransactionClient,
     matchId: string,
-    sessionId: string,
+    identity: InspectorCommandIdentity,
   ): Promise<void> {
+    if (identity.kind === 'official') {
+      const rows = await transaction.$queryRaw<LockedRow[]>`
+        SELECT official_session."id"
+        FROM "tournament_official_sessions" AS official_session
+        INNER JOIN "tournament_officials" AS official ON official."id" = official_session."official_id"
+        INNER JOIN "match_official_assignments" AS assignment ON assignment."id" = ${identity.assignmentId}::uuid
+        INNER JOIN "matches" AS match ON match."id" = ${matchId}::uuid
+        WHERE official_session."id" = ${identity.officialSessionId}::uuid
+          AND official_session."official_id" = ${identity.officialId}::uuid
+          AND official_session."active" = true AND official_session."revoked_at" IS NULL
+          AND official_session."expires_at" > clock_timestamp()
+          AND official."is_active" = true AND official."role" = 'INSPECTOR'
+          AND official."tournament_id" = match."tournament_id"
+          AND assignment."match_id" = match."id" AND assignment."official_id" = official."id"
+          AND assignment."role" = 'INSPECTOR' AND assignment."released_at" IS NULL
+        FOR UPDATE OF official_session, assignment
+      `;
+      if (rows.length !== 1) throw new InactivePenaltySessionError();
+      return;
+    }
     const rows = await transaction.$queryRaw<LockedRow[]>`
       SELECT match_session."id"
       FROM "match_sessions" AS match_session
       INNER JOIN "match_access_codes" AS access_code
         ON access_code."id" = match_session."access_code_id"
-      WHERE match_session."id" = ${sessionId}::uuid
+      WHERE match_session."id" = ${identity.sessionId}::uuid
         AND match_session."match_id" = ${matchId}::uuid
         AND match_session."active" = true
         AND match_session."revoked_at" IS NULL

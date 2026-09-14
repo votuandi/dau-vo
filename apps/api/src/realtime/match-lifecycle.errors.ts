@@ -48,3 +48,10 @@ export class MatchLifecycleTargetMissingError extends Error {
     this.name = MatchLifecycleTargetMissingError.name;
   }
 }
+
+export class MatchParticipantsNotReadyError extends Error {
+  constructor() {
+    super('Required officials or scoreboard are not connected');
+    this.name = MatchParticipantsNotReadyError.name;
+  }
+}

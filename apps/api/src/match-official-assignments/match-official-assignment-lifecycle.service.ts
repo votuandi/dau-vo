@@ -36,6 +36,8 @@ export class MatchOfficialAssignmentLifecycleService {
       matchId: string;
       occurredAt: Date;
       sessionId?: string;
+      officialSessionId?: string;
+      assignmentId?: string;
       to: MatchStatus;
     },
   ): Promise<string[]> {
@@ -57,8 +59,10 @@ export class MatchOfficialAssignmentLifecycleService {
         eventType: AuditEventType.MATCH_OFFICIAL_ASSIGNMENT_RELEASED,
         matchId: input.matchId,
         sessionId: input.sessionId,
+        officialSessionId: input.officialSessionId,
         metadata: {
           assignments,
+          ...(input.assignmentId ? { assignmentId: input.assignmentId } : {}),
           fromStatus: input.from,
           reason,
           toStatus: input.to,

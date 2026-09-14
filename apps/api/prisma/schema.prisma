@@ -678,7 +678,7 @@ model MatchResultOperation {
   previousFinishedAt    DateTime?                  @map("previous_finished_at") @db.Timestamptz(3)
   resultingStatus       MatchStatus                @map("resulting_status")
   resultingCurrentRound Int?                       @map("resulting_current_round") @db.SmallInt
-  createdBySessionId    String                     @map("created_by_session_id") @db.Uuid
+  createdBySessionId    String?                    @map("created_by_session_id") @db.Uuid
   status                MatchResultOperationStatus @default(APPLIED)
   createdAt             DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
   undoneAt              DateTime?                  @map("undone_at") @db.Timestamptz(3)
@@ -864,13 +864,13 @@ model Penalty {
   athleteId          String       @map("athlete_id") @db.Uuid
   roundNumber        Int?         @map("round_number") @db.SmallInt
   value              Int          @default(-1)
-  createdBySessionId String       @map("created_by_session_id") @db.Uuid
+  createdBySessionId String?      @map("created_by_session_id") @db.Uuid
   createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   revertedAt         DateTime?    @map("reverted_at") @db.Timestamptz(3)
   revertedByAuditId  String?      @map("reverted_by_audit_id") @db.Uuid
   match              Match        @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "penalties_match_id_fkey")
   athlete            MatchAthlete @relation(fields: [athleteId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "penalties_athlete_id_fkey")
-  createdBySession   MatchSession @relation("PenaltyCreatedBySession", fields: [createdBySessionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "penalties_created_by_session_id_fkey")
+  createdBySession   MatchSession? @relation("PenaltyCreatedBySession", fields: [createdBySessionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "penalties_created_by_session_id_fkey")
   scoreEvents        ScoreEvent[]
 
   @@index([matchId], map: "penalties_match_id_idx")

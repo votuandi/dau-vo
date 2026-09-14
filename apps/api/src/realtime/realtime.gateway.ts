@@ -47,12 +47,14 @@ import {
   SportGroupRulesNotImplementedError,
 } from '../sport-rules/sport-rules.errors';
 import type { ValidatedMatchSession } from '../match-access/match-access.types';
+import type { InspectorCommandIdentity } from './command-identity';
 import {
   InactiveRoundStartSessionError,
   InactiveRoundControlSessionError,
   InvalidRoundControlStateError,
   InvalidResultCancellationStateError,
   InvalidRoundStartStateError,
+  MatchParticipantsNotReadyError,
   ResultCancellationUndoNotAllowedError,
 } from './match-lifecycle.errors';
 import {
@@ -244,26 +246,17 @@ export class RealtimeGateway
     if (this.isScoreboardSocket(client)) {
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
     }
-    const identity = client.data.identity;
-    const sessionToken = client.data.matchSessionToken;
-
-    if (
-      client.data.revoked === true ||
-      identity === undefined ||
-      sessionToken === undefined
-    ) {
-      this.revokeSocket(client);
-      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
-    }
-
-    if (identity.role !== MatchRole.INSPECTOR) {
+    const command = await this.inspectorCommand(client);
+    if (!command) {
       return { error: ROUND_START_FORBIDDEN_ERROR, ok: false };
     }
     // Socket.IO marks the browser connected before Nest's asynchronous
     // `handleConnection` hook has necessarily completed `client.join`. Join
     // the server-derived match room here before changing lifecycle state so a
     // successful command can never miss its own room broadcast.
-    if (!(await this.ensureMatchRoomMembership(client, identity))) {
+    if (
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    ) {
       return {
         error: this.isSocketUnavailable(client)
           ? REALTIME_AUTHENTICATION_ERROR
@@ -272,47 +265,26 @@ export class RealtimeGateway
       };
     }
 
-    let readiness;
-    try {
-      readiness = await this.matchState.startReadiness(
-        identity.matchId,
-        identity.publicMatchId,
-      );
-    } catch (error: unknown) {
-      if (error instanceof SportGroupRulesNotImplementedError) {
-        return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
-      }
-      this.logger.error(
-        { error, matchId: identity.matchId },
-        'Unable to verify match participant readiness',
-      );
-      return { error: ROUND_START_FAILED_ERROR, ok: false };
-    }
-    if (readiness.missingRequirements.length > 0) {
-      return {
-        error: { ...MATCH_PARTICIPANTS_NOT_READY_ERROR, details: readiness },
-        ok: false,
-      };
-    }
-
     let transition: RoundStartedTransition;
 
     try {
       transition = await this.lifecycle.startRound({
-        matchId: identity.matchId,
-        sessionId: identity.sessionId,
+        matchId: command.matchId,
+        identity: command.identity,
         // `startRound` verifies this token-derived value while it owns the
         // Match lock. Keeping authorization in that transaction both remains
         // authoritative and preserves arrival order for concurrent starts.
-        sessionTokenHash: this.matchAccess.hashSessionToken(sessionToken),
       });
     } catch (error: unknown) {
       if (error instanceof SportGroupRulesNotImplementedError)
         return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
       if (error instanceof InactiveRoundStartSessionError) {
-        this.sessionRegistry.revokeSessions([identity.sessionId]);
+        this.revokeCommandSocket(client, command.identity);
         return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
       }
+
+      if (error instanceof MatchParticipantsNotReadyError)
+        return { error: MATCH_PARTICIPANTS_NOT_READY_ERROR, ok: false };
 
       if (error instanceof InvalidRoundStartStateError) {
         return { error: ROUND_START_INVALID_STATE_ERROR, ok: false };
@@ -321,8 +293,7 @@ export class RealtimeGateway
       this.logger.error(
         {
           error,
-          matchId: identity.matchId,
-          sessionId: identity.sessionId,
+          matchId: command.matchId,
         },
         'Unable to commit round start',
       );
@@ -365,26 +336,17 @@ export class RealtimeGateway
   ): Promise<RoundControlResponse> {
     if (this.isScoreboardSocket(client))
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
-    const identity = client.data.identity;
-    const token = client.data.matchSessionToken;
+    const command = await this.inspectorCommand(client);
+    if (!command) return { error: ROUND_CONTROL_FORBIDDEN_ERROR, ok: false };
     if (
-      client.data.revoked === true ||
-      identity === undefined ||
-      token === undefined
-    ) {
-      this.revokeSocket(client);
-      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
-    }
-    if (identity.role !== MatchRole.INSPECTOR)
-      return { error: ROUND_CONTROL_FORBIDDEN_ERROR, ok: false };
-    if (!(await this.ensureMatchRoomMembership(client, identity)))
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    )
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
     let transition: RoundControlTransition;
     try {
       const input = {
-        matchId: identity.matchId,
-        sessionId: identity.sessionId,
-        sessionTokenHash: this.matchAccess.hashSessionToken(token),
+        matchId: command.matchId,
+        identity: command.identity,
       };
       transition =
         action === 'pause'
@@ -394,7 +356,7 @@ export class RealtimeGateway
       if (error instanceof SportGroupRulesNotImplementedError)
         return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
       if (error instanceof InactiveRoundControlSessionError) {
-        this.sessionRegistry.revokeSessions([identity.sessionId]);
+        this.revokeCommandSocket(client, command.identity);
         return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
       }
       if (error instanceof InvalidRoundControlStateError)
@@ -403,8 +365,7 @@ export class RealtimeGateway
         {
           action,
           error,
-          matchId: identity.matchId,
-          sessionId: identity.sessionId,
+          matchId: command.matchId,
         },
         'Unable to commit round control command',
       );
@@ -415,14 +376,14 @@ export class RealtimeGateway
         ? RealtimeEvent.ROUND_PAUSED
         : RealtimeEvent.ROUND_RESUMED;
     this.server
-      .to(matchRoom(identity.publicMatchId))
+      .to(matchRoom(command.publicMatchId))
       .emit(event, transition.payload);
     await this.broadcastMatchState(
       transition.matchId,
-      identity.publicMatchId,
+      command.publicMatchId,
     ).catch((error: unknown) => {
       this.logger.error(
-        { action, error, matchId: identity.matchId },
+        { action, error, matchId: command.matchId },
         'Round control committed but realtime publication failed',
       );
     });
@@ -449,26 +410,18 @@ export class RealtimeGateway
   ): Promise<ResultCancellationResponse> {
     if (this.isScoreboardSocket(client))
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
-    const identity = client.data.identity;
-    const token = client.data.matchSessionToken;
-    if (
-      client.data.revoked === true ||
-      identity === undefined ||
-      token === undefined
-    ) {
-      this.revokeSocket(client);
-      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
-    }
-    if (identity.role !== MatchRole.INSPECTOR)
+    const command = await this.inspectorCommand(client);
+    if (!command)
       return { error: RESULT_CANCELLATION_FORBIDDEN_ERROR, ok: false };
-    if (!(await this.ensureMatchRoomMembership(client, identity)))
+    if (
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    )
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
     let transition: ResultCancellationTransition;
     try {
       const input = {
-        matchId: identity.matchId,
-        sessionId: identity.sessionId,
-        sessionTokenHash: this.matchAccess.hashSessionToken(token),
+        matchId: command.matchId,
+        identity: command.identity,
       };
       transition = entireMatch
         ? await this.lifecycle.resetMatchResults(input)
@@ -477,7 +430,7 @@ export class RealtimeGateway
       if (error instanceof SportGroupRulesNotImplementedError)
         return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
       if (error instanceof InactiveRoundControlSessionError) {
-        this.sessionRegistry.revokeSessions([identity.sessionId]);
+        this.revokeCommandSocket(client, command.identity);
         return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
       }
       if (error instanceof InvalidResultCancellationStateError)
@@ -485,7 +438,7 @@ export class RealtimeGateway
       if (error instanceof BracketProgressionLockedError)
         return { error: BRACKET_PROGRESSION_LOCKED_ERROR, ok: false };
       this.logger.error(
-        { entireMatch, error, matchId: identity.matchId },
+        { entireMatch, error, matchId: command.matchId },
         'Unable to cancel match results',
       );
       return { error: RESULT_CANCELLATION_FAILED_ERROR, ok: false };
@@ -494,14 +447,14 @@ export class RealtimeGateway
       ? RealtimeEvent.MATCH_RESET_COMPLETED
       : RealtimeEvent.ROUND_CANCELLED;
     this.server
-      .to(matchRoom(identity.publicMatchId))
+      .to(matchRoom(command.publicMatchId))
       .emit(event, transition.payload);
     await this.broadcastMatchState(
       transition.matchId,
-      identity.publicMatchId,
+      command.publicMatchId,
     ).catch((error: unknown) => {
       this.logger.error(
-        { error, matchId: identity.matchId },
+        { error, matchId: command.matchId },
         'Result cancellation committed but publication failed',
       );
     });
@@ -516,39 +469,29 @@ export class RealtimeGateway
     if (this.isScoreboardSocket(client)) {
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
     }
-    const identity = client.data.identity;
-    const token = client.data.matchSessionToken;
-    if (
-      client.data.revoked === true ||
-      identity === undefined ||
-      token === undefined ||
-      !this.isResultCancellationUndoPayload(payload)
-    ) {
-      if (identity !== undefined && token !== undefined) {
-        return { error: RESET_UNDO_NOT_ALLOWED_ERROR, ok: false };
-      }
-      this.revokeSocket(client);
-      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
-    }
-    if (identity.role !== MatchRole.INSPECTOR) {
+    if (!this.isResultCancellationUndoPayload(payload))
+      return { error: RESET_UNDO_NOT_ALLOWED_ERROR, ok: false };
+    const command = await this.inspectorCommand(client);
+    if (!command) {
       return { error: RESET_UNDO_FORBIDDEN_ERROR, ok: false };
     }
-    if (!(await this.ensureMatchRoomMembership(client, identity))) {
+    if (
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    ) {
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
     }
     let transition: ResultCancellationUndoTransition;
     try {
       transition = await this.lifecycle.undoResultCancellation({
-        matchId: identity.matchId,
+        matchId: command.matchId,
         operationId: payload.operationId,
-        sessionId: identity.sessionId,
-        sessionTokenHash: this.matchAccess.hashSessionToken(token),
+        identity: command.identity,
       });
     } catch (error: unknown) {
       if (error instanceof SportGroupRulesNotImplementedError)
         return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
       if (error instanceof InactiveRoundControlSessionError) {
-        this.sessionRegistry.revokeSessions([identity.sessionId]);
+        this.revokeCommandSocket(client, command.identity);
         return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
       }
       if (error instanceof ResultCancellationUndoNotAllowedError) {
@@ -557,20 +500,20 @@ export class RealtimeGateway
       if (error instanceof BracketProgressionLockedError)
         return { error: BRACKET_PROGRESSION_LOCKED_ERROR, ok: false };
       this.logger.error(
-        { error, matchId: identity.matchId, operationId: payload.operationId },
+        { error, matchId: command.matchId, operationId: payload.operationId },
         'Unable to undo result cancellation',
       );
       return { error: RESET_UNDO_FAILED_ERROR, ok: false };
     }
     this.server
-      .to(matchRoom(identity.publicMatchId))
+      .to(matchRoom(command.publicMatchId))
       .emit(RealtimeEvent.RESULT_CANCELLATION_UNDONE, transition.payload);
     await this.broadcastMatchState(
       transition.matchId,
-      identity.publicMatchId,
+      command.publicMatchId,
     ).catch((error: unknown) => {
       this.logger.error(
-        { error, matchId: identity.matchId },
+        { error, matchId: command.matchId },
         'Result cancellation undo committed but realtime publication failed',
       );
     });
@@ -734,17 +677,14 @@ export class RealtimeGateway
     if (this.isScoreboardSocket(client)) {
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
     }
-    const identity = await this.revalidate(client);
-
-    if (identity === null) {
-      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
-    }
-    if (!(await this.ensureMatchRoomMembership(client, identity))) {
-      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
-    }
-    if (identity.role !== MatchRole.INSPECTOR) {
+    const command = await this.inspectorCommand(client);
+    if (!command) {
       return { error: PENALTY_FORBIDDEN_ERROR, ok: false };
     }
+    if (
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    )
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
     if (!this.isPenaltyPayload(payload)) {
       return { error: PENALTY_INVALID_ATHLETE_ERROR, ok: false };
     }
@@ -752,8 +692,8 @@ export class RealtimeGateway
     try {
       const transition = await this.penalties.addPenalty({
         athlete: payload.athlete,
-        matchId: identity.matchId,
-        sessionId: identity.sessionId,
+        matchId: command.matchId,
+        identity: command.identity,
       });
       await this.publishPenaltyAdded(transition);
       return { ok: true, penalty: transition.payload.penalty };
@@ -761,7 +701,7 @@ export class RealtimeGateway
       if (error instanceof SportGroupRulesNotImplementedError)
         return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
       if (error instanceof InactivePenaltySessionError) {
-        this.sessionRegistry.revokeSessions([identity.sessionId]);
+        this.revokeCommandSocket(client, command.identity);
         return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
       }
       if (error instanceof MatchNotRunningForPenaltyError) {
@@ -772,7 +712,7 @@ export class RealtimeGateway
       }
 
       this.logger.error(
-        { error, matchId: identity.matchId, sessionId: identity.sessionId },
+        { error, matchId: command.matchId },
         'Unable to commit inspector penalty',
       );
       return { error: PENALTY_FAILED_ERROR, ok: false };
@@ -1018,6 +958,73 @@ export class RealtimeGateway
       status: resolved.status,
       tournament: resolved.tournament,
     };
+  }
+
+  /** Resolve command authority from the authenticated socket only. */
+  private async inspectorCommand(client: RealtimeSocket): Promise<{
+    identity: InspectorCommandIdentity;
+    matchId: string;
+    publicMatchId: string;
+  } | null> {
+    if (client.data.connectionKind === 'official') {
+      const official = await this.revalidateOfficial(client);
+      const assignment = official?.assignment;
+      if (!official || !assignment || assignment.role !== 'INSPECTOR')
+        return null;
+      return {
+        matchId: assignment.match.id,
+        publicMatchId: assignment.match.publicId,
+        identity: {
+          assignmentId: assignment.id,
+          kind: 'official',
+          officialId: official.official.id,
+          officialSessionId: official.sessionId,
+        },
+      };
+    }
+    const identity = await this.revalidate(client);
+    const token = client.data.matchSessionToken;
+    if (!identity || !token || identity.role !== MatchRole.INSPECTOR)
+      return null;
+    return {
+      matchId: identity.matchId,
+      publicMatchId: identity.publicMatchId,
+      identity: {
+        kind: 'legacy',
+        sessionId: identity.sessionId,
+        sessionTokenHash: this.matchAccess.hashSessionToken(token),
+      },
+    };
+  }
+
+  private async ensureCommandRoomMembership(
+    client: RealtimeSocket,
+    publicMatchId: string,
+  ): Promise<boolean> {
+    if (client.data.connectionKind !== 'official') {
+      const identity = client.data.identity;
+      return identity
+        ? this.ensureMatchRoomMembership(client, identity)
+        : false;
+    }
+    if (this.isSocketUnavailable(client)) return false;
+    await client.join(matchRoom(publicMatchId));
+    return (
+      !this.isSocketUnavailable(client) &&
+      client.rooms.has(matchRoom(publicMatchId))
+    );
+  }
+
+  private revokeCommandSocket(
+    client: RealtimeSocket,
+    identity: InspectorCommandIdentity,
+  ): void {
+    this.sessionRegistry.revokeSessions([
+      identity.kind === 'legacy'
+        ? identity.sessionId
+        : identity.officialSessionId,
+    ]);
+    this.revokeSocket(client);
   }
 
   private async broadcastPresence(
