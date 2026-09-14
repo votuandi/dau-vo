@@ -155,7 +155,8 @@ export class OfficialAccessService {
         },
         HttpStatus.CONFLICT,
       );
-    if (result.revokedSessionId) this.realtimeSessions.revokeSessions([result.revokedSessionId]);
+    if (result.revokedSessionId)
+      this.realtimeSessions.revokeSessions([result.revokedSessionId]);
     return result;
   }
 
@@ -197,7 +198,8 @@ export class OfficialAccessService {
         },
         HttpStatus.CONFLICT,
       );
-    if (result.revokedSessionId) this.realtimeSessions.revokeSessions([result.revokedSessionId]);
+    if (result.revokedSessionId)
+      this.realtimeSessions.revokeSessions([result.revokedSessionId]);
     return result;
   }
 

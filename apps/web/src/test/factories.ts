@@ -90,6 +90,7 @@ export function createMatchSnapshot(overrides: Partial<MatchStatePayload> = {}):
     officials: [],
     readiness: {
       canStartRound: true,
+      kind: 'LEGACY_MATCH_ACCESS',
       missingRequirements: [],
       referees: { REFEREE_1: true, REFEREE_2: true, REFEREE_3: true },
       scoreboardConnectedCount: 1,

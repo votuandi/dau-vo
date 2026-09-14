@@ -207,16 +207,35 @@ export function InspectorConsole({
     !roundIsRunning ||
     realtime.submittingPenalty !== null;
   const canStartRound = status === MatchStatus.WAITING || status === MatchStatus.BREAK;
-  const refereeReadiness = Array.isArray(snapshot?.readiness.referees)
-    ? snapshot.readiness.referees.map((referee) => ({
-        connected: referee.connected,
-        label: `Trọng tài ${referee.position}`,
-      }))
-    : [
-        { connected: snapshot?.readiness.referees.REFEREE_1 ?? false, label: 'Trọng tài 1' },
-        { connected: snapshot?.readiness.referees.REFEREE_2 ?? false, label: 'Trọng tài 2' },
-        { connected: snapshot?.readiness.referees.REFEREE_3 ?? false, label: 'Trọng tài 3' },
-      ];
+  const refereeReadiness =
+    snapshot?.readiness.kind === 'TOURNAMENT_OFFICIALS'
+      ? snapshot.readiness.referees.map((referee) => ({
+          connected: referee.connected,
+          label: `Trọng tài ${String(referee.position)}`,
+        }))
+      : [
+          {
+            connected:
+              snapshot?.readiness.kind === 'LEGACY_MATCH_ACCESS'
+                ? snapshot.readiness.referees.REFEREE_1
+                : false,
+            label: 'Trọng tài 1',
+          },
+          {
+            connected:
+              snapshot?.readiness.kind === 'LEGACY_MATCH_ACCESS'
+                ? snapshot.readiness.referees.REFEREE_2
+                : false,
+            label: 'Trọng tài 2',
+          },
+          {
+            connected:
+              snapshot?.readiness.kind === 'LEGACY_MATCH_ACCESS'
+                ? snapshot.readiness.referees.REFEREE_3
+                : false,
+            label: 'Trọng tài 3',
+          },
+        ];
   const scoreboardConnectedCount = snapshot?.readiness.scoreboardConnectedCount ?? 0;
   const participantsReady = snapshot?.readiness.canStartRound ?? false;
   const startLabel = status === MatchStatus.BREAK ? 'BẮT ĐẦU HIỆP 2' : 'BẮT ĐẦU HIỆP 1';
@@ -323,9 +342,12 @@ export function InspectorConsole({
                 </h2>
                 <ul className="mt-3 grid gap-2 text-sm font-semibold">
                   {refereeReadiness.map((referee) => (
-                    <li className={referee.connected ? 'text-emerald-200' : 'text-red-200'} key={referee.label}>
-                      <span aria-hidden="true">{referee.connected ? '✓' : '✗'}</span> {referee.label}{' '}
-                      {referee.connected ? 'đã kết nối' : 'chưa kết nối'}
+                    <li
+                      className={referee.connected ? 'text-emerald-200' : 'text-red-200'}
+                      key={referee.label}
+                    >
+                      <span aria-hidden="true">{referee.connected ? '✓' : '✗'}</span>{' '}
+                      {referee.label} {referee.connected ? 'đã kết nối' : 'chưa kết nối'}
                     </li>
                   ))}
                   <li

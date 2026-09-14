@@ -17,13 +17,9 @@ export function BracketStaffingEditor({
 }) {
   const [values, setValues] = useState<Record<number, string>>({});
   const rows = data.staffing ?? EMPTY_STAFFING;
-  useEffect(
-    () =>
-      setValues(
-        Object.fromEntries(rows.map((x) => [x.roundNumber, String(x.requiredRefereeCount)])),
-      ),
-    [rows],
-  );
+  useEffect(() => {
+    setValues(Object.fromEntries(rows.map((x) => [x.roundNumber, String(x.requiredRefereeCount)])));
+  }, [rows]);
   const active = data.activeRefereeCount ?? 0;
   return (
     <section className="mt-5 rounded-xl border p-4" aria-label="Cấu hình trọng tài theo vòng">
@@ -52,9 +48,9 @@ export function BracketStaffingEditor({
                   step="2"
                   type="number"
                   value={values[staffing.roundNumber] ?? ''}
-                  onChange={(event) =>
-                    setValues((old) => ({ ...old, [staffing.roundNumber]: event.target.value }))
-                  }
+                  onChange={(event) => {
+                    setValues((old) => ({ ...old, [staffing.roundNumber]: event.target.value }));
+                  }}
                 />
               </label>
               <Button
@@ -64,7 +60,9 @@ export function BracketStaffingEditor({
                   pending ||
                   !Number.isInteger(Number(values[staffing.roundNumber]))
                 }
-                onClick={() => onSave(staffing.roundNumber, Number(values[staffing.roundNumber]))}
+                onClick={() => {
+                  onSave(staffing.roundNumber, Number(values[staffing.roundNumber]));
+                }}
                 size="sm"
                 type="button"
               >

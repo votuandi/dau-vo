@@ -56,8 +56,18 @@ describe('PenaltyService (PostgreSQL integration)', () => {
       data: {
         athletes: {
           create: [
-            { color: AthleteColor.RED, name: 'Red', organization: 'Test' },
-            { color: AthleteColor.BLUE, name: 'Blue', organization: 'Test' },
+            {
+              color: AthleteColor.RED,
+              name: 'Red',
+              organization: 'Test',
+              tournamentId: tournament.id,
+            },
+            {
+              color: AthleteColor.BLUE,
+              name: 'Blue',
+              organization: 'Test',
+              tournamentId: tournament.id,
+            },
           ],
         },
         breakDurationMs: 60_000,

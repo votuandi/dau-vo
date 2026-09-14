@@ -22,15 +22,15 @@ persist only as hashes.
 
 ## Requirement traceability
 
-| Requirement | Implementation | Automated evidence | Result |
-| --- | --- | --- | --- |
-| Complete bounded eligibility roster; no paginated-bye source | `bracket-draw-setup.service.ts`, `bracket-preview.service.ts` | `bracket-draw-setup.service.spec.ts`, `bracket.e2e.spec.ts` | Pass |
-| 2–64 draw formulae, random and designated byes, no double bye | `bracket-summary.ts`, `single-elimination-bracket.generator.ts` | `bracket-summary.spec.ts`, `single-elimination-bracket.generator.spec.ts` | Pass |
-| Preview/redraw/cancel are non-persistent; confirm validates stale/tampered token | preview, setup-token, confirmation services | token/service specs; `bracket.e2e.spec.ts` | Pass |
-| Current/completed lifecycle and cancelled roster unlock | confirmation/cancellation services; `athlete.service.ts` | `bracket.e2e.spec.ts` | Pass |
-| Fixture preparation, progression, tie decision, reset and undo safety | `admin-management.service.ts`, `bracket-outcome.service.ts`, `match-lifecycle.service.ts` | outcome specs and bracket E2E | Pass |
-| Connector projection and 64-athlete topology | `bracket-graph.ts`, `bracket-chart.tsx` | `bracket-graph.test.ts` (3, 5, 29, 31, 32, 64) | Pass |
-| Sensitive response/cache/log handling | controllers and `app.module.ts` | bracket E2E asserts `no-store`; source review | Pass |
+| Requirement                                                                      | Implementation                                                                            | Automated evidence                                                        | Result |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------ |
+| Complete bounded eligibility roster; no paginated-bye source                     | `bracket-draw-setup.service.ts`, `bracket-preview.service.ts`                             | `bracket-draw-setup.service.spec.ts`, `bracket.e2e.spec.ts`               | Pass   |
+| 2–64 draw formulae, random and designated byes, no double bye                    | `bracket-summary.ts`, `single-elimination-bracket.generator.ts`                           | `bracket-summary.spec.ts`, `single-elimination-bracket.generator.spec.ts` | Pass   |
+| Preview/redraw/cancel are non-persistent; confirm validates stale/tampered token | preview, setup-token, confirmation services                                               | token/service specs; `bracket.e2e.spec.ts`                                | Pass   |
+| Current/completed lifecycle and cancelled roster unlock                          | confirmation/cancellation services; `athlete.service.ts`                                  | `bracket.e2e.spec.ts`                                                     | Pass   |
+| Fixture preparation, progression, tie decision, reset and undo safety            | `admin-management.service.ts`, `bracket-outcome.service.ts`, `match-lifecycle.service.ts` | outcome specs and bracket E2E                                             | Pass   |
+| Connector projection and 64-athlete topology                                     | `bracket-graph.ts`, `bracket-chart.tsx`                                                   | `bracket-graph.test.ts` (3, 5, 29, 31, 32, 64)                            | Pass   |
+| Sensitive response/cache/log handling                                            | controllers and `app.module.ts`                                                           | bracket E2E asserts `no-store`; source review                             | Pass   |
 
 ## Test evidence
 

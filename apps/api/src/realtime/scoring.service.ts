@@ -15,8 +15,7 @@ import {
   AthleteColor,
   AuditEventType,
   MatchStatus,
-  RefereeSlot,
-  TournamentOfficialRole,
+  type RefereeSlot,
   ScoreEventType,
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
@@ -161,11 +160,18 @@ export class ScoringService implements OnModuleDestroy {
       async (transaction) => {
         await this.lockMatch(transaction, input.matchId);
         await this.rulesForMatch(transaction, input.matchId);
-        const assignment = input.officialSessionId ? await this.lockActiveRefereeAssignment(
-          transaction,
-          input.matchId,
-          input.officialSessionId,
-        ) : await this.lockLegacyRefereeSession(transaction, input.matchId, input.sessionId, input.refereeSlot);
+        const assignment = input.officialSessionId
+          ? await this.lockActiveRefereeAssignment(
+              transaction,
+              input.matchId,
+              input.officialSessionId,
+            )
+          : await this.lockLegacyRefereeSession(
+              transaction,
+              input.matchId,
+              input.sessionId,
+              input.refereeSlot,
+            );
         // Sample time after the distributed Match lock. This produces one
         // ordered PostgreSQL clock for simultaneous requests across instances.
         const clock = await this.serverClock(transaction);
@@ -254,7 +260,8 @@ export class ScoringService implements OnModuleDestroy {
           const existing = await transaction.refereeVote.findFirst({
             select: { id: true },
             where: {
-              assignmentId: assignment.id, scoringWindowId: unresolved.id,
+              assignmentId: assignment.id,
+              scoringWindowId: unresolved.id,
             },
           });
 
@@ -330,8 +337,8 @@ export class ScoringService implements OnModuleDestroy {
           accepted: this.acceptedPayload(
             input.athlete,
             match.publicId,
-          assignment.id,
-          assignment.refereePosition,
+            assignment.id,
+            assignment.refereePosition,
             window.id,
             vote.serverReceivedAt,
           ),
@@ -455,12 +462,17 @@ export class ScoringService implements OnModuleDestroy {
   ): Promise<ScoringResolutionTransition> {
     const rules = await this.rulesForMatch(transaction, window.matchId);
     const match = await transaction.match.findUniqueOrThrow({
-      where: { id: window.matchId }, select: { requiredRefereeCount: true },
+      where: { id: window.matchId },
+      select: { requiredRefereeCount: true },
     });
     const votes = await transaction.refereeVote.findMany({
       orderBy: { serverReceivedAt: 'asc' },
-      select: { assignmentId: true, athleteColor: true, serverReceivedAt: true,
-        assignment: { select: { refereePosition: true } } },
+      select: {
+        assignmentId: true,
+        athleteColor: true,
+        serverReceivedAt: true,
+        assignment: { select: { refereePosition: true } },
+      },
       where: { scoringWindowId: window.id },
     });
     const redVotes = votes.filter(
@@ -472,7 +484,7 @@ export class ScoringService implements OnModuleDestroy {
     const winningColor =
       redVotes >= rules.refereeMajority(match.requiredRefereeCount)
         ? AthleteColor.RED
-      : blueVotes >= rules.refereeMajority(match.requiredRefereeCount)
+        : blueVotes >= rules.refereeMajority(match.requiredRefereeCount)
           ? AthleteColor.BLUE
           : null;
 
@@ -695,16 +707,29 @@ export class ScoringService implements OnModuleDestroy {
   }
 
   private async lockLegacyRefereeSession(
-    transaction: Prisma.TransactionClient, matchId: string, sessionId: string | undefined,
+    transaction: Prisma.TransactionClient,
+    matchId: string,
+    sessionId: string | undefined,
     refereeSlot: RefereeSlot | undefined,
   ): Promise<{ id: string; refereePosition: number }> {
     if (!sessionId || !refereeSlot) throw new InactiveVoteSessionError();
-    await this.lockActiveRefereeSession(transaction, matchId, sessionId, refereeSlot);
-    return { id: `legacy:${refereeSlot}`, refereePosition: Number(refereeSlot.slice(-1)) };
+    await this.lockActiveRefereeSession(
+      transaction,
+      matchId,
+      sessionId,
+      refereeSlot,
+    );
+    return {
+      id: `legacy:${refereeSlot}`,
+      refereePosition: Number(refereeSlot.slice(-1)),
+    };
   }
 
   private async lockActiveRefereeSession(
-    transaction: Prisma.TransactionClient, matchId: string, sessionId: string, refereeSlot: RefereeSlot,
+    transaction: Prisma.TransactionClient,
+    matchId: string,
+    sessionId: string,
+    refereeSlot: RefereeSlot,
   ): Promise<void> {
     const rows = await transaction.$queryRaw<LockedRow[]>`
       SELECT match_session."id" FROM "match_sessions" AS match_session
@@ -796,5 +821,4 @@ export class ScoringService implements OnModuleDestroy {
       ? SharedAthleteColor.RED
       : SharedAthleteColor.BLUE;
   }
-
 }

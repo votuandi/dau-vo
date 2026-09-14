@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -80,7 +80,12 @@ function Inspector({
   });
   const state = useQuery({
     queryKey: ['official-match', selected?.id],
-    queryFn: () => officialAccessApi.state(selected!.id),
+    queryFn: () => {
+      if (selected === null) {
+        throw new Error('A match must be selected before loading its state.');
+      }
+      return officialAccessApi.state(selected.id);
+    },
     enabled: !!selected,
     staleTime: 0,
   });
@@ -101,7 +106,12 @@ function Inspector({
     onSuccess: refresh,
   });
   const confirm = useMutation({
-    mutationFn: () => officialAccessApi.confirm(selected!.id, picked),
+    mutationFn: () => {
+      if (selected === null) {
+        throw new Error('A match must be selected before confirming referees.');
+      }
+      return officialAccessApi.confirm(selected.id, picked);
+    },
     onSuccess: refresh,
     onError: (e) => {
       const d = e instanceof ApiClientError ? e.body.details : undefined;
@@ -165,7 +175,9 @@ function Inspector({
             <h2 className="text-xl font-black">Phân công {selected.publicId}</h2>
             <Button
               disabled={claim.isPending || !selected.claimable}
-              onClick={() => claim.mutate(selected.id)}
+              onClick={() => {
+                claim.mutate(selected.id);
+              }}
               type="button"
             >
               Nhận trận
@@ -196,15 +208,15 @@ function Inspector({
                   <input
                     checked={picked.includes(referee.id)}
                     disabled={unavailable}
-                    onChange={() =>
+                    onChange={() => {
                       setPicked((old) =>
                         old.includes(referee.id)
                           ? old.filter((id) => id !== referee.id)
                           : old.length < required
                             ? [...old, referee.id]
                             : old,
-                      )
-                    }
+                      );
+                    }}
                     type="checkbox"
                   />
                 </label>
@@ -214,7 +226,9 @@ function Inspector({
           <Button
             className="mt-4"
             disabled={confirm.isPending || picked.length !== required}
-            onClick={() => confirm.mutate()}
+            onClick={() => {
+              confirm.mutate();
+            }}
             type="button"
           >
             {confirm.isPending ? 'Đang xác nhận…' : 'Xác nhận phân công'}
@@ -226,8 +240,12 @@ function Inspector({
           actionLabel="Đã hiểu"
           busy={false}
           description={conflict}
-          onCancel={() => setConflict(null)}
-          onConfirm={() => setConflict(null)}
+          onCancel={() => {
+            setConflict(null);
+          }}
+          onConfirm={() => {
+            setConflict(null);
+          }}
           title="Không thể phân công"
         />
       ) : null}
@@ -283,14 +301,18 @@ export function MatchAccessPage({ expectedRole }: Props) {
     },
   });
   const takeover = useMutation({
-    mutationFn: () =>
-      officialAccessApi.takeover({
+    mutationFn: () => {
+      if (challenge === null) {
+        throw new Error('A takeover challenge is required.');
+      }
+      return officialAccessApi.takeover({
         tournamentCode: code.trim().toUpperCase(),
         privatePasscode: passcode.trim(),
         deviceId,
         expectedRole: expectedOfficialRole,
-        takeoverToken: challenge!,
-      }),
+        takeoverToken: challenge,
+      });
+    },
     onSuccess: (x) => {
       qc.setQueryData(sessionKey, x);
       setChallenge(null);
@@ -315,11 +337,23 @@ export function MatchAccessPage({ expectedRole }: Props) {
     return <Navigate replace to={pathFor(identity.official.role)} />;
   if (identity)
     return identity.official.role === TournamentOfficialRole.INSPECTOR ? (
-      <Inspector logout={() => logout.mutate()} pending={logout.isPending} session={identity} />
+      <Inspector
+        logout={() => {
+          logout.mutate();
+        }}
+        pending={logout.isPending}
+        session={identity}
+      />
     ) : (
-      <Waiting logout={() => logout.mutate()} pending={logout.isPending} session={identity} />
+      <Waiting
+        logout={() => {
+          logout.mutate();
+        }}
+        pending={logout.isPending}
+        session={identity}
+      />
     );
-  const submit = (e: FormEvent) => {
+  const submit = (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
     if (!code.trim() || !passcode.trim()) {
@@ -343,7 +377,9 @@ export function MatchAccessPage({ expectedRole }: Props) {
             autoFocus
             className="mt-2 w-full rounded border p-3"
             maxLength={32}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => {
+              setCode(e.target.value);
+            }}
             value={code}
           />
         </label>
@@ -352,7 +388,9 @@ export function MatchAccessPage({ expectedRole }: Props) {
           <input
             className="mt-2 w-full rounded border p-3"
             maxLength={72}
-            onChange={(e) => setPasscode(e.target.value)}
+            onChange={(e) => {
+              setPasscode(e.target.value);
+            }}
             type="password"
             value={passcode}
           />
@@ -371,8 +409,12 @@ export function MatchAccessPage({ expectedRole }: Props) {
           actionLabel="Có, tiếp tục"
           busy={takeover.isPending}
           description="Mã này đang được sử dụng trên thiết bị khác."
-          onCancel={() => setChallenge(null)}
-          onConfirm={() => takeover.mutate()}
+          onCancel={() => {
+            setChallenge(null);
+          }}
+          onConfirm={() => {
+            takeover.mutate();
+          }}
           title="Tiếp quản phiên?"
         />
       ) : null}

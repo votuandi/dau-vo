@@ -283,11 +283,13 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
               color: AthleteColor.RED,
               name: `${TEST_PREFIX}-${label}-red`,
               organization: 'Red lifecycle test club',
+              tournamentId,
             },
             {
               color: AthleteColor.BLUE,
               name: `${TEST_PREFIX}-${label}-blue`,
               organization: 'Blue lifecycle test club',
+              tournamentId,
             },
           ],
         },

@@ -184,6 +184,7 @@ describe('InspectorConsole', () => {
             ...snapshotFor(MatchStatus.WAITING),
             readiness: {
               canStartRound: false,
+              kind: 'LEGACY_MATCH_ACCESS',
               missingRequirements: ['REFEREE_2'],
               referees: { REFEREE_1: true, REFEREE_2: false, REFEREE_3: true },
               scoreboardConnectedCount: 1,

@@ -225,11 +225,13 @@ describe('Match participant authentication (integration)', () => {
               color: AthleteColor.RED,
               name: `${TEST_PREFIX}-red`,
               organization: 'Red test organization',
+              tournamentId,
             },
             {
               color: AthleteColor.BLUE,
               name: `${TEST_PREFIX}-blue`,
               organization: 'Blue test organization',
+              tournamentId,
             },
           ],
         },

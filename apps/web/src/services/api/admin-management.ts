@@ -474,7 +474,7 @@ export const adminManagementApi = {
         readonly activeRefereeCount: number;
       };
     }>(
-      `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/staffing/${roundNumber}`,
+      `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/staffing/${String(roundNumber)}`,
       { requiredRefereeCount },
       options,
     ),

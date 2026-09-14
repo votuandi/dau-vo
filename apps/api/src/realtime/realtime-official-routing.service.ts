@@ -8,7 +8,10 @@ import {
 import type { Server } from 'socket.io';
 
 import { matchRoom, officialRoom, tournamentRoom } from './realtime.constants';
-import type { ClientToServerEvents, ServerToClientEvents } from './realtime.types';
+import type {
+  ClientToServerEvents,
+  ServerToClientEvents,
+} from './realtime.types';
 
 /**
  * A deliberately post-commit publisher. Assignment writes call this only
@@ -18,17 +21,19 @@ import type { ClientToServerEvents, ServerToClientEvents } from './realtime.type
 @Injectable()
 export class RealtimeOfficialRoutingService {
   private readonly logger = new Logger(RealtimeOfficialRoutingService.name);
-  private server: Server<ClientToServerEvents, ServerToClientEvents> | null = null;
+  private server: Server<ClientToServerEvents, ServerToClientEvents> | null =
+    null;
 
   bind(server: Server<ClientToServerEvents, ServerToClientEvents>): void {
     this.server = server;
   }
 
   publishAssignment(payload: OfficialAssignmentUpdatedPayload): void {
-    this.safePublish(() =>
-      this.server
-        ?.to(officialRoom(payload.officialId))
-        .emit(RealtimeEvent.OFFICIAL_ASSIGNMENT_UPDATED, payload),
+    this.safePublish(
+      () =>
+        this.server
+          ?.to(officialRoom(payload.officialId))
+          .emit(RealtimeEvent.OFFICIAL_ASSIGNMENT_UPDATED, payload),
       { officialId: payload.officialId, tournamentId: payload.tournamentId },
     );
   }
@@ -65,7 +70,10 @@ export class RealtimeOfficialRoutingService {
     try {
       work();
     } catch (error: unknown) {
-      this.logger.error({ error, ...ids }, 'Official realtime publication failed');
+      this.logger.error(
+        { error, ...ids },
+        'Official realtime publication failed',
+      );
     }
   }
 }

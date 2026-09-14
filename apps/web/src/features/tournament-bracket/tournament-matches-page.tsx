@@ -361,7 +361,9 @@ export function TournamentMatchesPage({
       });
       notifyMutationSuccess('Đã cập nhật số trọng tài.');
     },
-    onError: (error) => notifyMutationError(error, 'Không thể cập nhật số trọng tài.'),
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể cập nhật số trọng tài.');
+    },
   });
   const counts = useMemo(
     () =>
@@ -549,9 +551,9 @@ export function TournamentMatchesPage({
                   data={bracket.data}
                   disabled={isReadOnly || bracket.data.bracket.status !== 'ACTIVE'}
                   pending={staffing.isPending}
-                  onSave={(roundNumber, count) =>
-                    staffing.mutate({ weightClassId: selectedId!, roundNumber, count })
-                  }
+                  onSave={(roundNumber, count) => {
+                    staffing.mutate({ weightClassId: selectedId, roundNumber, count });
+                  }}
                 />
                 <FixtureList
                   data={bracket.data}

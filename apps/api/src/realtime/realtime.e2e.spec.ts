@@ -233,11 +233,13 @@ describe('Realtime match infrastructure (integration)', () => {
               color: AthleteColor.RED,
               name: `${TEST_PREFIX}-${label}-red`,
               organization: `${label} Red Club`,
+              tournamentId,
             },
             {
               color: AthleteColor.BLUE,
               name: `${TEST_PREFIX}-${label}-blue`,
               organization: `${label} Blue Club`,
+              tournamentId,
             },
           ],
         },

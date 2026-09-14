@@ -609,16 +609,14 @@ export class MatchLifecycleService implements OnModuleDestroy {
           },
           where: { id: input.matchId },
         });
-        const releasedOfficialIds = await this.assignmentLifecycle.releaseForTransition(
-          transaction,
-          {
+        const releasedOfficialIds =
+          await this.assignmentLifecycle.releaseForTransition(transaction, {
             from: match.status,
             matchId: input.matchId,
             occurredAt: clock.serverNow,
             sessionId: input.sessionId,
             to: nextStatus,
-          },
-        );
+          });
         return {
           matchId: input.matchId,
           payload: {
@@ -939,15 +937,13 @@ export class MatchLifecycleService implements OnModuleDestroy {
           select: { id: true },
           where: { id: matchId },
         });
-        const releasedOfficialIds = await this.assignmentLifecycle.releaseForTransition(
-          transaction,
-          {
+        const releasedOfficialIds =
+          await this.assignmentLifecycle.releaseForTransition(transaction, {
             from: match.status,
             matchId,
             occurredAt: endedAt,
             to: nextStatus,
-          },
-        );
+          });
         await transaction.auditLog.create({
           data: {
             eventType: AuditEventType.ROUND_ENDED,

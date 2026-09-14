@@ -597,19 +597,32 @@ export class RealtimeGateway
           officialSessionId: official.sessionId,
         });
         if (transition.resolvedBeforeAcceptance)
-          await this.publishScoringResolution(transition.resolvedBeforeAcceptance);
+          await this.publishScoringResolution(
+            transition.resolvedBeforeAcceptance,
+          );
         if (transition.opened)
-          this.server.to(matchRoom(transition.opened.matchPublicId)).emit(RealtimeEvent.SCORING_WINDOW_OPENED, transition.opened);
+          this.server
+            .to(matchRoom(transition.opened.matchPublicId))
+            .emit(RealtimeEvent.SCORING_WINDOW_OPENED, transition.opened);
         client.emit(RealtimeEvent.VOTE_ACCEPTED, transition.accepted);
         return { ok: true, vote: transition.accepted };
       } catch (error: unknown) {
-        if (error instanceof DuplicateRefereeVoteError) return { error: VOTE_ALREADY_SUBMITTED_ERROR, ok: false };
-        if (error instanceof InactiveVoteSessionError) return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
-        if (error instanceof MatchNotRunningForVoteError) return { error: VOTE_MATCH_NOT_RUNNING_ERROR, ok: false };
-        if (error instanceof RoundPausedForVoteError) return { error: ROUND_PAUSED_ERROR, ok: false };
-        if (error instanceof RoundEndedForVoteError) return { error: VOTE_ROUND_ENDED_ERROR, ok: false };
-        if (error instanceof PriorScoringWindowPendingError) return { error: VOTE_SCORING_WINDOW_PENDING_ERROR, ok: false };
-        this.logger.error({ error, assignmentId: assignment.id }, 'Assigned referee vote failed');
+        if (error instanceof DuplicateRefereeVoteError)
+          return { error: VOTE_ALREADY_SUBMITTED_ERROR, ok: false };
+        if (error instanceof InactiveVoteSessionError)
+          return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+        if (error instanceof MatchNotRunningForVoteError)
+          return { error: VOTE_MATCH_NOT_RUNNING_ERROR, ok: false };
+        if (error instanceof RoundPausedForVoteError)
+          return { error: ROUND_PAUSED_ERROR, ok: false };
+        if (error instanceof RoundEndedForVoteError)
+          return { error: VOTE_ROUND_ENDED_ERROR, ok: false };
+        if (error instanceof PriorScoringWindowPendingError)
+          return { error: VOTE_SCORING_WINDOW_PENDING_ERROR, ok: false };
+        this.logger.error(
+          { error, assignmentId: assignment.id },
+          'Assigned referee vote failed',
+        );
         return { error: VOTE_FAILED_ERROR, ok: false };
       }
     }
@@ -783,7 +796,8 @@ export class RealtimeGateway
     }
     if (client.data.connectionKind === 'official') {
       const identity = client.data.officialIdentity;
-      if (identity) await this.sessionRegistry.unregister(identity.sessionId, client.id);
+      if (identity)
+        await this.sessionRegistry.unregister(identity.sessionId, client.id);
       return;
     }
     const identity = client.data.identity;
@@ -834,7 +848,8 @@ export class RealtimeGateway
     @ConnectedSocket() client: RealtimeSocket,
   ): Promise<void> {
     const snapshot = await this.revalidateOfficial(client);
-    if (snapshot) client.emit(RealtimeEvent.OFFICIAL_ASSIGNMENT_SNAPSHOT, snapshot);
+    if (snapshot)
+      client.emit(RealtimeEvent.OFFICIAL_ASSIGNMENT_SNAPSHOT, snapshot);
   }
 
   @SubscribeMessage(RealtimeEvent.PUBLIC_MATCH_STATE_REQUEST)
@@ -879,7 +894,8 @@ export class RealtimeGateway
         sessionId: official.sessionId,
         tournamentId: official.tournamentId,
       };
-      client.data.officialMatchPublicId = official.activeAssignment?.match.publicId;
+      client.data.officialMatchPublicId =
+        official.activeAssignment?.match.publicId;
       client.data.revoked = false;
       return;
     }
@@ -957,7 +973,8 @@ export class RealtimeGateway
     });
     await client.join(officialRoom(identity.officialId));
     await client.join(tournamentRoom(identity.tournamentId));
-    if (snapshot.assignment) await client.join(matchRoom(snapshot.assignment.match.publicId));
+    if (snapshot.assignment)
+      await client.join(matchRoom(snapshot.assignment.match.publicId));
     client.emit(RealtimeEvent.OFFICIAL_ASSIGNMENT_SNAPSHOT, snapshot);
   }
 
@@ -969,17 +986,28 @@ export class RealtimeGateway
       return null;
     }
     const resolved = await this.officialAccess.resolveSession(token);
-    if (!resolved || resolved.sessionId !== original.sessionId || resolved.officialId !== original.officialId || resolved.tournamentId !== original.tournamentId) {
+    if (
+      !resolved ||
+      resolved.sessionId !== original.sessionId ||
+      resolved.officialId !== original.officialId ||
+      resolved.tournamentId !== original.tournamentId
+    ) {
       this.sessionRegistry.revokeSessions([original.sessionId]);
       this.revokeSocket(client);
       return null;
     }
     const nextMatch = resolved.activeAssignment?.match.publicId ?? null;
     const previousMatch = client.data.officialMatchPublicId;
-    if (previousMatch && previousMatch !== nextMatch) await client.leave(matchRoom(previousMatch));
-    if (nextMatch && previousMatch !== nextMatch) await client.join(matchRoom(nextMatch));
+    if (previousMatch && previousMatch !== nextMatch)
+      await client.leave(matchRoom(previousMatch));
+    if (nextMatch && previousMatch !== nextMatch)
+      await client.join(matchRoom(nextMatch));
     client.data.officialMatchPublicId = nextMatch ?? undefined;
-    await this.sessionRegistry.updateOfficialAssignment(original.sessionId, client.id, nextMatch);
+    await this.sessionRegistry.updateOfficialAssignment(
+      original.sessionId,
+      client.id,
+      nextMatch,
+    );
     return {
       assignment: resolved.activeAssignment,
       official: resolved.official,

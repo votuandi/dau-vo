@@ -27,7 +27,10 @@ export class RealtimeSessionRegistryService {
     Map<string, RealtimeConnectionRegistration>
   >();
   private readonly scoreboardConnections = new Map<string, string>();
-  private readonly officialConnections = new Map<string, Map<string, OfficialConnectionRegistration>>();
+  private readonly officialConnections = new Map<
+    string,
+    Map<string, OfficialConnectionRegistration>
+  >();
 
   constructor(@Inject(RedisService) private readonly redis: RedisService) {}
 
@@ -49,12 +52,16 @@ export class RealtimeSessionRegistryService {
     if (officialSockets?.delete(socketId)) {
       if (officialRegistration?.matchPublicId) {
         await this.redis.incrementByWithExpiry(
-          this.officialPresenceKey(officialRegistration.matchPublicId, officialRegistration.officialId),
+          this.officialPresenceKey(
+            officialRegistration.matchPublicId,
+            officialRegistration.officialId,
+          ),
           -1,
           PRESENCE_TTL_SECONDS,
         );
       }
-      if (officialSockets.size === 0) this.officialConnections.delete(sessionId);
+      if (officialSockets.size === 0)
+        this.officialConnections.delete(sessionId);
       return;
     }
     const sessionConnections = this.connectionsBySession.get(sessionId);
@@ -80,26 +87,39 @@ export class RealtimeSessionRegistryService {
     }
   }
 
-  async registerOfficial(registration: OfficialConnectionRegistration): Promise<void> {
-    const sockets = this.officialConnections.get(registration.sessionId) ?? new Map();
+  async registerOfficial(
+    registration: OfficialConnectionRegistration,
+  ): Promise<void> {
+    const sockets =
+      this.officialConnections.get(registration.sessionId) ?? new Map();
     if (sockets.has(registration.socketId)) return;
     sockets.set(registration.socketId, registration);
     this.officialConnections.set(registration.sessionId, sockets);
     if (registration.matchPublicId) {
       await this.redis.incrementByWithExpiry(
-        this.officialPresenceKey(registration.matchPublicId, registration.officialId),
+        this.officialPresenceKey(
+          registration.matchPublicId,
+          registration.officialId,
+        ),
         1,
         PRESENCE_TTL_SECONDS,
       );
     }
   }
 
-  async updateOfficialAssignment(sessionId: string, socketId: string, matchPublicId: string | null): Promise<void> {
+  async updateOfficialAssignment(
+    sessionId: string,
+    socketId: string,
+    matchPublicId: string | null,
+  ): Promise<void> {
     const registration = this.officialConnections.get(sessionId)?.get(socketId);
     if (registration && registration.matchPublicId !== matchPublicId) {
       if (registration.matchPublicId) {
         await this.redis.incrementByWithExpiry(
-          this.officialPresenceKey(registration.matchPublicId, registration.officialId),
+          this.officialPresenceKey(
+            registration.matchPublicId,
+            registration.officialId,
+          ),
           -1,
           PRESENCE_TTL_SECONDS,
         );
@@ -115,8 +135,13 @@ export class RealtimeSessionRegistryService {
     }
   }
 
-  async officialConnectedSocketCount(matchPublicId: string, officialId: string): Promise<number> {
-    const value = await this.redis.get(this.officialPresenceKey(matchPublicId, officialId));
+  async officialConnectedSocketCount(
+    matchPublicId: string,
+    officialId: string,
+  ): Promise<number> {
+    const value = await this.redis.get(
+      this.officialPresenceKey(matchPublicId, officialId),
+    );
     const count = Number(value);
     return Number.isSafeInteger(count) && count > 0 ? count : 0;
   }
@@ -204,7 +229,10 @@ export class RealtimeSessionRegistryService {
     return `realtime:presence:${matchPublicId}:SCOREBOARD`;
   }
 
-  private officialPresenceKey(matchPublicId: string, officialId: string): string {
+  private officialPresenceKey(
+    matchPublicId: string,
+    officialId: string,
+  ): string {
     return `realtime:official-presence:${matchPublicId}:${officialId}`;
   }
 }

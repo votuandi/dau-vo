@@ -216,7 +216,10 @@ export class RealtimeMatchStateService {
 
     const vote = await this.prisma.refereeVote.findFirst({
       select: { athleteColor: true, serverReceivedAt: true },
-      where: { scoringWindowId: unresolvedWindow.id, refereeSlot: viewer.refereeSlot },
+      where: {
+        scoringWindowId: unresolvedWindow.id,
+        refereeSlot: viewer.refereeSlot,
+      },
     });
 
     return {
@@ -330,11 +333,13 @@ export class RealtimeMatchStateService {
     matchId: string,
     matchPublicId: string,
   ): Promise<MatchStartReadinessDetails> {
-    const { officials, scoreboardConnectedCount, requiredRefereeCount } = await this.presence(
-      matchId,
-      matchPublicId,
-    );
-    return this.readinessFromPresence({ officials, scoreboardConnectedCount, requiredRefereeCount, presence: [] });
+    const { officials, scoreboardConnectedCount, requiredRefereeCount } =
+      await this.presence(matchId, matchPublicId);
+    return this.officialReadinessFromPresence({
+      officials,
+      scoreboardConnectedCount,
+      requiredRefereeCount,
+    });
   }
 
   private readinessFromPresence(presenceState: {
@@ -343,20 +348,76 @@ export class RealtimeMatchStateService {
     scoreboardConnectedCount: number;
     requiredRefereeCount: number;
   }): MatchReadiness {
-    const referees = presenceState.officials.filter((x) => x.role === 'REFEREE').map((x) => ({
-      officialId: x.officialId, name: x.name, position: x.refereePosition ?? 0,
-      assigned: true, connected: x.connected,
-    }));
-    const inspectorEntry = presenceState.officials.filter((x) => x.role === 'INSPECTOR');
+    if (presenceState.officials.length === 0) {
+      const connectedRoles = new Set(
+        presenceState.presence
+          .filter((entry) => entry.connected)
+          .map((entry) => entry.accessRole),
+      );
+      const referees = {
+        REFEREE_1: connectedRoles.has(SharedMatchAccessRole.REFEREE_1),
+        REFEREE_2: connectedRoles.has(SharedMatchAccessRole.REFEREE_2),
+        REFEREE_3: connectedRoles.has(SharedMatchAccessRole.REFEREE_3),
+      };
+      const missingRequirements: string[] = [];
+      if (!connectedRoles.has(SharedMatchAccessRole.INSPECTOR)) {
+        missingRequirements.push('INSPECTOR');
+      }
+      if (Object.values(referees).some((connected) => !connected)) {
+        missingRequirements.push('REFEREES');
+      }
+      if (presenceState.scoreboardConnectedCount < 1) {
+        missingRequirements.push('SCOREBOARD');
+      }
+      return {
+        canStartRound: missingRequirements.length === 0,
+        kind: 'LEGACY_MATCH_ACCESS',
+        missingRequirements,
+        referees,
+        scoreboardConnectedCount: presenceState.scoreboardConnectedCount,
+      };
+    }
+
+    return this.officialReadinessFromPresence(presenceState);
+  }
+
+  private officialReadinessFromPresence(presenceState: {
+    officials: MatchOfficialPresenceEntry[];
+    scoreboardConnectedCount: number;
+    requiredRefereeCount: number;
+  }): MatchStartReadinessDetails & {
+    canStartRound: boolean;
+    kind: 'TOURNAMENT_OFFICIALS';
+  } {
+    const referees = presenceState.officials
+      .filter((x) => x.role === 'REFEREE')
+      .map((x) => ({
+        officialId: x.officialId,
+        name: x.name,
+        position: x.refereePosition ?? 0,
+        assigned: true,
+        connected: x.connected,
+      }));
+    const inspectorEntry = presenceState.officials.filter(
+      (x) => x.role === 'INSPECTOR',
+    );
     const inspectorRecord = inspectorEntry[0];
-    const inspector = inspectorRecord && inspectorEntry.length === 1
-      ? { officialId: inspectorRecord.officialId, assigned: true, connected: inspectorRecord.connected }
-      : { officialId: null, assigned: false, connected: false };
+    const inspector =
+      inspectorRecord && inspectorEntry.length === 1
+        ? {
+            officialId: inspectorRecord.officialId,
+            assigned: true,
+            connected: inspectorRecord.connected,
+          }
+        : { officialId: null, assigned: false, connected: false };
     const missingRequirements: string[] = [];
     if (!inspector.assigned) missingRequirements.push('INSPECTOR_ASSIGNMENT');
-    if (!inspector.connected) missingRequirements.push('INSPECTOR_DISCONNECTED');
-    if (referees.length !== presenceState.requiredRefereeCount) missingRequirements.push('REFEREE_ASSIGNMENTS');
-    if (referees.some((x) => !x.connected)) missingRequirements.push('REFEREE_DISCONNECTED');
+    if (!inspector.connected)
+      missingRequirements.push('INSPECTOR_DISCONNECTED');
+    if (referees.length !== presenceState.requiredRefereeCount)
+      missingRequirements.push('REFEREE_ASSIGNMENTS');
+    if (referees.some((x) => !x.connected))
+      missingRequirements.push('REFEREE_DISCONNECTED');
     if (presenceState.scoreboardConnectedCount < 1) {
       missingRequirements.push('SCOREBOARD');
     }
@@ -365,6 +426,7 @@ export class RealtimeMatchStateService {
       assignedRefereeCount: referees.length,
       connectedRefereeCount: referees.filter((x) => x.connected).length,
       inspector,
+      kind: 'TOURNAMENT_OFFICIALS',
       missingRequirements,
       requiredRefereeCount: presenceState.requiredRefereeCount,
       referees,
@@ -395,34 +457,45 @@ export class RealtimeMatchStateService {
     scoreboardConnectedCount: number;
     requiredRefereeCount: number;
   }> {
-    const [activeOwners, scoreboardConnectedCount, officialAssignments, match] = await Promise.all([
-      this.prisma.matchSession.findMany({
-        select: { accessCode: { select: { role: true } } },
-        where: {
-          active: true,
-          expiresAt: { gt: new Date() },
-          matchId,
-          revokedAt: null,
-        },
-      }),
-      this.sessionRegistry.scoreboardConnectedCount(matchPublicId),
-      this.prisma.matchOfficialAssignment.findMany({
-        where: { matchId, releasedAt: null },
-        orderBy: [{ role: 'asc' }, { refereePosition: 'asc' }],
-        select: {
-          officialId: true,
-          role: true,
-          refereePosition: true,
-          official: {
-            select: {
-              name: true,
-              sessions: { where: { active: true, revokedAt: null, expiresAt: { gt: new Date() } }, select: { id: true } },
+    const [activeOwners, scoreboardConnectedCount, officialAssignments, match] =
+      await Promise.all([
+        this.prisma.matchSession.findMany({
+          select: { accessCode: { select: { role: true } } },
+          where: {
+            active: true,
+            expiresAt: { gt: new Date() },
+            matchId,
+            revokedAt: null,
+          },
+        }),
+        this.sessionRegistry.scoreboardConnectedCount(matchPublicId),
+        this.prisma.matchOfficialAssignment.findMany({
+          where: { matchId, releasedAt: null },
+          orderBy: [{ role: 'asc' }, { refereePosition: 'asc' }],
+          select: {
+            officialId: true,
+            role: true,
+            refereePosition: true,
+            official: {
+              select: {
+                name: true,
+                sessions: {
+                  where: {
+                    active: true,
+                    revokedAt: null,
+                    expiresAt: { gt: new Date() },
+                  },
+                  select: { id: true },
+                },
+              },
             },
           },
-        },
-      }),
-      this.prisma.match.findUniqueOrThrow({ where: { id: matchId }, select: { requiredRefereeCount: true } }),
-    ]);
+        }),
+        this.prisma.match.findUniqueOrThrow({
+          where: { id: matchId },
+          select: { requiredRefereeCount: true },
+        }),
+      ]);
     const activeRoles = new Set<string>(
       activeOwners.map(({ accessCode }) => accessCode.role),
     );
@@ -444,19 +517,30 @@ export class RealtimeMatchStateService {
       }),
     );
 
-    const officials = await Promise.all(officialAssignments.map(async (assignment) => {
-      const connectedSocketCount = await this.sessionRegistry.officialConnectedSocketCount(matchPublicId, assignment.officialId);
-      return {
-        activeSession: assignment.official.sessions.length > 0,
-        connected: connectedSocketCount > 0,
-        connectedSocketCount,
-        name: assignment.official.name,
-        officialId: assignment.officialId,
-        refereePosition: assignment.refereePosition,
-        role: assignment.role,
-      };
-    }));
-    return { officials, presence, scoreboardConnectedCount, requiredRefereeCount: match.requiredRefereeCount };
+    const officials = await Promise.all(
+      officialAssignments.map(async (assignment) => {
+        const connectedSocketCount =
+          await this.sessionRegistry.officialConnectedSocketCount(
+            matchPublicId,
+            assignment.officialId,
+          );
+        return {
+          activeSession: assignment.official.sessions.length > 0,
+          connected: connectedSocketCount > 0,
+          connectedSocketCount,
+          name: assignment.official.name,
+          officialId: assignment.officialId,
+          refereePosition: assignment.refereePosition,
+          role: assignment.role,
+        };
+      }),
+    );
+    return {
+      officials,
+      presence,
+      scoreboardConnectedCount,
+      requiredRefereeCount: match.requiredRefereeCount,
+    };
   }
 
   private sharedAccessRole(role: MatchAccessRole): SharedMatchAccessRole {

@@ -92,9 +92,9 @@ export interface PresenceUpdatedPayload {
 }
 
 export interface MatchStartReadinessDetails {
-  requiredRefereeCount?: number;
-  assignedRefereeCount?: number;
-  connectedRefereeCount?: number;
+  requiredRefereeCount: number;
+  assignedRefereeCount: number;
+  connectedRefereeCount: number;
   referees: Array<{
     officialId: string;
     name: string;
@@ -107,18 +107,24 @@ export interface MatchStartReadinessDetails {
   scoreboardConnectedCount: number;
 }
 
-export interface MatchReadiness {
+export interface LegacyMatchReadiness {
+  kind: 'LEGACY_MATCH_ACCESS';
   canStartRound: boolean;
   missingRequirements: string[];
-  requiredRefereeCount?: number;
-  assignedRefereeCount?: number;
-  connectedRefereeCount?: number;
-  referees: MatchStartReadinessDetails['referees'] | {
-    REFEREE_1: boolean; REFEREE_2: boolean; REFEREE_3: boolean;
+  referees: {
+    REFEREE_1: boolean;
+    REFEREE_2: boolean;
+    REFEREE_3: boolean;
   };
-  inspector?: MatchStartReadinessDetails['inspector'];
   scoreboardConnectedCount: number;
 }
+
+export interface TournamentOfficialMatchReadiness extends MatchStartReadinessDetails {
+  kind: 'TOURNAMENT_OFFICIALS';
+  canStartRound: boolean;
+}
+
+export type MatchReadiness = LegacyMatchReadiness | TournamentOfficialMatchReadiness;
 
 export interface MatchStateIdentity {
   currentRound: number | null;

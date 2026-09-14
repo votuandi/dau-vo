@@ -66,10 +66,16 @@ export interface ClientToServerEvents {
 
 export interface ServerToClientEvents {
   'official:assignment-snapshot': (payload: OfficialAssignmentSnapshot) => void;
-  'official:assignment-updated': (payload: OfficialAssignmentUpdatedPayload) => void;
-  'official:status-updated': (payload: Pick<OfficialAssignmentSnapshot, 'official' | 'status'>) => void;
+  'official:assignment-updated': (
+    payload: OfficialAssignmentUpdatedPayload,
+  ) => void;
+  'official:status-updated': (
+    payload: Pick<OfficialAssignmentSnapshot, 'official' | 'status'>,
+  ) => void;
   'match:officials-updated': (payload: MatchOfficialsUpdatedPayload) => void;
-  'match:assignment-released': (payload: MatchAssignmentReleasedPayload) => void;
+  'match:assignment-released': (
+    payload: MatchAssignmentReleasedPayload,
+  ) => void;
   'match:finished': (payload: MatchFinishedPayload) => void;
   'match:state': (payload: MatchStatePayload) => void;
   'scoreboard:state': (payload: PublicMatchStatePayload) => void;
