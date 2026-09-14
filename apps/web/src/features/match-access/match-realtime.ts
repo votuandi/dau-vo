@@ -50,6 +50,8 @@ export type RealtimeConnectionStatus =
   | 'revoked';
 
 interface UseMatchRealtimeOptions {
+  /** Official access keeps its assignment listener alive between consoles. */
+  readonly keepSocketConnected?: boolean;
   readonly matchPublicId: string;
   readonly onAuthenticationRequired: () => void;
   readonly onSessionRevoked: (payload: SessionRevokedPayload) => void;
@@ -222,6 +224,7 @@ function getPenaltyErrorMessage(code: PenaltyAddErrorCode, fallback: string): st
 }
 
 export function useMatchRealtime({
+  keepSocketConnected = false,
   matchPublicId,
   onAuthenticationRequired,
   onSessionRevoked,
@@ -942,9 +945,9 @@ export function useMatchRealtime({
       socket.off(RealtimeEvent.VOTE_REJECTED, handleVoteRejected);
       socket.io.off('reconnect_attempt', handleReconnectAttempt);
       socket.io.off('reconnect_failed', handleReconnectFailed);
-      socket.disconnect();
+      if (!keepSocketConnected) socket.disconnect();
     };
-  }, [matchPublicId, refereeSlot]);
+  }, [keepSocketConnected, matchPublicId, refereeSlot]);
 
   return {
     connectionStatus,

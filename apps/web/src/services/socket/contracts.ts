@@ -20,6 +20,10 @@ import type {
   ScoringWindowOpenedPayload,
   ScoringWindowResolvedPayload,
   SessionRevokedPayload,
+  OfficialAssignmentSnapshot,
+  OfficialAssignmentUpdatedPayload,
+  MatchAssignmentReleasedPayload,
+  MatchOfficialsUpdatedPayload,
   VoteAcceptedPayload,
   VoteRejectedPayload,
   VoteSubmitPayload,
@@ -27,6 +31,10 @@ import type {
 } from '@martial-arts-scoring/shared-types';
 
 export interface ServerToClientEvents {
+  'official:assignment-snapshot': (payload: OfficialAssignmentSnapshot) => void;
+  'official:assignment-updated': (payload: OfficialAssignmentUpdatedPayload) => void;
+  'match:assignment-released': (payload: MatchAssignmentReleasedPayload) => void;
+  'match:officials-updated': (payload: MatchOfficialsUpdatedPayload) => void;
   'match:finished': (payload: MatchFinishedPayload) => void;
   'match:state': (payload: MatchStatePayload) => void;
   'scoreboard:state': (payload: PublicMatchStatePayload) => void;
@@ -48,6 +56,7 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
+  'official:assignment-snapshot:request': () => void;
   'match:state:request': () => void;
   'scoreboard:state:request': () => void;
   'penalty:add': (

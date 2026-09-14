@@ -17,8 +17,49 @@ const officialAccessApiMock = vi.hoisted(() => ({
   takeover: vi.fn(),
 }));
 
+const socketHarness = vi.hoisted(() => {
+  const handlers = new Map<string, Set<(payload?: unknown) => void>>();
+  const socket = {
+    connected: false,
+    connect: vi.fn(() => {
+      socket.connected = true;
+      handlers.get('connect')?.forEach((handler) => { handler(); });
+    }),
+    disconnect: vi.fn(() => {
+      socket.connected = false;
+    }),
+    emit: vi.fn(),
+    off: vi.fn((event: string, handler: (payload?: unknown) => void) => {
+      handlers.get(event)?.delete(handler);
+    }),
+    on: vi.fn((event: string, handler: (payload?: unknown) => void) => {
+      const values = handlers.get(event) ?? new Set();
+      values.add(handler);
+      handlers.set(event, values);
+    }),
+  };
+  return {
+    socket,
+    reset: () => {
+      handlers.clear();
+      socket.connected = false;
+      socket.connect.mockClear();
+      socket.disconnect.mockClear();
+      socket.emit.mockClear();
+      socket.on.mockClear();
+      socket.off.mockClear();
+    },
+    trigger: (event: string, payload?: unknown) =>
+      handlers.get(event)?.forEach((handler) => { handler(payload); }),
+  };
+});
+
 vi.mock('@/services/api/official-access', () => ({
   officialAccessApi: officialAccessApiMock,
+}));
+
+vi.mock('@/services/socket/client', () => ({
+  getSocketClient: vi.fn(() => socketHarness.socket),
 }));
 
 vi.mock('@/features/match-access/match-realtime', () => ({
@@ -104,6 +145,7 @@ describe('MatchAccessPage official login', () => {
     officialAccessApiMock.session.mockReset();
     officialAccessApiMock.state.mockReset();
     officialAccessApiMock.takeover.mockReset();
+    socketHarness.reset();
     officialAccessApiMock.matches.mockResolvedValue({ matches: [] });
     officialAccessApiMock.session.mockRejectedValue(new ApiClientError(401, {}));
     window.localStorage.clear();
@@ -149,9 +191,7 @@ describe('MatchAccessPage official login', () => {
     const deviceId = storedDeviceId();
     await user.click(screen.getByRole('button', { name: 'Đăng nhập' }));
 
-    expect(
-      await screen.findByText('Mã này đang được sử dụng trên thiết bị khác.'),
-    ).toBeVisible();
+    expect(await screen.findByText('Mã này đang được sử dụng trên thiết bị khác.')).toBeVisible();
     expect(officialAccessApiMock.takeover).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: 'Có, tiếp tục' }));
@@ -186,5 +226,64 @@ describe('MatchAccessPage official login', () => {
 
     expect(await screen.findByRole('heading', { name: 'Khu vực giám định' })).toBeVisible();
     expect(screen.getByTestId('location')).toHaveTextContent('/giam-dinh');
+  });
+
+  it('opens the referee console when its correlated authoritative assignment arrives', async () => {
+    officialAccessApiMock.session.mockResolvedValue({ session: refereeSession });
+    renderPage();
+    await screen.findByText('Đang chờ phân công');
+
+    socketHarness.trigger('official:assignment-snapshot', {
+      assignment: {
+        id: 'assignment-1',
+        match: { id: 'match-1', publicId: 'M-001', status: 'WAITING' },
+        refereePosition: 1,
+        role: 'REFEREE',
+      },
+      official: refereeSession.official,
+      sessionId: refereeSession.sessionId,
+      status: 'IN_MATCH',
+      tournament: refereeSession.tournament,
+    });
+
+    expect(await screen.findByText('Referee console ready')).toBeVisible();
+  });
+
+  it('rejects assignment events for another official and clears the console on release', async () => {
+    officialAccessApiMock.session.mockResolvedValue({
+      session: {
+        ...refereeSession,
+        activeAssignment: {
+          id: 'assignment-1',
+          match: { id: 'match-1', publicId: 'M-001', status: 'WAITING' },
+          refereePosition: 1,
+          role: TournamentOfficialRole.REFEREE,
+        },
+        status: 'IN_MATCH',
+      },
+    });
+    renderPage();
+    expect(await screen.findByText('Referee console ready')).toBeVisible();
+    socketHarness.trigger('official:assignment-updated', {
+      officialId: 'other',
+      tournamentId: refereeSession.tournament.id,
+      assignment: null,
+    });
+    expect(screen.getByText('Referee console ready')).toBeVisible();
+    socketHarness.trigger('match:assignment-released', {
+      matchId: 'match-1',
+      matchPublicId: 'M-001',
+      tournamentId: refereeSession.tournament.id,
+      releasedOfficialIds: [refereeSession.official.id],
+    });
+    expect(await screen.findByText('Đang chờ phân công')).toBeVisible();
+  });
+
+  it('returns to login after session revocation', async () => {
+    officialAccessApiMock.session.mockResolvedValue({ session: refereeSession });
+    renderPage();
+    await screen.findByText('Đang chờ phân công');
+    socketHarness.trigger('session:revoked', { code: 'SESSION_REVOKED', message: 'revoked' });
+    expect(await screen.findByRole('heading', { name: 'Phiên đã bị thu hồi' })).toBeVisible();
   });
 });

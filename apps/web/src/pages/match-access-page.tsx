@@ -1,37 +1,80 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, useNavigate } from 'react-router-dom';
+import {
+  MatchRole,
+  RefereeSlot,
+  RealtimeEvent,
+  TournamentOfficialRole,
+  type OfficialAssignmentSnapshot,
+  type OfficialAssignmentUpdatedPayload,
+  type MatchAssignmentReleasedPayload,
+} from '@martial-arts-scoring/shared-types';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { getOrCreateDeviceId } from '@/features/match-access/device';
+import { useMatchRealtime } from '@/features/match-access/match-realtime';
+import { InspectorConsole } from '@/features/match-access/inspector-console';
+import { RefereeConsole } from '@/features/match-access/referee-console';
 import { ApiClientError } from '@/services/api/client';
 import {
   officialAccessApi,
+  type OfficialAssignment,
   type OfficialMatch,
   type OfficialSession,
 } from '@/services/api/official-access';
-import { MatchRole, TournamentOfficialRole } from '@/types/shared';
+import type { MatchAccessSession } from '@/services/api/match-access';
+import { getSocketClient } from '@/services/socket/client';
 
 interface Props {
-  readonly expectedRole: TournamentOfficialRole | MatchRole;
+  readonly expectedRole: TournamentOfficialRole;
 }
 const sessionKey = ['official-access', 'session'] as const;
 const pathFor = (role: TournamentOfficialRole) =>
   role === TournamentOfficialRole.REFEREE ? '/trong-tai' : '/giam-dinh';
-function message(error: unknown) {
-  return error instanceof ApiClientError && error.body.code === 'INVALID_OFFICIAL_CREDENTIALS'
+const toConsoleSession = (s: OfficialSession, a: OfficialAssignment): MatchAccessSession => ({
+  deviceId: s.deviceId,
+  expiresAt: s.expiresAt,
+  matchPublicId: a.match.publicId,
+  role: a.role === TournamentOfficialRole.REFEREE ? MatchRole.REFEREE : MatchRole.INSPECTOR,
+  sessionId: s.sessionId,
+  refereeSlot:
+    a.refereePosition === 1
+      ? RefereeSlot.REFEREE_1
+      : a.refereePosition === 2
+        ? RefereeSlot.REFEREE_2
+        : a.refereePosition === 3
+          ? RefereeSlot.REFEREE_3
+          : null,
+});
+const toAssignment = (
+  assignment: OfficialAssignmentSnapshot['assignment'],
+): OfficialAssignment | null =>
+  assignment === null
+    ? null
+    : {
+        ...assignment,
+        role:
+          assignment.role === 'REFEREE'
+            ? TournamentOfficialRole.REFEREE
+            : TournamentOfficialRole.INSPECTOR,
+      };
+function errorMessage(e: unknown) {
+  return e instanceof ApiClientError && e.body.code === 'INVALID_OFFICIAL_CREDENTIALS'
     ? 'Mã giải đấu hoặc mã bảo mật riêng không đúng.'
-    : error instanceof ApiClientError
-      ? (error.body.message ?? 'Không thể thực hiện yêu cầu.')
+    : e instanceof ApiClientError
+      ? (e.body.message ?? 'Không thể thực hiện yêu cầu.')
       : 'Không thể kết nối đến máy chủ.';
 }
 
 function Waiting({
   session,
+  connected,
   logout,
   pending,
 }: {
   session: OfficialSession;
+  connected: boolean;
   logout: () => void;
   pending: boolean;
 }) {
@@ -44,7 +87,9 @@ function Waiting({
           {session.official.name} · <strong>{session.status}</strong>
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
-          Đã kết nối. Vui lòng chờ giám định phân công trận đấu.
+          {connected
+            ? 'Đã kết nối. Vui lòng chờ giám định phân công trận đấu.'
+            : 'Ngoại tuyến. Đang chờ kết nối để nhận phân công.'}
         </p>
         <Button
           className="mt-6"
@@ -60,7 +105,7 @@ function Waiting({
   );
 }
 
-function Inspector({
+function InspectorAssignment({
   session,
   logout,
   pending,
@@ -81,9 +126,7 @@ function Inspector({
   const state = useQuery({
     queryKey: ['official-match', selected?.id],
     queryFn: () => {
-      if (selected === null) {
-        throw new Error('A match must be selected before loading its state.');
-      }
+      if (selected === null) throw new Error('A match must be selected before loading its state.');
       return officialAccessApi.state(selected.id);
     },
     enabled: !!selected,
@@ -102,14 +145,14 @@ function Inspector({
     if (selected) void qc.invalidateQueries({ queryKey: ['official-match', selected.id] });
   };
   const claim = useMutation({
-    mutationFn: (id: string) => officialAccessApi.claim(id),
+    mutationFn: officialAccessApi.claim,
     onSuccess: refresh,
+    onError: refresh,
   });
   const confirm = useMutation({
     mutationFn: () => {
-      if (selected === null) {
+      if (selected === null)
         throw new Error('A match must be selected before confirming referees.');
-      }
       return officialAccessApi.confirm(selected.id, picked);
     },
     onSuccess: refresh,
@@ -140,23 +183,22 @@ function Inspector({
         </Button>
       </header>
       <section aria-live="polite" className="mt-5 grid gap-3 md:grid-cols-2">
-        {matches.data?.matches.map((match) => (
+        {matches.data?.matches.map((m) => (
           <button
             className="rounded-xl border p-4 text-left focus-visible:ring-2"
-            key={match.id}
+            key={m.id}
             onClick={() => {
-              setSelected(match);
+              setSelected(m);
               setConflict(null);
             }}
             type="button"
           >
-            <strong>{match.publicId}</strong>
+            <strong>{m.publicId}</strong>
             <p className="mt-1 text-sm">
-              {match.athletes.map((a) => a.name).join(' · ')} · Cần {match.requiredRefereeCount}{' '}
-              trọng tài
+              {m.athletes.map((a) => a.name).join(' · ')} · Cần {m.requiredRefereeCount} trọng tài
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {match.claimable ? 'Có thể nhận trận' : 'Đã có giám định khác nhận'}
+              {m.claimable ? 'Có thể nhận trận' : 'Đã có giám định khác nhận'}
             </p>
           </button>
         ))}
@@ -186,34 +228,30 @@ function Inspector({
           <p className="mt-2 text-sm">
             Chọn đúng {required} trọng tài. Máy chủ kiểm tra trạng thái sẵn sàng khi bắt đầu.
           </p>
-          <fieldset className="mt-4 grid gap-2" disabled={confirm.isPending}>
+          <fieldset className="mt-4 grid gap-2" disabled={confirm.isPending || state.isFetching}>
             <legend className="sr-only">Chọn trọng tài</legend>
-            {state.data?.referees.map((referee) => {
+            {state.data?.referees.map((r) => {
               const unavailable =
-                !referee.isActive ||
-                (!!referee.assignedMatchId && referee.assignedMatchId !== selected.id);
+                !r.isActive || (!!r.assignedMatchId && r.assignedMatchId !== selected.id);
               return (
-                <label
-                  className="flex items-center justify-between rounded border p-3"
-                  key={referee.id}
-                >
+                <label className="flex items-center justify-between rounded border p-3" key={r.id}>
                   <span>
-                    {referee.name}{' '}
-                    {!referee.isActive
+                    {r.name}{' '}
+                    {!r.isActive
                       ? '· DISABLED'
                       : unavailable
                         ? '· Đang trong trận khác'
                         : '· READY'}
                   </span>
                   <input
-                    checked={picked.includes(referee.id)}
+                    checked={picked.includes(r.id)}
                     disabled={unavailable}
                     onChange={() => {
                       setPicked((old) =>
-                        old.includes(referee.id)
-                          ? old.filter((id) => id !== referee.id)
+                        old.includes(r.id)
+                          ? old.filter((id) => id !== r.id)
                           : old.length < required
-                            ? [...old, referee.id]
+                            ? [...old, r.id]
                             : old,
                       );
                     }}
@@ -253,11 +291,40 @@ function Inspector({
   );
 }
 
+function AssignedConsole({
+  session,
+  assignment,
+  logout,
+  pending,
+  revoked,
+}: {
+  session: OfficialSession;
+  assignment: OfficialAssignment;
+  logout: () => void;
+  pending: boolean;
+  revoked: () => void;
+}) {
+  const realtime = useMatchRealtime({
+    keepSocketConnected: true,
+    matchPublicId: assignment.match.publicId,
+    refereeSlot: toConsoleSession(session, assignment).refereeSlot,
+    onAuthenticationRequired: revoked,
+    onSessionRevoked: revoked,
+  });
+  const props = {
+    isLogoutPending: pending,
+    onLogout: logout,
+    realtime,
+    session: toConsoleSession(session, assignment),
+  };
+  return assignment.role === TournamentOfficialRole.REFEREE ? (
+    <RefereeConsole {...props} />
+  ) : (
+    <InspectorConsole {...props} />
+  );
+}
+
 export function MatchAccessPage({ expectedRole }: Props) {
-  const expectedOfficialRole =
-    expectedRole === MatchRole.REFEREE
-      ? TournamentOfficialRole.REFEREE
-      : TournamentOfficialRole.INSPECTOR;
   const nav = useNavigate();
   const qc = useQueryClient();
   const [deviceId] = useState(getOrCreateDeviceId);
@@ -265,6 +332,9 @@ export function MatchAccessPage({ expectedRole }: Props) {
   const [passcode, setPasscode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [challenge, setChallenge] = useState<string | null>(null);
+  const [assignment, setAssignment] = useState<OfficialAssignment | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [revoked, setRevoked] = useState(false);
   const session = useQuery({
     queryKey: sessionKey,
     queryFn: async () => {
@@ -278,13 +348,94 @@ export function MatchAccessPage({ expectedRole }: Props) {
     retry: false,
     staleTime: 0,
   });
+  const identity = session.data?.session;
+  useEffect(() => {
+    setAssignment(identity?.activeAssignment ?? null);
+    setRevoked(false);
+    // The assignment is deliberately owned by the authoritative socket after initial recovery.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity?.sessionId]);
+  useEffect(() => {
+    if (!identity) return;
+    const socket = getSocketClient();
+    const accept = (next: OfficialAssignment | null) => {
+      setAssignment((old) => {
+        if (old?.id !== next?.id || old?.match.id !== next?.match.id) {
+          if (old) qc.removeQueries({ queryKey: ['official-match', old.match.id] });
+        }
+        qc.setQueryData(sessionKey, (current: { session: OfficialSession } | undefined) =>
+          current
+            ? {
+                session: {
+                  ...current.session,
+                  activeAssignment: next,
+                  status: next ? 'IN_MATCH' : 'READY',
+                },
+              }
+            : current,
+        );
+        return next;
+      });
+    };
+    const snapshot = (p: OfficialAssignmentSnapshot) => {
+      if (
+        p.sessionId === identity.sessionId &&
+        p.official.id === identity.official.id &&
+        p.tournament.id === identity.tournament.id
+      )
+        accept(toAssignment(p.assignment));
+    };
+    const updated = (p: OfficialAssignmentUpdatedPayload) => {
+      if (p.officialId === identity.official.id && p.tournamentId === identity.tournament.id)
+        accept(toAssignment(p.assignment));
+    };
+    const released = (p: MatchAssignmentReleasedPayload) => {
+      if (
+        assignment &&
+        p.tournamentId === identity.tournament.id &&
+        p.matchId === assignment.match.id &&
+        p.releasedOfficialIds.includes(identity.official.id)
+      )
+        accept(null);
+    };
+    const revoke = () => {
+      setConnected(false);
+      setRevoked(true);
+      setAssignment(null);
+      qc.setQueryData(sessionKey, null);
+    };
+    const connect = () => {
+      setConnected(true);
+      socket.emit(RealtimeEvent.OFFICIAL_ASSIGNMENT_SNAPSHOT_REQUEST);
+    };
+    const disconnect = () => {
+      setConnected(false);
+    };
+    socket.on('connect', connect);
+    socket.on('disconnect', disconnect);
+    socket.on(RealtimeEvent.OFFICIAL_ASSIGNMENT_SNAPSHOT, snapshot);
+    socket.on(RealtimeEvent.OFFICIAL_ASSIGNMENT_UPDATED, updated);
+    socket.on(RealtimeEvent.MATCH_ASSIGNMENT_RELEASED, released);
+    socket.on(RealtimeEvent.SESSION_REVOKED, revoke);
+    if (socket.connected) connect();
+    else socket.connect();
+    return () => {
+      socket.off('connect', connect);
+      socket.off('disconnect', disconnect);
+      socket.off(RealtimeEvent.OFFICIAL_ASSIGNMENT_SNAPSHOT, snapshot);
+      socket.off(RealtimeEvent.OFFICIAL_ASSIGNMENT_UPDATED, updated);
+      socket.off(RealtimeEvent.MATCH_ASSIGNMENT_RELEASED, released);
+      socket.off(RealtimeEvent.SESSION_REVOKED, revoke);
+      socket.disconnect();
+    };
+  }, [assignment, identity, qc]);
   const login = useMutation({
     mutationFn: () =>
       officialAccessApi.login({
         tournamentCode: code.trim().toUpperCase(),
         privatePasscode: passcode.trim(),
         deviceId,
-        expectedRole: expectedOfficialRole,
+        expectedRole,
       }),
     onSuccess: (x) => {
       qc.setQueryData(sessionKey, x);
@@ -297,34 +448,36 @@ export function MatchAccessPage({ expectedRole }: Props) {
         typeof e.body.takeoverToken === 'string'
       )
         setChallenge(e.body.takeoverToken);
-      else setError(message(e));
+      else setError(errorMessage(e));
     },
   });
   const takeover = useMutation({
-    mutationFn: () => {
-      if (challenge === null) {
-        throw new Error('A takeover challenge is required.');
-      }
-      return officialAccessApi.takeover({
+    mutationFn: () =>
+      officialAccessApi.takeover({
         tournamentCode: code.trim().toUpperCase(),
         privatePasscode: passcode.trim(),
         deviceId,
-        expectedRole: expectedOfficialRole,
-        takeoverToken: challenge,
-      });
-    },
+        expectedRole,
+        takeoverToken: (() => {
+          if (challenge === null) throw new Error('A takeover challenge is required.');
+          return challenge;
+        })(),
+      }),
     onSuccess: (x) => {
       qc.setQueryData(sessionKey, x);
       setChallenge(null);
     },
     onError: (e) => {
       setChallenge(null);
-      setError(message(e));
+      setError(errorMessage(e));
     },
   });
   const logout = useMutation({
     mutationFn: officialAccessApi.logout,
-    onSuccess: () => qc.setQueryData(sessionKey, null),
+    onSuccess: () => {
+      setAssignment(null);
+      qc.setQueryData(sessionKey, null);
+    },
   });
   if (session.isPending)
     return (
@@ -332,12 +485,26 @@ export function MatchAccessPage({ expectedRole }: Props) {
         Đang khôi phục phiên đăng nhập…
       </p>
     );
-  const identity = session.data?.session;
-  if (identity && identity.official.role !== expectedOfficialRole)
+  if (identity && identity.official.role !== expectedRole)
     return <Navigate replace to={pathFor(identity.official.role)} />;
+  if (identity && assignment)
+    return (
+      <AssignedConsole
+        assignment={assignment}
+        logout={() => {
+          logout.mutate();
+        }}
+        pending={logout.isPending}
+        revoked={() => {
+          setRevoked(true);
+          qc.setQueryData(sessionKey, null);
+        }}
+        session={identity}
+      />
+    );
   if (identity)
     return identity.official.role === TournamentOfficialRole.INSPECTOR ? (
-      <Inspector
+      <InspectorAssignment
         logout={() => {
           logout.mutate();
         }}
@@ -346,6 +513,7 @@ export function MatchAccessPage({ expectedRole }: Props) {
       />
     ) : (
       <Waiting
+        connected={connected}
         logout={() => {
           logout.mutate();
         }}
@@ -366,11 +534,18 @@ export function MatchAccessPage({ expectedRole }: Props) {
     <main className="mx-auto grid min-h-dvh max-w-lg place-items-center p-4">
       <form className="w-full rounded-2xl border bg-card p-7 shadow-xl" onSubmit={submit}>
         <p className="text-sm font-bold text-primary">
-          {expectedOfficialRole === TournamentOfficialRole.REFEREE
+          {expectedRole === TournamentOfficialRole.REFEREE
             ? 'Khu vực trọng tài'
             : 'Khu vực giám định'}
         </p>
-        <h1 className="mt-2 text-3xl font-black">Đăng nhập</h1>
+        <h1 className="mt-2 text-3xl font-black">
+          {revoked ? 'Phiên đã bị thu hồi' : 'Đăng nhập'}
+        </h1>
+        {revoked ? (
+          <p className="mt-4" role="alert">
+            Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.
+          </p>
+        ) : null}
         <label className="mt-6 block font-semibold">
           Mã giải đấu
           <input
