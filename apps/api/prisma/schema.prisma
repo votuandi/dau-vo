@@ -820,7 +820,7 @@ model RefereeVote {
   scoringWindow        ScoringWindow @relation(fields: [scoringWindowId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "referee_votes_scoring_window_id_fkey")
   match                Match         @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "referee_votes_match_id_fkey")
   session              MatchSession? @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "referee_votes_session_id_fkey")
-  assignment           MatchOfficialAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "referee_votes_assignment_id_fkey")
+  assignment           MatchOfficialAssignment? @relation(fields: [assignmentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "referee_votes_assignment_id_fkey")
 
   @@index([scoringWindowId], map: "referee_votes_scoring_window_id_idx")
   @@index([matchId], map: "referee_votes_match_id_idx")
