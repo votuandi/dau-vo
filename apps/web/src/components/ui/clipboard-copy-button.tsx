@@ -12,6 +12,8 @@ interface ClipboardCopyButtonProps extends Omit<
   readonly copiedLabel?: string;
   readonly errorLabel?: string;
   readonly label?: string;
+  readonly onCopyError?: () => void;
+  readonly onCopySuccess?: () => void;
   readonly value: string;
 }
 
@@ -63,6 +65,8 @@ export function ClipboardCopyButton({
   copiedLabel = 'Đã sao chép',
   errorLabel = 'Không thể sao chép',
   label = 'Sao chép',
+  onCopyError,
+  onCopySuccess,
   size = 'sm',
   value,
   variant = 'outline',
@@ -92,8 +96,10 @@ export function ClipboardCopyButton({
 
       await navigator.clipboard.writeText(value);
       setStatus('copied');
+      onCopySuccess?.();
     } catch {
       setStatus('error');
+      onCopyError?.();
     }
 
     resetTimeout.current = window.setTimeout(() => {

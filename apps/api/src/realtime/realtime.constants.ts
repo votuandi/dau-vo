@@ -40,8 +40,7 @@ export const ROUND_CONTROL_FAILED_ERROR = {
 
 export const MATCH_PARTICIPANTS_NOT_READY_ERROR = {
   code: 'MATCH_PARTICIPANTS_NOT_READY',
-  message:
-    'All three referees and at least one scoreboard must be connected before the round can start.',
+  message: 'Required match participants are not connected',
 } as const;
 
 export const VOTE_FORBIDDEN_ERROR = {
@@ -139,6 +138,19 @@ export const PENALTY_FAILED_ERROR = {
 
 export function matchRoom(publicMatchId: string): string {
   return `match:${publicMatchId}`;
+}
+
+export function officialRoom(officialId: string): string {
+  return `official:${officialId}`;
+}
+
+/** A session room lets post-commit revocation reach every API instance. */
+export function sessionRoom(sessionId: string): string {
+  return `session:${sessionId}`;
+}
+
+export function tournamentRoom(tournamentId: string): string {
+  return `tournament:${tournamentId}`;
 }
 
 /** Public sockets are isolated from participant broadcasts and commands. */

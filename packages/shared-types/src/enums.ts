@@ -25,6 +25,11 @@ export enum MatchRole {
   INSPECTOR = 'INSPECTOR',
 }
 
+export enum TournamentOfficialRole {
+  REFEREE = 'REFEREE',
+  INSPECTOR = 'INSPECTOR',
+}
+
 export enum RefereeSlot {
   REFEREE_1 = 'REFEREE_1',
   REFEREE_2 = 'REFEREE_2',

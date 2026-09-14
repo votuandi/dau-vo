@@ -92,6 +92,7 @@ export class MatchAccessService {
   private readonly rateLimitIpMaxAttempts: number;
   private readonly rateLimitWindowSeconds: number;
   private readonly matchSessionSecret: string;
+  private readonly legacyAccessEnabled: boolean;
   private readonly sessionTtlSeconds: number;
 
   constructor(
@@ -104,6 +105,12 @@ export class MatchAccessService {
     @Inject(RealtimeSessionRegistryService)
     private readonly realtimeSessions: RealtimeSessionRegistryService,
   ) {
+    this.legacyAccessEnabled = config.getOrThrow(
+      'LEGACY_MATCH_ACCESS_ENABLED',
+      {
+        infer: true,
+      },
+    );
     this.matchSessionSecret = config.getOrThrow('MATCH_SESSION_SECRET', {
       infer: true,
     });
@@ -332,6 +339,7 @@ export class MatchAccessService {
   async resolveSession(
     sessionToken: string,
   ): Promise<ValidatedMatchSession | null> {
+    if (!this.legacyAccessEnabled) return null;
     if (!SESSION_TOKEN_PATTERN.test(sessionToken)) {
       return null;
     }
@@ -508,6 +516,10 @@ export class MatchAccessService {
           select: { codeHash: true, id: true, role: true },
         },
         id: true,
+        officialAssignments: {
+          select: { id: true },
+          where: { releasedAt: null },
+        },
         publicId: true,
       },
       where: { publicId: matchPublicId, tournament: { softDeletedAt: null } },
@@ -515,7 +527,7 @@ export class MatchAccessService {
     const codeFitsBcrypt =
       Buffer.byteLength(securityCode, 'utf8') <= BCRYPT_MAX_INPUT_BYTES;
 
-    if (match === null) {
+    if (match === null || match.officialAssignments.length > 0) {
       const dummyCodeHash = await this.dummyCodeHash;
       await Promise.all(
         Array.from({ length: 4 }, () => compare(securityCode, dummyCodeHash)),

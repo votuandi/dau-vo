@@ -38,6 +38,7 @@ const requiredAccessRoles = [
 
 interface TournamentView {
   id: string;
+  publicCode: string;
   name: string;
   description: string | null;
   location: string | null;
@@ -562,6 +563,31 @@ describe('Admin tournament and match management (integration)', () => {
     );
   });
 
+  it('generates human-friendly tournament public codes and retries collisions', async () => {
+    const existing = await createTournament('public-code-collision');
+    expect(existing.publicCode).toMatch(
+      /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{10}$/,
+    );
+    let replacement = credentialGenerator.generateTournamentPublicCode();
+    while (replacement === existing.publicCode) {
+      replacement = credentialGenerator.generateTournamentPublicCode();
+    }
+    const spy = jest
+      .spyOn(credentialGenerator, 'generateTournamentPublicCode')
+      .mockReturnValueOnce(existing.publicCode)
+      .mockReturnValueOnce(replacement);
+    try {
+      await expect(
+        createTournament('public-code-retry'),
+      ).resolves.toMatchObject({
+        publicCode: replacement,
+      });
+      expect(spy).toHaveBeenCalledTimes(2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('rejects null for optional fields that are not nullable', async () => {
     await authenticated(
       request(app.getHttpServer()).post('/api/admin/tournaments'),
@@ -754,11 +780,12 @@ describe('Admin tournament and match management (integration)', () => {
     ).toBe(0);
   });
 
-  it('atomically creates a match with two athletes and four one-time raw codes', async () => {
+  it('atomically creates a match with two athletes, staffing snapshot, and no modern codes', async () => {
     const tournament = await createTournament('match-create');
     const creation = await createMatch(tournament.id, 'match-create', {
       breakDurationMs: 45_000,
       roundDurationMs: 90_000,
+      requiredRefereeCount: 3,
     });
 
     expect(creation.match).toMatchObject({
@@ -786,29 +813,12 @@ describe('Admin tournament and match management (integration)', () => {
       ]),
     );
 
-    expect(creation.accessCodes).toHaveLength(4);
-    expect(creation.accessCodes.map(({ role }) => role).sort()).toEqual(
-      [...requiredAccessRoles].sort(),
-    );
-    for (const accessCode of creation.accessCodes) {
-      expect(accessCode.code).toMatch(
-        /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}(?:-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}){3}$/,
-      );
-    }
+    expect(creation.accessCodes).toEqual([]);
 
     const storedCodes = await prisma.matchAccessCode.findMany({
       where: { matchId: creation.match.id },
     });
-    expect(storedCodes).toHaveLength(4);
-    await Promise.all(
-      creation.accessCodes.map(async ({ code, role }) => {
-        const stored = storedCodes.find((candidate) => candidate.role === role);
-
-        expect(stored).toBeDefined();
-        expect(stored?.codeHash).not.toBe(code);
-        await expect(compare(code, stored?.codeHash ?? '')).resolves.toBe(true);
-      }),
-    );
+    expect(storedCodes).toHaveLength(0);
 
     const listResponse = await authenticated(
       request(app.getHttpServer()).get(
@@ -1106,7 +1116,7 @@ describe('Admin tournament and match management (integration)', () => {
       const creation = await createMatch(tournament.id, 'collision-retry');
 
       expect(creation.match.publicId).toBe(retryPublicId);
-      expect(creation.accessCodes).toHaveLength(4);
+      expect(creation.accessCodes).toEqual([]);
       expect(generatorSpy).toHaveBeenCalledTimes(2);
     } finally {
       generatorSpy.mockRestore();

@@ -233,11 +233,13 @@ describe('Realtime match infrastructure (integration)', () => {
               color: AthleteColor.RED,
               name: `${TEST_PREFIX}-${label}-red`,
               organization: `${label} Red Club`,
+              tournamentId,
             },
             {
               color: AthleteColor.BLUE,
               name: `${TEST_PREFIX}-${label}-blue`,
               organization: `${label} Blue Club`,
+              tournamentId,
             },
           ],
         },
@@ -470,6 +472,7 @@ describe('Realtime match infrastructure (integration)', () => {
       data: {
         name: `${TEST_PREFIX}-tournament`,
         ownerUserId: '00000000-0000-4000-8000-000000000001',
+        publicCode: `R${randomBytes(5).toString('hex').toUpperCase()}`,
         sportId: DEFAULT_SPORT.id,
       },
       select: { id: true },
@@ -688,13 +691,13 @@ describe('Realtime match infrastructure (integration)', () => {
       error: {
         code: 'MATCH_PARTICIPANTS_NOT_READY',
         details: {
-          referee1Connected: true,
-          referee2Connected: true,
-          referee3Connected: true,
+          assignedRefereeCount: 3,
+          connectedRefereeCount: 3,
+          inspectorConnected: true,
+          requiredRefereeCount: 3,
           scoreboardConnectedCount: 0,
         },
-        message:
-          'All three referees and at least one scoreboard must be connected before the round can start.',
+        message: 'Required match participants are not connected',
       },
       ok: false,
     });
@@ -730,9 +733,10 @@ describe('Realtime match infrastructure (integration)', () => {
       error: {
         code: 'MATCH_PARTICIPANTS_NOT_READY',
         details: {
-          referee1Connected: true,
-          referee2Connected: false,
-          referee3Connected: true,
+          assignedRefereeCount: 3,
+          connectedRefereeCount: 2,
+          inspectorConnected: true,
+          requiredRefereeCount: 3,
           scoreboardConnectedCount: 1,
         },
       },
@@ -1209,7 +1213,7 @@ describe('Realtime match infrastructure (integration)', () => {
     expect(refereeOneState.viewer).toEqual({
       acceptedVote: expect.objectContaining({
         athlete: AthleteColor.RED,
-        refereeSlot: RefereeSlot.REFEREE_1,
+        identity: { kind: 'legacy', refereeSlot: RefereeSlot.REFEREE_1 },
         scoringWindowId: window.id,
       }),
     });

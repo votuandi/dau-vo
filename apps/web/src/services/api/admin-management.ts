@@ -1,17 +1,14 @@
-import {
-  type AthleteColor,
-  type MatchAccessRole,
-  type MatchStatus,
-  type TournamentStatus,
-} from '@/types/shared';
+import { type AthleteColor, type MatchStatus, type TournamentStatus } from '@/types/shared';
 import type { MatchStatePayload } from '@martial-arts-scoring/shared-types';
 import { apiClient } from '@/services/api/client';
 import type { ApiRequestOptions } from '@/services/api/client';
+import type { TournamentOfficialRole } from '@/types/shared';
 
 type ApiRequestWithoutBody = Omit<ApiRequestOptions<never>, 'body' | 'method'>;
 
 export interface AdminTournament {
   readonly id: string;
+  readonly publicCode: string;
   readonly imagePath: string | null;
   readonly name: string;
   readonly description: string | null;
@@ -45,11 +42,6 @@ export interface AdminMatchAthlete {
   readonly updatedAt: string;
 }
 
-export interface AdminMatchAccessCode {
-  readonly role: MatchAccessRole;
-  readonly updatedAt: string;
-}
-
 export interface AdminMatch {
   readonly id: string;
   readonly publicId: string;
@@ -70,12 +62,6 @@ export interface AdminMatch {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly athletes: readonly AdminMatchAthlete[];
-  readonly accessCodes: readonly AdminMatchAccessCode[];
-}
-
-export interface GeneratedAccessCode {
-  readonly role: MatchAccessRole;
-  readonly code: string;
 }
 
 export interface AdminMatchMonitoring {
@@ -231,6 +217,25 @@ export interface AthleteListInput {
   readonly noOrganization?: boolean;
   readonly isActive?: boolean;
 }
+export interface TournamentOfficial {
+  readonly id: string;
+  readonly tournamentId: string;
+  readonly role: TournamentOfficialRole;
+  readonly name: string;
+  readonly isActive: boolean;
+  readonly status: 'READY' | 'IN_MATCH' | 'DISABLED';
+  readonly connected: boolean;
+  readonly currentMatch: {
+    readonly id: string;
+    readonly publicId: string;
+    readonly status: string;
+  } | null;
+}
+export interface TournamentOfficialListInput {
+  readonly role?: TournamentOfficialRole;
+  readonly isActive?: boolean;
+  readonly search?: string;
+}
 
 interface TournamentsResponse {
   readonly tournaments: readonly AdminTournament[];
@@ -262,15 +267,6 @@ interface AthletesResponse {
   readonly pageSize: number;
   readonly total: number;
   readonly totalPages: number;
-}
-
-export interface MatchWithGeneratedCodesResponse extends MatchResponse {
-  readonly accessCodes: readonly GeneratedAccessCode[];
-}
-
-export interface GeneratedCodesResponse {
-  readonly matchId: string;
-  readonly accessCodes: readonly GeneratedAccessCode[];
 }
 
 export interface BracketPreview {
@@ -327,6 +323,7 @@ export interface BracketFixture {
   }[];
 }
 export interface ActiveBracket {
+  readonly activeRefereeCount?: number;
   readonly bracket: {
     readonly id: string;
     readonly status: string;
@@ -367,6 +364,12 @@ export interface ActiveBracket {
       } | null;
       readonly sourceFixtureId: string | null;
     }[];
+  }[];
+  readonly staffing?: readonly {
+    readonly id: string;
+    readonly roundNumber: number;
+    readonly roundLabel: string;
+    readonly requiredRefereeCount: number;
   }[];
 }
 
@@ -412,7 +415,7 @@ export const adminManagementApi = {
       readonly counts: readonly { readonly weightClassId: string | null; readonly count: number }[];
     }>(`admin/tournaments/${encodePathSegment(tournamentId)}/matches/counts`),
   createMatch: (tournamentId: string, input: CreateMatchInput) =>
-    apiClient.post<MatchWithGeneratedCodesResponse>(
+    apiClient.post<MatchResponse>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/matches`,
       input,
     ),
@@ -456,8 +459,28 @@ export const adminManagementApi = {
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/cancel`,
       { reason },
     ),
+  updateBracketRoundStaffing: (
+    tournamentId: string,
+    weightClassId: string,
+    roundNumber: number,
+    requiredRefereeCount: number,
+    options?: ApiRequestWithoutBody,
+  ) =>
+    apiClient.patch<{
+      readonly staffing: {
+        readonly id: string;
+        readonly roundNumber: number;
+        readonly roundLabel: string;
+        readonly requiredRefereeCount: number;
+        readonly activeRefereeCount: number;
+      };
+    }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/staffing/${String(roundNumber)}`,
+      { requiredRefereeCount },
+      options,
+    ),
   prepareBracketFixtureMatch: (tournamentId: string, bracketId: string, fixtureId: string) =>
-    apiClient.post<MatchWithGeneratedCodesResponse>(
+    apiClient.post<MatchResponse>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/brackets/${encodePathSegment(bracketId)}/fixtures/${encodePathSegment(fixtureId)}/prepare-match`,
       {},
     ),
@@ -476,16 +499,6 @@ export const adminManagementApi = {
     apiClient.get<AdminMatchMonitoring>(`admin/matches/${encodePathSegment(id)}/monitoring`),
   updateMatch: (id: string, input: UpdateMatchInput) =>
     apiClient.patch<MatchResponse>(`admin/matches/${encodePathSegment(id)}`, input),
-  regenerateAllMatchCodes: (id: string) =>
-    apiClient.post<GeneratedCodesResponse>(
-      `admin/matches/${encodePathSegment(id)}/access-codes/regenerate`,
-      {},
-    ),
-  regenerateMatchCode: (id: string, role: MatchAccessRole) =>
-    apiClient.post<GeneratedCodesResponse>(
-      `admin/matches/${encodePathSegment(id)}/access-codes/${encodePathSegment(role)}/regenerate`,
-      {},
-    ),
   listOrganizations: (tournamentId: string, includeInactive = true) =>
     apiClient.get<OrganizationsResponse>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/organizations?includeInactive=${String(includeInactive)}`,
@@ -568,5 +581,37 @@ export const adminManagementApi = {
   removeAthleteImage: (tournamentId: string, id: string) =>
     apiClient.delete<undefined>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/athletes/${encodePathSegment(id)}/image`,
+    ),
+  listOfficials: (tournamentId: string, input: TournamentOfficialListInput = {}) => {
+    const query = new URLSearchParams();
+    if (input.role) query.set('role', input.role);
+    if (input.isActive !== undefined) query.set('isActive', String(input.isActive));
+    if (input.search?.trim()) query.set('search', input.search.trim());
+    const suffix = query.size ? `?${query.toString()}` : '';
+    return apiClient.get<{ readonly officials: readonly TournamentOfficial[] }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/officials${suffix}`,
+    );
+  },
+  createOfficial: (
+    tournamentId: string,
+    input: { readonly role: TournamentOfficialRole; readonly name: string },
+  ) =>
+    apiClient.post<{ readonly official: TournamentOfficial; readonly passcode: string }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/officials`,
+      input,
+    ),
+  updateOfficial: (
+    tournamentId: string,
+    officialId: string,
+    input: { readonly name?: string; readonly isActive?: boolean },
+  ) =>
+    apiClient.patch<{ readonly official: TournamentOfficial }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/officials/${encodePathSegment(officialId)}`,
+      input,
+    ),
+  regenerateOfficialPasscode: (tournamentId: string, officialId: string) =>
+    apiClient.post<{ readonly official: TournamentOfficial; readonly passcode: string }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/officials/${encodePathSegment(officialId)}/passcode/regenerate`,
+      {},
     ),
 };

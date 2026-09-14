@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { GeneratedAccessCodesPanel } from '@/components/generated-access-codes-panel';
 import {
   getApiErrorMessage,
   notifyMutationError,
@@ -19,11 +18,9 @@ import {
 import { ApiClientError } from '@/services/api/client';
 import {
   adminManagementApi,
-  type AdminMatch,
   type AdminTournament,
   type BracketPreview,
   type BracketDrawSetup,
-  type GeneratedAccessCode,
   type ActiveBracket,
 } from '@/services/api/admin-management';
 import { TournamentStatus } from '@/types/shared';
@@ -37,6 +34,7 @@ import { BracketDrawSetupDialog } from './bracket-draw-setup-dialog';
 import { bracketQueryKeys } from './query-keys';
 import { WeightClassMatchTabs } from './weight-class-match-tabs';
 import { ManualMatchCreationForm } from './manual-match-creation-form';
+import { BracketStaffingEditor } from './bracket-staffing-editor';
 
 export function TournamentMatchesPage({
   tournament,
@@ -114,8 +112,6 @@ export function TournamentMatchesPage({
   // A key is created once for each user action and survives mutation retries.
   const [confirmationKey, setConfirmationKey] = useState<string | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
-  const [generatedCodes, setGeneratedCodes] = useState<readonly GeneratedAccessCode[]>([]);
-  const [preparedMatch, setPreparedMatch] = useState<AdminMatch | null>(null);
   const [decisionFixture, setDecisionFixture] = useState<ActiveBracket['fixtures'][number] | null>(
     null,
   );
@@ -157,8 +153,6 @@ export function TournamentMatchesPage({
       setCancelOpen(false);
       setCancelError(null);
       setConfirmedCancelled(false);
-      setGeneratedCodes([]);
-      setPreparedMatch(null);
       drawWeightClassRef.current = selectedId;
     }
   }, [selectedId]);
@@ -283,8 +277,6 @@ export function TournamentMatchesPage({
       return adminManagementApi.prepareBracketFixtureMatch(tournament.id, bracketId, fixtureId);
     },
     onSuccess: (value) => {
-      setGeneratedCodes(value.accessCodes);
-      setPreparedMatch(value.match);
       notifyMutationSuccess('Đã chuẩn bị trận đấu.');
       void Promise.all([
         qc.invalidateQueries({
@@ -348,6 +340,29 @@ export function TournamentMatchesPage({
     },
     onError: (error) => {
       setCancelError(getApiErrorMessage(error, 'Không thể hủy nhánh đấu.'));
+    },
+  });
+  const staffing = useMutation({
+    mutationFn: (input: {
+      readonly weightClassId: string;
+      readonly roundNumber: number;
+      readonly count: number;
+    }) =>
+      adminManagementApi.updateBracketRoundStaffing(
+        tournament.id,
+        input.weightClassId,
+        input.roundNumber,
+        input.count,
+      ),
+    onSuccess: (_, input) => {
+      if (input.weightClassId !== selectedId) return;
+      void qc.invalidateQueries({
+        queryKey: bracketQueryKeys.detail(tournament.id, input.weightClassId),
+      });
+      notifyMutationSuccess('Đã cập nhật số trọng tài.');
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể cập nhật số trọng tài.');
     },
   });
   const counts = useMemo(
@@ -532,6 +547,14 @@ export function TournamentMatchesPage({
                 <div className="mt-5">
                   <BracketChart data={bracket.data} />
                 </div>
+                <BracketStaffingEditor
+                  data={bracket.data}
+                  disabled={isReadOnly || bracket.data.bracket.status !== 'ACTIVE'}
+                  pending={staffing.isPending}
+                  onSave={(roundNumber, count) => {
+                    staffing.mutate({ weightClassId: selectedId, roundNumber, count });
+                  }}
+                />
                 <FixtureList
                   data={bracket.data}
                   disabled={isReadOnly || prepare.isPending || cancelBracket.isPending}
@@ -610,16 +633,6 @@ export function TournamentMatchesPage({
           pending={workflow === 'generatingPreview'}
           selectedIds={designatedByeAthleteIds}
           setup={drawSetup}
-        />
-      ) : null}
-      {generatedCodes.length && preparedMatch ? (
-        <GeneratedAccessCodesPanel
-          accessCodes={generatedCodes}
-          matchPublicId={preparedMatch.publicId}
-          onDismiss={() => {
-            setGeneratedCodes([]);
-          }}
-          title={`Mã truy cập trận ${preparedMatch.publicId}`}
         />
       ) : null}
       {decisionFixture ? (

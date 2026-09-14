@@ -29,7 +29,42 @@ export const RealtimeEvent = {
   VOTE_ACCEPTED: 'vote:accepted',
   VOTE_REJECTED: 'vote:rejected',
   VOTE_SUBMIT: 'vote:submit',
+  OFFICIAL_ASSIGNMENT_UPDATED: 'official:assignment-updated',
+  OFFICIAL_STATUS_UPDATED: 'official:status-updated',
+  MATCH_OFFICIALS_UPDATED: 'match:officials-updated',
+  MATCH_ASSIGNMENT_RELEASED: 'match:assignment-released',
+  OFFICIAL_ASSIGNMENT_SNAPSHOT_REQUEST: 'official:assignment-snapshot:request',
+  OFFICIAL_ASSIGNMENT_SNAPSHOT: 'official:assignment-snapshot',
 } as const;
+
+export interface OfficialAssignmentSnapshot {
+  assignment: {
+    id: string;
+    match: { id: string; publicId: string; status: string };
+    refereePosition: number | null;
+    role: 'REFEREE' | 'INSPECTOR';
+  } | null;
+  official: { id: string; name: string; role: 'REFEREE' | 'INSPECTOR' };
+  sessionId: string;
+  status: 'IN_MATCH' | 'READY';
+  tournament: { id: string; name: string; publicCode: string };
+}
+
+export interface OfficialAssignmentUpdatedPayload {
+  assignment: OfficialAssignmentSnapshot['assignment'];
+  officialId: string;
+  tournamentId: string;
+}
+
+export interface MatchOfficialsUpdatedPayload {
+  matchId: string;
+  matchPublicId: string;
+  tournamentId: string;
+}
+
+export interface MatchAssignmentReleasedPayload extends MatchOfficialsUpdatedPayload {
+  releasedOfficialIds: string[];
+}
 
 export interface MatchPresenceEntry {
   accessRole: MatchAccessRole;
@@ -38,23 +73,54 @@ export interface MatchPresenceEntry {
   connectedSocketCount: number;
 }
 
+export interface MatchOfficialPresenceEntry {
+  activeSession: boolean;
+  connected: boolean;
+  connectedSocketCount: number;
+  name: string;
+  officialId: string;
+  refereePosition: number | null;
+  role: 'REFEREE' | 'INSPECTOR';
+}
+
 export interface PresenceUpdatedPayload {
   matchPublicId: string;
+  officials: MatchOfficialPresenceEntry[];
   presence: MatchPresenceEntry[];
   scoreboardConnectedCount: number;
   updatedAt: string;
 }
 
 export interface MatchStartReadinessDetails {
-  referee1Connected: boolean;
-  referee2Connected: boolean;
-  referee3Connected: boolean;
+  requiredRefereeCount: number;
+  assignedRefereeCount: number;
+  connectedRefereeCount: number;
+  referees: Array<{
+    officialId: string;
+    name: string;
+    position: number;
+    assigned: boolean;
+    connected: boolean;
+  }>;
+  inspector: { officialId: string | null; assigned: boolean; connected: boolean };
+  missingRequirements: string[];
   scoreboardConnectedCount: number;
 }
 
-export interface MatchReadiness {
+/** Safe, aggregate readiness state returned when a round start is rejected. */
+export interface MatchParticipantsNotReadyDetails {
+  requiredRefereeCount: number;
+  assignedRefereeCount: number;
+  connectedRefereeCount: number;
+  scoreboardConnectedCount: number;
+  inspectorConnected: boolean;
+}
+
+export interface LegacyMatchReadiness {
+  kind: 'LEGACY_MATCH_ACCESS';
   canStartRound: boolean;
-  missingRequirements: Array<'REFEREE_1' | 'REFEREE_2' | 'REFEREE_3' | 'SCOREBOARD'>;
+  missingRequirements: string[];
+  requiredRefereeCount: number;
   referees: {
     REFEREE_1: boolean;
     REFEREE_2: boolean;
@@ -62,6 +128,13 @@ export interface MatchReadiness {
   };
   scoreboardConnectedCount: number;
 }
+
+export interface TournamentOfficialMatchReadiness extends MatchStartReadinessDetails {
+  kind: 'TOURNAMENT_OFFICIALS';
+  canStartRound: boolean;
+}
+
+export type MatchReadiness = LegacyMatchReadiness | TournamentOfficialMatchReadiness;
 
 export interface MatchStateIdentity {
   currentRound: number | null;
@@ -117,6 +190,7 @@ export interface MatchStatePayload {
   generatedAt: string;
   match: MatchStateIdentity;
   presence: MatchPresenceEntry[];
+  officials: MatchOfficialPresenceEntry[];
   readiness: MatchReadiness;
   scoreboardConnectedCount: number;
   /** Present only on a direct `match:state:request` response. */
@@ -230,7 +304,7 @@ export type RoundStartResponse =
   | {
       error: {
         code: RoundStartErrorCode;
-        details?: MatchStartReadinessDetails;
+        details?: MatchParticipantsNotReadyDetails;
         message: string;
       };
       ok: false;
@@ -257,13 +331,28 @@ export interface VoteSubmitError {
   message: string;
 }
 
-export interface VoteAcceptedPayload {
+interface VoteAcceptedPayloadBase {
   athlete: AthleteColor;
   matchPublicId: string;
-  refereeSlot: RefereeSlot;
   scoringWindowId: string;
   serverReceivedAt: string;
 }
+
+/**
+ * The vote owner is deliberately discriminated: tournament assignments must
+ * never be projected into the legacy three-slot identity.
+ */
+export type VoteAcceptedPayload =
+  | (VoteAcceptedPayloadBase & {
+      identity: { kind: 'legacy'; refereeSlot: RefereeSlot };
+    })
+  | (VoteAcceptedPayloadBase & {
+      identity: {
+        kind: 'official';
+        assignmentId: string;
+        refereePosition: number;
+      };
+    });
 
 export type VoteSubmitResponse =
   | {
@@ -294,7 +383,9 @@ export interface ScoringWindowResolvedPayload {
   matchPublicId: string;
   votes: Array<{
     athlete: AthleteColor;
-    refereeSlot: RefereeSlot;
+    assignmentId: string | null;
+    refereePosition: number | null;
+    refereeSlot?: RefereeSlot | null;
     serverReceivedAt: string;
   }>;
   window: {

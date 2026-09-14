@@ -7,6 +7,7 @@ import type { EnvironmentVariables } from '../config/environment';
 const HUMAN_FRIENDLY_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 const ACCESS_CODE_GROUP_LENGTH = 4;
 const ACCESS_CODE_GROUPS = 4;
+const TOURNAMENT_PUBLIC_CODE_LENGTH = 10;
 
 @Injectable()
 export class MatchCredentialGeneratorService {
@@ -30,6 +31,10 @@ export class MatchCredentialGeneratorService {
     return Array.from({ length: ACCESS_CODE_GROUPS }, () =>
       this.randomCharacters(ACCESS_CODE_GROUP_LENGTH),
     ).join('-');
+  }
+
+  generateTournamentPublicCode(): string {
+    return this.randomCharacters(TOURNAMENT_PUBLIC_CODE_LENGTH);
   }
 
   private randomCharacters(length: number): string {

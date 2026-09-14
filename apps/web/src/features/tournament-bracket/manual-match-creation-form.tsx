@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { GeneratedAccessCodesPanel } from '@/components/generated-access-codes-panel';
 import {
   getApiErrorMessage,
   notifyMutationError,
@@ -18,7 +17,6 @@ import {
   adminManagementApi,
   type AdminMatch,
   type AdminTournament,
-  type GeneratedAccessCode,
 } from '@/services/api/admin-management';
 import { AthleteColor, TournamentStatus } from '@/types/shared';
 
@@ -35,10 +33,7 @@ export function ManualMatchCreationForm({
   const [redAthleteId, setRedAthleteId] = useState<string | null>(null);
   const [blueAthleteId, setBlueAthleteId] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [created, setCreated] = useState<{
-    match: AdminMatch;
-    accessCodes: readonly GeneratedAccessCode[];
-  } | null>(null);
+  const [created, setCreated] = useState<AdminMatch | null>(null);
   const athletesQuery = useQuery({
     ...tournamentAthletesQueryOptions(tournament.id, {
       page: 1,
@@ -72,7 +67,7 @@ export function ManualMatchCreationForm({
       });
     },
     onSuccess: (response) => {
-      setCreated(response);
+      setCreated(response.match);
       setRedAthleteId(null);
       setBlueAthleteId(null);
       queryClient.setQueryData(matchQueryKeys.detail(response.match.id), { match: response.match });
@@ -173,23 +168,15 @@ export function ManualMatchCreationForm({
           ? 'Đang tạo trận…'
           : tournament.status === TournamentStatus.ARCHIVED
             ? 'Giải đã lưu trữ'
-            : 'Tạo trận và mã truy cập'}
+            : 'Tạo trận'}
       </Button>
       {created ? (
         <div className="mt-5">
-          <GeneratedAccessCodesPanel
-            accessCodes={created.accessCodes}
-            matchPublicId={created.match.publicId}
-            onDismiss={() => {
-              setCreated(null);
-            }}
-            title={`Mã truy cập trận ${created.match.publicId}`}
-          />
           <Link
             className="mt-2 inline-block text-sm font-bold underline"
-            to={`/admin/matches/${created.match.id}`}
+            to={`/admin/matches/${created.id}`}
           >
-            Mở trận
+            Mở trận mới
           </Link>
         </div>
       ) : null}

@@ -202,6 +202,7 @@ describe('Match participant authentication (integration)', () => {
       data: {
         name: `${TEST_PREFIX}-tournament`,
         ownerUserId: '00000000-0000-4000-8000-000000000001',
+        publicCode: `A${randomBytes(5).toString('hex').toUpperCase()}`,
         sportId: DEFAULT_SPORT.id,
       },
       select: { id: true },
@@ -224,11 +225,13 @@ describe('Match participant authentication (integration)', () => {
               color: AthleteColor.RED,
               name: `${TEST_PREFIX}-red`,
               organization: 'Red test organization',
+              tournamentId,
             },
             {
               color: AthleteColor.BLUE,
               name: `${TEST_PREFIX}-blue`,
               organization: 'Blue test organization',
+              tournamentId,
             },
           ],
         },

@@ -29,6 +29,8 @@ const tabs = [
   ['organizations', 'Đơn vị tham gia'],
   ['athletes', 'Vận động viên'],
   ['matches', 'Trận đấu'],
+  ['referees', 'Trọng tài'],
+  ['inspectors', 'Giám định'],
 ] as const;
 const organizationImageMaxBytes = 2 * 1024 * 1024;
 const organizationImageTypes = ['image/jpeg', 'image/png', 'image/webp'];

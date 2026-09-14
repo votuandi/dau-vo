@@ -5,6 +5,7 @@ export {
   MatchStatus,
   RefereeSlot,
   TournamentStatus,
+  TournamentOfficialRole,
 } from './enums';
 
 export { RealtimeEvent } from './realtime';
@@ -16,8 +17,16 @@ export {
 export type { BracketFixtureState } from './bracket-presentation';
 export type {
   MatchPresenceEntry,
+  MatchOfficialPresenceEntry,
+  OfficialAssignmentSnapshot,
+  OfficialAssignmentUpdatedPayload,
+  MatchOfficialsUpdatedPayload,
+  MatchAssignmentReleasedPayload,
+  LegacyMatchReadiness,
   MatchReadiness,
   MatchStartReadinessDetails,
+  MatchParticipantsNotReadyDetails,
+  TournamentOfficialMatchReadiness,
   MatchFinishedPayload,
   MatchRoundState,
   MatchScoringWindowState,

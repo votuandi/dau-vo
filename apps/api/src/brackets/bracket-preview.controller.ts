@@ -8,6 +8,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Patch,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -31,6 +32,9 @@ import { BracketDrawSetupService } from './bracket-draw-setup.service';
 // Nest reads this class from decorator metadata at runtime.
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { PreviewBracketDto } from './dto/preview-bracket.dto';
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+import { UpdateBracketRoundStaffingDto } from './dto/update-bracket-round-staffing.dto';
+import { BracketRoundStaffingService } from './bracket-round-staffing.service';
 
 const uuid = new ParseUUIDPipe({
   exceptionFactory: () => new BadRequestException(INVALID_ID_ERROR),
@@ -53,6 +57,8 @@ export class BracketPreviewController {
     private readonly cancellations: BracketCancellationService,
     @Inject(BracketDrawSetupService)
     private readonly drawSetup: BracketDrawSetupService,
+    @Inject(BracketRoundStaffingService)
+    private readonly staffing: BracketRoundStaffingService,
   ) {}
 
   @Get('draw-setup')
@@ -119,6 +125,31 @@ export class BracketPreviewController {
       weightClassId,
       request.user.id,
       input.reason,
+    );
+  }
+
+  @Patch('staffing/:roundNumber')
+  @Header('Cache-Control', 'no-store')
+  async updateStaffing(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Param('weightClassId', uuid) weightClassId: string,
+    @Param('roundNumber') roundNumber: string,
+    @Body() input: UpdateBracketRoundStaffingDto,
+    @Req() request: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, request.user, true);
+    const parsedRound = Number(roundNumber);
+    if (!Number.isSafeInteger(parsedRound) || parsedRound < 1)
+      throw new BadRequestException({
+        code: 'BRACKET_ROUND_INVALID',
+        message: 'Round number is invalid',
+      });
+    return this.staffing.update(
+      tournamentId,
+      weightClassId,
+      parsedRound,
+      input.requiredRefereeCount,
+      request.user.id,
     );
   }
 }

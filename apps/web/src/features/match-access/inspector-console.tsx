@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { AthleteColor, MatchStatus } from '@martial-arts-scoring/shared-types';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
-import type { MatchRealtimeState, RealtimeConnectionStatus } from './match-realtime';
+import {
+  getParticipantsNotReadyMessage,
+  type MatchRealtimeState,
+  type RealtimeConnectionStatus,
+} from './match-realtime';
 import type { MatchAccessSession } from '@/services/api/match-access';
 
 interface InspectorConsoleProps {
@@ -207,13 +211,56 @@ export function InspectorConsole({
     !roundIsRunning ||
     realtime.submittingPenalty !== null;
   const canStartRound = status === MatchStatus.WAITING || status === MatchStatus.BREAK;
-  const refereeReadiness = [
-    snapshot?.readiness.referees.REFEREE_1 ?? false,
-    snapshot?.readiness.referees.REFEREE_2 ?? false,
-    snapshot?.readiness.referees.REFEREE_3 ?? false,
-  ];
+  const refereeReadiness =
+    snapshot?.readiness.kind === 'TOURNAMENT_OFFICIALS'
+      ? snapshot.readiness.referees.map((referee) => ({
+          connected: referee.connected,
+          label: `Trọng tài ${String(referee.position)}`,
+        }))
+      : [
+          {
+            connected:
+              snapshot?.readiness.kind === 'LEGACY_MATCH_ACCESS'
+                ? snapshot.readiness.referees.REFEREE_1
+                : false,
+            label: 'Trọng tài 1',
+          },
+          {
+            connected:
+              snapshot?.readiness.kind === 'LEGACY_MATCH_ACCESS'
+                ? snapshot.readiness.referees.REFEREE_2
+                : false,
+            label: 'Trọng tài 2',
+          },
+          {
+            connected:
+              snapshot?.readiness.kind === 'LEGACY_MATCH_ACCESS'
+                ? snapshot.readiness.referees.REFEREE_3
+                : false,
+            label: 'Trọng tài 3',
+          },
+        ];
   const scoreboardConnectedCount = snapshot?.readiness.scoreboardConnectedCount ?? 0;
   const participantsReady = snapshot?.readiness.canStartRound ?? false;
+  const readinessMessage =
+    snapshot?.readiness.kind === 'TOURNAMENT_OFFICIALS'
+      ? getParticipantsNotReadyMessage({
+          assignedRefereeCount: snapshot.readiness.assignedRefereeCount,
+          connectedRefereeCount: snapshot.readiness.connectedRefereeCount,
+          inspectorConnected: snapshot.readiness.inspector.connected,
+          requiredRefereeCount: snapshot.readiness.requiredRefereeCount,
+          scoreboardConnectedCount: snapshot.readiness.scoreboardConnectedCount,
+        })
+      : snapshot?.readiness.kind === 'LEGACY_MATCH_ACCESS'
+        ? getParticipantsNotReadyMessage({
+            assignedRefereeCount: snapshot.readiness.requiredRefereeCount,
+            connectedRefereeCount: Object.values(snapshot.readiness.referees).filter(Boolean)
+              .length,
+            inspectorConnected: true,
+            requiredRefereeCount: snapshot.readiness.requiredRefereeCount,
+            scoreboardConnectedCount: snapshot.readiness.scoreboardConnectedCount,
+          })
+        : getParticipantsNotReadyMessage(undefined);
   const startLabel = status === MatchStatus.BREAK ? 'BẮT ĐẦU HIỆP 2' : 'BẮT ĐẦU HIỆP 1';
   const redAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
   const blueAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
@@ -317,10 +364,13 @@ export function InspectorConsole({
                   Sẵn sàng trận đấu
                 </h2>
                 <ul className="mt-3 grid gap-2 text-sm font-semibold">
-                  {refereeReadiness.map((connected, index) => (
-                    <li className={connected ? 'text-emerald-200' : 'text-red-200'} key={index}>
-                      <span aria-hidden="true">{connected ? '✓' : '✗'}</span> Trọng tài {index + 1}{' '}
-                      {connected ? 'đã kết nối' : 'chưa kết nối'}
+                  {refereeReadiness.map((referee) => (
+                    <li
+                      className={referee.connected ? 'text-emerald-200' : 'text-red-200'}
+                      key={referee.label}
+                    >
+                      <span aria-hidden="true">{referee.connected ? '✓' : '✗'}</span>{' '}
+                      {referee.label} {referee.connected ? 'đã kết nối' : 'chưa kết nối'}
                     </li>
                   ))}
                   <li
@@ -348,7 +398,7 @@ export function InspectorConsole({
               </Button>
               {!participantsReady ? (
                 <p className="mx-auto mt-3 max-w-md text-sm font-semibold text-amber-100">
-                  Chưa thể bắt đầu hiệp đấu. Cần kết nối đủ 3 trọng tài và ít nhất 1 bảng điểm.
+                  {readinessMessage}
                 </p>
               ) : null}
             </>

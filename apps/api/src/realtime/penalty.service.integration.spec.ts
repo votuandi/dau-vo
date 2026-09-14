@@ -45,6 +45,7 @@ describe('PenaltyService (PostgreSQL integration)', () => {
       data: {
         name: `${TEST_PREFIX}-${randomBytes(5).toString('hex')}`,
         ownerUserId: '00000000-0000-4000-8000-000000000001',
+        publicCode: `P${randomBytes(5).toString('hex').toUpperCase()}`,
         sportId: DEFAULT_SPORT.id,
       },
       select: { id: true },
@@ -55,8 +56,18 @@ describe('PenaltyService (PostgreSQL integration)', () => {
       data: {
         athletes: {
           create: [
-            { color: AthleteColor.RED, name: 'Red', organization: 'Test' },
-            { color: AthleteColor.BLUE, name: 'Blue', organization: 'Test' },
+            {
+              color: AthleteColor.RED,
+              name: 'Red',
+              organization: 'Test',
+              tournamentId: tournament.id,
+            },
+            {
+              color: AthleteColor.BLUE,
+              name: 'Blue',
+              organization: 'Test',
+              tournamentId: tournament.id,
+            },
           ],
         },
         breakDurationMs: 60_000,

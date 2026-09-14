@@ -4,6 +4,7 @@ import {
   MatchAccessRole as SharedMatchAccessRole,
   MatchStatus as SharedMatchStatus,
   type MatchPresenceEntry,
+  type MatchOfficialPresenceEntry,
   type MatchReadiness,
   type MatchStartReadinessDetails,
   type PublicMatchStatePayload,
@@ -45,7 +46,9 @@ export class RealtimeMatchStateService {
 
   async snapshot(
     matchId: string,
-    viewer?: { refereeSlot: RefereeSlot | null },
+    viewer?:
+      | { kind: 'legacy'; refereeSlot: RefereeSlot | null }
+      | { assignmentId: string; kind: 'official'; refereePosition: number },
   ): Promise<MatchStatePayload> {
     const match = await this.prisma.match.findUnique({
       select: {
@@ -151,6 +154,7 @@ export class RealtimeMatchStateService {
         status: this.sharedMatchStatus(match.status),
       },
       presence: presenceState.presence,
+      officials: presenceState.officials,
       readiness: this.readinessFromPresence(presenceState),
       scoreboardConnectedCount: presenceState.scoreboardConnectedCount,
       ...(viewerState === undefined ? {} : { viewer: viewerState }),
@@ -195,7 +199,10 @@ export class RealtimeMatchStateService {
   }
 
   private async viewerState(
-    viewer: { refereeSlot: RefereeSlot | null } | undefined,
+    viewer:
+      | { kind: 'legacy'; refereeSlot: RefereeSlot | null }
+      | { assignmentId: string; kind: 'official'; refereePosition: number }
+      | undefined,
     unresolvedWindow: {
       endsAt: Date;
       id: string;
@@ -208,31 +215,51 @@ export class RealtimeMatchStateService {
       return undefined;
     }
 
-    if (viewer.refereeSlot === null || unresolvedWindow === null) {
+    if (
+      unresolvedWindow === null ||
+      (viewer.kind === 'legacy' && viewer.refereeSlot === null)
+    ) {
       return { acceptedVote: null };
     }
 
-    const vote = await this.prisma.refereeVote.findUnique({
+    const vote = await this.prisma.refereeVote.findFirst({
       select: { athleteColor: true, serverReceivedAt: true },
       where: {
-        scoringWindowId_refereeSlot: {
-          refereeSlot: viewer.refereeSlot,
-          scoringWindowId: unresolvedWindow.id,
-        },
+        scoringWindowId: unresolvedWindow.id,
+        ...(viewer.kind === 'official'
+          ? { assignmentId: viewer.assignmentId }
+          : { refereeSlot: viewer.refereeSlot }),
       },
     });
 
+    if (vote === null) return { acceptedVote: null };
+    if (viewer.kind === 'official') {
+      return {
+        acceptedVote: {
+          athlete: this.sharedAthleteColor(vote.athleteColor),
+          identity: {
+            assignmentId: viewer.assignmentId,
+            kind: 'official',
+            refereePosition: viewer.refereePosition,
+          },
+          matchPublicId,
+          scoringWindowId: unresolvedWindow.id,
+          serverReceivedAt: vote.serverReceivedAt.toISOString(),
+        },
+      };
+    }
+    if (viewer.refereeSlot === null) return { acceptedVote: null };
     return {
-      acceptedVote:
-        vote === null
-          ? null
-          : {
-              athlete: this.sharedAthleteColor(vote.athleteColor),
-              matchPublicId,
-              refereeSlot: this.sharedRefereeSlot(viewer.refereeSlot),
-              scoringWindowId: unresolvedWindow.id,
-              serverReceivedAt: vote.serverReceivedAt.toISOString(),
-            },
+      acceptedVote: {
+        athlete: this.sharedAthleteColor(vote.athleteColor),
+        identity: {
+          kind: 'legacy',
+          refereeSlot: this.sharedRefereeSlot(viewer.refereeSlot),
+        },
+        matchPublicId,
+        scoringWindowId: unresolvedWindow.id,
+        serverReceivedAt: vote.serverReceivedAt.toISOString(),
+      },
     };
   }
 
@@ -331,51 +358,106 @@ export class RealtimeMatchStateService {
     matchId: string,
     matchPublicId: string,
   ): Promise<MatchStartReadinessDetails> {
-    const rules = await this.rulesForMatch(matchId);
-    const { presence, scoreboardConnectedCount } = await this.presence(
-      matchId,
-      matchPublicId,
-    );
-    const isConnected = (role: SharedMatchAccessRole): boolean =>
-      presence.some((entry) => entry.accessRole === role && entry.connected);
-
-    return {
-      referee1Connected:
-        rules.requiredRefereeSlots.includes(RefereeSlot.REFEREE_1) &&
-        isConnected(SharedMatchAccessRole.REFEREE_1),
-      referee2Connected:
-        rules.requiredRefereeSlots.includes(RefereeSlot.REFEREE_2) &&
-        isConnected(SharedMatchAccessRole.REFEREE_2),
-      referee3Connected:
-        rules.requiredRefereeSlots.includes(RefereeSlot.REFEREE_3) &&
-        isConnected(SharedMatchAccessRole.REFEREE_3),
+    const { officials, scoreboardConnectedCount, requiredRefereeCount } =
+      await this.presence(matchId, matchPublicId);
+    return this.officialReadinessFromPresence({
+      officials,
       scoreboardConnectedCount,
-    };
+      requiredRefereeCount,
+    });
   }
 
   private readinessFromPresence(presenceState: {
+    officials: MatchOfficialPresenceEntry[];
     presence: MatchPresenceEntry[];
     scoreboardConnectedCount: number;
+    requiredRefereeCount: number;
   }): MatchReadiness {
-    const isConnected = (role: SharedMatchAccessRole): boolean =>
-      presenceState.presence.some(
-        (entry) => entry.accessRole === role && entry.connected,
+    if (presenceState.officials.length === 0) {
+      const connectedRoles = new Set(
+        presenceState.presence
+          .filter((entry) => entry.connected)
+          .map((entry) => entry.accessRole),
       );
-    const referees = {
-      REFEREE_1: isConnected(SharedMatchAccessRole.REFEREE_1),
-      REFEREE_2: isConnected(SharedMatchAccessRole.REFEREE_2),
-      REFEREE_3: isConnected(SharedMatchAccessRole.REFEREE_3),
-    };
-    const missingRequirements: MatchReadiness['missingRequirements'] = [];
-    if (!referees.REFEREE_1) missingRequirements.push('REFEREE_1');
-    if (!referees.REFEREE_2) missingRequirements.push('REFEREE_2');
-    if (!referees.REFEREE_3) missingRequirements.push('REFEREE_3');
+      const referees = {
+        REFEREE_1: connectedRoles.has(SharedMatchAccessRole.REFEREE_1),
+        REFEREE_2: connectedRoles.has(SharedMatchAccessRole.REFEREE_2),
+        REFEREE_3: connectedRoles.has(SharedMatchAccessRole.REFEREE_3),
+      };
+      const missingRequirements: string[] = [];
+      if (!connectedRoles.has(SharedMatchAccessRole.INSPECTOR)) {
+        missingRequirements.push('INSPECTOR');
+      }
+      if (presenceState.requiredRefereeCount !== 3) {
+        missingRequirements.push('REFEREE_ASSIGNMENTS');
+      }
+      if (Object.values(referees).some((connected) => !connected)) {
+        missingRequirements.push('REFEREES');
+      }
+      if (presenceState.scoreboardConnectedCount < 1) {
+        missingRequirements.push('SCOREBOARD');
+      }
+      return {
+        canStartRound: missingRequirements.length === 0,
+        kind: 'LEGACY_MATCH_ACCESS',
+        missingRequirements,
+        requiredRefereeCount: presenceState.requiredRefereeCount,
+        referees,
+        scoreboardConnectedCount: presenceState.scoreboardConnectedCount,
+      };
+    }
+
+    return this.officialReadinessFromPresence(presenceState);
+  }
+
+  private officialReadinessFromPresence(presenceState: {
+    officials: MatchOfficialPresenceEntry[];
+    scoreboardConnectedCount: number;
+    requiredRefereeCount: number;
+  }): MatchStartReadinessDetails & {
+    canStartRound: boolean;
+    kind: 'TOURNAMENT_OFFICIALS';
+  } {
+    const referees = presenceState.officials
+      .filter((x) => x.role === 'REFEREE')
+      .map((x) => ({
+        officialId: x.officialId,
+        name: x.name,
+        position: x.refereePosition ?? 0,
+        assigned: true,
+        connected: x.connected,
+      }));
+    const inspectorEntry = presenceState.officials.filter(
+      (x) => x.role === 'INSPECTOR',
+    );
+    const inspectorRecord = inspectorEntry[0];
+    const inspector =
+      inspectorRecord && inspectorEntry.length === 1
+        ? {
+            officialId: inspectorRecord.officialId,
+            assigned: true,
+            connected: inspectorRecord.connected,
+          }
+        : { officialId: null, assigned: false, connected: false };
+    const missingRequirements: string[] = [];
+    if (!inspector.assigned) missingRequirements.push('INSPECTOR_ASSIGNMENT');
+    if (!inspector.connected)
+      missingRequirements.push('INSPECTOR_DISCONNECTED');
+    if (referees.length !== presenceState.requiredRefereeCount)
+      missingRequirements.push('REFEREE_ASSIGNMENTS');
+    if (referees.some((x) => !x.connected))
+      missingRequirements.push('REFEREE_DISCONNECTED');
     if (presenceState.scoreboardConnectedCount < 1) {
       missingRequirements.push('SCOREBOARD');
     }
     return {
       canStartRound: missingRequirements.length === 0,
+      assignedRefereeCount: referees.length,
+      connectedRefereeCount: referees.filter((x) => x.connected).length,
+      inspector,
+      kind: 'TOURNAMENT_OFFICIALS',
       missingRequirements,
+      requiredRefereeCount: presenceState.requiredRefereeCount,
       referees,
       scoreboardConnectedCount: presenceState.scoreboardConnectedCount,
     };
@@ -399,21 +481,50 @@ export class RealtimeMatchStateService {
     matchId: string,
     matchPublicId: string,
   ): Promise<{
+    officials: MatchOfficialPresenceEntry[];
     presence: MatchPresenceEntry[];
     scoreboardConnectedCount: number;
+    requiredRefereeCount: number;
   }> {
-    const [activeOwners, scoreboardConnectedCount] = await Promise.all([
-      this.prisma.matchSession.findMany({
-        select: { accessCode: { select: { role: true } } },
-        where: {
-          active: true,
-          expiresAt: { gt: new Date() },
-          matchId,
-          revokedAt: null,
-        },
-      }),
-      this.sessionRegistry.scoreboardConnectedCount(matchPublicId),
-    ]);
+    const [activeOwners, scoreboardConnectedCount, officialAssignments, match] =
+      await Promise.all([
+        this.prisma.matchSession.findMany({
+          select: { accessCode: { select: { role: true } } },
+          where: {
+            active: true,
+            expiresAt: { gt: new Date() },
+            matchId,
+            revokedAt: null,
+          },
+        }),
+        this.sessionRegistry.scoreboardConnectedCount(matchPublicId),
+        this.prisma.matchOfficialAssignment.findMany({
+          where: { matchId, releasedAt: null },
+          orderBy: [{ role: 'asc' }, { refereePosition: 'asc' }],
+          select: {
+            officialId: true,
+            role: true,
+            refereePosition: true,
+            official: {
+              select: {
+                name: true,
+                sessions: {
+                  where: {
+                    active: true,
+                    revokedAt: null,
+                    expiresAt: { gt: new Date() },
+                  },
+                  select: { id: true },
+                },
+              },
+            },
+          },
+        }),
+        this.prisma.match.findUniqueOrThrow({
+          where: { id: matchId },
+          select: { requiredRefereeCount: true },
+        }),
+      ]);
     const activeRoles = new Set<string>(
       activeOwners.map(({ accessCode }) => accessCode.role),
     );
@@ -435,7 +546,30 @@ export class RealtimeMatchStateService {
       }),
     );
 
-    return { presence, scoreboardConnectedCount };
+    const officials = await Promise.all(
+      officialAssignments.map(async (assignment) => {
+        const connectedSocketCount =
+          await this.sessionRegistry.officialConnectedSocketCount(
+            matchPublicId,
+            assignment.officialId,
+          );
+        return {
+          activeSession: assignment.official.sessions.length > 0,
+          connected: connectedSocketCount > 0,
+          connectedSocketCount,
+          name: assignment.official.name,
+          officialId: assignment.officialId,
+          refereePosition: assignment.refereePosition,
+          role: assignment.role,
+        };
+      }),
+    );
+    return {
+      officials,
+      presence,
+      scoreboardConnectedCount,
+      requiredRefereeCount: match.requiredRefereeCount,
+    };
   }
 
   private sharedAccessRole(role: MatchAccessRole): SharedMatchAccessRole {

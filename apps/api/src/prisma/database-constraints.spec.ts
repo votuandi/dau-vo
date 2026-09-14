@@ -6,6 +6,7 @@ import {
   MatchRole,
   PrismaClient,
   RefereeSlot,
+  TournamentOfficialRole,
 } from '@prisma/client';
 import { config as loadEnvironment } from 'dotenv';
 
@@ -98,6 +99,7 @@ async function createMatchFixture(): Promise<void> {
       id: fixture.tournamentId,
       name: 'Database constraint test tournament',
       ownerUserId: fixture.tournamentId,
+      publicCode: 'TESTTOURN01',
       sportId: DEFAULT_SPORT.id,
     },
   });
@@ -147,6 +149,289 @@ describe('database unique constraints', () => {
         },
       }),
     ).rejects.toMatchObject({ code: 'P2002' });
+  });
+
+  it('enforces official assignment lifecycle, role, and tournament boundaries', async () => {
+    await prisma.user.create({
+      data: {
+        id: fixture.otherTournamentId,
+        normalizedUsername: 'official-assignment-other-owner',
+        passwordHash: 'hash',
+        username: 'official-assignment-other-owner',
+      },
+    });
+    await prisma.tournament.create({
+      data: {
+        id: fixture.otherTournamentId,
+        name: 'Other official assignment tournament',
+        ownerUserId: fixture.otherTournamentId,
+        publicCode: 'TESTOFFIC02',
+        sportId: DEFAULT_SPORT.id,
+      },
+    });
+    const referee = await prisma.tournamentOfficial.create({
+      data: {
+        name: 'Referee one',
+        normalizedName: 'referee one',
+        passcodeHash: 'hash',
+        passcodeLookupDigest: 'a'.repeat(64),
+        role: TournamentOfficialRole.REFEREE,
+        tournamentId: fixture.tournamentId,
+      },
+    });
+    const inspector = await prisma.tournamentOfficial.create({
+      data: {
+        name: 'Inspector one',
+        normalizedName: 'inspector one',
+        passcodeHash: 'hash',
+        passcodeLookupDigest: 'b'.repeat(64),
+        role: TournamentOfficialRole.INSPECTOR,
+        tournamentId: fixture.tournamentId,
+      },
+    });
+    const otherReferee = await prisma.tournamentOfficial.create({
+      data: {
+        name: 'Other referee',
+        normalizedName: 'other referee',
+        passcodeHash: 'hash',
+        passcodeLookupDigest: 'c'.repeat(64),
+        role: TournamentOfficialRole.REFEREE,
+        tournamentId: fixture.otherTournamentId,
+      },
+    });
+    const inspectorAssignment = await prisma.matchOfficialAssignment.create({
+      data: {
+        matchId: fixture.matchId,
+        officialId: inspector.id,
+        role: TournamentOfficialRole.INSPECTOR,
+        tournamentId: fixture.tournamentId,
+      },
+    });
+
+    await prisma.matchOfficialAssignment.create({
+      data: {
+        assignedByInspectorId: inspector.id,
+        matchId: fixture.matchId,
+        officialId: referee.id,
+        refereePosition: 1,
+        role: TournamentOfficialRole.REFEREE,
+        tournamentId: fixture.tournamentId,
+      },
+    });
+    await expect(
+      prisma.matchOfficialAssignment.create({
+        data: {
+          matchId: fixture.matchId,
+          officialId: referee.id,
+          refereePosition: 2,
+          role: TournamentOfficialRole.REFEREE,
+          tournamentId: fixture.tournamentId,
+          assignedByInspectorId: inspectorAssignment.officialId,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2002' });
+    await expect(
+      prisma.matchOfficialAssignment.create({
+        data: {
+          matchId: fixture.matchId,
+          officialId: otherReferee.id,
+          refereePosition: 2,
+          role: TournamentOfficialRole.REFEREE,
+          tournamentId: fixture.tournamentId,
+          assignedByInspectorId: inspectorAssignment.officialId,
+        },
+      }),
+    ).rejects.toBeDefined();
+    await expect(
+      prisma.$executeRaw`
+        INSERT INTO "match_official_assignments" ("match_id", "tournament_id", "official_id", "role", "referee_position")
+        VALUES (${fixture.matchId}::uuid, ${fixture.tournamentId}::uuid, ${inspector.id}::uuid, 'REFEREE', 2)
+      `,
+    ).rejects.toMatchObject({ code: 'P2010', meta: { code: '23514' } });
+    await expect(
+      prisma.match.update({
+        data: { requiredRefereeCount: 0 },
+        where: { id: fixture.matchId },
+      }),
+    ).rejects.toThrow('matches_required_referee_count_positive_check');
+  });
+
+  it('enforces assignment authorizers, positions, and active assignment uniqueness', async () => {
+    const inspector = await prisma.tournamentOfficial.create({
+      data: {
+        name: 'Inspector authorizer',
+        normalizedName: 'inspector authorizer',
+        passcodeHash: 'hash',
+        passcodeLookupDigest: 'd'.repeat(64),
+        role: TournamentOfficialRole.INSPECTOR,
+        tournamentId: fixture.tournamentId,
+      },
+    });
+    const refereeOne = await prisma.tournamentOfficial.create({
+      data: {
+        name: 'Referee authorizer one',
+        normalizedName: 'referee authorizer one',
+        passcodeHash: 'hash',
+        passcodeLookupDigest: 'e'.repeat(64),
+        role: TournamentOfficialRole.REFEREE,
+        tournamentId: fixture.tournamentId,
+      },
+    });
+    const refereeTwo = await prisma.tournamentOfficial.create({
+      data: {
+        name: 'Referee authorizer two',
+        normalizedName: 'referee authorizer two',
+        passcodeHash: 'hash',
+        passcodeLookupDigest: 'f'.repeat(64),
+        role: TournamentOfficialRole.REFEREE,
+        tournamentId: fixture.tournamentId,
+      },
+    });
+    await expect(
+      prisma.matchOfficialAssignment.create({
+        data: {
+          matchId: fixture.matchId,
+          tournamentId: fixture.tournamentId,
+          officialId: refereeOne.id,
+          role: TournamentOfficialRole.REFEREE,
+          refereePosition: 1,
+        },
+      }),
+    ).rejects.toBeDefined();
+    const inspectorAssignment = await prisma.matchOfficialAssignment.create({
+      data: {
+        matchId: fixture.matchId,
+        tournamentId: fixture.tournamentId,
+        officialId: inspector.id,
+        role: TournamentOfficialRole.INSPECTOR,
+      },
+    });
+    await prisma.matchOfficialAssignment.create({
+      data: {
+        matchId: fixture.matchId,
+        tournamentId: fixture.tournamentId,
+        officialId: refereeOne.id,
+        role: TournamentOfficialRole.REFEREE,
+        refereePosition: 1,
+        assignedByInspectorId: inspectorAssignment.officialId,
+      },
+    });
+    await expect(
+      prisma.matchOfficialAssignment.create({
+        data: {
+          matchId: fixture.matchId,
+          tournamentId: fixture.tournamentId,
+          officialId: refereeTwo.id,
+          role: TournamentOfficialRole.REFEREE,
+          refereePosition: 1,
+          assignedByInspectorId: inspectorAssignment.officialId,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2002' });
+    await expect(prisma.$executeRaw`
+      INSERT INTO "match_official_assignments" ("match_id", "tournament_id", "official_id", "role", "referee_position", "assigned_by_inspector_id")
+      VALUES (${fixture.matchId}::uuid, ${fixture.tournamentId}::uuid, ${refereeTwo.id}::uuid, 'REFEREE', 0, ${inspector.id}::uuid)
+    `).rejects.toMatchObject({ code: 'P2010', meta: { code: '23514' } });
+    await expect(
+      prisma.matchOfficialAssignment.update({
+        where: { id: inspectorAssignment.id },
+        data: { releasedAt: new Date(), releaseReason: 'INSPECTOR_RELEASED' },
+      }),
+    ).resolves.toBeDefined();
+    await expect(
+      prisma.matchOfficialAssignment.create({
+        data: {
+          matchId: fixture.matchId,
+          tournamentId: fixture.tournamentId,
+          officialId: refereeTwo.id,
+          role: TournamentOfficialRole.REFEREE,
+          refereePosition: 2,
+          assignedByInspectorId: inspector.id,
+        },
+      }),
+    ).rejects.toBeDefined();
+  });
+
+  it('rejects mixed, anonymous, duplicate, and invalid-role vote provenance', async () => {
+    const inspector = await prisma.tournamentOfficial.create({
+      data: {
+        name: 'Vote inspector',
+        normalizedName: 'vote inspector',
+        passcodeHash: 'hash',
+        passcodeLookupDigest: '1'.repeat(64),
+        role: TournamentOfficialRole.INSPECTOR,
+        tournamentId: fixture.tournamentId,
+      },
+    });
+    const referee = await prisma.tournamentOfficial.create({
+      data: {
+        name: 'Vote referee',
+        normalizedName: 'vote referee',
+        passcodeHash: 'hash',
+        passcodeLookupDigest: '2'.repeat(64),
+        role: TournamentOfficialRole.REFEREE,
+        tournamentId: fixture.tournamentId,
+      },
+    });
+    const inspectorAssignment = await prisma.matchOfficialAssignment.create({
+      data: {
+        matchId: fixture.matchId,
+        tournamentId: fixture.tournamentId,
+        officialId: inspector.id,
+        role: TournamentOfficialRole.INSPECTOR,
+      },
+    });
+    const refereeAssignment = await prisma.matchOfficialAssignment.create({
+      data: {
+        matchId: fixture.matchId,
+        tournamentId: fixture.tournamentId,
+        officialId: referee.id,
+        role: TournamentOfficialRole.REFEREE,
+        refereePosition: 1,
+        assignedByInspectorId: inspectorAssignment.officialId,
+      },
+    });
+    await prisma.scoringWindow.create({
+      data: {
+        id: fixture.scoringWindowId,
+        matchId: fixture.matchId,
+        roundNumber: 1,
+        startedAt: new Date('2026-01-01T00:00:00Z'),
+        endsAt: new Date('2026-01-01T00:00:05Z'),
+      },
+    });
+    await prisma.refereeVote.create({
+      data: {
+        id: fixture.voteId,
+        scoringWindowId: fixture.scoringWindowId,
+        matchId: fixture.matchId,
+        athleteColor: AthleteColor.RED,
+        assignmentId: refereeAssignment.id,
+      },
+    });
+    await expect(
+      prisma.refereeVote.create({
+        data: {
+          id: fixture.duplicateVoteId,
+          scoringWindowId: fixture.scoringWindowId,
+          matchId: fixture.matchId,
+          athleteColor: AthleteColor.BLUE,
+          assignmentId: refereeAssignment.id,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2002' });
+    await expect(prisma.$executeRaw`
+      INSERT INTO "referee_votes" ("scoring_window_id", "match_id", "athlete_color")
+      VALUES (${fixture.scoringWindowId}::uuid, ${fixture.matchId}::uuid, 'RED')
+    `).rejects.toMatchObject({ code: 'P2010', meta: { code: '23514' } });
+    await expect(prisma.$executeRaw`
+      INSERT INTO "referee_votes" ("scoring_window_id", "match_id", "athlete_color", "assignment_id", "session_id", "referee_slot")
+      VALUES (${fixture.scoringWindowId}::uuid, ${fixture.matchId}::uuid, 'RED', ${refereeAssignment.id}::uuid, '60000000-0000-4000-8000-000000000099'::uuid, 'REFEREE_1')
+    `).rejects.toMatchObject({ code: 'P2010', meta: { code: '23514' } });
+    await expect(prisma.$executeRaw`
+      INSERT INTO "referee_votes" ("scoring_window_id", "match_id", "athlete_color", "assignment_id")
+      VALUES (${fixture.scoringWindowId}::uuid, ${fixture.matchId}::uuid, 'BLUE', ${inspectorAssignment.id}::uuid)
+    `).rejects.toMatchObject({ code: 'P2010', meta: { code: '23514' } });
   });
 
   it('enforces active-bracket uniqueness and bracket sizing checks', async () => {
@@ -273,6 +558,7 @@ describe('database unique constraints', () => {
         id: fixture.otherTournamentId,
         name: 'Other roster tournament',
         ownerUserId: fixture.otherTournamentId,
+        publicCode: 'TESTTOURN02',
         sportId: DEFAULT_SPORT.id,
       },
     });

@@ -22,6 +22,9 @@ import { SuperAdminModule } from './super-admin/super-admin.module';
 import { MediaModule } from './media/media.module';
 import { TournamentRosterModule } from './tournament-roster/tournament-roster.module';
 import { BracketsModule } from './brackets/brackets.module';
+import { TournamentOfficialsModule } from './tournament-officials/tournament-officials.module';
+import { OfficialAccessModule } from './official-access/official-access.module';
+import { MatchOfficialAssignmentsModule } from './match-official-assignments/match-official-assignments.module';
 
 @Module({
   imports: [
@@ -55,6 +58,7 @@ import { BracketsModule } from './brackets/brackets.module';
               'req.headers.cookie',
               'req.body.password',
               'req.body.securityCode',
+              'req.body.privatePasscode',
               'req.body.takeoverToken',
               'req.body.setupToken',
               'req.body.previewToken',
@@ -79,6 +83,9 @@ import { BracketsModule } from './brackets/brackets.module';
     MediaModule,
     TournamentRosterModule,
     BracketsModule,
+    TournamentOfficialsModule,
+    OfficialAccessModule,
+    MatchOfficialAssignmentsModule,
   ],
 })
 export class AppModule {}

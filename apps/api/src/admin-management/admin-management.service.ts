@@ -15,12 +15,7 @@ import {
   TournamentStatus,
   UserRole,
 } from '@prisma/client';
-import type {
-  AthleteColor,
-  MatchAccessRole,
-  MatchStatus,
-} from '@prisma/client';
-import { hash } from 'bcryptjs';
+import type { AthleteColor, MatchStatus } from '@prisma/client';
 
 import type { EnvironmentVariables } from '../config/environment';
 import { PrismaService } from '../prisma/prisma.service';
@@ -31,7 +26,6 @@ import {
   isActiveAdminState,
 } from '../subscriptions/admin-access.policy';
 import type { AuthenticatedUser } from '../auth/admin-auth.types';
-import { RealtimeSessionRegistryService } from '../realtime/realtime-session-registry.service';
 import { RealtimeMatchStateService } from '../realtime/realtime-match-state.service';
 import {
   INVALID_MATCH_ATHLETES_ERROR,
@@ -45,8 +39,6 @@ import {
   INVALID_MATCH_ERROR,
   INVALID_TOURNAMENT_DATE_RANGE_ERROR,
   INVALID_TOURNAMENT_ERROR,
-  MATCH_ACCESS_CODE_NOT_FOUND_ERROR,
-  MATCH_ACCESS_CODES_INCOMPLETE_ERROR,
   MATCH_NOT_FOUND_ERROR,
   PUBLIC_MATCH_ID_COLLISION_ERROR,
   TOURNAMENT_ARCHIVED_ERROR,
@@ -72,8 +64,8 @@ import {
   monitoringScoringWindow,
 } from './monitoring-history';
 
-const ACCESS_CODE_HASH_COST = 12;
 const PUBLIC_ID_GENERATION_ATTEMPTS = 8;
+const TOURNAMENT_PUBLIC_CODE_GENERATION_ATTEMPTS = 8;
 
 const tournamentSelect = {
   createdAt: true,
@@ -86,6 +78,7 @@ const tournamentSelect = {
   startDate: true,
   status: true,
   sportId: true,
+  publicCode: true,
   sport: {
     select: {
       id: true,
@@ -99,13 +92,6 @@ const tournamentSelect = {
 } satisfies Prisma.TournamentSelect;
 
 const matchSelect = {
-  accessCodes: {
-    orderBy: { role: 'asc' },
-    select: {
-      role: true,
-      updatedAt: true,
-    },
-  },
   athletes: {
     orderBy: { color: 'asc' },
     select: {
@@ -125,6 +111,7 @@ const matchSelect = {
   finishedAt: true,
   id: true,
   publicId: true,
+  requiredRefereeCount: true,
   roundDurationMs: true,
   startedAt: true,
   status: true,
@@ -161,23 +148,8 @@ export type MatchView = Prisma.MatchGetPayload<{
   select: typeof matchSelect;
 }>;
 
-export interface GeneratedAccessCode {
-  code: string;
-  role: MatchAccessRole;
-}
-
 export interface CreatedMatchResult {
-  accessCodes: GeneratedAccessCode[];
   match: MatchView;
-}
-
-export interface RegeneratedAccessCodesResult {
-  accessCodes: GeneratedAccessCode[];
-  matchId: string;
-}
-
-interface PreparedAccessCode extends GeneratedAccessCode {
-  codeHash: string;
 }
 
 @Injectable()
@@ -193,8 +165,6 @@ export class AdminManagementService {
     private readonly prisma: PrismaService,
     @Inject(MatchCredentialGeneratorService)
     private readonly credentialGenerator: MatchCredentialGeneratorService,
-    @Inject(RealtimeSessionRegistryService)
-    private readonly realtimeSessions: RealtimeSessionRegistryService,
     @Inject(RealtimeMatchStateService)
     private readonly matchState: RealtimeMatchStateService,
     @Inject(SportRulesRegistry)
@@ -298,73 +268,103 @@ export class AdminManagementService {
     const endDate = this.parseDate(input.endDate, 'endDate');
     this.assertDateRange(startDate, endDate);
 
-    return this.prisma.$transaction(async (transaction) => {
-      const actor = await transaction.user.findUniqueOrThrow({
-        where: { id: adminUserId },
-        select: { role: true },
-      });
-      if (actor.role !== UserRole.SUPER_ADMIN) {
-        await transaction.$queryRaw`SELECT id FROM admin_entitlements WHERE user_id = ${adminUserId}::uuid FOR UPDATE`;
-        const entitlement = await transaction.adminEntitlement.findUnique({
-          where: { userId: adminUserId },
+    for (
+      let attempt = 1;
+      attempt <= TOURNAMENT_PUBLIC_CODE_GENERATION_ATTEMPTS;
+      attempt += 1
+    ) {
+      const publicCode =
+        this.credentialGenerator.generateTournamentPublicCode();
+      try {
+        return await this.prisma.$transaction(async (transaction) => {
+          const actor = await transaction.user.findUniqueOrThrow({
+            where: { id: adminUserId },
+            select: { role: true },
+          });
+          if (actor.role !== UserRole.SUPER_ADMIN) {
+            await transaction.$queryRaw`SELECT id FROM admin_entitlements WHERE user_id = ${adminUserId}::uuid FOR UPDATE`;
+            const entitlement = await transaction.adminEntitlement.findUnique({
+              where: { userId: adminUserId },
+            });
+            const now = new Date();
+            if (
+              entitlement === null ||
+              !isActiveAdminState(
+                calculateAdminAccessState(actor.role, entitlement, now),
+              )
+            ) {
+              throw new ConflictException({
+                code:
+                  entitlement === null
+                    ? 'ADMIN_SUBSCRIPTION_REQUIRED'
+                    : 'ADMIN_SUBSCRIPTION_EXPIRED',
+              });
+            }
+            const used = await transaction.tournament.count({
+              where: { ownerUserId: adminUserId },
+            });
+            if (used >= entitlement.tournamentLimit)
+              throw new ConflictException({ code: 'TOURNAMENT_LIMIT_REACHED' });
+          }
+          await transaction.$queryRaw`SELECT id FROM sports WHERE id = ${input.sportId}::uuid FOR UPDATE`;
+          const sport = await transaction.sport.findUnique({
+            where: { id: input.sportId },
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              isActive: true,
+              sportGroup: { select: { id: true, code: true, name: true } },
+            },
+          });
+          if (sport === null)
+            throw new NotFoundException(SPORT_NOT_FOUND_ERROR);
+          if (!sport.isActive)
+            throw new ConflictException(SPORT_INACTIVE_ERROR);
+          const tournament = await transaction.tournament.create({
+            data: {
+              description: this.optionalTrimmedText(input.description),
+              endDate,
+              location: this.optionalTrimmedText(input.location),
+              name,
+              ownerUserId: adminUserId,
+              publicCode,
+              sportId: sport.id,
+              startDate,
+              status: input.status,
+            },
+            select: tournamentSelect,
+          });
+
+          await transaction.auditLog.create({
+            data: {
+              adminUserId,
+              eventType: AuditEventType.TOURNAMENT_CREATED,
+              metadata: {
+                tournamentId: tournament.id,
+                sportId: sport.id,
+                sport,
+              },
+            },
+            select: { id: true },
+          });
+
+          return tournament;
         });
-        const now = new Date();
-        if (
-          entitlement === null ||
-          !isActiveAdminState(
-            calculateAdminAccessState(actor.role, entitlement, now),
-          )
-        ) {
+      } catch (error: unknown) {
+        if (!this.isTournamentPublicCodeCollision(error)) throw error;
+        if (attempt === TOURNAMENT_PUBLIC_CODE_GENERATION_ATTEMPTS) {
           throw new ConflictException({
-            code:
-              entitlement === null
-                ? 'ADMIN_SUBSCRIPTION_REQUIRED'
-                : 'ADMIN_SUBSCRIPTION_EXPIRED',
+            code: 'TOURNAMENT_PUBLIC_CODE_COLLISION',
+            message: 'Could not allocate a unique tournament public code',
           });
         }
-        const used = await transaction.tournament.count({
-          where: { ownerUserId: adminUserId },
-        });
-        if (used >= entitlement.tournamentLimit)
-          throw new ConflictException({ code: 'TOURNAMENT_LIMIT_REACHED' });
       }
-      await transaction.$queryRaw`SELECT id FROM sports WHERE id = ${input.sportId}::uuid FOR UPDATE`;
-      const sport = await transaction.sport.findUnique({
-        where: { id: input.sportId },
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          isActive: true,
-          sportGroup: { select: { id: true, code: true, name: true } },
-        },
-      });
-      if (sport === null) throw new NotFoundException(SPORT_NOT_FOUND_ERROR);
-      if (!sport.isActive) throw new ConflictException(SPORT_INACTIVE_ERROR);
-      const tournament = await transaction.tournament.create({
-        data: {
-          description: this.optionalTrimmedText(input.description),
-          endDate,
-          location: this.optionalTrimmedText(input.location),
-          name,
-          ownerUserId: adminUserId,
-          sportId: sport.id,
-          startDate,
-          status: input.status,
-        },
-        select: tournamentSelect,
-      });
+    }
 
-      await transaction.auditLog.create({
-        data: {
-          adminUserId,
-          eventType: AuditEventType.TOURNAMENT_CREATED,
-          metadata: { tournamentId: tournament.id, sportId: sport.id, sport },
-        },
-        select: { id: true },
-      });
-
-      return tournament;
+    throw new ConflictException({
+      code: 'TOURNAMENT_PUBLIC_CODE_COLLISION',
+      message: 'Could not allocate a unique tournament public code',
     });
   }
 
@@ -602,24 +602,24 @@ export class AdminManagementService {
             tournamentId,
             input.athletes,
           );
-          const accessCodes = await this.prepareAccessCodes(rules.accessRoles);
-
           const created = await transaction.match.create({
             data: {
-              accessCodes: {
-                create: accessCodes.map(({ codeHash, role }) => ({
-                  codeHash,
-                  role,
-                })),
-              },
-              athletes: { create: athletes },
               breakDurationMs: input.breakDurationMs ?? this.breakDurationMs,
               publicId,
               roundDurationMs: input.roundDurationMs ?? this.roundDurationMs,
+              requiredRefereeCount: rules.defaultRequiredRefereeCount,
               tournamentId,
               weightClassId: athletes[0]!.weightClassId,
             },
-            select: matchSelect,
+            select: { id: true },
+          });
+          await transaction.matchAthlete.createMany({
+            data: athletes.map(
+              ({ weightClassId: _weightClassId, ...athlete }) => ({
+                ...athlete,
+                matchId: created.id,
+              }),
+            ),
           });
 
           await transaction.auditLog.create({
@@ -637,16 +637,10 @@ export class AdminManagementService {
             select: { id: true },
           });
 
-          return { accessCodes, created };
+          return { createdId: created.id };
         });
 
-        return {
-          accessCodes: match.accessCodes.map(({ code, role }) => ({
-            code,
-            role,
-          })),
-          match: match.created,
-        };
+        return { match: await this.getMatch(match.createdId) };
       } catch (error: unknown) {
         if (!this.isPublicIdCollision(error)) {
           throw error;
@@ -682,6 +676,9 @@ export class AdminManagementService {
           await tx.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId}::uuid FOR UPDATE`;
           await tx.$queryRaw`SELECT id FROM tournament_brackets WHERE id = ${bracketId}::uuid FOR UPDATE`;
           await tx.$queryRaw`SELECT id FROM bracket_fixtures WHERE id = ${fixtureId}::uuid FOR UPDATE`;
+          // Lock the staffing snapshot before reading it so a concurrent
+          // staffing update cannot alter the count while this match is made.
+          await tx.$queryRaw`SELECT id FROM bracket_round_staffing WHERE bracket_id = ${bracketId}::uuid ORDER BY round_number FOR UPDATE`;
           const tournament = await tx.tournament.findUnique({
             where: { id: tournamentId },
             select: {
@@ -736,8 +733,20 @@ export class AdminManagementService {
               code: 'DUPLICATE_MATCH_ATHLETE',
               message: 'Fixture must contain distinct entrants',
             });
-          const rules = this.resolveRules(tournament.sport.sportGroup.code);
-          const accessCodes = await this.prepareAccessCodes(rules.accessRoles);
+          const staffing = await tx.bracketRoundStaffing.findUnique({
+            where: {
+              bracketId_roundNumber: {
+                bracketId,
+                roundNumber: fixture.roundNumber,
+              },
+            },
+            select: { requiredRefereeCount: true },
+          });
+          if (!staffing)
+            throw new ConflictException({
+              code: 'BRACKET_ROUND_STAFFING_NOT_FOUND',
+              message: 'Bracket round staffing is missing',
+            });
           const created = await tx.match.create({
             data: {
               publicId,
@@ -746,32 +755,29 @@ export class AdminManagementService {
               bracketFixtureId: fixture.id,
               roundDurationMs: this.roundDurationMs,
               breakDurationMs: this.breakDurationMs,
-              accessCodes: {
-                create: accessCodes.map(({ codeHash, role }) => ({
-                  codeHash,
-                  role,
-                })),
-              },
-              athletes: {
-                create: [
-                  {
-                    color: 'RED',
-                    athleteId: red.athleteId,
-                    name: red.snapshotName,
-                    organization: red.snapshotOrganization,
-                    tournamentId,
-                  },
-                  {
-                    color: 'BLUE',
-                    athleteId: blue.athleteId,
-                    name: blue.snapshotName,
-                    organization: blue.snapshotOrganization,
-                    tournamentId,
-                  },
-                ],
-              },
+              requiredRefereeCount: staffing.requiredRefereeCount,
             },
-            select: matchSelect,
+            select: { id: true },
+          });
+          await tx.matchAthlete.createMany({
+            data: [
+              {
+                color: 'RED',
+                athleteId: red.athleteId,
+                name: red.snapshotName,
+                organization: red.snapshotOrganization,
+                tournamentId,
+                matchId: created.id,
+              },
+              {
+                color: 'BLUE',
+                athleteId: blue.athleteId,
+                name: blue.snapshotName,
+                organization: blue.snapshotOrganization,
+                tournamentId,
+                matchId: created.id,
+              },
+            ],
           });
           await tx.bracketFixture.update({
             where: { id: fixture.id },
@@ -793,15 +799,9 @@ export class AdminManagementService {
             },
             select: { id: true },
           });
-          return { created, accessCodes };
+          return { createdId: created.id };
         });
-        return {
-          match: result.created,
-          accessCodes: result.accessCodes.map(({ code, role }) => ({
-            code,
-            role,
-          })),
-        };
+        return { match: await this.getMatch(result.createdId) };
       } catch (error: unknown) {
         if (!this.isPublicIdCollision(error)) throw error;
         if (attempt === PUBLIC_ID_GENERATION_ATTEMPTS)
@@ -1008,171 +1008,6 @@ export class AdminManagementService {
         where: { id },
       });
     });
-  }
-
-  async regenerateAllAccessCodes(
-    matchId: string,
-    adminUserId: string,
-  ): Promise<RegeneratedAccessCodesResult> {
-    const existingCodes = await this.prisma.matchAccessCode.findMany({
-      orderBy: { role: 'asc' },
-      select: {
-        id: true,
-        match: {
-          select: {
-            tournament: {
-              select: {
-                sport: { select: { sportGroup: { select: { code: true } } } },
-              },
-            },
-          },
-        },
-        role: true,
-      },
-      where: { matchId },
-    });
-
-    if (existingCodes.length === 0) {
-      await this.requireMatch(matchId);
-    }
-    const firstCode = existingCodes[0];
-    const rules =
-      firstCode === undefined
-        ? undefined
-        : this.resolveRules(firstCode.match.tournament.sport.sportGroup.code);
-
-    if (
-      rules === undefined ||
-      existingCodes.length !== rules.accessRoles.length ||
-      !rules.accessRoles.every((role) =>
-        existingCodes.some((code) => code.role === role),
-      )
-    ) {
-      throw new ConflictException(MATCH_ACCESS_CODES_INCOMPLETE_ERROR);
-    }
-
-    const prepared = await this.prepareAccessCodes(
-      existingCodes.map(({ role }) => role),
-    );
-
-    await this.replaceAccessCodes(
-      matchId,
-      existingCodes.map(({ id, role }) => ({
-        id,
-        prepared: this.requirePreparedCode(prepared, role),
-      })),
-      adminUserId,
-    );
-
-    return {
-      accessCodes: prepared.map(({ code, role }) => ({ code, role })),
-      matchId,
-    };
-  }
-
-  async regenerateAccessCode(
-    matchId: string,
-    role: MatchAccessRole,
-    adminUserId: string,
-  ): Promise<RegeneratedAccessCodesResult> {
-    const existingCode = await this.prisma.matchAccessCode.findUnique({
-      select: { id: true, role: true },
-      where: { matchId_role: { matchId, role } },
-    });
-
-    if (existingCode === null) {
-      const matchExists = await this.prisma.match.findUnique({
-        select: { id: true },
-        where: { id: matchId },
-      });
-
-      if (matchExists === null) {
-        throw new NotFoundException(MATCH_NOT_FOUND_ERROR);
-      }
-
-      throw new NotFoundException(MATCH_ACCESS_CODE_NOT_FOUND_ERROR);
-    }
-
-    const [prepared] = await this.prepareAccessCodes([role]);
-
-    if (prepared === undefined) {
-      throw new Error('Access code generation did not return a value');
-    }
-
-    await this.replaceAccessCodes(
-      matchId,
-      [{ id: existingCode.id, prepared }],
-      adminUserId,
-    );
-
-    return {
-      accessCodes: [{ code: prepared.code, role: prepared.role }],
-      matchId,
-    };
-  }
-
-  private async prepareAccessCodes(
-    roles: readonly MatchAccessRole[],
-  ): Promise<PreparedAccessCode[]> {
-    return Promise.all(
-      roles.map(async (role) => {
-        const code = this.credentialGenerator.generateAccessCode();
-        const codeHash = await hash(code, ACCESS_CODE_HASH_COST);
-
-        return { code, codeHash, role };
-      }),
-    );
-  }
-
-  private async replaceAccessCodes(
-    matchId: string,
-    replacements: Array<{ id: string; prepared: PreparedAccessCode }>,
-    adminUserId: string,
-  ): Promise<void> {
-    const revokedAt = new Date();
-
-    const revokedSessionIds = await this.prisma.$transaction(
-      async (transaction) => {
-        for (const replacement of replacements) {
-          await transaction.matchAccessCode.update({
-            data: { codeHash: replacement.prepared.codeHash },
-            where: { id: replacement.id },
-          });
-        }
-
-        const activeSessions = await transaction.matchSession.findMany({
-          select: { id: true },
-          where: {
-            accessCodeId: { in: replacements.map(({ id }) => id) },
-            active: true,
-          },
-        });
-
-        await transaction.matchSession.updateMany({
-          data: { active: false, revokedAt },
-          where: {
-            accessCodeId: { in: replacements.map(({ id }) => id) },
-            active: true,
-          },
-        });
-
-        await transaction.auditLog.create({
-          data: {
-            adminUserId,
-            eventType: AuditEventType.MATCH_CODE_REGENERATED,
-            matchId,
-            metadata: {
-              roles: replacements.map(({ prepared }) => prepared.role),
-            },
-          },
-          select: { id: true },
-        });
-
-        return activeSessions.map(({ id }) => id);
-      },
-    );
-
-    this.realtimeSessions.revokeSessions(revokedSessionIds);
   }
 
   private resolveRules(sportGroupCode: string) {
@@ -1384,16 +1219,15 @@ export class AdminManagementService {
     return target.includes('public_id') || target.includes('publicid');
   }
 
-  private requirePreparedCode(
-    preparedCodes: readonly PreparedAccessCode[],
-    role: MatchAccessRole,
-  ): PreparedAccessCode {
-    const prepared = preparedCodes.find((code) => code.role === role);
-
-    if (prepared === undefined) {
-      throw new Error(`Access code generation failed for ${role}`);
+  private isTournamentPublicCodeCollision(error: unknown): boolean {
+    if (
+      !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+      error.code !== 'P2002'
+    ) {
+      return false;
     }
 
-    return prepared;
+    const target = String(error.meta?.target ?? '').toLowerCase();
+    return target.includes('public_code') || target.includes('publiccode');
   }
 }

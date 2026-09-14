@@ -7,6 +7,8 @@ const validEnvironment: Record<string, unknown> = {
   BRACKET_PREVIEW_SECRET: 'bracket-preview-test-secret',
   DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/scoring',
   MATCH_SESSION_SECRET: 'match-test-secret',
+  OFFICIAL_PASSCODE_SECRET: 'official-passcode-test-secret',
+  OFFICIAL_SESSION_SECRET: 'official-session-test-secret',
   NODE_ENV: 'test',
   REDIS_URL: 'redis://localhost:6379',
   ROUND_DURATION_MS: '120000',
@@ -24,8 +26,13 @@ describe('validateEnvironment', () => {
       MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS: 10,
       MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS: 100,
       MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS: 60,
+      LEGACY_MATCH_ACCESS_ENABLED: true,
       MATCH_PUBLIC_ID_INITIAL_LENGTH: 6,
       MATCH_SESSION_TTL_SECONDS: 28_800,
+      OFFICIAL_SESSION_TTL_SECONDS: 28_800,
+      OFFICIAL_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS: 10,
+      OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS: 100,
+      OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS: 60,
       ROUND_DURATION_MS: 120_000,
     });
   });
@@ -75,6 +82,32 @@ describe('validateEnvironment', () => {
       MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS: 7,
       MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS: 55,
       MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS: 120,
+    });
+  });
+
+  it('requires an explicit boolean value for legacy match access', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        LEGACY_MATCH_ACCESS_ENABLED: 'yes',
+      }),
+    ).toThrow('LEGACY_MATCH_ACCESS_ENABLED must be true or false');
+  });
+
+  it('normalizes isolated official-authentication settings', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        OFFICIAL_SESSION_TTL_SECONDS: '7200',
+        OFFICIAL_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS: '4',
+        OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS: '40',
+        OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS: '90',
+      }),
+    ).toMatchObject({
+      OFFICIAL_SESSION_TTL_SECONDS: 7200,
+      OFFICIAL_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS: 4,
+      OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS: 40,
+      OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS: 90,
     });
   });
 

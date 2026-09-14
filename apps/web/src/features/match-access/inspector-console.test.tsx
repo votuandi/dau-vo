@@ -184,7 +184,9 @@ describe('InspectorConsole', () => {
             ...snapshotFor(MatchStatus.WAITING),
             readiness: {
               canStartRound: false,
+              kind: 'LEGACY_MATCH_ACCESS',
               missingRequirements: ['REFEREE_2'],
+              requiredRefereeCount: 3,
               referees: { REFEREE_1: true, REFEREE_2: false, REFEREE_3: true },
               scoreboardConnectedCount: 1,
             },
@@ -201,7 +203,7 @@ describe('InspectorConsole', () => {
     expect(screen.getByRole('button', { name: 'BẮT ĐẦU HIỆP 1' })).toBeDisabled();
     expect(
       screen.getByText(
-        'Chưa thể bắt đầu hiệp đấu. Cần kết nối đủ 3 trọng tài và ít nhất 1 bảng điểm.',
+        'Chưa thể bắt đầu hiệp đấu. Đã phân công 3/3 trọng tài, kết nối 2/3 trọng tài và 1 bảng điểm.',
       ),
     ).toBeVisible();
   });

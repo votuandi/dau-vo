@@ -11,6 +11,7 @@ import { BracketFixturesController } from './bracket-fixtures.controller';
 import { BracketCancellationService } from './bracket-cancellation.service';
 import { BracketDrawSetupService } from './bracket-draw-setup.service';
 import { BracketDrawSetupTokenService } from './bracket-draw-setup-token.service';
+import { BracketRoundStaffingService } from './bracket-round-staffing.service';
 
 @Module({
   imports: [AdminManagementModule, AuthModule, PrismaModule, SportRulesModule],
@@ -22,6 +23,7 @@ import { BracketDrawSetupTokenService } from './bracket-draw-setup-token.service
     BracketCancellationService,
     BracketDrawSetupService,
     BracketDrawSetupTokenService,
+    BracketRoundStaffingService,
   ],
 })
 export class BracketsModule {}

@@ -5,6 +5,7 @@ export {
   MatchStatus,
   RefereeSlot,
   TournamentStatus,
+  TournamentOfficialRole,
 } from '@martial-arts-scoring/shared-types';
 
 export type {

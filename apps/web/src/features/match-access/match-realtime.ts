@@ -3,6 +3,7 @@ import {
   RealtimeEvent,
   type AthleteColor,
   type MatchFinishedPayload,
+  type MatchParticipantsNotReadyDetails,
   type MatchPresenceEntry,
   type MatchStatePayload,
   type PenaltyAddErrorCode,
@@ -49,11 +50,40 @@ export type RealtimeConnectionStatus =
   | 'error'
   | 'revoked';
 
+export type RealtimeRefereeIdentity =
+  | { kind: 'legacy'; refereeSlot: RefereeSlot }
+  | { assignmentId: string; kind: 'official'; refereePosition: number }
+  | null;
+
 interface UseMatchRealtimeOptions {
+  /** Official access keeps its assignment listener alive between consoles. */
+  readonly keepSocketConnected?: boolean;
   readonly matchPublicId: string;
   readonly onAuthenticationRequired: () => void;
   readonly onSessionRevoked: (payload: SessionRevokedPayload) => void;
-  readonly refereeSlot: RefereeSlot | null;
+  readonly refereeIdentity: RealtimeRefereeIdentity;
+}
+
+function voteAcknowledgementMatchesReferee(
+  payload: VoteAcceptedPayload,
+  refereeIdentity: RealtimeRefereeIdentity,
+): boolean {
+  if (refereeIdentity === null) return false;
+  const identity: unknown = payload.identity;
+  if (typeof identity !== 'object' || identity === null) return false;
+
+  if (refereeIdentity.kind === 'legacy') {
+    return (
+      (identity as { kind?: unknown }).kind === 'legacy' &&
+      (identity as { refereeSlot?: unknown }).refereeSlot === refereeIdentity.refereeSlot
+    );
+  }
+
+  return (
+    (identity as { kind?: unknown }).kind === 'official' &&
+    (identity as { assignmentId?: unknown }).assignmentId === refereeIdentity.assignmentId &&
+    (identity as { refereePosition?: unknown }).refereePosition === refereeIdentity.refereePosition
+  );
 }
 
 export interface MatchRealtimeState {
@@ -105,7 +135,24 @@ function isRealtimeAuthenticationError(error: Error): boolean {
   );
 }
 
-function getRoundStartErrorMessage(code: RoundStartErrorCode, fallback: string): string {
+export function getParticipantsNotReadyMessage(
+  details: MatchParticipantsNotReadyDetails | undefined,
+): string {
+  if (!details) {
+    return 'Chưa thể bắt đầu hiệp đấu. Chưa đáp ứng đủ trọng tài hoặc bảng điểm cần thiết.';
+  }
+  const scoreboard =
+    details.scoreboardConnectedCount > 0
+      ? `${String(details.scoreboardConnectedCount)} bảng điểm`
+      : 'chưa có bảng điểm nào được kết nối';
+  return `Chưa thể bắt đầu hiệp đấu. Đã phân công ${String(details.assignedRefereeCount)}/${String(details.requiredRefereeCount)} trọng tài, kết nối ${String(details.connectedRefereeCount)}/${String(details.requiredRefereeCount)} trọng tài và ${scoreboard}.`;
+}
+
+function getRoundStartErrorMessage(
+  code: RoundStartErrorCode,
+  fallback: string,
+  details?: MatchParticipantsNotReadyDetails,
+): string {
   switch (code) {
     case 'SPORT_GROUP_RULES_NOT_IMPLEMENTED':
       return 'Luật thi đấu cho nhóm môn này chưa được triển khai.';
@@ -114,7 +161,7 @@ function getRoundStartErrorMessage(code: RoundStartErrorCode, fallback: string):
     case 'ROUND_START_FORBIDDEN':
       return 'Chỉ giám định viên được phép bắt đầu hiệp đấu.';
     case 'MATCH_PARTICIPANTS_NOT_READY':
-      return 'Chưa thể bắt đầu hiệp đấu. Cần kết nối đủ 3 trọng tài và ít nhất 1 bảng điểm.';
+      return getParticipantsNotReadyMessage(details);
     case 'ROUND_START_INVALID_STATE':
       return 'Không thể bắt đầu hiệp từ trạng thái hiện tại. Trạng thái mới nhất đang được tải lại.';
     case 'ROUND_START_FAILED':
@@ -222,11 +269,18 @@ function getPenaltyErrorMessage(code: PenaltyAddErrorCode, fallback: string): st
 }
 
 export function useMatchRealtime({
+  keepSocketConnected = false,
   matchPublicId,
   onAuthenticationRequired,
   onSessionRevoked,
-  refereeSlot,
+  refereeIdentity,
 }: UseMatchRealtimeOptions): MatchRealtimeState {
+  const refereeIdentityKind = refereeIdentity?.kind ?? null;
+  const legacyRefereeSlot = refereeIdentity?.kind === 'legacy' ? refereeIdentity.refereeSlot : null;
+  const officialAssignmentId =
+    refereeIdentity?.kind === 'official' ? refereeIdentity.assignmentId : null;
+  const officialRefereePosition =
+    refereeIdentity?.kind === 'official' ? refereeIdentity.refereePosition : null;
   const [connectionStatus, setConnectionStatus] = useState<RealtimeConnectionStatus>('connecting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [presence, setPresence] = useState<readonly MatchPresenceEntry[]>([]);
@@ -246,6 +300,7 @@ export function useMatchRealtime({
   const [penaltyErrorMessage, setPenaltyErrorMessage] = useState<string | null>(null);
   const [voteSubmitErrorMessage, setVoteSubmitErrorMessage] = useState<string | null>(null);
   const acceptedVoteRef = useRef<VoteAcceptedPayload | null>(null);
+  const refereeIdentityRef = useRef(refereeIdentity);
   const onAuthenticationRequiredRef = useRef(onAuthenticationRequired);
   const onSessionRevokedRef = useRef(onSessionRevoked);
   const penaltySubmissionInFlightRef = useRef(false);
@@ -258,6 +313,10 @@ export function useMatchRealtime({
     onAuthenticationRequiredRef.current = onAuthenticationRequired;
     onSessionRevokedRef.current = onSessionRevoked;
   }, [onAuthenticationRequired, onSessionRevoked]);
+
+  useEffect(() => {
+    refereeIdentityRef.current = refereeIdentity;
+  }, [refereeIdentity]);
 
   const requestSnapshot = useCallback(() => {
     const socket = getSocketClient();
@@ -317,7 +376,11 @@ export function useMatchRealtime({
       });
       if (!response.ok) {
         setRoundStartErrorMessage(
-          getRoundStartErrorMessage(response.error.code, response.error.message),
+          getRoundStartErrorMessage(
+            response.error.code,
+            response.error.message,
+            response.error.details,
+          ),
         );
         socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
 
@@ -808,8 +871,7 @@ export function useMatchRealtime({
     function handleVoteAccepted(payload: VoteAcceptedPayload): void {
       if (
         payload.matchPublicId === matchPublicId &&
-        refereeSlot !== null &&
-        payload.refereeSlot === refereeSlot
+        voteAcknowledgementMatchesReferee(payload, refereeIdentityRef.current)
       ) {
         acceptedVoteRef.current = payload;
         voteSubmissionInFlightRef.current = false;
@@ -942,9 +1004,16 @@ export function useMatchRealtime({
       socket.off(RealtimeEvent.VOTE_REJECTED, handleVoteRejected);
       socket.io.off('reconnect_attempt', handleReconnectAttempt);
       socket.io.off('reconnect_failed', handleReconnectFailed);
-      socket.disconnect();
+      if (!keepSocketConnected) socket.disconnect();
     };
-  }, [matchPublicId, refereeSlot]);
+  }, [
+    keepSocketConnected,
+    legacyRefereeSlot,
+    matchPublicId,
+    officialAssignmentId,
+    officialRefereePosition,
+    refereeIdentityKind,
+  ]);
 
   return {
     connectionStatus,
