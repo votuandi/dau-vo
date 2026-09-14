@@ -12,7 +12,9 @@ Deploy migrations in repository timestamp order, ending with
 `20260913190000_tournament_official_assignment_foundation`,
 `20260913200000_tournament_official_authentication`,
 `20260914090000_dynamic_referee_votes`, and
-`20260914100000_match_assignment_lifecycle_release`:
+`20260914100000_match_assignment_lifecycle_release`,
+`20260914110000_official_assignment_vote_integrity`, and
+`20260914150000_official_inspector_lifecycle`:
 
 ```powershell
 pnpm --filter @martial-arts-scoring/api prisma migrate status

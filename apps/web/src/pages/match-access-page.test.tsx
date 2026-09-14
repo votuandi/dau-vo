@@ -23,7 +23,9 @@ const socketHarness = vi.hoisted(() => {
     connected: false,
     connect: vi.fn(() => {
       socket.connected = true;
-      handlers.get('connect')?.forEach((handler) => { handler(); });
+      handlers.get('connect')?.forEach((handler) => {
+        handler();
+      });
     }),
     disconnect: vi.fn(() => {
       socket.connected = false;
@@ -50,7 +52,9 @@ const socketHarness = vi.hoisted(() => {
       socket.off.mockClear();
     },
     trigger: (event: string, payload?: unknown) =>
-      handlers.get(event)?.forEach((handler) => { handler(payload); }),
+      handlers.get(event)?.forEach((handler) => {
+        handler(payload);
+      }),
   };
 });
 

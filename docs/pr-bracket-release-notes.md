@@ -4,10 +4,11 @@
 
 This branch adds the bracket aggregate tables, fixture/slot membership checks,
 the nullable unique `matches.bracket_fixture_id` link, and supporting indexes.
-Migrations are additive. `prisma migrate status` reports 33 applied migrations
-and an up-to-date schema in the review environment. Rollback is operational:
-disable bracket entry points; do not delete confirmed brackets, linked matches,
-credential hashes, or audit history.
+Migrations are additive. On 2026-09-14, a disposable empty PostgreSQL database
+applied all 39 checked-in migrations and `prisma migrate status` reported an
+up-to-date schema. Rollback is operational: disable bracket entry points; do
+not delete confirmed brackets, linked matches, credential hashes, or audit
+history.
 
 ## API and security changes
 
@@ -22,23 +23,23 @@ persist only as hashes.
 
 ## Requirement traceability
 
-| Requirement                                                                      | Implementation                                                                            | Automated evidence                                                        | Result |
-| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------ |
-| Complete bounded eligibility roster; no paginated-bye source                     | `bracket-draw-setup.service.ts`, `bracket-preview.service.ts`                             | `bracket-draw-setup.service.spec.ts`, `bracket.e2e.spec.ts`               | Pass   |
-| 2–64 draw formulae, random and designated byes, no double bye                    | `bracket-summary.ts`, `single-elimination-bracket.generator.ts`                           | `bracket-summary.spec.ts`, `single-elimination-bracket.generator.spec.ts` | Pass   |
-| Preview/redraw/cancel are non-persistent; confirm validates stale/tampered token | preview, setup-token, confirmation services                                               | token/service specs; `bracket.e2e.spec.ts`                                | Pass   |
-| Current/completed lifecycle and cancelled roster unlock                          | confirmation/cancellation services; `athlete.service.ts`                                  | `bracket.e2e.spec.ts`                                                     | Pass   |
-| Fixture preparation, progression, tie decision, reset and undo safety            | `admin-management.service.ts`, `bracket-outcome.service.ts`, `match-lifecycle.service.ts` | outcome specs and bracket E2E                                             | Pass   |
-| Connector projection and 64-athlete topology                                     | `bracket-graph.ts`, `bracket-chart.tsx`                                                   | `bracket-graph.test.ts` (3, 5, 29, 31, 32, 64)                            | Pass   |
-| Sensitive response/cache/log handling                                            | controllers and `app.module.ts`                                                           | bracket E2E asserts `no-store`; source review                             | Pass   |
+| Requirement                                     | Current evidence                                                                                                   |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Bracket behavior and lifecycle compatibility    | Coverage remains in the named unit and PostgreSQL integration suites; rerun the complete API suite before release. |
+| Connector projection (including 29/31 athletes) | Coverage remains in `bracket-graph.test.ts`; rerun the complete web suite before release.                          |
+| Sensitive response/cache/log handling           | Coverage remains in the API E2E suite; no release assertion is made here pending the final run.                    |
 
 ## Test evidence
 
-- API bracket suite: 9 suites / 81 tests passed.
-- Web bracket suite: 20 files / 78 tests passed.
-- Migration status: schema up to date, 33 migrations applied.
-- Full pipeline is pending rerun after the native Prisma engine lock that
-  blocked generated-client replacement during frozen install.
+- 2026-09-14: empty-database deployment passed: 39 migrations applied and
+  `prisma migrate status` reported the schema up to date.
+- 2026-09-14: legacy-admin and sport-catalog pre-feature PostgreSQL upgrade
+  verifiers passed.
+- 2026-09-14: `pnpm format:check` and `pnpm lint` passed. `pnpm typecheck`
+  passed with engine-free Prisma generation because an existing local process
+  held the native Prisma DLL open.
+- Final native-client build and PostgreSQL/Redis E2E evidence remains required;
+  do not treat this document as merge approval until those gates pass.
 
 ## Screenshots and known limitations
 
