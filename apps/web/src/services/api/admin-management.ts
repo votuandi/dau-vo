@@ -8,6 +8,7 @@ type ApiRequestWithoutBody = Omit<ApiRequestOptions<never>, 'body' | 'method'>;
 
 export interface AdminTournament {
   readonly id: string;
+  readonly publicCode: string;
   readonly imagePath: string | null;
   readonly name: string;
   readonly description: string | null;

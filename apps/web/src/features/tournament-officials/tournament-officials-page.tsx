@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
+import { ClipboardCopyButton } from '@/components/ui/clipboard-copy-button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { Dialog } from '@/components/ui/dialog';
 import {
@@ -51,10 +52,12 @@ function Status({ official }: { readonly official: TournamentOfficial }) {
 }
 export function TournamentOfficialsPage({
   tournamentId,
+  tournamentPublicCode,
   role,
   readOnly,
 }: {
   readonly tournamentId: string;
+  readonly tournamentPublicCode?: string;
   readonly role: TournamentOfficialRole;
   readonly readOnly: boolean;
 }) {
@@ -305,25 +308,36 @@ export function TournamentOfficialsPage({
       ) : null}
       {passcode ? (
         <Dialog
-          description="Hãy sao chép và lưu mã ngay; mã này sẽ không hiển thị lại."
+          description="Cán bộ cần cả mã giải đấu dùng chung và mã bảo mật riêng bên dưới để đăng nhập. Hãy sao chép và lưu mã bảo mật riêng ngay; mã này sẽ không hiển thị lại."
           onClose={() => {
             setPasscode(null);
           }}
           title="Mã riêng của cán bộ"
         >
-          <code className="mt-4 block select-all rounded bg-muted p-3 text-center font-bold">
-            {passcode}
-          </code>
+          <div className="mt-4 grid gap-3">
+            {tournamentPublicCode ? (
+              <div>
+                <p className="text-sm font-semibold">Mã giải đấu</p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <code className="select-all rounded bg-muted p-3 font-mono font-bold uppercase">
+                    {tournamentPublicCode}
+                  </code>
+                  <ClipboardCopyButton
+                    accessibleLabel="Sao chép mã giải đấu"
+                    value={tournamentPublicCode}
+                  />
+                </div>
+              </div>
+            ) : null}
+            <div>
+              <p className="text-sm font-semibold">Mã bảo mật riêng</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <code className="select-all rounded bg-muted p-3 font-mono font-bold">{passcode}</code>
+                <ClipboardCopyButton accessibleLabel="Sao chép mã bảo mật riêng" value={passcode} />
+              </div>
+            </div>
+          </div>
           <div className="mt-4 flex justify-end gap-2">
-            <Button
-              onClick={() => {
-                void navigator.clipboard.writeText(passcode);
-              }}
-              type="button"
-              variant="outline"
-            >
-              Sao chép
-            </Button>
             <Button
               onClick={() => {
                 setPasscode(null);

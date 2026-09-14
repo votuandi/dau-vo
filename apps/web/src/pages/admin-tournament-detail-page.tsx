@@ -2,6 +2,8 @@ import { useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { ClipboardCopyButton } from '@/components/ui/clipboard-copy-button';
+import { toast } from '@/components/ui/toast';
 import { DateInput } from '@/components/ui/date-input';
 import { TournamentImage, TournamentImagePicker } from '@/components/tournament-image';
 import {
@@ -381,6 +383,31 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
           {tournament.location ?? 'Chưa có địa điểm'} · {formatDate(tournament.startDate)} –{' '}
           {formatDate(tournament.endDate)}
         </p>
+        <section className="mt-5 max-w-2xl rounded-xl border border-primary/20 bg-primary/5 p-4">
+          <h2 className="text-sm font-bold">Mã đăng nhập giải đấu</h2>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <code className="select-all rounded-md border bg-background px-3 py-2 font-mono text-lg font-black tracking-[0.12em] uppercase">
+              {tournament.publicCode}
+            </code>
+            <ClipboardCopyButton
+              accessibleLabel="Sao chép mã đăng nhập giải đấu"
+              label="Sao chép mã"
+              onCopyError={() => {
+                toast({
+                  title: 'Không thể sao chép mã. Vui lòng sao chép thủ công.',
+                  variant: 'destructive',
+                });
+              }}
+              onCopySuccess={() => {
+                toast({ title: 'Đã sao chép mã giải đấu.', variant: 'success' });
+              }}
+              value={tournament.publicCode}
+            />
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Trọng tài và giám định sử dụng mã này cùng với mã bảo mật riêng để đăng nhập.
+          </p>
+        </section>
       </header>
 
       <TournamentTabs active={active} tournamentId={tournamentId} />
@@ -419,6 +446,7 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
           readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED}
           role={TournamentOfficialRole.REFEREE}
           tournamentId={tournamentId}
+          tournamentPublicCode={tournament.publicCode}
         />
       ) : null}
       {active === 'inspectors' ? (
@@ -426,6 +454,7 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
           readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED}
           role={TournamentOfficialRole.INSPECTOR}
           tournamentId={tournamentId}
+          tournamentPublicCode={tournament.publicCode}
         />
       ) : null}
     </div>
