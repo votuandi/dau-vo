@@ -5,6 +5,7 @@ import {
   MatchRole,
   MatchStatus,
   RefereeSlot,
+  TournamentOfficialRole,
 } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 
@@ -266,6 +267,99 @@ describe('ScoringService (PostgreSQL integration)', () => {
     expect(window.winningColor).toBe(winner);
     expect(window.scoreAwarded).toBe(winner !== null);
     expect(window.scoreEvents).toHaveLength(winner === null ? 0 : 1);
+  });
+
+  it('persists legacy provenance and resolves a five-referee official majority at three votes', async () => {
+    const current = await fixture();
+    const legacy = await vote(current, RefereeSlot.REFEREE_1, AthleteColor.RED);
+    const legacyVote = await prisma.refereeVote.findFirstOrThrow({
+      where: { scoringWindowId: legacy.accepted.scoringWindowId },
+    });
+    expect(legacyVote).toMatchObject({
+      assignmentId: null,
+      refereeSlot: RefereeSlot.REFEREE_1,
+      sessionId: current.sessions[RefereeSlot.REFEREE_1],
+    });
+
+    const dynamic = await fixture();
+    await prisma.match.update({
+      data: { requiredRefereeCount: 5 },
+      where: { id: dynamic.matchId },
+    });
+    const inspector = await prisma.tournamentOfficial.create({
+      data: {
+        name: 'Inspector',
+        normalizedName: `inspector-${randomBytes(4).toString('hex')}`,
+        passcodeHash: 'test-hash',
+        passcodeLookupDigest: randomBytes(32).toString('hex'),
+        role: TournamentOfficialRole.INSPECTOR,
+        tournamentId: dynamic.tournamentId,
+      },
+    });
+    await prisma.matchOfficialAssignment.create({
+      data: {
+        matchId: dynamic.matchId,
+        officialId: inspector.id,
+        role: TournamentOfficialRole.INSPECTOR,
+        tournamentId: dynamic.tournamentId,
+      },
+    });
+    const officialSessions: string[] = [];
+    for (const refereePosition of [1, 2, 3, 4, 5]) {
+      const official = await prisma.tournamentOfficial.create({
+        data: {
+          name: `Referee ${refereePosition}`,
+          normalizedName: `referee-${refereePosition}-${randomBytes(4).toString('hex')}`,
+          passcodeHash: 'test-hash',
+          passcodeLookupDigest: randomBytes(32).toString('hex'),
+          role: TournamentOfficialRole.REFEREE,
+          tournamentId: dynamic.tournamentId,
+        },
+      });
+      await prisma.matchOfficialAssignment.create({
+        data: {
+          assignedByInspectorId: inspector.id,
+          matchId: dynamic.matchId,
+          officialId: official.id,
+          refereePosition,
+          role: TournamentOfficialRole.REFEREE,
+          tournamentId: dynamic.tournamentId,
+        },
+      });
+      const session = await prisma.tournamentOfficialSession.create({
+        data: {
+          deviceId: `${TEST_PREFIX}-official-${refereePosition}`,
+          expiresAt: new Date(Date.now() + 60_000),
+          officialId: official.id,
+          tokenHash: randomBytes(18).toString('hex'),
+        },
+      });
+      officialSessions.push(session.id);
+    }
+    await Promise.all(
+      officialSessions.slice(0, 3).map((officialSessionId) =>
+        scoring.submitVote({
+          athlete: AthleteColor.BLUE,
+          matchId: dynamic.matchId,
+          officialSessionId,
+        }),
+      ),
+    );
+    const resolved = await waitForResolution(dynamic.matchId);
+    expect(resolved.winningColor).toBe(AthleteColor.BLUE);
+    expect(resolved.scoreEvents).toHaveLength(1);
+    const dynamicVotes = await prisma.refereeVote.findMany({
+      where: { scoringWindowId: resolved.id },
+    });
+    expect(dynamicVotes).toHaveLength(3);
+    expect(dynamicVotes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assignmentId: expect.any(String),
+          sessionId: null,
+        }),
+      ]),
+    );
   });
 
   it('proves the acceptance demonstration and immediately resolves a consecutive window', async () => {
