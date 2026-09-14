@@ -107,10 +107,20 @@ export interface MatchStartReadinessDetails {
   scoreboardConnectedCount: number;
 }
 
+/** Safe, aggregate readiness state returned when a round start is rejected. */
+export interface MatchParticipantsNotReadyDetails {
+  requiredRefereeCount: number;
+  assignedRefereeCount: number;
+  connectedRefereeCount: number;
+  scoreboardConnectedCount: number;
+  inspectorConnected: boolean;
+}
+
 export interface LegacyMatchReadiness {
   kind: 'LEGACY_MATCH_ACCESS';
   canStartRound: boolean;
   missingRequirements: string[];
+  requiredRefereeCount: number;
   referees: {
     REFEREE_1: boolean;
     REFEREE_2: boolean;
@@ -294,7 +304,7 @@ export type RoundStartResponse =
   | {
       error: {
         code: RoundStartErrorCode;
-        details?: MatchStartReadinessDetails;
+        details?: MatchParticipantsNotReadyDetails;
         message: string;
       };
       ok: false;
@@ -321,16 +331,28 @@ export interface VoteSubmitError {
   message: string;
 }
 
-export interface VoteAcceptedPayload {
+interface VoteAcceptedPayloadBase {
   athlete: AthleteColor;
   matchPublicId: string;
-  assignmentId?: string;
-  refereePosition?: number;
-  /** Present only when rendering historical three-slot votes. */
-  refereeSlot?: RefereeSlot;
   scoringWindowId: string;
   serverReceivedAt: string;
 }
+
+/**
+ * The vote owner is deliberately discriminated: tournament assignments must
+ * never be projected into the legacy three-slot identity.
+ */
+export type VoteAcceptedPayload =
+  | (VoteAcceptedPayloadBase & {
+      identity: { kind: 'legacy'; refereeSlot: RefereeSlot };
+    })
+  | (VoteAcceptedPayloadBase & {
+      identity: {
+        kind: 'official';
+        assignmentId: string;
+        refereePosition: number;
+      };
+    });
 
 export type VoteSubmitResponse =
   | {

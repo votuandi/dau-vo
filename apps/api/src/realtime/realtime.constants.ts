@@ -40,8 +40,7 @@ export const ROUND_CONTROL_FAILED_ERROR = {
 
 export const MATCH_PARTICIPANTS_NOT_READY_ERROR = {
   code: 'MATCH_PARTICIPANTS_NOT_READY',
-  message:
-    'All three referees and at least one scoreboard must be connected before the round can start.',
+  message: 'Required match participants are not connected',
 } as const;
 
 export const VOTE_FORBIDDEN_ERROR = {

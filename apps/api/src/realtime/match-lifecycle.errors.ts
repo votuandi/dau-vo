@@ -1,4 +1,5 @@
 import type { MatchStatus } from '@prisma/client';
+import type { MatchParticipantsNotReadyDetails } from '@martial-arts-scoring/shared-types';
 
 export class InvalidRoundStartStateError extends Error {
   constructor(readonly status: MatchStatus) {
@@ -50,7 +51,7 @@ export class MatchLifecycleTargetMissingError extends Error {
 }
 
 export class MatchParticipantsNotReadyError extends Error {
-  constructor() {
+  constructor(readonly details: MatchParticipantsNotReadyDetails) {
     super('Required officials or scoreboard are not connected');
     this.name = MatchParticipantsNotReadyError.name;
   }

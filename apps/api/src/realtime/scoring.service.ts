@@ -679,15 +679,26 @@ export class ScoringService implements OnModuleDestroy {
     scoringWindowId: string,
     serverReceivedAt: Date,
   ): VoteAcceptedPayload {
+    if (authorization.kind === 'official') {
+      return {
+        athlete: this.sharedAthleteColor(athlete),
+        identity: {
+          assignmentId: authorization.assignmentId,
+          kind: 'official',
+          refereePosition: authorization.refereePosition,
+        },
+        matchPublicId,
+        scoringWindowId,
+        serverReceivedAt: serverReceivedAt.toISOString(),
+      };
+    }
     return {
       athlete: this.sharedAthleteColor(athlete),
+      identity: {
+        kind: 'legacy',
+        refereeSlot: this.sharedRefereeSlot(authorization.refereeSlot),
+      },
       matchPublicId,
-      ...(authorization.kind === 'official'
-        ? {
-            assignmentId: authorization.assignmentId,
-            refereePosition: authorization.refereePosition,
-          }
-        : { refereeSlot: this.sharedRefereeSlot(authorization.refereeSlot) }),
       scoringWindowId,
       serverReceivedAt: serverReceivedAt.toISOString(),
     };

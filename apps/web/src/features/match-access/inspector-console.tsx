@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { AthleteColor, MatchStatus } from '@martial-arts-scoring/shared-types';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
-import type { MatchRealtimeState, RealtimeConnectionStatus } from './match-realtime';
+import {
+  getParticipantsNotReadyMessage,
+  type MatchRealtimeState,
+  type RealtimeConnectionStatus,
+} from './match-realtime';
 import type { MatchAccessSession } from '@/services/api/match-access';
 
 interface InspectorConsoleProps {
@@ -238,6 +242,25 @@ export function InspectorConsole({
         ];
   const scoreboardConnectedCount = snapshot?.readiness.scoreboardConnectedCount ?? 0;
   const participantsReady = snapshot?.readiness.canStartRound ?? false;
+  const readinessMessage =
+    snapshot?.readiness.kind === 'TOURNAMENT_OFFICIALS'
+      ? getParticipantsNotReadyMessage({
+          assignedRefereeCount: snapshot.readiness.assignedRefereeCount,
+          connectedRefereeCount: snapshot.readiness.connectedRefereeCount,
+          inspectorConnected: snapshot.readiness.inspector.connected,
+          requiredRefereeCount: snapshot.readiness.requiredRefereeCount,
+          scoreboardConnectedCount: snapshot.readiness.scoreboardConnectedCount,
+        })
+      : snapshot?.readiness.kind === 'LEGACY_MATCH_ACCESS'
+        ? getParticipantsNotReadyMessage({
+            assignedRefereeCount: snapshot.readiness.requiredRefereeCount,
+            connectedRefereeCount: Object.values(snapshot.readiness.referees).filter(Boolean)
+              .length,
+            inspectorConnected: true,
+            requiredRefereeCount: snapshot.readiness.requiredRefereeCount,
+            scoreboardConnectedCount: snapshot.readiness.scoreboardConnectedCount,
+          })
+        : getParticipantsNotReadyMessage(undefined);
   const startLabel = status === MatchStatus.BREAK ? 'BẮT ĐẦU HIỆP 2' : 'BẮT ĐẦU HIỆP 1';
   const redAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
   const blueAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
@@ -375,7 +398,7 @@ export function InspectorConsole({
               </Button>
               {!participantsReady ? (
                 <p className="mx-auto mt-3 max-w-md text-sm font-semibold text-amber-100">
-                  Chưa thể bắt đầu hiệp đấu. Cần kết nối đủ 3 trọng tài và ít nhất 1 bảng điểm.
+                  {readinessMessage}
                 </p>
               ) : null}
             </>

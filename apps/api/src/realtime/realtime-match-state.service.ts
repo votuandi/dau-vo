@@ -46,7 +46,9 @@ export class RealtimeMatchStateService {
 
   async snapshot(
     matchId: string,
-    viewer?: { refereeSlot: RefereeSlot | null },
+    viewer?:
+      | { kind: 'legacy'; refereeSlot: RefereeSlot | null }
+      | { assignmentId: string; kind: 'official'; refereePosition: number },
   ): Promise<MatchStatePayload> {
     const match = await this.prisma.match.findUnique({
       select: {
@@ -197,7 +199,10 @@ export class RealtimeMatchStateService {
   }
 
   private async viewerState(
-    viewer: { refereeSlot: RefereeSlot | null } | undefined,
+    viewer:
+      | { kind: 'legacy'; refereeSlot: RefereeSlot | null }
+      | { assignmentId: string; kind: 'official'; refereePosition: number }
+      | undefined,
     unresolvedWindow: {
       endsAt: Date;
       id: string;
@@ -210,7 +215,10 @@ export class RealtimeMatchStateService {
       return undefined;
     }
 
-    if (viewer.refereeSlot === null || unresolvedWindow === null) {
+    if (
+      unresolvedWindow === null ||
+      (viewer.kind === 'legacy' && viewer.refereeSlot === null)
+    ) {
       return { acceptedVote: null };
     }
 
@@ -218,23 +226,40 @@ export class RealtimeMatchStateService {
       select: { athleteColor: true, serverReceivedAt: true },
       where: {
         scoringWindowId: unresolvedWindow.id,
-        refereeSlot: viewer.refereeSlot,
+        ...(viewer.kind === 'official'
+          ? { assignmentId: viewer.assignmentId }
+          : { refereeSlot: viewer.refereeSlot }),
       },
     });
 
+    if (vote === null) return { acceptedVote: null };
+    if (viewer.kind === 'official') {
+      return {
+        acceptedVote: {
+          athlete: this.sharedAthleteColor(vote.athleteColor),
+          identity: {
+            assignmentId: viewer.assignmentId,
+            kind: 'official',
+            refereePosition: viewer.refereePosition,
+          },
+          matchPublicId,
+          scoringWindowId: unresolvedWindow.id,
+          serverReceivedAt: vote.serverReceivedAt.toISOString(),
+        },
+      };
+    }
+    if (viewer.refereeSlot === null) return { acceptedVote: null };
     return {
-      acceptedVote:
-        vote === null
-          ? null
-          : {
-              athlete: this.sharedAthleteColor(vote.athleteColor),
-              matchPublicId,
-              assignmentId: '',
-              refereePosition: 0,
-              refereeSlot: this.sharedRefereeSlot(viewer.refereeSlot),
-              scoringWindowId: unresolvedWindow.id,
-              serverReceivedAt: vote.serverReceivedAt.toISOString(),
-            },
+      acceptedVote: {
+        athlete: this.sharedAthleteColor(vote.athleteColor),
+        identity: {
+          kind: 'legacy',
+          refereeSlot: this.sharedRefereeSlot(viewer.refereeSlot),
+        },
+        matchPublicId,
+        scoringWindowId: unresolvedWindow.id,
+        serverReceivedAt: vote.serverReceivedAt.toISOString(),
+      },
     };
   }
 
@@ -363,6 +388,9 @@ export class RealtimeMatchStateService {
       if (!connectedRoles.has(SharedMatchAccessRole.INSPECTOR)) {
         missingRequirements.push('INSPECTOR');
       }
+      if (presenceState.requiredRefereeCount !== 3) {
+        missingRequirements.push('REFEREE_ASSIGNMENTS');
+      }
       if (Object.values(referees).some((connected) => !connected)) {
         missingRequirements.push('REFEREES');
       }
@@ -373,6 +401,7 @@ export class RealtimeMatchStateService {
         canStartRound: missingRequirements.length === 0,
         kind: 'LEGACY_MATCH_ACCESS',
         missingRequirements,
+        requiredRefereeCount: presenceState.requiredRefereeCount,
         referees,
         scoreboardConnectedCount: presenceState.scoreboardConnectedCount,
       };

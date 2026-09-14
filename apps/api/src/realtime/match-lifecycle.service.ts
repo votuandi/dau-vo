@@ -1095,25 +1095,43 @@ export class MatchLifecycleService implements OnModuleDestroy {
     if (assignments.length > 0) {
       const inspectors = assignments.filter((x) => x.role === 'INSPECTOR');
       const referees = assignments.filter((x) => x.role === 'REFEREE');
+      const connectedAssignments = await Promise.all(
+        assignments.map(async (assignment) => ({
+          assignment,
+          connectedSocketCount:
+            await this.sessions.officialConnectedSocketCount(
+              publicMatchId,
+              assignment.officialId,
+            ),
+        })),
+      );
+      const scoreboardConnectedCount =
+        await this.sessions.scoreboardConnectedCount(publicMatchId);
+      const inspectorConnected = connectedAssignments.some(
+        ({ assignment, connectedSocketCount }) =>
+          assignment.role === 'INSPECTOR' && connectedSocketCount > 0,
+      );
+      const connectedRefereeCount = connectedAssignments.filter(
+        ({ assignment, connectedSocketCount }) =>
+          assignment.role === 'REFEREE' && connectedSocketCount > 0,
+      ).length;
       if (
         inspectors.length !== 1 ||
         referees.length !== requiredRefereeCount ||
-        new Set(referees.map((x) => x.officialId)).size !== requiredRefereeCount
+        new Set(referees.map((x) => x.officialId)).size !==
+          requiredRefereeCount ||
+        connectedAssignments.some(
+          ({ connectedSocketCount }) => connectedSocketCount < 1,
+        ) ||
+        scoreboardConnectedCount < 1
       )
-        throw new MatchParticipantsNotReadyError();
-      const connected = await Promise.all(
-        assignments.map((x) =>
-          this.sessions.officialConnectedSocketCount(
-            publicMatchId,
-            x.officialId,
-          ),
-        ),
-      );
-      if (
-        connected.some((count) => count < 1) ||
-        (await this.sessions.scoreboardConnectedCount(publicMatchId)) < 1
-      )
-        throw new MatchParticipantsNotReadyError();
+        throw new MatchParticipantsNotReadyError({
+          assignedRefereeCount: referees.length,
+          connectedRefereeCount,
+          inspectorConnected,
+          requiredRefereeCount,
+          scoreboardConnectedCount,
+        });
       return;
     }
     const legacyRoles = [
@@ -1127,11 +1145,21 @@ export class MatchLifecycleService implements OnModuleDestroy {
         this.sessions.connectedSocketCount(publicMatchId, role),
       ),
     );
+    const scoreboardConnectedCount =
+      await this.sessions.scoreboardConnectedCount(publicMatchId);
     if (
+      requiredRefereeCount !== 3 ||
       connected.some((count) => count < 1) ||
-      (await this.sessions.scoreboardConnectedCount(publicMatchId)) < 1
+      scoreboardConnectedCount < 1
     )
-      throw new MatchParticipantsNotReadyError();
+      throw new MatchParticipantsNotReadyError({
+        assignedRefereeCount: 3,
+        connectedRefereeCount: connected.slice(1).filter((count) => count > 0)
+          .length,
+        inspectorConnected: connected[0]! > 0,
+        requiredRefereeCount,
+        scoreboardConnectedCount,
+      });
   }
 
   private async lockActiveInspectorIdentity(

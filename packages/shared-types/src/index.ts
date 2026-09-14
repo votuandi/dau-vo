@@ -25,6 +25,7 @@ export type {
   LegacyMatchReadiness,
   MatchReadiness,
   MatchStartReadinessDetails,
+  MatchParticipantsNotReadyDetails,
   TournamentOfficialMatchReadiness,
   MatchFinishedPayload,
   MatchRoundState,

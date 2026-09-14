@@ -31,8 +31,8 @@ export const inspectorSession: MatchAccessSession = {
 
 export const acceptedRedVote: VoteAcceptedPayload = {
   athlete: AthleteColor.RED,
+  identity: { kind: 'legacy', refereeSlot: RefereeSlot.REFEREE_1 },
   matchPublicId: refereeSession.matchPublicId,
-  refereeSlot: RefereeSlot.REFEREE_1,
   scoringWindowId: 'window-1',
   serverReceivedAt: '2026-09-01T12:00:00.250Z',
 };
@@ -92,6 +92,7 @@ export function createMatchSnapshot(overrides: Partial<MatchStatePayload> = {}):
       canStartRound: true,
       kind: 'LEGACY_MATCH_ACCESS',
       missingRequirements: [],
+      requiredRefereeCount: 3,
       referees: { REFEREE_1: true, REFEREE_2: true, REFEREE_3: true },
       scoreboardConnectedCount: 1,
     },

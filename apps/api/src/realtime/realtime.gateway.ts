@@ -284,7 +284,13 @@ export class RealtimeGateway
       }
 
       if (error instanceof MatchParticipantsNotReadyError)
-        return { error: MATCH_PARTICIPANTS_NOT_READY_ERROR, ok: false };
+        return {
+          error: {
+            ...MATCH_PARTICIPANTS_NOT_READY_ERROR,
+            details: error.details,
+          },
+          ok: false,
+        };
 
       if (error instanceof InvalidRoundStartStateError) {
         return { error: ROUND_START_INVALID_STATE_ERROR, ok: false };
@@ -761,6 +767,30 @@ export class RealtimeGateway
   async matchStateRequest(
     @ConnectedSocket() client: RealtimeSocket,
   ): Promise<void> {
+    if (client.data.connectionKind === 'official') {
+      const official = await this.revalidateOfficial(client);
+      const assignment = official?.assignment;
+      if (!official || !assignment) return;
+      const viewer =
+        assignment.role === 'REFEREE' && assignment.refereePosition !== null
+          ? {
+              assignmentId: assignment.id,
+              kind: 'official' as const,
+              refereePosition: assignment.refereePosition,
+            }
+          : undefined;
+      const snapshot = await this.matchState.snapshot(
+        assignment.match.id,
+        viewer,
+      );
+      if (snapshot.match.publicId !== assignment.match.publicId) {
+        this.sessionRegistry.revokeSessions([official.sessionId]);
+        this.revokeSocket(client);
+        return;
+      }
+      client.emit(RealtimeEvent.MATCH_STATE, snapshot);
+      return;
+    }
     const identity = await this.revalidate(client);
 
     if (identity === null) {
@@ -774,6 +804,7 @@ export class RealtimeGateway
     // that referee slot's accepted vote for an unresolved scoring window.
     // Room broadcasts intentionally omit this recipient-specific data.
     const snapshot = await this.matchState.snapshot(identity.matchId, {
+      kind: 'legacy',
       refereeSlot: identity.refereeSlot,
     });
 

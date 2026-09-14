@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, useNavigate } from 'react-router-dom';
 import {
   MatchRole,
-  RefereeSlot,
   RealtimeEvent,
   TournamentOfficialRole,
   type OfficialAssignmentSnapshot,
@@ -13,7 +12,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { getOrCreateDeviceId } from '@/features/match-access/device';
-import { useMatchRealtime } from '@/features/match-access/match-realtime';
+import {
+  useMatchRealtime,
+  type RealtimeRefereeIdentity,
+} from '@/features/match-access/match-realtime';
 import { InspectorConsole } from '@/features/match-access/inspector-console';
 import { RefereeConsole } from '@/features/match-access/referee-console';
 import { ApiClientError } from '@/services/api/client';
@@ -38,15 +40,17 @@ const toConsoleSession = (s: OfficialSession, a: OfficialAssignment): MatchAcces
   matchPublicId: a.match.publicId,
   role: a.role === TournamentOfficialRole.REFEREE ? MatchRole.REFEREE : MatchRole.INSPECTOR,
   sessionId: s.sessionId,
-  refereeSlot:
-    a.refereePosition === 1
-      ? RefereeSlot.REFEREE_1
-      : a.refereePosition === 2
-        ? RefereeSlot.REFEREE_2
-        : a.refereePosition === 3
-          ? RefereeSlot.REFEREE_3
-          : null,
+  refereeSlot: null,
 });
+const realtimeRefereeIdentity = (assignment: OfficialAssignment): RealtimeRefereeIdentity =>
+  assignment.role === TournamentOfficialRole.REFEREE &&
+  typeof assignment.refereePosition === 'number'
+    ? {
+        assignmentId: assignment.id,
+        kind: 'official',
+        refereePosition: assignment.refereePosition,
+      }
+    : null;
 const toAssignment = (
   assignment: OfficialAssignmentSnapshot['assignment'],
 ): OfficialAssignment | null =>
@@ -307,7 +311,7 @@ function AssignedConsole({
   const realtime = useMatchRealtime({
     keepSocketConnected: true,
     matchPublicId: assignment.match.publicId,
-    refereeSlot: toConsoleSession(session, assignment).refereeSlot,
+    refereeIdentity: realtimeRefereeIdentity(assignment),
     onAuthenticationRequired: revoked,
     onSessionRevoked: revoked,
   });

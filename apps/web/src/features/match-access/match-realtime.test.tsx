@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AthleteColor, RealtimeEvent } from '@martial-arts-scoring/shared-types';
-import { useMatchRealtime } from './match-realtime';
+import { AthleteColor, RealtimeEvent, RefereeSlot } from '@martial-arts-scoring/shared-types';
+import { getParticipantsNotReadyMessage, useMatchRealtime } from './match-realtime';
 import { acceptedRedVote, createMatchSnapshot, refereeSession } from '@/test/factories';
 
 const socketHarness = vi.hoisted(() => {
@@ -112,13 +112,30 @@ describe('useMatchRealtime', () => {
     socketHarness.reset();
   });
 
+  it('formats dynamic start readiness and supports older errors without details', () => {
+    expect(
+      getParticipantsNotReadyMessage({
+        assignedRefereeCount: 5,
+        connectedRefereeCount: 3,
+        inspectorConnected: true,
+        requiredRefereeCount: 5,
+        scoreboardConnectedCount: 1,
+      }),
+    ).toBe(
+      'Chưa thể bắt đầu hiệp đấu. Đã phân công 5/5 trọng tài, kết nối 3/5 trọng tài và 1 bảng điểm.',
+    );
+    expect(getParticipantsNotReadyMessage(undefined)).toBe(
+      'Chưa thể bắt đầu hiệp đấu. Chưa đáp ứng đủ trọng tài hoặc bảng điểm cần thiết.',
+    );
+  });
+
   function renderRealtime(onSessionRevoked = vi.fn()) {
     return renderHook(() =>
       useMatchRealtime({
         matchPublicId: refereeSession.matchPublicId,
         onAuthenticationRequired: vi.fn(),
         onSessionRevoked,
-        refereeSlot: refereeSession.refereeSlot,
+        refereeIdentity: { kind: 'legacy', refereeSlot: RefereeSlot.REFEREE_1 },
       }),
     );
   }
@@ -179,6 +196,44 @@ describe('useMatchRealtime', () => {
 
     await waitFor(() => {
       expect(result.current.lastAcceptedVote).toBeNull();
+    });
+  });
+
+  it('accepts only the assigned official referee acknowledgement', async () => {
+    const { result } = renderHook(() =>
+      useMatchRealtime({
+        matchPublicId: refereeSession.matchPublicId,
+        onAuthenticationRequired: vi.fn(),
+        onSessionRevoked: vi.fn(),
+        refereeIdentity: {
+          assignmentId: 'assignment-4',
+          kind: 'official',
+          refereePosition: 4,
+        },
+      }),
+    );
+    const accepted = {
+      ...acceptedRedVote,
+      identity: {
+        assignmentId: 'assignment-4',
+        kind: 'official' as const,
+        refereePosition: 4,
+      },
+    };
+
+    act(() => {
+      socketHarness.triggerSocketEvent(RealtimeEvent.VOTE_ACCEPTED, {
+        ...accepted,
+        identity: { ...accepted.identity, assignmentId: 'another-assignment' },
+      });
+    });
+    expect(result.current.lastAcceptedVote).toBeNull();
+
+    act(() => {
+      socketHarness.triggerSocketEvent(RealtimeEvent.VOTE_ACCEPTED, accepted);
+    });
+    await waitFor(() => {
+      expect(result.current.lastAcceptedVote).toEqual(accepted);
     });
   });
 
