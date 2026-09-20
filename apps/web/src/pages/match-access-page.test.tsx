@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -158,6 +158,7 @@ function storedDeviceId(): string {
 
 describe('MatchAccessPage official login', () => {
   beforeEach(() => {
+    vi.useRealTimers();
     officialAccessApiMock.login.mockReset();
     officialAccessApiMock.logout.mockReset();
     officialAccessApiMock.matches.mockReset();
@@ -377,6 +378,138 @@ describe('MatchAccessPage official login', () => {
     });
     expect(await screen.findByText('Đang chờ phân công')).toBeVisible();
     expect(socketHarness.socket.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('reconciles a missed release from a non-null assignment when the window regains focus', async () => {
+    const assignedSession: OfficialSession = {
+      ...refereeSession,
+      activeAssignment: {
+        id: 'assignment-missed-focus-release',
+        match: { id: 'match-missed-focus', publicId: 'M-MISSED-FOCUS', status: MatchStatus.WAITING },
+        refereePosition: 1,
+        role: TournamentOfficialRole.REFEREE,
+      },
+      status: 'IN_MATCH',
+    };
+    officialAccessApiMock.session.mockResolvedValue({ session: assignedSession });
+    renderPage();
+    expect(await screen.findByText('Referee console ready')).toBeVisible();
+    await waitFor(() => {
+      expect(officialAccessApiMock.session).toHaveBeenCalledTimes(2);
+    });
+
+    officialAccessApiMock.session.mockResolvedValue({ session: refereeSession });
+    window.dispatchEvent(new Event('focus'));
+
+    expect(await screen.findByText('Đang chờ phân công')).toBeVisible();
+    expect(socketHarness.socket.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('reconciles a missed release from a non-null assignment on the recovery interval', async () => {
+    vi.useFakeTimers();
+    const assignedSession: OfficialSession = {
+      ...refereeSession,
+      activeAssignment: {
+        id: 'assignment-missed-interval-release',
+        match: {
+          id: 'match-missed-interval',
+          publicId: 'M-MISSED-INTERVAL',
+          status: MatchStatus.WAITING,
+        },
+        refereePosition: 1,
+        role: TournamentOfficialRole.REFEREE,
+      },
+      status: 'IN_MATCH',
+    };
+    officialAccessApiMock.session.mockResolvedValue({ session: assignedSession });
+    renderPage();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText('Referee console ready')).toBeVisible();
+    expect(officialAccessApiMock.session).toHaveBeenCalledTimes(2);
+
+    officialAccessApiMock.session.mockResolvedValue({ session: refereeSession });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000);
+    });
+
+    expect(screen.getByText('Đang chờ phân công')).toBeVisible();
+    expect(socketHarness.socket.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('does not let a late HTTP reconciliation overwrite a newer assignment socket event', async () => {
+    const assignedSession: OfficialSession = {
+      ...refereeSession,
+      activeAssignment: {
+        id: 'assignment-http-old',
+        match: { id: 'match-http-old', publicId: 'M-HTTP-OLD', status: MatchStatus.WAITING },
+        refereePosition: 1,
+        role: TournamentOfficialRole.REFEREE,
+      },
+      status: 'IN_MATCH',
+    };
+    officialAccessApiMock.session.mockResolvedValue({ session: assignedSession });
+    renderPage();
+    expect(await screen.findByText('Referee console ready')).toBeVisible();
+    await waitFor(() => {
+      expect(officialAccessApiMock.session).toHaveBeenCalledTimes(2);
+    });
+
+    let resolveReconciliation: ((value: { session: OfficialSession }) => void) | undefined;
+    officialAccessApiMock.session.mockImplementationOnce(
+      () =>
+        new Promise<{ session: OfficialSession }>((resolve) => {
+          resolveReconciliation = resolve;
+        }),
+    );
+    window.dispatchEvent(new Event('focus'));
+    await waitFor(() => {
+      expect(officialAccessApiMock.session).toHaveBeenCalledTimes(3);
+    });
+    socketHarness.trigger('official:assignment-updated', {
+      assignment: {
+        id: 'assignment-socket-new',
+        match: { id: 'match-socket-new', publicId: 'M-SOCKET-NEW', status: 'WAITING' },
+        refereePosition: 1,
+        role: 'REFEREE',
+      },
+      officialId: refereeSession.official.id,
+      tournamentId: refereeSession.tournament.id,
+    });
+    resolveReconciliation?.({ session: refereeSession });
+
+    await waitFor(() => {
+      expect(socketHarness.socket.emit).toHaveBeenCalledWith('match:state:request');
+    });
+    expect(screen.getByText('Referee console ready')).toBeVisible();
+  });
+
+  it('keeps a non-null assignment after a transient reconciliation failure', async () => {
+    const assignedSession: OfficialSession = {
+      ...refereeSession,
+      activeAssignment: {
+        id: 'assignment-transient-error',
+        match: { id: 'match-transient-error', publicId: 'M-TRANSIENT', status: MatchStatus.WAITING },
+        refereePosition: 1,
+        role: TournamentOfficialRole.REFEREE,
+      },
+      status: 'IN_MATCH',
+    };
+    officialAccessApiMock.session.mockResolvedValue({ session: assignedSession });
+    renderPage();
+    expect(await screen.findByText('Referee console ready')).toBeVisible();
+    await waitFor(() => {
+      expect(officialAccessApiMock.session).toHaveBeenCalledTimes(2);
+    });
+
+    officialAccessApiMock.session.mockRejectedValueOnce(new Error('network unavailable'));
+    window.dispatchEvent(new Event('focus'));
+    await waitFor(() => {
+      expect(officialAccessApiMock.session).toHaveBeenCalledTimes(3);
+    });
+
+    expect(screen.getByText('Referee console ready')).toBeVisible();
   });
 
   it('returns an exiting inspector to the match list from the authoritative exit acknowledgement', async () => {

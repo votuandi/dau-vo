@@ -67,6 +67,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
   const assignmentRef = useRef(assignment);
   const eventEpoch = useRef(0);
   const assignmentEventEpoch = useRef(0);
+  const reconciliationIdentityRef = useRef<string | null>(null);
   const identityRef = useRef(connectionIdentity(session));
   const assignmentIdentityRef = useRef(connectionIdentity(session));
   const releasedAssignmentIds = useRef(new Set<string>());
@@ -132,6 +133,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
     releasedAssignmentIds.current.clear();
     eventEpoch.current = 0;
     assignmentEventEpoch.current = 0;
+    reconciliationIdentityRef.current = null;
   }
 
   useEffect(() => {
@@ -158,7 +160,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
     const apply = (next: OfficialAssignment | null, source: string) => {
       if (next !== null && releasedAssignmentIds.current.has(next.id)) {
         diagnostic('assignment-rejected', { source: 'retired', sessionId });
-        return;
+        return false;
       }
       eventEpoch.current += 1;
       setAssignment((previous) => {
@@ -182,23 +184,35 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
         diagnostic('assignment-accepted', { source, assigned: next !== null, sessionId });
         return next;
       });
+      return true;
     };
     const reconcile = async (reason: string) => {
+      if (reconciliationIdentityRef.current === identity) {
+        diagnostic('reconcile-skipped', { reason, sessionId });
+        return;
+      }
+      reconciliationIdentityRef.current = identity;
       const startedAtEpoch = eventEpoch.current;
       diagnostic('reconcile-requested', { reason, sessionId });
       try {
         const response = await officialAccessApi.session();
         if (
           disposed ||
+          identityRef.current !== identity ||
           eventEpoch.current !== startedAtEpoch ||
           response.session.sessionId !== sessionId
         )
           return;
-        apply(response.session.activeAssignment, `http:${reason}`);
+        const accepted = apply(response.session.activeAssignment, `http:${reason}`);
+        if (accepted && response.session.activeAssignment !== null)
+          socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
       } catch {
         // The socket's revocation message remains the immediate path; the next
         // protected request will also clear an invalid cookie normally.
         diagnostic('reconcile-failed', { reason, sessionId });
+      } finally {
+        if (reconciliationIdentityRef.current === identity)
+          reconciliationIdentityRef.current = null;
       }
     };
     const onConnect = () => {
@@ -263,7 +277,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
       revokedRef.current();
     };
     const onFocus = () => {
-      if (!document.hidden && assignmentRef.current === null) void reconcile('focus');
+      if (!document.hidden) void reconcile('focus');
     };
 
     socket.on('connect', onConnect);
@@ -274,7 +288,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
     socket.on(RealtimeEvent.SESSION_REVOKED, onRevocation);
     window.addEventListener('focus', onFocus);
     const recoveryTimer = window.setInterval(() => {
-      if (assignmentRef.current === null) void reconcile('interval');
+      void reconcile('interval');
     }, 12_000);
     if (socket.connected) onConnect();
     else socket.connect();
