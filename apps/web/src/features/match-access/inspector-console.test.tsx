@@ -8,7 +8,7 @@ import {
   MatchStatus,
 } from '@martial-arts-scoring/shared-types';
 import { InspectorConsole } from './inspector-console';
-import { createMatchSnapshot, createRealtimeState, inspectorSession } from '@/test/factories';
+import { createMatchSnapshot, createRealtimeState } from '@/test/factories';
 
 function snapshotFor(status: MatchStatus) {
   const active =
@@ -68,7 +68,6 @@ describe('InspectorConsole', () => {
           startRound,
           submitPenalty,
         })}
-        session={inspectorSession}
       />,
     );
 
@@ -84,7 +83,6 @@ describe('InspectorConsole', () => {
           startRound,
           submitPenalty,
         })}
-        session={inspectorSession}
       />,
     );
 
@@ -107,7 +105,6 @@ describe('InspectorConsole', () => {
           startRound,
           submitPenalty,
         })}
-        session={inspectorSession}
       />,
     );
 
@@ -122,7 +119,6 @@ describe('InspectorConsole', () => {
           startRound,
           submitPenalty,
         })}
-        session={inspectorSession}
       />,
     );
 
@@ -136,7 +132,6 @@ describe('InspectorConsole', () => {
           startRound,
           submitPenalty,
         })}
-        session={inspectorSession}
       />,
     );
 
@@ -152,7 +147,6 @@ describe('InspectorConsole', () => {
           connectionStatus: 'revoked',
           snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING),
         })}
-        session={inspectorSession}
       />,
     );
 
@@ -184,7 +178,6 @@ describe('InspectorConsole', () => {
             },
           }),
         })}
-        session={inspectorSession}
       />,
     );
 
@@ -210,7 +203,6 @@ describe('InspectorConsole', () => {
           pauseRound,
           snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING),
         })}
-        session={inspectorSession}
       />,
     );
 
@@ -226,7 +218,6 @@ describe('InspectorConsole', () => {
           resumeRound,
           snapshot: snapshotFor(MatchStatus.ROUND_1_PAUSED),
         })}
-        session={inspectorSession}
       />,
     );
     expect(screen.getByText('HIỆP 1 TẠM DỪNG')).toBeVisible();
@@ -248,7 +239,6 @@ describe('InspectorConsole', () => {
           cancelRoundResult,
           snapshot: snapshotFor(MatchStatus.BREAK),
         })}
-        session={inspectorSession}
       />,
     );
     await user.click(screen.getByRole('button', { name: 'HỦY KẾT QUẢ HIỆP 1 VÀ BẮT ĐẦU LẠI' }));
@@ -271,7 +261,6 @@ describe('InspectorConsole', () => {
             },
           }),
         })}
-        session={inspectorSession}
       />,
     );
     await user.click(screen.getByRole('button', { name: 'THOÁT TRẬN' }));
@@ -288,7 +277,6 @@ describe('InspectorConsole', () => {
     render(
       <InspectorConsole
         realtime={createRealtimeState({ snapshot: snapshotFor(MatchStatus.BREAK) })}
-        session={inspectorSession}
       />,
     );
 
@@ -309,7 +297,6 @@ describe('InspectorConsole', () => {
             completion: { canComplete: true, blockedReasons: [] },
           }),
         })}
-        session={inspectorSession}
       />,
     );
 

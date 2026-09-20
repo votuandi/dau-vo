@@ -1,7 +1,7 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { MatchRole, TournamentOfficialRole } from '@martial-arts-scoring/shared-types';
+import { MatchLifecycle, TournamentOfficialRole } from '@/types/shared';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { toast } from '@/components/ui/toast';
@@ -24,7 +24,6 @@ import {
   type OfficialMatch,
   type OfficialSession,
 } from '@/services/api/official-access';
-import type { MatchAccessSession } from '@/services/api/match-access';
 
 interface Props {
   readonly expectedRole: TournamentOfficialRole;
@@ -32,14 +31,6 @@ interface Props {
 const sessionKey = officialSessionQueryKey;
 const pathFor = (role: TournamentOfficialRole) =>
   role === TournamentOfficialRole.REFEREE ? '/trong-tai' : '/giam-dinh';
-const toConsoleSession = (s: OfficialSession, a: OfficialAssignment): MatchAccessSession => ({
-  deviceId: s.deviceId,
-  expiresAt: s.expiresAt,
-  matchPublicId: a.match.publicId,
-  role: a.role === TournamentOfficialRole.REFEREE ? MatchRole.REFEREE : MatchRole.INSPECTOR,
-  sessionId: s.sessionId,
-  refereeSlot: null,
-});
 const realtimeRefereeIdentity = (assignment: OfficialAssignment): RealtimeRefereeIdentity =>
   assignment.role === TournamentOfficialRole.REFEREE &&
   typeof assignment.refereePosition === 'number'
@@ -58,14 +49,17 @@ function errorMessage(e: unknown) {
 }
 
 function isEligible(match: OfficialMatch): boolean {
-  return match.claimable && (match.lifecycle === 'NOT_STARTED' || match.lifecycle === 'SUSPENDED');
+  return (
+    match.claimable &&
+    (match.lifecycle === MatchLifecycle.NOT_STARTED || match.lifecycle === MatchLifecycle.SUSPENDED)
+  );
 }
 
 function claimabilityMessage(match: OfficialMatch): string {
-  if (match.lifecycle === 'COMPLETED') return 'Trận đã hoàn thành, không thể nhận.';
-  if (match.lifecycle === 'IN_PROGRESS') return 'Trận đang diễn ra, không thể nhận.';
+  if (match.lifecycle === MatchLifecycle.COMPLETED) return 'Trận đã hoàn thành, không thể nhận.';
+  if (match.lifecycle === MatchLifecycle.IN_PROGRESS) return 'Trận đang diễn ra, không thể nhận.';
   if (!match.claimable) return 'Đã có giám định khác nhận trận.';
-  return match.lifecycle === 'SUSPENDED'
+  return match.lifecycle === MatchLifecycle.SUSPENDED
     ? 'Có thể nhận để tiếp tục trận tạm dừng.'
     : 'Có thể nhận trận.';
 }
@@ -187,12 +181,12 @@ function InspectorAssignment({
   const refresh = async () => {
     if (selected === null) return;
     const [matchesResult, stateResult] = await Promise.all([
-      qc.fetchQuery({
+      qc.query({
         queryKey: ['official-matches', session.tournament.id],
         queryFn: officialAccessApi.matches,
         staleTime: 0,
       }),
-      qc.fetchQuery({
+      qc.query({
         queryKey: ['official-match', selected.id],
         queryFn: () => officialAccessApi.state(selected.id),
         staleTime: 0,
@@ -389,12 +383,10 @@ function InspectorAssignment({
 }
 
 function AssignedConsole({
-  session,
   assignment,
   revoked,
   notice,
 }: {
-  session: OfficialSession;
   assignment: OfficialAssignment;
   revoked: () => void;
   notice: string | null;
@@ -406,16 +398,12 @@ function AssignedConsole({
     onAuthenticationRequired: revoked,
     onSessionRevoked: revoked,
   });
-  const props = {
-    realtime,
-    session: toConsoleSession(session, assignment),
-  };
   return (
     <>
       {assignment.role === TournamentOfficialRole.REFEREE ? (
-        <RefereeConsole {...props} />
+        <RefereeConsole realtime={realtime} />
       ) : (
-        <InspectorConsole {...props} />
+        <InspectorConsole realtime={realtime} />
       )}
       {notice ? (
         <p
@@ -548,7 +536,6 @@ export function MatchAccessPage({ expectedRole }: Props) {
           qc.setQueryData(sessionKey, null);
         }}
         notice={logoutError}
-        session={identity}
       />
     );
   if (identity)

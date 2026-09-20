@@ -12,12 +12,10 @@ import {
   type MatchRealtimeState,
   type RealtimeConnectionStatus,
 } from './match-realtime';
-import type { MatchAccessSession } from '@/services/api/match-access';
 import { presentPhase } from '@/features/match-presentation';
 
 interface InspectorConsoleProps {
   readonly realtime: MatchRealtimeState;
-  readonly session: MatchAccessSession;
 }
 
 interface ExitOption {
@@ -216,7 +214,7 @@ function PenaltyButton({
   );
 }
 
-export function InspectorConsole({ realtime, session }: InspectorConsoleProps) {
+export function InspectorConsole({ realtime }: InspectorConsoleProps) {
   const snapshot = realtime.snapshot;
   const status = snapshot?.match.phase;
   const roundIsRunning =
@@ -302,7 +300,9 @@ export function InspectorConsole({ realtime, session }: InspectorConsoleProps) {
     realtime.completingMatch ||
     snapshot?.completion.canComplete !== true;
   const exitDisabled =
-    realtime.connectionStatus !== 'connected' || realtime.cancellingResults || !snapshot?.exit.canExit;
+    realtime.connectionStatus !== 'connected' ||
+    realtime.cancellingResults ||
+    !snapshot?.exit.canExit;
 
   useEffect(() => {
     if (armedPenalty === null) {
@@ -358,7 +358,7 @@ export function InspectorConsole({ realtime, session }: InspectorConsoleProps) {
               Giám định
             </p>
             <p className="mt-1 truncate font-mono text-lg font-black tracking-[0.14em] text-white sm:text-xl">
-              {session.matchPublicId}
+              {snapshot?.match.publicId ?? 'Đang đồng bộ'}
             </p>
           </div>
           <div

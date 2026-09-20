@@ -23,11 +23,8 @@ import {
   type BracketDrawSetup,
   type ActiveBracket,
 } from '@/services/api/admin-management';
-import { TournamentStatus } from '@/types/shared';
-import {
-  bracketRoundLabel as roundLabel,
-  MatchLifecycle,
-} from '@martial-arts-scoring/shared-types';
+import { MatchDisplayState, MatchLifecycle, TournamentStatus } from '@/types/shared';
+import { bracketRoundLabel as roundLabel } from '@martial-arts-scoring/shared-types';
 import { presentDisplayState, presentLifecycle, presentPhase } from '@/features/match-presentation';
 import { BracketChart } from './bracket-chart';
 import { BracketPreviewPanel } from './bracket-preview-dialog';
@@ -872,7 +869,7 @@ function FixtureList({
                       Vô địch: {data.bracket.championEntrant.snapshotName}
                     </p>
                   ) : null}
-                  {f.displayState === 'NOT_READY' ? (
+                  {f.displayState === MatchDisplayState.NOT_READY ? (
                     <p className="text-sm text-muted-foreground">
                       Đang chờ kết quả các trận trước.
                     </p>

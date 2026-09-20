@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { AthleteColor, MatchStatus, RefereeSlot } from '@martial-arts-scoring/shared-types';
+import { AthleteColor, MatchStatus } from '@martial-arts-scoring/shared-types';
 import type { MatchRealtimeState, RealtimeConnectionStatus } from './match-realtime';
-import type { MatchAccessSession } from '@/services/api/match-access';
 
 interface RefereeConsoleProps {
   readonly realtime: MatchRealtimeState;
-  readonly session: MatchAccessSession;
 }
 
 const connectionLabels: Record<RealtimeConnectionStatus, string> = {
@@ -27,19 +25,6 @@ const connectionDotClasses: Record<RealtimeConnectionStatus, string> = {
   reconnecting: 'bg-amber-400',
   revoked: 'bg-red-500',
 };
-
-function refereeIdentity(session: MatchAccessSession): string {
-  switch (session.refereeSlot) {
-    case RefereeSlot.REFEREE_1:
-      return 'Trọng tài 1';
-    case RefereeSlot.REFEREE_2:
-      return 'Trọng tài 2';
-    case RefereeSlot.REFEREE_3:
-      return 'Trọng tài 3';
-    default:
-      return 'Trọng tài';
-  }
-}
 
 function displayPhase(status: MatchStatus | undefined): string {
   switch (status) {
@@ -161,7 +146,7 @@ function AthleteVoteButton({
   );
 }
 
-export function RefereeConsole({ realtime, session }: RefereeConsoleProps) {
+export function RefereeConsole({ realtime }: RefereeConsoleProps) {
   const snapshot = realtime.snapshot;
   const status = snapshot?.match.phase;
   const roundIsRunning =
@@ -191,10 +176,10 @@ export function RefereeConsole({ realtime, session }: RefereeConsoleProps) {
         <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/15 bg-blue-950/35 px-4 py-3 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5">
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-200/80">
-              {refereeIdentity(session)}
+              Trọng tài
             </p>
             <p className="mt-1 truncate font-mono text-lg font-black tracking-[0.14em] text-white sm:text-xl">
-              {session.matchPublicId}
+              {snapshot?.match.publicId ?? 'Đang đồng bộ'}
             </p>
           </div>
           <div className="flex items-center gap-3">

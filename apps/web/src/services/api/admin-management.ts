@@ -1,14 +1,14 @@
-import {
-  type AthleteColor,
-  type MatchDisplayState,
-  type MatchLifecycle,
-  type MatchStatus,
-  type TournamentStatus,
-} from '@/types/shared';
-import type { MatchStatePayload } from '@martial-arts-scoring/shared-types';
+import type {
+  AthleteColor,
+  MatchDisplayState,
+  MatchLifecycle,
+  MatchStatePayload,
+  MatchStatus,
+  TournamentStatus,
+} from '@martial-arts-scoring/shared-types';
 import { apiClient } from '@/services/api/client';
 import type { ApiRequestOptions } from '@/services/api/client';
-import type { TournamentOfficialRole } from '@/types/shared';
+import type { TournamentOfficialRole } from '@martial-arts-scoring/shared-types';
 
 type ApiRequestWithoutBody = Omit<ApiRequestOptions<never>, 'body' | 'method'>;
 

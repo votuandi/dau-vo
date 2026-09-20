@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   RealtimeEvent,
+  MatchStatus,
   TournamentOfficialRole,
   type MatchAssignmentReleasedPayload,
   type OfficialAssignmentSnapshot,
@@ -16,6 +17,23 @@ import { disconnectSocket, getSocketClient } from '@/services/socket/client';
 
 export const officialSessionQueryKey = ['official-access', 'session'] as const;
 
+const matchStatusByWireValue: Readonly<Record<string, MatchStatus>> = {
+  WAITING: MatchStatus.WAITING,
+  ROUND_1_RUNNING: MatchStatus.ROUND_1_RUNNING,
+  ROUND_1_PAUSED: MatchStatus.ROUND_1_PAUSED,
+  BREAK: MatchStatus.BREAK,
+  ROUND_2_RUNNING: MatchStatus.ROUND_2_RUNNING,
+  ROUND_2_PAUSED: MatchStatus.ROUND_2_PAUSED,
+  AWAITING_RESULT_SAVE: MatchStatus.AWAITING_RESULT_SAVE,
+  FINISHED: MatchStatus.FINISHED,
+};
+
+function matchStatusFromWire(status: string): MatchStatus {
+  const typedStatus = matchStatusByWireValue[status];
+  if (typedStatus === undefined) throw new Error(`Unsupported match status: ${status}`);
+  return typedStatus;
+}
+
 function connectionIdentity(session: OfficialSession | undefined): string | null {
   if (!session) return null;
   return `${session.sessionId}:${session.official.id}:${session.tournament.id}`;
@@ -29,7 +47,11 @@ function assignmentFromSnapshot(
     assignment.role === 'REFEREE'
       ? TournamentOfficialRole.REFEREE
       : TournamentOfficialRole.INSPECTOR;
-  return { ...assignment, role };
+  return {
+    ...assignment,
+    match: { ...assignment.match, status: matchStatusFromWire(assignment.match.status) },
+    role,
+  };
 }
 
 /**

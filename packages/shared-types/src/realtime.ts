@@ -240,10 +240,23 @@ export interface MatchStatePayload {
   viewer?: MatchStateViewer;
 }
 
-export interface MatchExitPayload { matchPublicId: string; mode: MatchExitMode; }
+export interface MatchExitPayload {
+  matchPublicId: string;
+  mode: MatchExitMode;
+}
 export type MatchExitResponse =
   | { ok: true; exit: MatchExitPayload }
-  | { ok: false; error: { code: 'MATCH_EXIT_FORBIDDEN' | 'MATCH_EXIT_INVALID_STATE' | 'MATCH_EXIT_FAILED' | 'REALTIME_AUTHENTICATION_REQUIRED'; message: string } };
+  | {
+      ok: false;
+      error: {
+        code:
+          | 'MATCH_EXIT_FORBIDDEN'
+          | 'MATCH_EXIT_INVALID_STATE'
+          | 'MATCH_EXIT_FAILED'
+          | 'REALTIME_AUTHENTICATION_REQUIRED';
+        message: string;
+      };
+    };
 
 /**
  * Deliberately minimal state exposed to public scoreboards. It omits internal

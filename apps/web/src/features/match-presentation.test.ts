@@ -8,25 +8,47 @@ import {
 } from './match-presentation';
 
 describe('match presentation', () => {
-  it.each(Object.values(MatchLifecycle))('presents lifecycle %s', (value) => {
-    expect(presentLifecycle(value)).toMatchObject({
-      label: expect.any(String),
-      variant: expect.any(String),
-    });
+  const lifecycles: readonly MatchLifecycle[] = [
+    MatchLifecycle.NOT_STARTED,
+    MatchLifecycle.IN_PROGRESS,
+    MatchLifecycle.SUSPENDED,
+    MatchLifecycle.COMPLETED,
+  ];
+  const displayStates: readonly MatchDisplayState[] = [
+    MatchDisplayState.NOT_READY,
+    MatchDisplayState.READY,
+    MatchDisplayState.NOT_STARTED,
+    MatchDisplayState.IN_PROGRESS,
+    MatchDisplayState.SUSPENDED,
+    MatchDisplayState.COMPLETED,
+  ];
+  const phases: readonly MatchPhase[] = [
+    MatchPhase.WAITING,
+    MatchPhase.ROUND_1_RUNNING,
+    MatchPhase.ROUND_1_PAUSED,
+    MatchPhase.BREAK,
+    MatchPhase.ROUND_2_RUNNING,
+    MatchPhase.ROUND_2_PAUSED,
+    MatchPhase.AWAITING_RESULT_SAVE,
+    MatchPhase.FINISHED,
+  ];
+
+  it.each(lifecycles)('presents lifecycle %s', (value) => {
+    const presentation = presentLifecycle(value);
+    expect(typeof presentation.label).toBe('string');
+    expect(typeof presentation.variant).toBe('string');
   });
 
-  it.each(Object.values(MatchDisplayState))('presents display state %s', (value) => {
-    expect(presentDisplayState(value)).toMatchObject({
-      label: expect.any(String),
-      help: expect.any(String),
-    });
+  it.each(displayStates)('presents display state %s', (value) => {
+    const presentation = presentDisplayState(value);
+    expect(typeof presentation.label).toBe('string');
+    expect(typeof presentation.help).toBe('string');
   });
 
-  it.each(Object.values(MatchPhase))('presents phase %s', (value) => {
-    expect(presentPhase(value)).toMatchObject({
-      label: expect.any(String),
-      variant: expect.any(String),
-    });
+  it.each(phases)('presents phase %s', (value) => {
+    const presentation = presentPhase(value);
+    expect(typeof presentation.label).toBe('string');
+    expect(typeof presentation.variant).toBe('string');
   });
 
   it.each(['READY', 'IN_MATCH', 'DISABLED'] as const)('presents official status %s', (value) => {

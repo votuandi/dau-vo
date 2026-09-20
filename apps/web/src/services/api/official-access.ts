@@ -1,11 +1,11 @@
 import { apiClient, request } from '@/services/api/client';
-import { MatchLifecycle, type TournamentOfficialRole } from '@/types/shared';
+import { MatchLifecycle, MatchStatus, type TournamentOfficialRole } from '@/types/shared';
 
 export interface OfficialAssignment {
   readonly id: string;
   readonly role: TournamentOfficialRole;
   readonly refereePosition: number | null;
-  readonly match: { readonly id: string; readonly publicId: string; readonly status: string };
+  readonly match: { readonly id: string; readonly publicId: string; readonly status: MatchStatus };
 }
 export interface OfficialSession {
   readonly sessionId: string;
@@ -24,7 +24,7 @@ export interface OfficialMatch {
   readonly id: string;
   readonly publicId: string;
   readonly lifecycle: MatchLifecycle;
-  readonly status: string;
+  readonly status: MatchStatus;
   readonly requiredRefereeCount: number;
   readonly athletes: readonly { readonly color: string; readonly name: string }[];
   readonly claimable: boolean;

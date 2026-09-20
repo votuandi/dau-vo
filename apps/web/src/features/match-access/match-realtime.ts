@@ -432,8 +432,10 @@ export function useMatchRealtime({
           .timeout(10_000)
           .emit(
             RealtimeEvent.MATCH_COMPLETE,
-            (error: Error | null, acknowledgement: MatchCompletionResponse) =>
-              error ? reject(error) : resolve(acknowledgement),
+            (error: Error | null, acknowledgement: MatchCompletionResponse) => {
+              if (error) reject(error);
+              else resolve(acknowledgement);
+            },
           );
       });
       if (!response.ok) {
@@ -681,8 +683,10 @@ export function useMatchRealtime({
           .emit(
             RealtimeEvent.MATCH_EXIT,
             { mode },
-            (error: Error | null, acknowledgement: MatchExitResponse) =>
-              error ? reject(error) : resolve(acknowledgement),
+            (error: Error | null, acknowledgement: MatchExitResponse) => {
+              if (error) reject(error);
+              else resolve(acknowledgement);
+            },
           ),
       );
       if (!response.ok) {

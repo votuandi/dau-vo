@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { TournamentOfficialRole } from '@martial-arts-scoring/shared-types';
+import { MatchStatus, TournamentOfficialRole } from '@martial-arts-scoring/shared-types';
 import { MatchAccessPage } from './match-access-page';
 import { ApiClientError } from '@/services/api/client';
 import type { OfficialSession } from '@/services/api/official-access';
@@ -271,7 +271,7 @@ describe('MatchAccessPage official login', () => {
       ...refereeSession,
       activeAssignment: {
         id: 'assignment-race',
-        match: { id: 'match-race', publicId: 'M-RACE', status: 'WAITING' },
+        match: { id: 'match-race', publicId: 'M-RACE', status: MatchStatus.WAITING },
         refereePosition: 1,
         role: TournamentOfficialRole.REFEREE,
       },
@@ -289,7 +289,9 @@ describe('MatchAccessPage official login', () => {
 
     expect(await screen.findByText('Referee console ready')).toBeVisible();
     expect(
-      screen.getByText('Bạn đã được phân công vào trận trước khi yêu cầu đăng xuất được xử lý. Phiên vẫn được giữ.'),
+      screen.getByText(
+        'Bạn đã được phân công vào trận trước khi yêu cầu đăng xuất được xử lý. Phiên vẫn được giữ.',
+      ),
     ).toHaveAttribute('role', 'alert');
     expect(screen.queryByRole('button', { name: 'Đăng xuất' })).not.toBeInTheDocument();
   });
