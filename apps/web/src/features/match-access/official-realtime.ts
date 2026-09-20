@@ -12,9 +12,14 @@ import {
   type OfficialAssignment,
   type OfficialSession,
 } from '@/services/api/official-access';
-import { getSocketClient } from '@/services/socket/client';
+import { disconnectSocket, getSocketClient } from '@/services/socket/client';
 
 export const officialSessionQueryKey = ['official-access', 'session'] as const;
+
+function connectionIdentity(session: OfficialSession | undefined): string | null {
+  if (!session) return null;
+  return `${session.sessionId}:${session.official.id}:${session.tournament.id}`;
+}
 
 function assignmentFromSnapshot(
   assignment: OfficialAssignmentSnapshot['assignment'],
@@ -40,6 +45,9 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
   const assignmentRef = useRef(assignment);
   const eventEpoch = useRef(0);
   const assignmentEventEpoch = useRef(0);
+  const identityRef = useRef(connectionIdentity(session));
+  const assignmentIdentityRef = useRef(connectionIdentity(session));
+  const connectedIdentityRef = useRef<string | null>(null);
   const revokedRef = useRef(onRevoked);
   revokedRef.current = onRevoked;
   assignmentRef.current = assignment;
@@ -48,13 +56,35 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
   const officialId = session?.official.id;
   const tournamentId = session?.tournament.id;
   const sessionAssignment = session?.activeAssignment;
+  const identity = connectionIdentity(session);
+
+  // State updates run after render. Do this inexpensive synchronous reset as
+  // well so a newly rendered session can never briefly render the prior
+  // official's assignment or reuse its ordering guards.
+  if (identityRef.current !== identity) {
+    identityRef.current = identity;
+    assignmentRef.current = null;
+    assignmentIdentityRef.current = null;
+    connectedIdentityRef.current = null;
+    eventEpoch.current = 0;
+    assignmentEventEpoch.current = 0;
+  }
 
   useEffect(() => {
+    eventEpoch.current = 0;
+    assignmentEventEpoch.current = 0;
+  }, [identity]);
+
+  useEffect(() => {
+    assignmentIdentityRef.current = identity;
     setAssignment(sessionAssignment ?? null);
-  }, [sessionAssignment, sessionId]);
+  }, [identity, sessionAssignment]);
 
   useEffect(() => {
-    if (!sessionId || !officialId || !tournamentId) return;
+    if (!identity || !sessionId || !officialId || !tournamentId) {
+      setConnected(false);
+      return;
+    }
     const socket = getSocketClient();
     let disposed = false;
     const diagnostic = (event: string, details?: Record<string, unknown>) => {
@@ -65,6 +95,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
       eventEpoch.current += 1;
       setAssignment((previous) => {
         assignmentRef.current = next;
+        assignmentIdentityRef.current = identity;
         if (previous?.match.id !== next?.match.id && previous)
           queryClient.removeQueries({ queryKey: ['official-match', previous.match.id] });
         queryClient.setQueryData(
@@ -103,12 +134,14 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
       }
     };
     const onConnect = () => {
+      connectedIdentityRef.current = identity;
       setConnected(true);
       diagnostic('connected', { sessionId });
       socket.emit(RealtimeEvent.OFFICIAL_ASSIGNMENT_SNAPSHOT_REQUEST);
       void reconcile('connect');
     };
     const onDisconnect = () => {
+      connectedIdentityRef.current = null;
       setConnected(false);
       diagnostic('disconnected', { sessionId });
     };
@@ -151,7 +184,9 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
     };
     const onRevocation = () => {
       setConnected(false);
+      connectedIdentityRef.current = null;
       setAssignment(null);
+      assignmentIdentityRef.current = null;
       queryClient.setQueryData(officialSessionQueryKey, null);
       diagnostic('revoked', { sessionId });
       revokedRef.current();
@@ -182,8 +217,15 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
       socket.off(RealtimeEvent.OFFICIAL_ASSIGNMENT_UPDATED, onUpdated);
       socket.off(RealtimeEvent.MATCH_ASSIGNMENT_RELEASED, onReleased);
       socket.off(RealtimeEvent.SESSION_REVOKED, onRevocation);
+      // This hook owns the authenticated lifecycle, not an individual screen.
+      // An assignment rerender leaves `identity` unchanged, while logout,
+      // takeover, or another official's login retires the old handshake.
+      disconnectSocket();
     };
-  }, [officialId, queryClient, sessionId, tournamentId]);
+  }, [identity, officialId, queryClient, sessionId, tournamentId]);
 
-  return { assignment, connected };
+  return {
+    assignment: assignmentIdentityRef.current === identity ? assignment : null,
+    connected: connectedIdentityRef.current === identity && connected,
+  };
 }

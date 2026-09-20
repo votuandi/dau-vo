@@ -64,6 +64,9 @@ vi.mock('@/services/api/official-access', () => ({
 }));
 
 vi.mock('@/services/socket/client', () => ({
+  disconnectSocket: vi.fn(() => {
+    socketHarness.socket.disconnect();
+  }),
   getSocketClient: vi.fn(() => socketHarness.socket),
 }));
 
@@ -103,6 +106,12 @@ const inspectorSession: OfficialSession = {
     role: TournamentOfficialRole.INSPECTOR,
   },
   sessionId: 'official-session-inspector',
+};
+
+const secondRefereeSession: OfficialSession = {
+  ...refereeSession,
+  official: { id: 'official-referee-b', name: 'Lê Văn B', role: TournamentOfficialRole.REFEREE },
+  sessionId: 'official-session-referee-b',
 };
 
 function renderPage(expectedRole = TournamentOfficialRole.REFEREE) {
@@ -328,6 +337,7 @@ describe('MatchAccessPage official login', () => {
       releasedOfficialIds: [refereeSession.official.id],
     });
     expect(await screen.findByText('Đang chờ phân công')).toBeVisible();
+    expect(socketHarness.socket.disconnect).not.toHaveBeenCalled();
   });
 
   it('returns to login after session revocation', async () => {
@@ -336,6 +346,50 @@ describe('MatchAccessPage official login', () => {
     await screen.findByText('Đang chờ phân công');
     socketHarness.trigger('session:revoked', { code: 'SESSION_REVOKED', message: 'revoked' });
     expect(await screen.findByRole('heading', { name: 'Phiên đã bị thu hồi' })).toBeVisible();
+  });
+
+  it("retires A's socket lifecycle before connecting B and ignores A's late snapshot", async () => {
+    const user = userEvent.setup();
+    officialAccessApiMock.session.mockResolvedValue({ session: refereeSession });
+    officialAccessApiMock.logout.mockResolvedValue(undefined);
+    officialAccessApiMock.login.mockResolvedValue({ session: secondRefereeSession });
+    renderPage();
+    await screen.findByText('Đang chờ phân công');
+
+    await user.click(screen.getByRole('button', { name: 'Đăng xuất' }));
+    expect(await screen.findByRole('heading', { name: 'Đăng nhập' })).toBeVisible();
+    await fillLoginForm(user);
+    await user.click(screen.getByRole('button', { name: 'Đăng nhập' }));
+    expect(await screen.findByText('Lê Văn B')).toBeVisible();
+
+    expect(socketHarness.socket.disconnect).toHaveBeenCalledOnce();
+    expect(socketHarness.socket.connect).toHaveBeenCalledTimes(2);
+
+    socketHarness.trigger('official:assignment-snapshot', {
+      assignment: {
+        id: 'assignment-a',
+        match: { id: 'match-a', publicId: 'M-A', status: 'WAITING' },
+        refereePosition: 1,
+        role: 'REFEREE',
+      },
+      official: refereeSession.official,
+      sessionId: refereeSession.sessionId,
+      status: 'IN_MATCH',
+      tournament: refereeSession.tournament,
+    });
+    expect(screen.queryByText('Referee console ready')).not.toBeInTheDocument();
+
+    socketHarness.trigger('official:assignment-updated', {
+      assignment: {
+        id: 'assignment-b',
+        match: { id: 'match-b', publicId: 'M-B', status: 'WAITING' },
+        refereePosition: 1,
+        role: 'REFEREE',
+      },
+      officialId: secondRefereeSession.official.id,
+      tournamentId: secondRefereeSession.tournament.id,
+    });
+    expect(await screen.findByText('Referee console ready')).toBeVisible();
   });
 
   it('takes a match once with the selected available referees and enters the authoritative console', async () => {
