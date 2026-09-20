@@ -63,6 +63,8 @@ interface UseMatchRealtimeOptions {
   readonly keepSocketConnected?: boolean;
   readonly matchPublicId: string;
   readonly onAuthenticationRequired: () => void;
+  /** The server acknowledgement confirms this official's assignment was released. */
+  readonly onMatchExitAcknowledged?: () => void;
   readonly onSessionRevoked: (payload: SessionRevokedPayload) => void;
   readonly refereeIdentity: RealtimeRefereeIdentity;
 }
@@ -279,6 +281,7 @@ export function useMatchRealtime({
   keepSocketConnected = false,
   matchPublicId,
   onAuthenticationRequired,
+  onMatchExitAcknowledged,
   onSessionRevoked,
   refereeIdentity,
 }: UseMatchRealtimeOptions): MatchRealtimeState {
@@ -694,6 +697,7 @@ export function useMatchRealtime({
         socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
         return false;
       }
+      onMatchExitAcknowledged?.();
       toast({
         title:
           mode === MatchExitMode.CANCEL_RESULTS
@@ -701,7 +705,6 @@ export function useMatchRealtime({
             : 'Đã lưu trạng thái tạm dừng và thoát trận.',
         variant: 'success',
       });
-      socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
       return true;
     } catch {
       setResultCancellationErrorMessage(
@@ -712,7 +715,7 @@ export function useMatchRealtime({
       resultCancellationInFlightRef.current = false;
       setCancellingResults(false);
     }
-  }, []);
+  }, [onMatchExitAcknowledged]);
 
   const submitVote = useCallback(async (athlete: AthleteColor) => {
     const socket = getSocketClient();

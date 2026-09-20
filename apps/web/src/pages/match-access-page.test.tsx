@@ -18,6 +18,8 @@ const officialAccessApiMock = vi.hoisted(() => ({
   takeover: vi.fn(),
 }));
 
+const matchRealtimeMock = vi.hoisted(() => vi.fn<(options: unknown) => object>(() => ({})));
+
 const socketHarness = vi.hoisted(() => {
   const handlers = new Map<string, Set<(payload?: unknown) => void>>();
   const socket = {
@@ -71,7 +73,7 @@ vi.mock('@/services/socket/client', () => ({
 }));
 
 vi.mock('@/features/match-access/match-realtime', () => ({
-  useMatchRealtime: vi.fn(() => ({})),
+  useMatchRealtime: matchRealtimeMock,
 }));
 
 vi.mock('@/features/match-access/referee-console', () => ({
@@ -123,7 +125,9 @@ function renderPage(expectedRole = TournamentOfficialRole.REFEREE) {
     },
   });
 
-  return render(
+  return {
+    queryClient,
+    ...render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter
         initialEntries={[
@@ -134,7 +138,8 @@ function renderPage(expectedRole = TournamentOfficialRole.REFEREE) {
         <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>,
-  );
+    ),
+  };
 }
 
 async function fillLoginForm(user: ReturnType<typeof userEvent.setup>): Promise<void> {
@@ -160,6 +165,7 @@ describe('MatchAccessPage official login', () => {
     officialAccessApiMock.state.mockReset();
     officialAccessApiMock.take.mockReset();
     officialAccessApiMock.takeover.mockReset();
+    matchRealtimeMock.mockClear();
     socketHarness.reset();
     officialAccessApiMock.matches.mockResolvedValue({ matches: [] });
     officialAccessApiMock.session.mockRejectedValue(new ApiClientError(401, {}));
@@ -370,6 +376,40 @@ describe('MatchAccessPage official login', () => {
       releasedOfficialIds: [refereeSession.official.id],
     });
     expect(await screen.findByText('Đang chờ phân công')).toBeVisible();
+    expect(socketHarness.socket.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('returns an exiting inspector to the match list from the authoritative exit acknowledgement', async () => {
+    const assignedInspectorSession: OfficialSession = {
+      ...inspectorSession,
+      activeAssignment: {
+        id: 'assignment-inspector-exit',
+        match: { id: 'match-exit', publicId: 'M-EXIT', status: MatchStatus.BREAK },
+        refereePosition: null,
+        role: TournamentOfficialRole.INSPECTOR,
+      },
+      status: 'IN_MATCH',
+    };
+    officialAccessApiMock.session.mockResolvedValue({ session: assignedInspectorSession });
+    officialAccessApiMock.matches.mockResolvedValue({ matches: [] });
+    const { queryClient } = renderPage(TournamentOfficialRole.INSPECTOR);
+
+    expect(await screen.findByText('Inspector console ready')).toBeVisible();
+    const options = matchRealtimeMock.mock.calls.at(-1)?.[0];
+    if (
+      typeof options !== 'object' ||
+      options === null ||
+      !('onMatchExitAcknowledged' in options) ||
+      typeof options.onMatchExitAcknowledged !== 'function'
+    )
+      throw new Error('The assigned inspector did not receive the exit acknowledgement callback.');
+    (options as { onMatchExitAcknowledged: () => void }).onMatchExitAcknowledged();
+
+    expect(await screen.findByRole('heading', { name: 'Khu vực giám định' })).toBeVisible();
+    expect(screen.queryByText('Inspector console ready')).not.toBeInTheDocument();
+    expect(queryClient.getQueryData(['official-access', 'session'])).toMatchObject({
+      session: { activeAssignment: null, status: 'READY' },
+    });
     expect(socketHarness.socket.disconnect).not.toHaveBeenCalled();
   });
 

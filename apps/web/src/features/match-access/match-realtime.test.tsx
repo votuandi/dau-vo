@@ -1,16 +1,20 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AthleteColor, RealtimeEvent, RefereeSlot } from '@martial-arts-scoring/shared-types';
+import {
+  AthleteColor,
+  MatchExitMode,
+  RealtimeEvent,
+  RefereeSlot,
+  type MatchExitResponse,
+} from '@martial-arts-scoring/shared-types';
 import { getParticipantsNotReadyMessage, useMatchRealtime } from './match-realtime';
 import { acceptedRedVote, createMatchSnapshot, refereeSession } from '@/test/factories';
 
 const socketHarness = vi.hoisted(() => {
   type EventHandler = (payload?: unknown) => void;
-
   const eventHandlers = new Map<string, Set<EventHandler>>();
   const managerEventHandlers = new Map<string, Set<EventHandler>>();
   const emit = vi.fn();
-
   function register(
     handlers: Map<string, Set<EventHandler>>,
     event: string,
@@ -20,7 +24,6 @@ const socketHarness = vi.hoisted(() => {
     registeredHandlers.add(handler);
     handlers.set(event, registeredHandlers);
   }
-
   function unregister(
     handlers: Map<string, Set<EventHandler>>,
     event: string,
@@ -28,17 +31,13 @@ const socketHarness = vi.hoisted(() => {
   ): void {
     handlers.get(event)?.delete(handler);
   }
-
   function dispatch(
     handlers: Map<string, Set<EventHandler>>,
     event: string,
     payload?: unknown,
   ): void {
-    for (const handler of handlers.get(event) ?? []) {
-      handler(payload);
-    }
+    for (const handler of handlers.get(event) ?? []) handler(payload);
   }
-
   const socket = {
     active: true,
     connected: true,
@@ -61,14 +60,12 @@ const socketHarness = vi.hoisted(() => {
     }),
     timeout: vi.fn(() => ({ emit })),
   };
-
   socket.connect.mockImplementation(() => {
     socket.connected = true;
   });
   socket.disconnect.mockImplementation(() => {
     socket.connected = false;
   });
-
   return {
     reset: () => {
       eventHandlers.clear();
@@ -111,7 +108,6 @@ describe('useMatchRealtime', () => {
   beforeEach(() => {
     socketHarness.reset();
   });
-
   it('formats dynamic start readiness and supports older errors without details', () => {
     expect(
       getParticipantsNotReadyMessage({
@@ -128,7 +124,6 @@ describe('useMatchRealtime', () => {
       'Chưa thể bắt đầu hiệp đấu. Chưa đáp ứng đủ trọng tài hoặc bảng điểm cần thiết.',
     );
   });
-
   function renderRealtime(onSessionRevoked = vi.fn()) {
     return renderHook(() =>
       useMatchRealtime({
@@ -139,45 +134,32 @@ describe('useMatchRealtime', () => {
       }),
     );
   }
-
   it('hydrates an accepted referee vote from the direct recovery snapshot and prevents a duplicate submit', async () => {
     const { result } = renderRealtime();
-    const snapshot = createMatchSnapshot({
-      viewer: {
-        acceptedVote: acceptedRedVote,
-      },
-    });
-
+    const snapshot = createMatchSnapshot({ viewer: { acceptedVote: acceptedRedVote } });
     act(() => {
       socketHarness.triggerSocketEvent(RealtimeEvent.MATCH_STATE, snapshot);
     });
-
     await waitFor(() => {
       expect(result.current.lastAcceptedVote).toEqual(acceptedRedVote);
     });
-
     await act(async () => {
       await result.current.submitVote(AthleteColor.BLUE);
     });
-
     expect(socketHarness.socket.emit).not.toHaveBeenCalledWith(
       RealtimeEvent.VOTE_SUBMIT,
       { athlete: AthleteColor.BLUE },
       expect.any(Function),
     );
   });
-
   it('clears the local vote lock when the server resolves the scoring window', async () => {
     const { result } = renderRealtime();
-
     act(() => {
       socketHarness.triggerSocketEvent(RealtimeEvent.VOTE_ACCEPTED, acceptedRedVote);
     });
-
     await waitFor(() => {
       expect(result.current.lastAcceptedVote).toEqual(acceptedRedVote);
     });
-
     act(() => {
       socketHarness.triggerSocketEvent(RealtimeEvent.SCORING_WINDOW_RESOLVED, {
         matchPublicId: refereeSession.matchPublicId,
@@ -193,34 +175,23 @@ describe('useMatchRealtime', () => {
         },
       });
     });
-
     await waitFor(() => {
       expect(result.current.lastAcceptedVote).toBeNull();
     });
   });
-
   it('accepts only the assigned official referee acknowledgement', async () => {
     const { result } = renderHook(() =>
       useMatchRealtime({
         matchPublicId: refereeSession.matchPublicId,
         onAuthenticationRequired: vi.fn(),
         onSessionRevoked: vi.fn(),
-        refereeIdentity: {
-          assignmentId: 'assignment-4',
-          kind: 'official',
-          refereePosition: 4,
-        },
+        refereeIdentity: { assignmentId: 'assignment-4', kind: 'official', refereePosition: 4 },
       }),
     );
     const accepted = {
       ...acceptedRedVote,
-      identity: {
-        assignmentId: 'assignment-4',
-        kind: 'official' as const,
-        refereePosition: 4,
-      },
+      identity: { assignmentId: 'assignment-4', kind: 'official' as const, refereePosition: 4 },
     };
-
     act(() => {
       socketHarness.triggerSocketEvent(RealtimeEvent.VOTE_ACCEPTED, {
         ...accepted,
@@ -228,7 +199,6 @@ describe('useMatchRealtime', () => {
       });
     });
     expect(result.current.lastAcceptedVote).toBeNull();
-
     act(() => {
       socketHarness.triggerSocketEvent(RealtimeEvent.VOTE_ACCEPTED, accepted);
     });
@@ -236,17 +206,14 @@ describe('useMatchRealtime', () => {
       expect(result.current.lastAcceptedVote).toEqual(accepted);
     });
   });
-
   it('updates the connection state across disconnect and reconnect events', async () => {
     const { result } = renderRealtime();
-
     act(() => {
       socketHarness.triggerSocketEvent('disconnect');
     });
     await waitFor(() => {
       expect(result.current.connectionStatus).toBe('reconnecting');
     });
-
     act(() => {
       socketHarness.triggerManagerEvent('reconnect_attempt');
       socketHarness.triggerSocketEvent('connect');
@@ -256,19 +223,13 @@ describe('useMatchRealtime', () => {
     });
     expect(socketHarness.socket.emit).toHaveBeenCalledWith(RealtimeEvent.MATCH_STATE_REQUEST);
   });
-
   it('disconnects and calls the revocation callback immediately when the server revokes the session', async () => {
     const onSessionRevoked = vi.fn();
     const { result } = renderRealtime(onSessionRevoked);
-    const revocation = {
-      code: 'SESSION_REVOKED' as const,
-      message: 'Session was taken over',
-    };
-
+    const revocation = { code: 'SESSION_REVOKED' as const, message: 'Session was taken over' };
     act(() => {
       socketHarness.triggerSocketEvent(RealtimeEvent.SESSION_REVOKED, revocation);
     });
-
     await waitFor(() => {
       expect(result.current.connectionStatus).toBe('revoked');
     });
@@ -276,5 +237,44 @@ describe('useMatchRealtime', () => {
     expect(onSessionRevoked).toHaveBeenCalledExactlyOnceWith(revocation);
     expect(result.current.snapshot).toBeNull();
     expect(result.current.presence).toEqual([]);
+  });
+  it('releases the requesting official from a successful exit acknowledgement without requesting match state', async () => {
+    const onMatchExitAcknowledged = vi.fn();
+    socketHarness.socket.emit.mockImplementation(
+      (
+        event: string,
+        _payload?: unknown,
+        acknowledge?: (error: Error | null, response: MatchExitResponse) => void,
+      ) => {
+        if (event === RealtimeEvent.MATCH_EXIT && acknowledge)
+          acknowledge(null, {
+            exit: {
+              matchPublicId: refereeSession.matchPublicId,
+              mode: MatchExitMode.CANCEL_RESULTS,
+            },
+            ok: true,
+          });
+      },
+    );
+    const { result } = renderHook(() =>
+      useMatchRealtime({
+        matchPublicId: refereeSession.matchPublicId,
+        onAuthenticationRequired: vi.fn(),
+        onMatchExitAcknowledged,
+        onSessionRevoked: vi.fn(),
+        refereeIdentity: null,
+      }),
+    );
+    socketHarness.socket.emit.mockClear();
+    await act(async () => {
+      await expect(result.current.exitMatch(MatchExitMode.CANCEL_RESULTS)).resolves.toBe(true);
+    });
+    expect(onMatchExitAcknowledged).toHaveBeenCalledOnce();
+    expect(socketHarness.socket.emit).toHaveBeenCalledWith(
+      RealtimeEvent.MATCH_EXIT,
+      { mode: MatchExitMode.CANCEL_RESULTS },
+      expect.any(Function),
+    );
+    expect(socketHarness.socket.emit).not.toHaveBeenCalledWith(RealtimeEvent.MATCH_STATE_REQUEST);
   });
 });

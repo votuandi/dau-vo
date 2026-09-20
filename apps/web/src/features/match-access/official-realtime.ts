@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   RealtimeEvent,
@@ -69,6 +69,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
   const assignmentEventEpoch = useRef(0);
   const identityRef = useRef(connectionIdentity(session));
   const assignmentIdentityRef = useRef(connectionIdentity(session));
+  const releasedAssignmentIds = useRef(new Set<string>());
   const connectedIdentityRef = useRef<string | null>(null);
   const revokedRef = useRef(onRevoked);
   revokedRef.current = onRevoked;
@@ -80,6 +81,46 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
   const sessionAssignment = session?.activeAssignment;
   const identity = connectionIdentity(session);
 
+  const acknowledgeAssignmentRelease = useCallback(
+    (releasedAssignment: Pick<OfficialAssignment, 'id' | 'match'>) => {
+      const current = assignmentRef.current;
+      if (
+        current?.id !== releasedAssignment.id ||
+        current.match.id !== releasedAssignment.match.id
+      )
+        return;
+
+      // The command acknowledgement is authoritative for its requester. Keep
+      // its old assignment retired if a delayed socket snapshot arrives later.
+      releasedAssignmentIds.current.add(releasedAssignment.id);
+      eventEpoch.current += 1;
+      assignmentEventEpoch.current += 1;
+      assignmentRef.current = null;
+      assignmentIdentityRef.current = identity;
+      queryClient.removeQueries({
+        queryKey: ['official-match', releasedAssignment.match.id],
+      });
+      queryClient.setQueryData(
+        officialSessionQueryKey,
+        (currentSession: { session: OfficialSession } | null | undefined) =>
+          currentSession
+            ? {
+                session: {
+                  ...currentSession.session,
+                  activeAssignment: null,
+                  status: 'READY',
+                },
+              }
+            : currentSession,
+      );
+      setAssignment(null);
+      void queryClient.invalidateQueries({
+        queryKey: ['official-matches', session?.tournament.id],
+      });
+    },
+    [identity, queryClient, session?.tournament.id],
+  );
+
   // State updates run after render. Do this inexpensive synchronous reset as
   // well so a newly rendered session can never briefly render the prior
   // official's assignment or reuse its ordering guards.
@@ -88,6 +129,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
     assignmentRef.current = null;
     assignmentIdentityRef.current = null;
     connectedIdentityRef.current = null;
+    releasedAssignmentIds.current.clear();
     eventEpoch.current = 0;
     assignmentEventEpoch.current = 0;
   }
@@ -114,6 +156,10 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
       console.info('[official-realtime]', event, details);
     };
     const apply = (next: OfficialAssignment | null, source: string) => {
+      if (next !== null && releasedAssignmentIds.current.has(next.id)) {
+        diagnostic('assignment-rejected', { source: 'retired', sessionId });
+        return;
+      }
       eventEpoch.current += 1;
       setAssignment((previous) => {
         assignmentRef.current = next;
@@ -251,6 +297,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
 
   return {
     assignment: assignmentIdentityRef.current === identity ? assignment : null,
+    acknowledgeAssignmentRelease,
     connected: connectedIdentityRef.current === identity && connected,
   };
 }

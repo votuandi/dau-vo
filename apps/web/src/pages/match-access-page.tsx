@@ -384,10 +384,12 @@ function InspectorAssignment({
 
 function AssignedConsole({
   assignment,
+  onMatchExitAcknowledged,
   revoked,
   notice,
 }: {
   assignment: OfficialAssignment;
+  onMatchExitAcknowledged: () => void;
   revoked: () => void;
   notice: string | null;
 }) {
@@ -396,6 +398,7 @@ function AssignedConsole({
     matchPublicId: assignment.match.publicId,
     refereeIdentity: realtimeRefereeIdentity(assignment),
     onAuthenticationRequired: revoked,
+    onMatchExitAcknowledged,
     onSessionRevoked: revoked,
   });
   return (
@@ -444,7 +447,7 @@ export function MatchAccessPage({ expectedRole }: Props) {
   const officialRealtime = useOfficialAssignment(identity, () => {
     setRevoked(true);
   });
-  const { assignment, connected } = officialRealtime;
+  const { acknowledgeAssignmentRelease, assignment, connected } = officialRealtime;
   const login = useMutation({
     mutationFn: () =>
       officialAccessApi.login({
@@ -531,6 +534,9 @@ export function MatchAccessPage({ expectedRole }: Props) {
     return (
       <AssignedConsole
         assignment={assignment}
+        onMatchExitAcknowledged={() => {
+          acknowledgeAssignmentRelease(assignment);
+        }}
         revoked={() => {
           setRevoked(true);
           qc.setQueryData(sessionKey, null);
