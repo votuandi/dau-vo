@@ -17,6 +17,9 @@ import { MatchOfficialAssignmentsService } from './match-official-assignments.se
 // Nest reads this class from decorator metadata at runtime.
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { ConfirmMatchOfficialAssignmentDto } from './dto/confirm-match-official-assignment.dto';
+// Nest reads this class from decorator metadata at runtime.
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+import { TakeMatchDto } from './dto/take-match.dto';
 
 @Controller('official/matches')
 @UseGuards(OfficialSessionGuard)
@@ -34,6 +37,19 @@ export class MatchOfficialAssignmentsController {
   ) {
     return this.assignments.state(matchId, request.officialSession);
   }
+  /** The atomic replacement for the deprecated claim/referees sequence. */
+  @Post(':matchId/take') take(
+    @Param('matchId', new ParseUUIDPipe()) matchId: string,
+    @Body() body: TakeMatchDto,
+    @Req() request: AuthenticatedOfficialRequest,
+  ) {
+    return this.assignments.take(
+      matchId,
+      body.refereeIds,
+      request.officialSession,
+    );
+  }
+  /** @deprecated Use POST :matchId/take. It cannot create a partial assignment. */
   @Post(':matchId/claim') claim(
     @Param('matchId', new ParseUUIDPipe()) matchId: string,
     @Req() request: AuthenticatedOfficialRequest,

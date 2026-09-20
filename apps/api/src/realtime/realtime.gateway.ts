@@ -167,8 +167,8 @@ export class RealtimeGateway
   ) {}
 
   afterInit(server: Server): void {
-    this.officialRouting.bind(this.server);
-    this.sessionRegistry.bind(this.server);
+    this.officialRouting.bind(server);
+    this.sessionRegistry.bind(server);
     server.use((socket, next) => {
       void this.authenticate(socket as RealtimeSocket).then(
         () => next(),
