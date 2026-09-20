@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import {
   AthleteColor,
   MatchAccessRole,
+  MatchLifecycle,
   MatchStatus,
   PrismaClient,
 } from '@prisma/client';
@@ -466,6 +467,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
         data: {
           breakDurationMs: 60_000,
           currentRound: 1,
+          lifecycle: MatchLifecycle.IN_PROGRESS,
           publicId: randomBytes(6).toString('hex').slice(0, 8).toUpperCase(),
           roundDurationMs: 500,
           rounds: {
@@ -488,6 +490,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
         data: {
           breakDurationMs: 60_000,
           currentRound: 2,
+          lifecycle: MatchLifecycle.IN_PROGRESS,
           publicId: randomBytes(6).toString('hex').slice(0, 8).toUpperCase(),
           roundDurationMs: 500,
           rounds: {
@@ -651,6 +654,11 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     });
     expect(roundOneStarted.round.roundNumber).toBe(1);
     expect(roundOneState.activeRound?.roundNumber).toBe(1);
+    expect(roundOneState.match).toMatchObject({
+      lifecycle: MatchLifecycle.IN_PROGRESS,
+      phase: MatchStatus.ROUND_1_RUNNING,
+      status: MatchStatus.ROUND_1_RUNNING,
+    });
 
     const prematureRoundTwo = await startRound(socket);
     expect(prematureRoundTwo).toMatchObject({
@@ -954,6 +962,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     await prisma.match.update({
       data: {
         currentRound: 1,
+        lifecycle: MatchLifecycle.IN_PROGRESS,
         startedAt: new Date(),
         status: MatchStatus.BREAK,
       },
@@ -1038,6 +1047,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       data: {
         currentRound: 2,
         finishedAt: now,
+        lifecycle: MatchLifecycle.COMPLETED,
         startedAt: new Date(now.getTime() - 5_000),
         status: MatchStatus.FINISHED,
       },
@@ -1183,7 +1193,12 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       throw new Error('Missing athletes');
     const now = new Date();
     await prisma.match.update({
-      data: { currentRound: 1, startedAt: now, status: MatchStatus.BREAK },
+      data: {
+        currentRound: 1,
+        lifecycle: MatchLifecycle.IN_PROGRESS,
+        startedAt: now,
+        status: MatchStatus.BREAK,
+      },
       where: { id: match.id },
     });
     await prisma.round.create({
@@ -1282,7 +1297,12 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     ]);
     const now = new Date();
     await prisma.match.update({
-      data: { currentRound: 1, startedAt: now, status: MatchStatus.BREAK },
+      data: {
+        currentRound: 1,
+        lifecycle: MatchLifecycle.IN_PROGRESS,
+        startedAt: now,
+        status: MatchStatus.BREAK,
+      },
       where: { id: match.id },
     });
     await prisma.round.create({
@@ -1346,6 +1366,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       data: {
         currentRound: 2,
         finishedAt: now,
+        lifecycle: MatchLifecycle.COMPLETED,
         startedAt: now,
         status: MatchStatus.FINISHED,
       },

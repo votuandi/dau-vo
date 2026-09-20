@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   AthleteColor as SharedAthleteColor,
   MatchAccessRole as SharedMatchAccessRole,
+  MatchLifecycle as SharedMatchLifecycle,
   MatchStatus as SharedMatchStatus,
   type MatchPresenceEntry,
   type MatchOfficialPresenceEntry,
@@ -18,6 +19,7 @@ import {
 import {
   AthleteColor,
   MatchAccessRole,
+  MatchLifecycle,
   MatchStatus,
   RefereeSlot,
 } from '@prisma/client';
@@ -62,6 +64,7 @@ export class RealtimeMatchStateService {
           },
         },
         currentRound: true,
+        lifecycle: true,
         finishedAt: true,
         id: true,
         publicId: true,
@@ -150,6 +153,8 @@ export class RealtimeMatchStateService {
         finishedAt: match.finishedAt?.toISOString() ?? null,
         id: match.id,
         publicId: match.publicId,
+        lifecycle: this.sharedMatchLifecycle(match.lifecycle),
+        phase: this.sharedMatchStatus(match.status),
         startedAt: match.startedAt?.toISOString() ?? null,
         status: this.sharedMatchStatus(match.status),
       },
@@ -193,6 +198,8 @@ export class RealtimeMatchStateService {
         currentRound: snapshot.match.currentRound,
         finishedAt: snapshot.match.finishedAt,
         publicId: snapshot.match.publicId,
+        lifecycle: snapshot.match.lifecycle,
+        phase: snapshot.match.phase,
         status: snapshot.match.status,
       },
     };
@@ -631,11 +638,32 @@ export class RealtimeMatchStateService {
         return SharedMatchStatus.ROUND_2_RUNNING;
       case MatchStatus.ROUND_2_PAUSED:
         return SharedMatchStatus.ROUND_2_PAUSED;
+      case MatchStatus.AWAITING_RESULT_SAVE:
+        return SharedMatchStatus.AWAITING_RESULT_SAVE;
       case MatchStatus.FINISHED:
         return SharedMatchStatus.FINISHED;
       default: {
         const exhaustiveStatus: never = status;
         throw new Error(`Unsupported match status: ${exhaustiveStatus}`);
+      }
+    }
+  }
+
+  private sharedMatchLifecycle(
+    lifecycle: MatchLifecycle,
+  ): SharedMatchLifecycle {
+    switch (lifecycle) {
+      case MatchLifecycle.NOT_STARTED:
+        return SharedMatchLifecycle.NOT_STARTED;
+      case MatchLifecycle.IN_PROGRESS:
+        return SharedMatchLifecycle.IN_PROGRESS;
+      case MatchLifecycle.SUSPENDED:
+        return SharedMatchLifecycle.SUSPENDED;
+      case MatchLifecycle.COMPLETED:
+        return SharedMatchLifecycle.COMPLETED;
+      default: {
+        const exhaustiveLifecycle: never = lifecycle;
+        throw new Error(`Unsupported match lifecycle: ${exhaustiveLifecycle}`);
       }
     }
   }

@@ -15,6 +15,8 @@ function phaseLabel(status: MatchStatus | undefined): string {
       return 'HIỆP 2 · PAUSED';
     case MatchStatus.BREAK:
       return 'GIẢI LAO';
+    case MatchStatus.AWAITING_RESULT_SAVE:
+      return 'CHỜ LƯU KẾT QUẢ';
     case MatchStatus.FINISHED:
       return 'TRẬN ĐẤU ĐÃ KẾT THÚC';
     case MatchStatus.WAITING:
@@ -156,11 +158,11 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
   const { connectionStatus, snapshot } = useScoreboardRealtime(matchPublicId);
   const activeRound = snapshot?.activeRound;
   const running =
-    snapshot?.match.status === MatchStatus.ROUND_1_RUNNING ||
-    snapshot?.match.status === MatchStatus.ROUND_2_RUNNING;
+    snapshot?.match.phase === MatchStatus.ROUND_1_RUNNING ||
+    snapshot?.match.phase === MatchStatus.ROUND_2_RUNNING;
   const paused =
-    snapshot?.match.status === MatchStatus.ROUND_1_PAUSED ||
-    snapshot?.match.status === MatchStatus.ROUND_2_PAUSED;
+    snapshot?.match.phase === MatchStatus.ROUND_1_PAUSED ||
+    snapshot?.match.phase === MatchStatus.ROUND_2_PAUSED;
   const remaining = useDisplayTimer(
     running ? activeRound?.endsAt : undefined,
     snapshot?.generatedAt,
@@ -186,7 +188,7 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
       </header>
       <section className="my-4 rounded-[2rem] border border-white/15 bg-white/10 px-6 py-5 text-center shadow-2xl shadow-blue-950/20 backdrop-blur-xl sm:my-7">
         <p className="text-2xl font-black tracking-[0.2em] text-sky-100 sm:text-4xl">
-          {phaseLabel(snapshot?.match.status)}
+          {phaseLabel(snapshot?.match.phase)}
         </p>
         <p className="mt-2 font-mono text-7xl font-black tabular-nums sm:text-9xl">
           {running && remaining !== null

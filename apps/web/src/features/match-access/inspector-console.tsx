@@ -50,6 +50,8 @@ function displayPhase(status: MatchStatus | undefined): string {
       return 'HIỆP 2';
     case MatchStatus.ROUND_2_PAUSED:
       return 'HIỆP 2 · TẠM DỪNG';
+    case MatchStatus.AWAITING_RESULT_SAVE:
+      return 'CHỜ LƯU KẾT QUẢ';
     case MatchStatus.FINISHED:
       return 'TRẬN ĐẤU ĐÃ KẾT THÚC';
     default:
@@ -190,7 +192,7 @@ export function InspectorConsole({
   session,
 }: InspectorConsoleProps) {
   const snapshot = realtime.snapshot;
-  const status = snapshot?.match.status;
+  const status = snapshot?.match.phase;
   const roundIsRunning =
     status === MatchStatus.ROUND_1_RUNNING || status === MatchStatus.ROUND_2_RUNNING;
   const roundIsPaused =

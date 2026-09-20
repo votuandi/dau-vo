@@ -18,6 +18,7 @@ import {
 import {
   AuditEventType,
   MatchAccessRole,
+  MatchLifecycle,
   MatchResultOperationStatus,
   MatchResultOperationType,
   MatchStatus,
@@ -251,6 +252,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
         await transaction.match.update({
           data: {
             currentRound: roundNumber,
+            lifecycle: MatchLifecycle.IN_PROGRESS,
             startedAt: roundNumber === 1 ? clock.serverNow : match.startedAt,
             status: nextStatus,
           },
@@ -632,6 +634,10 @@ export class MatchLifecycleService implements OnModuleDestroy {
           data: {
             currentRound: resultingCurrentRound,
             finishedAt: null,
+            lifecycle:
+              nextStatus === MatchStatus.WAITING
+                ? MatchLifecycle.NOT_STARTED
+                : MatchLifecycle.IN_PROGRESS,
             startedAt:
               nextStatus === MatchStatus.WAITING ? null : match.startedAt,
             status: nextStatus,
@@ -768,6 +774,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
           data: {
             currentRound: operation.previousCurrentRound,
             finishedAt: operation.previousFinishedAt,
+            lifecycle: this.lifecycleForPhase(operation.previousStatus),
             startedAt: operation.previousStartedAt,
             status: operation.previousStatus,
           },
@@ -977,6 +984,10 @@ export class MatchLifecycleService implements OnModuleDestroy {
         await transaction.match.update({
           data: {
             finishedAt: round.roundNumber === 2 ? endedAt : undefined,
+            lifecycle:
+              round.roundNumber === 2
+                ? MatchLifecycle.COMPLETED
+                : MatchLifecycle.IN_PROGRESS,
             status: nextStatus,
           },
           select: { id: true },
@@ -1314,11 +1325,33 @@ export class MatchLifecycleService implements OnModuleDestroy {
         return SharedMatchStatus.ROUND_2_RUNNING;
       case MatchStatus.ROUND_2_PAUSED:
         return SharedMatchStatus.ROUND_2_PAUSED;
+      case MatchStatus.AWAITING_RESULT_SAVE:
+        return SharedMatchStatus.AWAITING_RESULT_SAVE;
       case MatchStatus.FINISHED:
         return SharedMatchStatus.FINISHED;
       default: {
         const exhaustiveStatus: never = status;
         throw new Error(`Unsupported match status: ${exhaustiveStatus}`);
+      }
+    }
+  }
+
+  private lifecycleForPhase(phase: MatchStatus): MatchLifecycle {
+    switch (phase) {
+      case MatchStatus.WAITING:
+        return MatchLifecycle.NOT_STARTED;
+      case MatchStatus.ROUND_1_RUNNING:
+      case MatchStatus.ROUND_1_PAUSED:
+      case MatchStatus.BREAK:
+      case MatchStatus.ROUND_2_RUNNING:
+      case MatchStatus.ROUND_2_PAUSED:
+      case MatchStatus.AWAITING_RESULT_SAVE:
+        return MatchLifecycle.IN_PROGRESS;
+      case MatchStatus.FINISHED:
+        return MatchLifecycle.COMPLETED;
+      default: {
+        const exhaustivePhase: never = phase;
+        throw new Error(`Unsupported match phase: ${exhaustivePhase}`);
       }
     }
   }

@@ -36,9 +36,19 @@ enum MatchStatus {
   BREAK
   ROUND_2_RUNNING
   ROUND_2_PAUSED
+  AWAITING_RESULT_SAVE
   FINISHED
 
   @@map("match_status")
+}
+
+enum MatchLifecycle {
+  NOT_STARTED
+  IN_PROGRESS
+  SUSPENDED
+  COMPLETED
+
+  @@map("match_lifecycle")
 }
 
 enum MatchRole {
@@ -448,6 +458,8 @@ model Match {
   bracketFixtureId     String?                @unique(map: "matches_bracket_fixture_id_key") @map("bracket_fixture_id") @db.Uuid
   requiredRefereeCount Int                    @default(3) @map("required_referee_count") @db.SmallInt
   status               MatchStatus            @default(WAITING)
+  lifecycle            MatchLifecycle         @default(NOT_STARTED)
+  suspendedAt          DateTime?               @map("suspended_at") @db.Timestamptz(3)
   currentRound         Int?                   @map("current_round") @db.SmallInt
   roundDurationMs      Int                    @map("round_duration_ms")
   breakDurationMs      Int                    @map("break_duration_ms")
@@ -475,6 +487,7 @@ model Match {
   @@index([tournamentId], map: "matches_tournament_id_idx")
   @@index([tournamentId, weightClassId], map: "matches_tournament_id_weight_class_id_idx")
   @@index([status], map: "matches_status_idx")
+  @@index([lifecycle], map: "matches_lifecycle_idx")
   @@map("matches")
 }
 

@@ -1,4 +1,10 @@
-import type { AthleteColor, MatchAccessRole, MatchStatus, RefereeSlot } from './enums';
+import type {
+  AthleteColor,
+  MatchAccessRole,
+  MatchLifecycle,
+  MatchPhase,
+  RefereeSlot,
+} from './enums';
 
 export const RealtimeEvent = {
   MATCH_STATE: 'match:state',
@@ -142,7 +148,10 @@ export interface MatchStateIdentity {
   id: string;
   publicId: string;
   startedAt: string | null;
-  status: MatchStatus;
+  lifecycle: MatchLifecycle;
+  phase: MatchPhase;
+  /** @deprecated Use phase. */
+  status: MatchPhase;
 }
 
 export interface MatchRoundState {
@@ -217,19 +226,19 @@ export interface PublicMatchStatePayload {
 export interface RoundStartedPayload {
   matchPublicId: string;
   round: MatchRoundState;
-  status: MatchStatus;
+  status: MatchPhase;
 }
 
 export interface RoundEndedPayload {
   matchPublicId: string;
   round: MatchRoundState;
-  status: MatchStatus;
+  status: MatchPhase;
 }
 
 export interface RoundPausedPayload {
   matchPublicId: string;
   round: MatchRoundState;
-  status: MatchStatus;
+  status: MatchPhase;
 }
 
 export type RoundResumedPayload = RoundPausedPayload;
@@ -249,7 +258,7 @@ export interface ResultCancellationPayload {
   actionId: string;
   matchPublicId: string;
   roundNumbers: Array<1 | 2>;
-  status: MatchStatus;
+  status: MatchPhase;
 }
 
 export type ResultCancellationErrorCode =
@@ -268,7 +277,7 @@ export interface ResultCancellationUndoPayload {
   matchPublicId: string;
   operationId: string;
   roundNumbers: Array<1 | 2>;
-  status: MatchStatus;
+  status: MatchPhase;
 }
 
 export type ResultCancellationUndoErrorCode =

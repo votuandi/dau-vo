@@ -73,6 +73,7 @@ export const matchStatusLabels: Record<MatchStatus, string> = {
   [MatchStatus.BREAK]: 'Nghỉ giữa hiệp',
   [MatchStatus.ROUND_2_RUNNING]: 'Hiệp 2',
   [MatchStatus.ROUND_2_PAUSED]: 'Hiệp 2 tạm dừng',
+  [MatchStatus.AWAITING_RESULT_SAVE]: 'Chờ lưu kết quả',
   [MatchStatus.FINISHED]: 'Đã kết thúc',
 };
 

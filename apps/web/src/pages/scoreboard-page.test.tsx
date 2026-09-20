@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import {
   AthleteColor,
+  MatchLifecycle,
   MatchStatus,
   type PublicMatchStatePayload,
 } from '@martial-arts-scoring/shared-types';
@@ -38,6 +39,8 @@ const snapshot: PublicMatchStatePayload = {
   match: {
     currentRound: 1,
     finishedAt: null,
+    lifecycle: MatchLifecycle.IN_PROGRESS,
+    phase: MatchStatus.ROUND_1_RUNNING,
     publicId: 'A72K9P',
     status: MatchStatus.ROUND_1_RUNNING,
   },

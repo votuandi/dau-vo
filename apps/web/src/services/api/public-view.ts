@@ -1,4 +1,9 @@
 import { apiClient } from './client';
+import type {
+  MatchDisplayState,
+  MatchLifecycle,
+  MatchPhase,
+} from '@martial-arts-scoring/shared-types';
 
 export interface PublicTournament {
   readonly id: string;
@@ -20,6 +25,9 @@ export interface PublicMatch {
   readonly id: string;
   readonly publicId: string;
   readonly status: string;
+  readonly phase: MatchPhase;
+  readonly lifecycle: MatchLifecycle;
+  readonly displayState: MatchDisplayState;
   readonly currentRound: number;
   readonly weightClass: { readonly name: string } | null;
   readonly athletes: readonly {

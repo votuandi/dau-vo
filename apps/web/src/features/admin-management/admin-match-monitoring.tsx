@@ -111,11 +111,11 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
   const snapshot = monitoring.data?.snapshot;
   const activeRound = snapshot?.activeRound;
   const running =
-    snapshot?.match.status === MatchStatus.ROUND_1_RUNNING ||
-    snapshot?.match.status === MatchStatus.ROUND_2_RUNNING;
+    snapshot?.match.phase === MatchStatus.ROUND_1_RUNNING ||
+    snapshot?.match.phase === MatchStatus.ROUND_2_RUNNING;
   const paused =
-    snapshot?.match.status === MatchStatus.ROUND_1_PAUSED ||
-    snapshot?.match.status === MatchStatus.ROUND_2_PAUSED;
+    snapshot?.match.phase === MatchStatus.ROUND_1_PAUSED ||
+    snapshot?.match.phase === MatchStatus.ROUND_2_PAUSED;
   const timer = useDisplayTimer(running ? activeRound?.endsAt : undefined, snapshot?.generatedAt);
   const displayedTimer =
     paused && activeRound?.remainingDurationMs != null
@@ -147,7 +147,7 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl bg-muted p-4">
               <p className="text-xs font-bold uppercase text-muted-foreground">Trạng thái</p>
-              <p className="mt-2 font-black">{matchStatusLabels[snapshot.match.status]}</p>
+              <p className="mt-2 font-black">{matchStatusLabels[snapshot.match.phase]}</p>
             </div>
             <div className="rounded-xl bg-muted p-4">
               <p className="text-xs font-bold uppercase text-muted-foreground">Hiệp hiện tại</p>

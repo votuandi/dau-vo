@@ -13,6 +13,7 @@ import { MatchStatus, TournamentStatus } from '@prisma/client';
 
 import { AuthGuard } from '../auth/admin-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { projectMatchDisplayState } from '../match-display-state';
 
 const visibleStatuses = [TournamentStatus.ACTIVE, TournamentStatus.FINISHED];
 const imageUrl = (key: string | null): string | null =>
@@ -95,6 +96,7 @@ export class PublicViewController {
           orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
           select: {
             id: true,
+            lifecycle: true,
             publicId: true,
             status: true,
             currentRound: true,
@@ -118,8 +120,16 @@ export class PublicViewController {
       tournament: {
         ...safeTournament,
         imageUrl: imageUrl(imagePath),
-        matches: matches.map(({ athletes, ...match }) => ({
+        matches: matches.map(({ athletes, status, ...match }) => ({
           ...match,
+          displayState: projectMatchDisplayState({
+            kind: 'OPERATIONAL_MATCH',
+            lifecycle: match.lifecycle,
+          }),
+          lifecycle: match.lifecycle,
+          phase: status,
+          // Deprecated compatibility alias; use phase.
+          status,
           athletes: athletes.map(({ athlete, ...snapshot }) => ({
             ...snapshot,
             imageUrl: imageUrl(athlete?.imagePath ?? null),
@@ -138,6 +148,7 @@ export class PublicViewController {
       },
       select: {
         id: true,
+        lifecycle: true,
         publicId: true,
         status: true,
         currentRound: true,
@@ -157,10 +168,17 @@ export class PublicViewController {
       },
     });
     if (match === null) throw new NotFoundException();
-    const { athletes, ...safeMatch } = match;
+    const { athletes, status, ...safeMatch } = match;
     return {
       match: {
         ...safeMatch,
+        displayState: projectMatchDisplayState({
+          kind: 'OPERATIONAL_MATCH',
+          lifecycle: safeMatch.lifecycle,
+        }),
+        phase: status,
+        // Deprecated compatibility alias; use phase.
+        status,
         athletes: athletes.map(({ athlete, ...snapshot }) => ({
           ...snapshot,
           imageUrl: imageUrl(athlete?.imagePath ?? null),

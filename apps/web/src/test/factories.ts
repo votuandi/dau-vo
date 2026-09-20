@@ -2,6 +2,7 @@ import { vi } from 'vitest';
 import {
   AthleteColor,
   MatchAccessRole,
+  MatchLifecycle,
   MatchRole,
   MatchStatus,
   RefereeSlot,
@@ -72,6 +73,8 @@ export function createMatchSnapshot(overrides: Partial<MatchStatePayload> = {}):
       currentRound: 1,
       finishedAt: null,
       id: 'match-1',
+      lifecycle: MatchLifecycle.IN_PROGRESS,
+      phase: MatchStatus.ROUND_1_RUNNING,
       publicId: refereeSession.matchPublicId,
       startedAt: '2026-09-01T12:00:00.000Z',
       status: MatchStatus.ROUND_1_RUNNING,

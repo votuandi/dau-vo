@@ -56,6 +56,8 @@ function displayPhase(status: MatchStatus | undefined): string {
       return 'Hiệp 2 · TẠM DỪNG';
     case MatchStatus.BREAK:
       return 'Nghỉ giữa hiệp';
+    case MatchStatus.AWAITING_RESULT_SAVE:
+      return 'Chờ lưu kết quả';
     case MatchStatus.FINISHED:
       return 'Kết thúc';
     case MatchStatus.WAITING:
@@ -169,7 +171,7 @@ export function RefereeConsole({
   session,
 }: RefereeConsoleProps) {
   const snapshot = realtime.snapshot;
-  const status = snapshot?.match.status;
+  const status = snapshot?.match.phase;
   const roundIsRunning =
     status === MatchStatus.ROUND_1_RUNNING || status === MatchStatus.ROUND_2_RUNNING;
   const roundIsPaused =

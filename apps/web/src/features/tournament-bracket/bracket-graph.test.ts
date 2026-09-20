@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ActiveBracket, BracketPreview } from '@/services/api/admin-management';
 import { bracketPresentation } from './bracket-graph';
+import { MatchDisplayState } from '@martial-arts-scoring/shared-types';
 
 type Side = 'RED' | 'BLUE';
 
@@ -80,6 +81,7 @@ function confirmedFor(athleteCount: number): ActiveBracket {
       roundNumber: fixture.round,
       position: 1,
       status: 'PENDING_PARTICIPANTS',
+      displayState: MatchDisplayState.NOT_READY,
       match: null,
       winnerEntrant: null,
       slots: fixture.slots.map((slot) => ({

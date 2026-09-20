@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import {
   AthleteColor,
   MatchAccessRole,
+  MatchLifecycle,
   MatchRole,
   MatchStatus,
   ScoreEventType,
@@ -71,6 +72,13 @@ describe('PenaltyService (PostgreSQL integration)', () => {
           ],
         },
         breakDurationMs: 60_000,
+        lifecycle:
+          status === MatchStatus.WAITING
+            ? MatchLifecycle.NOT_STARTED
+            : status === MatchStatus.FINISHED
+              ? MatchLifecycle.COMPLETED
+              : MatchLifecycle.IN_PROGRESS,
+        finishedAt: status === MatchStatus.FINISHED ? now : undefined,
         currentRound: status === MatchStatus.ROUND_1_RUNNING ? 1 : null,
         publicId: randomBytes(8).toString('hex').toUpperCase(),
         roundDurationMs: 20_000,

@@ -63,6 +63,7 @@ import {
   monitoringScoreEvent,
   monitoringScoringWindow,
 } from './monitoring-history';
+import { projectMatchDisplayState } from '../match-display-state';
 
 const PUBLIC_ID_GENERATION_ATTEMPTS = 8;
 const TOURNAMENT_PUBLIC_CODE_GENERATION_ATTEMPTS = 8;
@@ -110,6 +111,7 @@ const matchSelect = {
   currentRound: true,
   finishedAt: true,
   id: true,
+  lifecycle: true,
   publicId: true,
   requiredRefereeCount: true,
   roundDurationMs: true,
@@ -144,9 +146,27 @@ export type SportCatalogView = Prisma.SportGetPayload<{
   select: typeof sportCatalogSelect;
 }>;
 
-export type MatchView = Prisma.MatchGetPayload<{
+type StoredMatchView = Prisma.MatchGetPayload<{
   select: typeof matchSelect;
 }>;
+
+export type MatchView = StoredMatchView & {
+  displayState: ReturnType<typeof projectMatchDisplayState>;
+  phase: StoredMatchView['status'];
+  /** @deprecated Use phase. Removed in the final contract-hardening prompt. */
+  status: StoredMatchView['status'];
+};
+
+function matchView(match: StoredMatchView): MatchView {
+  return {
+    ...match,
+    displayState: projectMatchDisplayState({
+      kind: 'OPERATIONAL_MATCH',
+      lifecycle: match.lifecycle,
+    }),
+    phase: match.status,
+  };
+}
 
 export interface CreatedMatchResult {
   match: MatchView;
@@ -536,7 +556,7 @@ export class AdminManagementService {
         });
     }
 
-    return this.prisma.match.findMany({
+    const matches = await this.prisma.match.findMany({
       orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       select: matchSelect,
       where: {
@@ -545,6 +565,7 @@ export class AdminManagementService {
         ...(query.unassigned === 'true' ? { weightClassId: null } : {}),
       },
     });
+    return matches.map(matchView);
   }
 
   async countMatchesByWeightClass(
@@ -821,7 +842,7 @@ export class AdminManagementService {
       throw new NotFoundException(MATCH_NOT_FOUND_ERROR);
     }
 
-    return match;
+    return matchView(match);
   }
 
   async getMatchMonitoring(id: string) {
@@ -1003,10 +1024,12 @@ export class AdminManagementService {
         select: { id: true },
       });
 
-      return transaction.match.findUniqueOrThrow({
-        select: matchSelect,
-        where: { id },
-      });
+      return transaction.match
+        .findUniqueOrThrow({
+          select: matchSelect,
+          where: { id },
+        })
+        .then(matchView);
     });
   }
 

@@ -44,6 +44,7 @@ function snapshotFor(status: MatchStatus) {
       ...base.match,
       currentRound: status === MatchStatus.WAITING ? null : roundNumber,
       finishedAt: status === MatchStatus.FINISHED ? '2026-09-01T12:04:00.000Z' : null,
+      phase: status,
       startedAt: status === MatchStatus.WAITING ? null : base.match.startedAt,
       status,
     },
