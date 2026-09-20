@@ -42,7 +42,9 @@ export class MatchOfficialAssignmentLifecycleService {
       to: MatchStatus;
     },
   ): Promise<string[]> {
-    const reason = input.reason ?? assignmentReleaseReasonForTransition(input.from, input.to);
+    const reason =
+      input.reason ??
+      assignmentReleaseReasonForTransition(input.from, input.to);
     if (reason === null) return [];
 
     const assignments = await tx.matchOfficialAssignment.findMany({

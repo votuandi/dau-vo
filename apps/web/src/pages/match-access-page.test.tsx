@@ -11,6 +11,7 @@ import type { OfficialSession } from '@/services/api/official-access';
 const officialAccessApiMock = vi.hoisted(() => ({
   matches: vi.fn(),
   state: vi.fn(),
+  take: vi.fn(),
   login: vi.fn(),
   logout: vi.fn(),
   session: vi.fn(),
@@ -148,6 +149,7 @@ describe('MatchAccessPage official login', () => {
     officialAccessApiMock.matches.mockReset();
     officialAccessApiMock.session.mockReset();
     officialAccessApiMock.state.mockReset();
+    officialAccessApiMock.take.mockReset();
     officialAccessApiMock.takeover.mockReset();
     socketHarness.reset();
     officialAccessApiMock.matches.mockResolvedValue({ matches: [] });
@@ -334,5 +336,65 @@ describe('MatchAccessPage official login', () => {
     await screen.findByText('Đang chờ phân công');
     socketHarness.trigger('session:revoked', { code: 'SESSION_REVOKED', message: 'revoked' });
     expect(await screen.findByRole('heading', { name: 'Phiên đã bị thu hồi' })).toBeVisible();
+  });
+
+  it('takes a match once with the selected available referees and enters the authoritative console', async () => {
+    const user = userEvent.setup();
+    const match = {
+      athletes: [
+        { color: 'BLUE', name: 'Võ sĩ X' },
+        { color: 'RED', name: 'Võ sĩ Y' },
+      ],
+      claimable: true,
+      id: 'match-1',
+      lifecycle: 'NOT_STARTED' as const,
+      publicId: 'M-001',
+      requiredRefereeCount: 2,
+      status: 'WAITING',
+    };
+    officialAccessApiMock.session
+      .mockResolvedValueOnce({ session: inspectorSession })
+      .mockResolvedValueOnce({ session: inspectorSession })
+      .mockResolvedValueOnce({
+        session: {
+          ...inspectorSession,
+          activeAssignment: {
+            id: 'assignment-inspector',
+            match: { id: match.id, publicId: match.publicId, status: 'WAITING' },
+            refereePosition: null,
+            role: TournamentOfficialRole.INSPECTOR,
+          },
+          status: 'IN_MATCH',
+        },
+      });
+    officialAccessApiMock.matches.mockResolvedValue({ matches: [match] });
+    officialAccessApiMock.state.mockResolvedValue({
+      match: {
+        id: match.id,
+        lifecycle: match.lifecycle,
+        officialAssignments: [],
+        requiredRefereeCount: 2,
+      },
+      referees: [
+        { assignedMatchId: null, id: 'referee-1', name: 'Trọng tài 1', status: 'READY' },
+        { assignedMatchId: null, id: 'referee-2', name: 'Trọng tài 2', status: 'READY' },
+        { assignedMatchId: null, id: 'referee-3', name: 'Trọng tài 3', status: 'IN_MATCH' },
+      ],
+    });
+    officialAccessApiMock.take.mockResolvedValue({ match: { id: match.id } });
+    renderPage(TournamentOfficialRole.INSPECTOR);
+
+    await user.click(await screen.findByRole('button', { name: /M-001/ }));
+    expect(screen.getByRole('button', { name: 'Nhận trận' })).toBeDisabled();
+    expect(screen.getByLabelText('Chọn trọng tài Trọng tài 3')).toBeDisabled();
+    await user.click(screen.getByLabelText('Chọn trọng tài Trọng tài 1'));
+    await user.click(screen.getByLabelText('Chọn trọng tài Trọng tài 2'));
+    await user.click(screen.getByRole('button', { name: 'Nhận trận' }));
+
+    await waitFor(() => {
+      expect(officialAccessApiMock.take).toHaveBeenCalledTimes(1);
+      expect(officialAccessApiMock.take).toHaveBeenCalledWith(match.id, ['referee-1', 'referee-2']);
+    });
+    expect(await screen.findByText('Inspector console ready')).toBeVisible();
   });
 });

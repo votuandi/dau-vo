@@ -37,9 +37,18 @@ export const ROUND_CONTROL_FAILED_ERROR = {
   code: 'ROUND_CONTROL_FAILED',
   message: 'The round control command could not be completed',
 } as const;
-export const MATCH_COMPLETION_FORBIDDEN_ERROR = { code: 'MATCH_COMPLETION_FORBIDDEN', message: 'Chỉ giám sát viên đang được phân công mới có thể lưu kết quả' } as const;
-export const MATCH_COMPLETION_NOT_READY_ERROR = { code: 'MATCH_COMPLETION_NOT_READY', message: 'Kết quả chưa sẵn sàng để lưu' } as const;
-export const MATCH_COMPLETION_FAILED_ERROR = { code: 'MATCH_COMPLETION_FAILED', message: 'Không thể lưu kết quả trận đấu' } as const;
+export const MATCH_COMPLETION_FORBIDDEN_ERROR = {
+  code: 'MATCH_COMPLETION_FORBIDDEN',
+  message: 'Chỉ giám sát viên đang được phân công mới có thể lưu kết quả',
+} as const;
+export const MATCH_COMPLETION_NOT_READY_ERROR = {
+  code: 'MATCH_COMPLETION_NOT_READY',
+  message: 'Kết quả chưa sẵn sàng để lưu',
+} as const;
+export const MATCH_COMPLETION_FAILED_ERROR = {
+  code: 'MATCH_COMPLETION_FAILED',
+  message: 'Không thể lưu kết quả trận đấu',
+} as const;
 
 export const MATCH_PARTICIPANTS_NOT_READY_ERROR = {
   code: 'MATCH_PARTICIPANTS_NOT_READY',

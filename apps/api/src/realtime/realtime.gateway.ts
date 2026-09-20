@@ -141,7 +141,11 @@ import type {
 function isExitPayload(value: unknown): value is { mode: MatchExitMode } {
   if (typeof value !== 'object' || value === null) return false;
   const mode = (value as { mode?: unknown }).mode;
-  return mode === MatchExitMode.CANCEL_RESULTS || mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 || mode === MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2;
+  return (
+    mode === MatchExitMode.CANCEL_RESULTS ||
+    mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 ||
+    mode === MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2
+  );
 }
 
 /**
@@ -348,14 +352,20 @@ export class RealtimeGateway
   async completeMatch(
     @ConnectedSocket() client: RealtimeSocket,
   ): Promise<MatchCompletionResponse> {
-    if (this.isScoreboardSocket(client)) return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    if (this.isScoreboardSocket(client))
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
     const command = await this.inspectorCommand(client);
     if (!command) return { error: MATCH_COMPLETION_FORBIDDEN_ERROR, ok: false };
-    if (!(await this.ensureCommandRoomMembership(client, command.publicMatchId)))
+    if (
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    )
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
     let transition: MatchCompletionTransition;
     try {
-      transition = await this.lifecycle.completeMatch({ matchId: command.matchId, identity: command.identity });
+      transition = await this.lifecycle.completeMatch({
+        matchId: command.matchId,
+        identity: command.identity,
+      });
     } catch (error: unknown) {
       if (error instanceof SportGroupRulesNotImplementedError)
         return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
@@ -367,18 +377,36 @@ export class RealtimeGateway
         return { error: MATCH_COMPLETION_NOT_READY_ERROR, ok: false };
       if (error instanceof BracketProgressionLockedError)
         return { error: BRACKET_PROGRESSION_LOCKED_ERROR, ok: false };
-      this.logger.error({ error, matchId: command.matchId }, 'Unable to save match result');
+      this.logger.error(
+        { error, matchId: command.matchId },
+        'Unable to save match result',
+      );
       return { error: MATCH_COMPLETION_FAILED_ERROR, ok: false };
     }
     try {
-      this.server.to(matchRoom(transition.matchPublicId)).emit(RealtimeEvent.MATCH_COMPLETED, transition.completed);
-      this.server.to(matchRoom(transition.matchPublicId)).emit(RealtimeEvent.MATCH_FINISHED, transition.completed);
+      this.server
+        .to(matchRoom(transition.matchPublicId))
+        .emit(RealtimeEvent.MATCH_COMPLETED, transition.completed);
+      this.server
+        .to(matchRoom(transition.matchPublicId))
+        .emit(RealtimeEvent.MATCH_FINISHED, transition.completed);
       if (transition.releasedOfficialIds.length > 0) {
-        this.officialRouting.publishReleased({ matchId: transition.matchId, matchPublicId: transition.matchPublicId, tournamentId: transition.tournamentId, releasedOfficialIds: transition.releasedOfficialIds });
+        this.officialRouting.publishReleased({
+          matchId: transition.matchId,
+          matchPublicId: transition.matchPublicId,
+          tournamentId: transition.tournamentId,
+          releasedOfficialIds: transition.releasedOfficialIds,
+        });
       }
-      await this.broadcastMatchState(transition.matchId, transition.matchPublicId);
+      await this.broadcastMatchState(
+        transition.matchId,
+        transition.matchPublicId,
+      );
     } catch (error: unknown) {
-      this.logger.error({ error, matchId: transition.matchId }, 'Match completion committed but realtime publication failed');
+      this.logger.error(
+        { error, matchId: transition.matchId },
+        'Match completion committed but realtime publication failed',
+      );
     }
     return { completed: transition.completed, ok: true };
   }
@@ -388,26 +416,93 @@ export class RealtimeGateway
     @ConnectedSocket() client: RealtimeSocket,
     @MessageBody() payload: unknown,
   ): Promise<MatchExitResponse> {
-    if (this.isScoreboardSocket(client)) return { ok: false, error: { code: 'REALTIME_AUTHENTICATION_REQUIRED', message: 'Phiên đăng nhập không hợp lệ.' } };
+    if (this.isScoreboardSocket(client))
+      return {
+        ok: false,
+        error: {
+          code: 'REALTIME_AUTHENTICATION_REQUIRED',
+          message: 'Phiên đăng nhập không hợp lệ.',
+        },
+      };
     const command = await this.inspectorCommand(client);
-    if (!command || !isExitPayload(payload)) return { ok: false, error: { code: 'MATCH_EXIT_FORBIDDEN', message: 'Chỉ giám sát viên đang được phân công mới có thể thoát trận.' } };
-    if (!(await this.ensureCommandRoomMembership(client, command.publicMatchId))) return { ok: false, error: { code: 'REALTIME_AUTHENTICATION_REQUIRED', message: 'Phiên đăng nhập không hợp lệ.' } };
+    if (!command || !isExitPayload(payload))
+      return {
+        ok: false,
+        error: {
+          code: 'MATCH_EXIT_FORBIDDEN',
+          message:
+            'Chỉ giám sát viên đang được phân công mới có thể thoát trận.',
+        },
+      };
+    if (
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    )
+      return {
+        ok: false,
+        error: {
+          code: 'REALTIME_AUTHENTICATION_REQUIRED',
+          message: 'Phiên đăng nhập không hợp lệ.',
+        },
+      };
     let transition: MatchExitTransition;
     try {
-      transition = await this.lifecycle.exitMatch({ matchId: command.matchId, identity: command.identity, mode: payload.mode });
+      transition = await this.lifecycle.exitMatch({
+        matchId: command.matchId,
+        identity: command.identity,
+        mode: payload.mode,
+      });
     } catch (error: unknown) {
-      if (error instanceof InactiveRoundStartSessionError || error instanceof InactiveRoundControlSessionError) {
+      if (
+        error instanceof InactiveRoundStartSessionError ||
+        error instanceof InactiveRoundControlSessionError
+      ) {
         this.revokeCommandSocket(client, command.identity);
-        return { ok: false, error: { code: 'REALTIME_AUTHENTICATION_REQUIRED', message: 'Phiên đăng nhập không còn hiệu lực.' } };
+        return {
+          ok: false,
+          error: {
+            code: 'REALTIME_AUTHENTICATION_REQUIRED',
+            message: 'Phiên đăng nhập không còn hiệu lực.',
+          },
+        };
       }
-      if (error instanceof InvalidResultCancellationStateError) return { ok: false, error: { code: 'MATCH_EXIT_INVALID_STATE', message: 'Trạng thái trận đấu không cho phép lựa chọn thoát này.' } };
-      this.logger.error({ error, matchId: command.matchId }, 'Unable to exit match');
-      return { ok: false, error: { code: 'MATCH_EXIT_FAILED', message: 'Không thể thoát trận. Vui lòng thử lại.' } };
+      if (error instanceof InvalidResultCancellationStateError)
+        return {
+          ok: false,
+          error: {
+            code: 'MATCH_EXIT_INVALID_STATE',
+            message: 'Trạng thái trận đấu không cho phép lựa chọn thoát này.',
+          },
+        };
+      this.logger.error(
+        { error, matchId: command.matchId },
+        'Unable to exit match',
+      );
+      return {
+        ok: false,
+        error: {
+          code: 'MATCH_EXIT_FAILED',
+          message: 'Không thể thoát trận. Vui lòng thử lại.',
+        },
+      };
     }
     try {
-      if (transition.releasedOfficialIds.length > 0) this.officialRouting.publishReleased({ matchId: transition.matchId, matchPublicId: transition.matchPublicId, tournamentId: transition.tournamentId, releasedOfficialIds: transition.releasedOfficialIds });
-      await this.broadcastMatchState(transition.matchId, transition.matchPublicId);
-    } catch (error: unknown) { this.logger.error({ error, matchId: transition.matchId }, 'Match exit committed but publication failed'); }
+      if (transition.releasedOfficialIds.length > 0)
+        this.officialRouting.publishReleased({
+          matchId: transition.matchId,
+          matchPublicId: transition.matchPublicId,
+          tournamentId: transition.tournamentId,
+          releasedOfficialIds: transition.releasedOfficialIds,
+        });
+      await this.broadcastMatchState(
+        transition.matchId,
+        transition.matchPublicId,
+      );
+    } catch (error: unknown) {
+      this.logger.error(
+        { error, matchId: transition.matchId },
+        'Match exit committed but publication failed',
+      );
+    }
     return { ok: true, exit: transition.payload };
   }
 

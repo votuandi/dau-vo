@@ -424,17 +424,32 @@ export function InspectorConsole({
             <div className="mx-auto mt-6 max-w-md">
               <Button
                 className="h-16 w-full text-lg font-black"
-                disabled={realtime.connectionStatus !== 'connected' || realtime.completingMatch || !snapshot?.completion.canComplete}
+                disabled={
+                  realtime.connectionStatus !== 'connected' ||
+                  realtime.completingMatch ||
+                  !snapshot?.completion.canComplete
+                }
                 onClick={() => setConfirmation('complete')}
                 type="button"
               >
                 {realtime.completingMatch ? 'ĐANG LƯU…' : 'LƯU KẾT QUẢ'}
               </Button>
-              {!snapshot?.completion.canComplete ? <p className="mt-3 text-sm font-semibold text-amber-100">Kết quả chưa sẵn sàng để lưu. Vui lòng chờ các thao tác chấm điểm hoàn tất.</p> : null}
+              {!snapshot?.completion.canComplete ? (
+                <p className="mt-3 text-sm font-semibold text-amber-100">
+                  Kết quả chưa sẵn sàng để lưu. Vui lòng chờ các thao tác chấm điểm hoàn tất.
+                </p>
+              ) : null}
             </div>
           ) : null}
 
-          {realtime.completionErrorMessage ? <p className="mx-auto mt-4 max-w-xl rounded-xl bg-red-400/15 px-4 py-3 text-sm font-semibold text-red-100" role="alert">{realtime.completionErrorMessage}</p> : null}
+          {realtime.completionErrorMessage ? (
+            <p
+              className="mx-auto mt-4 max-w-xl rounded-xl bg-red-400/15 px-4 py-3 text-sm font-semibold text-red-100"
+              role="alert"
+            >
+              {realtime.completionErrorMessage}
+            </p>
+          ) : null}
 
           {realtime.roundControlErrorMessage ? (
             <p
@@ -445,7 +460,9 @@ export function InspectorConsole({
             </p>
           ) : null}
 
-          {status === MatchStatus.BREAK || status === MatchStatus.FINISHED || status === MatchStatus.AWAITING_RESULT_SAVE ? (
+          {status === MatchStatus.BREAK ||
+          status === MatchStatus.FINISHED ||
+          status === MatchStatus.AWAITING_RESULT_SAVE ? (
             <div className="mx-auto mt-6 grid max-w-xl gap-3">
               <Button
                 disabled={realtime.connectionStatus !== 'connected' || realtime.cancellingResults}
@@ -486,8 +503,20 @@ export function InspectorConsole({
           {snapshot?.exit?.canExit ? (
             <div className="mx-auto mt-6 grid max-w-xl gap-3" aria-label="Thoát trận">
               {snapshot.exit.allowedModes.map((mode) => (
-                <Button key={mode} disabled={realtime.connectionStatus !== 'connected' || realtime.cancellingResults} onClick={() => { void realtime.exitMatch(mode); }} type="button" variant="outline">
-                  {mode === MatchExitMode.CANCEL_RESULTS ? 'THOÁT VÀ HỦY KẾT QUẢ' : mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 ? 'THOÁT, GIỮ HIỆP 1' : 'THOÁT, GIỮ 2 HIỆP'}
+                <Button
+                  key={mode}
+                  disabled={realtime.connectionStatus !== 'connected' || realtime.cancellingResults}
+                  onClick={() => {
+                    void realtime.exitMatch(mode);
+                  }}
+                  type="button"
+                  variant="outline"
+                >
+                  {mode === MatchExitMode.CANCEL_RESULTS
+                    ? 'THOÁT VÀ HỦY KẾT QUẢ'
+                    : mode === MatchExitMode.SUSPEND_KEEP_ROUND_1
+                      ? 'THOÁT, GIỮ HIỆP 1'
+                      : 'THOÁT, GIỮ 2 HIỆP'}
                 </Button>
               ))}
             </div>
@@ -595,11 +624,11 @@ export function InspectorConsole({
               ? 'Tạm dừng'
               : confirmation === 'resume'
                 ? 'Tiếp tục'
-              : confirmation === 'cancel-round'
-                ? 'Hủy kết quả hiệp'
-                : confirmation === 'complete'
-                  ? 'Lưu kết quả'
-                : 'Đặt lại trận đấu'
+                : confirmation === 'cancel-round'
+                  ? 'Hủy kết quả hiệp'
+                  : confirmation === 'complete'
+                    ? 'Lưu kết quả'
+                    : 'Đặt lại trận đấu'
           }
           busy={realtime.controllingRound || realtime.cancellingResults || realtime.completingMatch}
           description={
@@ -611,7 +640,7 @@ export function InspectorConsole({
                   ? `Hủy kết quả Hiệp ${status === MatchStatus.BREAK ? '1' : '2'}?`
                   : confirmation === 'complete'
                     ? 'Xác nhận lưu kết quả chính thức và cập nhật nhánh đấu?'
-                  : 'Hủy toàn bộ kết quả trận đấu?'
+                    : 'Hủy toàn bộ kết quả trận đấu?'
           }
           onCancel={() => {
             setConfirmation(null);

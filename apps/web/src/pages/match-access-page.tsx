@@ -4,6 +4,7 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { MatchRole, TournamentOfficialRole } from '@martial-arts-scoring/shared-types';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
+import { toast } from '@/components/ui/toast';
 import { getOrCreateDeviceId } from '@/features/match-access/device';
 import {
   officialSessionQueryKey,
@@ -53,6 +54,79 @@ function errorMessage(e: unknown) {
     : e instanceof ApiClientError
       ? (e.body.message ?? 'Không thể thực hiện yêu cầu.')
       : 'Không thể kết nối đến máy chủ.';
+}
+
+function lifecycleLabel(lifecycle: OfficialMatch['lifecycle']): string {
+  switch (lifecycle) {
+    case 'NOT_STARTED':
+      return 'Chưa bắt đầu';
+    case 'SUSPENDED':
+      return 'Tạm dừng';
+    case 'IN_PROGRESS':
+      return 'Đang diễn ra';
+    case 'COMPLETED':
+      return 'Đã hoàn thành';
+    default:
+      return lifecycle satisfies never;
+  }
+}
+
+function isEligible(match: OfficialMatch): boolean {
+  return match.claimable && (match.lifecycle === 'NOT_STARTED' || match.lifecycle === 'SUSPENDED');
+}
+
+function claimabilityMessage(match: OfficialMatch): string {
+  if (match.lifecycle === 'COMPLETED') return 'Trận đã hoàn thành, không thể nhận.';
+  if (match.lifecycle === 'IN_PROGRESS') return 'Trận đang diễn ra, không thể nhận.';
+  if (!match.claimable) return 'Đã có giám định khác nhận trận.';
+  return match.lifecycle === 'SUSPENDED'
+    ? 'Có thể nhận để tiếp tục trận tạm dừng.'
+    : 'Có thể nhận trận.';
+}
+
+function refereeStatusLabel(status: 'READY' | 'IN_MATCH' | 'DISABLED'): string {
+  switch (status) {
+    case 'READY':
+      return 'Sẵn sàng';
+    case 'IN_MATCH':
+      return 'Trong trận';
+    case 'DISABLED':
+      return 'Đình chỉ';
+    default:
+      return status satisfies never;
+  }
+}
+
+function assignmentErrorMessage(code: string | undefined): string {
+  switch (code) {
+    case 'MATCH_ALREADY_CLAIMED':
+      return 'Trận đã được giám định khác nhận.';
+    case 'INSPECTOR_ALREADY_IN_MATCH':
+      return 'Bạn đang được phân công ở một trận khác.';
+    case 'REFEREE_INACTIVE':
+      return 'Có trọng tài đang bị đình chỉ.';
+    case 'REFEREE_NOT_AVAILABLE':
+      return 'Trọng tài không còn sẵn sàng.';
+    case 'MATCH_LIFECYCLE_MISMATCH':
+    case 'STALE_ASSIGNMENT_SELECTION':
+      return 'Trạng thái trận đã thay đổi. Vui lòng cập nhật lại.';
+    case 'REFEREE_COUNT_MISMATCH':
+      return 'Số lượng trọng tài chưa đúng yêu cầu.';
+    case 'SESSION_REVOKED':
+      return 'Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại.';
+    default:
+      return 'Không thể nhận trận. Vui lòng kiểm tra kết nối và thử lại.';
+  }
+}
+
+function MatchListSkeleton() {
+  return (
+    <section aria-label="Đang tải danh sách trận" className="mt-5 grid gap-3 md:grid-cols-2">
+      {[0, 1, 2, 3].map((item) => (
+        <div className="h-28 animate-pulse rounded-xl bg-muted" key={item} />
+      ))}
+    </section>
+  );
 }
 
 function Waiting({
@@ -106,11 +180,21 @@ function InspectorAssignment({
   const [selected, setSelected] = useState<OfficialMatch | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [conflict, setConflict] = useState<string | null>(null);
+  const [refreshAnnouncement, setRefreshAnnouncement] = useState('');
   const matches = useQuery({
     queryKey: ['official-matches', session.tournament.id],
     queryFn: officialAccessApi.matches,
     staleTime: 0,
   });
+  useEffect(() => {
+    if (
+      selected &&
+      !matches.data?.matches.some((match) => match.id === selected.id && isEligible(match))
+    ) {
+      setSelected(null);
+      setPicked([]);
+    }
+  }, [matches.data, selected]);
   const state = useQuery({
     queryKey: ['official-match', selected?.id],
     queryFn: () => {
@@ -120,44 +204,72 @@ function InspectorAssignment({
     enabled: !!selected,
     staleTime: 0,
   });
-  useEffect(() => {
-    if (state.data)
-      setPicked(
-        state.data.match.officialAssignments
-          .filter((x) => x.role === TournamentOfficialRole.REFEREE)
-          .map((x) => x.officialId),
-      );
-  }, [state.data]);
-  const refresh = () => {
-    void qc.invalidateQueries({ queryKey: ['official-matches', session.tournament.id] });
-    if (selected) void qc.invalidateQueries({ queryKey: ['official-match', selected.id] });
+  const refresh = async () => {
+    if (selected === null) return;
+    const [matchesResult, stateResult] = await Promise.all([
+      qc.fetchQuery({
+        queryKey: ['official-matches', session.tournament.id],
+        queryFn: officialAccessApi.matches,
+        staleTime: 0,
+      }),
+      qc.fetchQuery({
+        queryKey: ['official-match', selected.id],
+        queryFn: () => officialAccessApi.state(selected.id),
+        staleTime: 0,
+      }),
+    ]);
+    const refreshedMatch = matchesResult.matches.find((match) => match.id === selected.id);
+    if (!refreshedMatch || !isEligible(refreshedMatch)) {
+      setSelected(null);
+      setPicked([]);
+      setRefreshAnnouncement('Trận đã không còn khả dụng để nhận.');
+      return;
+    }
+    setSelected(refreshedMatch);
+    const available = new Set(
+      stateResult.referees
+        .filter((referee) => referee.status === 'READY')
+        .map((referee) => referee.id),
+    );
+    setPicked((previous) => {
+      const next = previous.filter((id) => available.has(id));
+      if (next.length !== previous.length)
+        setRefreshAnnouncement('Một số trọng tài đã không còn sẵn sàng và đã được bỏ chọn.');
+      else setRefreshAnnouncement('Đã cập nhật trạng thái trận và trọng tài.');
+      return next;
+    });
   };
-  const claim = useMutation({
-    mutationFn: officialAccessApi.claim,
-    onSuccess: refresh,
-    onError: refresh,
-  });
-  const confirm = useMutation({
+  const take = useMutation({
     mutationFn: () => {
-      if (selected === null)
-        throw new Error('A match must be selected before confirming referees.');
-      return officialAccessApi.confirm(selected.id, picked);
+      if (selected === null) throw new Error('A match must be selected before taking it.');
+      return officialAccessApi.take(selected.id, picked);
     },
-    onSuccess: refresh,
-    onError: (e) => {
-      const d = e instanceof ApiClientError ? e.body.details : undefined;
-      if (
-        e instanceof ApiClientError &&
-        e.body.code === 'REFEREE_ALREADY_IN_MATCH' &&
-        d &&
-        typeof d === 'object' &&
-        'name' in d &&
-        typeof d.name === 'string'
-      )
-        setConflict(`Trọng tài ${d.name} đang trong trận khác. Vui lòng chọn lại.`);
-      refresh();
+    onSuccess: async () => {
+      // A session snapshot is authoritative; the take response deliberately
+      // does not let the browser invent an assignment identity.
+      const snapshot = await officialAccessApi.session();
+      qc.setQueryData(sessionKey, snapshot);
+      toast({ title: 'Đã nhận trận', variant: 'success' });
+    },
+    onError: async (error) => {
+      const details = error instanceof ApiClientError ? error.body.details : undefined;
+      const code = error instanceof ApiClientError ? error.body.code : undefined;
+      if (code === 'REFEREE_ALREADY_IN_MATCH' && details && typeof details === 'object') {
+        const officialName =
+          'officialName' in details && typeof details.officialName === 'string'
+            ? details.officialName
+            : 'này';
+        const officialId =
+          'officialId' in details && typeof details.officialId === 'string'
+            ? details.officialId
+            : null;
+        if (officialId) setPicked((previous) => previous.filter((id) => id !== officialId));
+        setConflict(`Trọng tài ${officialName} đã được phân công.`);
+      } else toast({ title: assignmentErrorMessage(code), variant: 'destructive' });
+      await refresh();
     },
   });
+  const refreshing = state.isFetching || matches.isFetching;
   const required = state.data?.match.requiredRefereeCount ?? 0;
   return (
     <main className="mx-auto w-full max-w-5xl p-4 sm:p-6">
@@ -167,13 +279,24 @@ function InspectorAssignment({
           <h1 className="text-3xl font-black">Khu vực giám định</h1>
         </div>
         <Button disabled={pending} onClick={logout} type="button" variant="outline">
-          Thoát
+          {pending ? 'Đang đăng xuất…' : 'Đăng xuất'}
         </Button>
       </header>
-      <section aria-live="polite" className="mt-5 grid gap-3 md:grid-cols-2">
+      <p aria-live="polite" className="sr-only">
+        {refreshAnnouncement}
+      </p>
+      {matches.isPending ? <MatchListSkeleton /> : null}
+      {matches.data?.matches.length === 0 ? (
+        <p className="mt-5 rounded-xl border p-5 text-muted-foreground">
+          Chưa có trận nào sẵn sàng để nhận.
+        </p>
+      ) : null}
+      <section aria-label="Danh sách trận" className="mt-5 grid gap-3 md:grid-cols-2">
         {matches.data?.matches.map((m) => (
           <button
-            className="rounded-xl border p-4 text-left focus-visible:ring-2"
+            aria-pressed={selected?.id === m.id}
+            className="min-h-28 rounded-xl border p-4 text-left focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!isEligible(m)}
             key={m.id}
             onClick={() => {
               setSelected(m);
@@ -185,16 +308,15 @@ function InspectorAssignment({
             <p className="mt-1 text-sm">
               {m.athletes.map((a) => a.name).join(' · ')} · Cần {m.requiredRefereeCount} trọng tài
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {m.claimable ? 'Có thể nhận trận' : 'Đã có giám định khác nhận'}
-            </p>
+            <p className="mt-2 text-xs font-semibold">{lifecycleLabel(m.lifecycle)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{claimabilityMessage(m)}</p>
           </button>
         ))}
       </section>
       {matches.isError ? (
         <p role="alert">
           Không tải được danh sách.{' '}
-          <button onClick={() => void matches.refetch()} type="button">
+          <button className="underline" onClick={() => void matches.refetch()} type="button">
             Thử lại
           </button>
         </p>
@@ -202,38 +324,37 @@ function InspectorAssignment({
       {selected ? (
         <section className="mt-6 rounded-2xl border p-5">
           <div className="flex justify-between gap-3">
-            <h2 className="text-xl font-black">Phân công {selected.publicId}</h2>
+            <h2 className="text-xl font-black">Chọn trọng tài · {selected.publicId}</h2>
             <Button
-              disabled={claim.isPending || !selected.claimable}
+              disabled={refreshing || take.isPending}
               onClick={() => {
-                claim.mutate(selected.id);
+                void refresh();
               }}
+              variant="secondary"
               type="button"
             >
-              Nhận trận
+              {refreshing ? 'Đang cập nhật…' : 'Cập nhật'}
             </Button>
           </div>
-          <p className="mt-2 text-sm">
-            Chọn đúng {required} trọng tài. Máy chủ kiểm tra trạng thái sẵn sàng khi bắt đầu.
+          <p aria-live="polite" className="mt-2 text-sm">
+            Đã chọn {picked.length}/{required} trọng tài.
           </p>
-          <fieldset className="mt-4 grid gap-2" disabled={confirm.isPending || state.isFetching}>
+          <fieldset className="mt-4 grid gap-2" disabled={take.isPending || refreshing}>
             <legend className="sr-only">Chọn trọng tài</legend>
             {state.data?.referees.map((r) => {
-              const unavailable =
-                !r.isActive || (!!r.assignedMatchId && r.assignedMatchId !== selected.id);
+              const unavailable = r.status !== 'READY';
               return (
-                <label className="flex items-center justify-between rounded border p-3" key={r.id}>
+                <label
+                  className="flex min-h-12 items-center justify-between rounded border p-3"
+                  key={r.id}
+                >
                   <span>
-                    {r.name}{' '}
-                    {!r.isActive
-                      ? '· DISABLED'
-                      : unavailable
-                        ? '· Đang trong trận khác'
-                        : '· READY'}
+                    {r.name} · <span className="font-semibold">{refereeStatusLabel(r.status)}</span>
                   </span>
                   <input
                     checked={picked.includes(r.id)}
-                    disabled={unavailable}
+                    aria-label={`Chọn trọng tài ${r.name}`}
+                    disabled={unavailable || (!picked.includes(r.id) && picked.length >= required)}
                     onChange={() => {
                       setPicked((old) =>
                         old.includes(r.id)
@@ -251,13 +372,15 @@ function InspectorAssignment({
           </fieldset>
           <Button
             className="mt-4"
-            disabled={confirm.isPending || picked.length !== required}
+            disabled={
+              take.isPending || refreshing || !isEligible(selected) || picked.length !== required
+            }
             onClick={() => {
-              confirm.mutate();
+              take.mutate();
             }}
             type="button"
           >
-            {confirm.isPending ? 'Đang xác nhận…' : 'Xác nhận phân công'}
+            {take.isPending ? 'Đang nhận trận…' : 'Nhận trận'}
           </Button>
         </section>
       ) : null}

@@ -47,7 +47,10 @@ function renderPage(): void {
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={['/admin/tournaments/tournament-1/referees']}>
         <Routes>
-          <Route path="/admin/tournaments/:tournamentId/referees" element={<AdminTournamentDetailPage />} />
+          <Route
+            path="/admin/tournaments/:tournamentId/referees"
+            element={<AdminTournamentDetailPage />}
+          />
         </Routes>
       </MemoryRouter>
       <Toaster />

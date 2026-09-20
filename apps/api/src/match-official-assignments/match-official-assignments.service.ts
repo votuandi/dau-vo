@@ -49,6 +49,7 @@ export class MatchOfficialAssignmentsService {
       select: {
         id: true,
         publicId: true,
+        lifecycle: true,
         status: true,
         requiredRefereeCount: true,
         athletes: {
@@ -82,6 +83,7 @@ export class MatchOfficialAssignmentsService {
       select: {
         id: true,
         publicId: true,
+        lifecycle: true,
         requiredRefereeCount: true,
         status: true,
         startedAt: true,

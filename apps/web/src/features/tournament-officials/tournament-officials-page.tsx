@@ -332,7 +332,9 @@ export function TournamentOfficialsPage({
             <div>
               <p className="text-sm font-semibold">Mã bảo mật riêng</p>
               <div className="mt-1 flex flex-wrap items-center gap-2">
-                <code className="select-all rounded bg-muted p-3 font-mono font-bold">{passcode}</code>
+                <code className="select-all rounded bg-muted p-3 font-mono font-bold">
+                  {passcode}
+                </code>
                 <ClipboardCopyButton accessibleLabel="Sao chép mã bảo mật riêng" value={passcode} />
               </div>
             </div>

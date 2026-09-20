@@ -9,7 +9,9 @@ vi.mock('@/services/api/admin-management', () => ({ adminManagementApi: api }));
 
 function renderPage(): void {
   render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
       <TournamentOfficialsPage
         readOnly={false}
         role={TournamentOfficialRole.REFEREE}

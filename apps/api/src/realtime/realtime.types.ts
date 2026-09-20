@@ -60,7 +60,10 @@ export interface ClientToServerEvents {
   'match:complete': (
     acknowledge: (response: MatchCompletionResponse) => void,
   ) => void;
-  'match:exit': (payload: { mode: MatchExitMode }, acknowledge: (response: MatchExitResponse) => void) => void;
+  'match:exit': (
+    payload: { mode: MatchExitMode },
+    acknowledge: (response: MatchExitResponse) => void,
+  ) => void;
   'result-cancellation:undo': (
     payload: { operationId: string },
     acknowledge: (response: ResultCancellationUndoResponse) => void,
