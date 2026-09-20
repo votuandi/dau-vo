@@ -10,6 +10,7 @@ import {
 } from '@prisma/client';
 import {
   RealtimeEvent,
+  type MatchCompletionResponse,
   type MatchFinishedPayload,
   type MatchStatePayload,
   type RoundEndedPayload,
@@ -168,6 +169,22 @@ function startRound(socket: Socket): Promise<RoundStartResponse> {
       clearTimeout(timer);
       resolve(response);
     });
+  });
+}
+
+function completeMatch(socket: Socket): Promise<MatchCompletionResponse> {
+  return new Promise<MatchCompletionResponse>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('Timed out waiting for match:complete response')),
+      EVENT_TIMEOUT_MS,
+    );
+    socket.emit(
+      RealtimeEvent.MATCH_COMPLETE,
+      (response: MatchCompletionResponse) => {
+        clearTimeout(timer);
+        resolve(response);
+      },
+    );
   });
 }
 
@@ -588,30 +605,33 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
             include: { rounds: true },
             where: { id: recoveredRoundTwoMatchId },
           }),
-        (match) => match.status === MatchStatus.FINISHED,
+        (match) => match.status === MatchStatus.AWAITING_RESULT_SAVE,
         'overdue Round 2 recovery',
       ),
     ]);
 
     expect(roundOneMatch.rounds[0]?.endedAt).not.toBeNull();
     expect(roundTwoMatch.rounds[0]?.endedAt).not.toBeNull();
-    expect(roundTwoMatch.finishedAt).not.toBeNull();
+    expect(roundTwoMatch.lifecycle).toBe(MatchLifecycle.IN_PROGRESS);
+    expect(roundTwoMatch.finishedAt).toBeNull();
     expect(roundOneMatch.rounds[0]?.endedAt).toEqual(
       roundOneMatch.rounds[0]?.endsAt,
     );
     expect(roundTwoMatch.rounds[0]?.endedAt).toEqual(
       roundTwoMatch.rounds[0]?.endsAt,
     );
-    expect(roundTwoMatch.finishedAt).toEqual(roundTwoMatch.rounds[0]?.endsAt);
     await expect(auditEventNames(recoveredRoundOneMatchId)).resolves.toContain(
       'ROUND_ENDED',
     );
     await expect(auditEventNames(recoveredRoundTwoMatchId)).resolves.toEqual(
-      expect.arrayContaining(['ROUND_ENDED', 'MATCH_FINISHED']),
+      expect.arrayContaining(['ROUND_ENDED']),
     );
+    await expect(
+      auditEventNames(recoveredRoundTwoMatchId),
+    ).resolves.not.toContain('MATCH_FINISHED');
   });
 
-  it('lets the inspector run Round 1, break, Round 2, and finish exactly once', async () => {
+  it('requires explicit inspector completion after Round 2 and completes exactly once', async () => {
     // The flow awaits multiple socket broadcasts before the invalid-transition
     // check, so allow real database/socket scheduling margin here.
     const match = await createMatch('complete-flow', 2_000);
@@ -686,30 +706,32 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
         payload.matchPublicId === match.publicId &&
         payload.round.roundNumber === 2,
     );
-    const matchFinishedEvent = waitForEvent<MatchFinishedPayload>(
-      socket,
-      RealtimeEvent.MATCH_FINISHED,
-      (payload) => payload.matchPublicId === match.publicId,
-    );
     const roundTwoResponse = await startRound(socket);
     expect(roundTwoResponse.ok).toBe(true);
     const roundTwoStarted = await roundTwoStartedEvent;
     expect(roundTwoStarted.status).toBe(MatchStatus.ROUND_2_RUNNING);
 
-    const [roundTwoEnded, matchFinished] = await Promise.all([
-      roundTwoEndedEvent,
-      matchFinishedEvent,
-    ]);
-    expect(roundTwoEnded.status).toBe(MatchStatus.FINISHED);
-    expect(new Date(matchFinished.finishedAt).getTime()).toBeGreaterThanOrEqual(
-      new Date(roundTwoEnded.round.endsAt).getTime(),
-    );
+    const roundTwoEnded = await roundTwoEndedEvent;
+    expect(roundTwoEnded.status).toBe(MatchStatus.AWAITING_RESULT_SAVE);
 
-    const afterFinished = await startRound(socket);
-    expect(afterFinished).toMatchObject({
-      error: { code: 'ROUND_START_INVALID_STATE' },
-      ok: false,
+    const beforeCompletion = await prisma.match.findUniqueOrThrow({
+      where: { id: match.id },
     });
+    expect(beforeCompletion).toMatchObject({
+      finishedAt: null,
+      lifecycle: MatchLifecycle.IN_PROGRESS,
+      status: MatchStatus.AWAITING_RESULT_SAVE,
+    });
+
+    const matchCompletedEvent = waitForEvent<MatchFinishedPayload>(
+      socket,
+      RealtimeEvent.MATCH_COMPLETED,
+      (payload) => payload.matchPublicId === match.publicId,
+    );
+    const completion = await completeMatch(socket);
+    expect(completion).toMatchObject({ ok: true });
+    const matchCompleted = await matchCompletedEvent;
+    expect(matchCompleted.matchPublicId).toBe(match.publicId);
 
     const persisted = await prisma.match.findUniqueOrThrow({
       include: { rounds: { orderBy: { roundNumber: 'asc' } } },
@@ -717,6 +739,8 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     });
     expect(persisted).toMatchObject({
       currentRound: 2,
+      lifecycle: MatchLifecycle.COMPLETED,
+      finishedAt: expect.any(Date),
       status: MatchStatus.FINISHED,
     });
     expect(persisted.rounds).toHaveLength(2);
@@ -737,6 +761,13 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     expect(
       auditEvents.filter((event) => event === 'MATCH_FINISHED'),
     ).toHaveLength(1);
+
+    await expect(completeMatch(socket)).resolves.toMatchObject({ ok: true });
+    await expect(
+      prisma.auditLog.count({
+        where: { eventType: 'MATCH_FINISHED', matchId: match.id },
+      }),
+    ).resolves.toBe(1);
   });
 
   it('uses the match duration and never expires a round before its persisted endsAt', async () => {
