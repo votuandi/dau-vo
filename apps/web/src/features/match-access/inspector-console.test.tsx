@@ -273,6 +273,120 @@ describe('InspectorConsole', () => {
     expect(exitMatch).toHaveBeenCalledWith(MatchExitMode.CANCEL_RESULTS);
   });
 
+  it('prioritizes the in-flight exit message and disables exit choices', () => {
+    render(
+      <InspectorConsole
+        realtime={createRealtimeState({
+          cancellingResults: true,
+          snapshot: createMatchSnapshot({
+            exit: {
+              canExit: true,
+              allowedModes: [MatchExitMode.CANCEL_RESULTS],
+              blockedReasons: ['ROUND_1_NOT_ENDED'],
+            },
+          }),
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'THOÁT TRẬN' })).toBeDisabled();
+    expect(screen.getByText('Đang xử lý yêu cầu thoát trận…')).toBeVisible();
+  });
+
+  it('explains that a server connection is required before exiting', () => {
+    render(
+      <InspectorConsole
+        realtime={createRealtimeState({
+          connectionStatus: 'disconnected',
+          snapshot: createMatchSnapshot({
+            exit: {
+              canExit: true,
+              allowedModes: [MatchExitMode.CANCEL_RESULTS],
+              blockedReasons: [],
+            },
+          }),
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'THOÁT TRẬN' })).toBeDisabled();
+    expect(screen.getByText('Cần kết nối máy chủ để thoát trận.')).toBeVisible();
+  });
+
+  it('waits for an authoritative snapshot before offering exit choices', () => {
+    render(<InspectorConsole realtime={createRealtimeState({ snapshot: null })} />);
+
+    expect(screen.getByRole('button', { name: 'THOÁT TRẬN' })).toBeDisabled();
+    expect(screen.getByText('Đang đồng bộ các lựa chọn thoát trận từ máy chủ.')).toBeVisible();
+  });
+
+  it('only reports that exit is unavailable when the authoritative capability forbids it', () => {
+    render(
+      <InspectorConsole
+        realtime={createRealtimeState({
+          snapshot: createMatchSnapshot({
+            exit: { canExit: false, allowedModes: [], blockedReasons: ['ALREADY_COMPLETED'] },
+          }),
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'THOÁT TRẬN' })).toBeDisabled();
+    expect(
+      screen.getByText('Chưa thể thoát trận theo trạng thái hiện tại do máy chủ xác định.'),
+    ).toBeVisible();
+  });
+
+  it('allows cancel-results before round 1 despite informational limitations on other exit modes', () => {
+    render(
+      <InspectorConsole
+        realtime={createRealtimeState({
+          snapshot: createMatchSnapshot({
+            exit: {
+              canExit: true,
+              allowedModes: [MatchExitMode.CANCEL_RESULTS],
+              blockedReasons: ['ROUND_1_NOT_ENDED'],
+            },
+          }),
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'THOÁT TRẬN' })).toBeEnabled();
+    expect(
+      screen.queryByText('Chưa thể thoát trận theo trạng thái hiện tại do máy chủ xác định.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps a rejected exit confirmation open and surfaces the server message', async () => {
+    const user = userEvent.setup();
+    const exitMatch = vi.fn(() => Promise.resolve(false));
+    render(
+      <InspectorConsole
+        realtime={createRealtimeState({
+          exitMatch,
+          resultCancellationErrorMessage: 'Máy chủ từ chối thao tác này.',
+          snapshot: createMatchSnapshot({
+            exit: {
+              canExit: true,
+              allowedModes: [MatchExitMode.CANCEL_RESULTS],
+              blockedReasons: [],
+            },
+          }),
+        })}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'THOÁT TRẬN' }));
+    await user.click(screen.getByRole('button', { name: /Hủy kết quả/ }));
+    await user.click(screen.getByRole('button', { name: 'Hủy kết quả' }));
+
+    expect(exitMatch).toHaveBeenCalledWith(MatchExitMode.CANCEL_RESULTS);
+    expect(screen.getByRole('dialog')).toBeVisible();
+    expect(screen.getByText('Máy chủ từ chối thao tác này.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Hủy kết quả' })).toBeEnabled();
+  });
+
   it('keeps saving visible but disabled before round 2 is complete, using the server reason', () => {
     render(
       <InspectorConsole

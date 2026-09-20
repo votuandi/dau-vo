@@ -231,6 +231,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
   >(null);
   const [exitMenuOpen, setExitMenuOpen] = useState(false);
   const [exitConfirmation, setExitConfirmation] = useState<MatchExitMode | null>(null);
+  const [exitAttempted, setExitAttempted] = useState(false);
   const exitMenuFirstOptionRef = useRef<HTMLButtonElement>(null);
   const displayedRemaining = roundIsPaused
     ? (snapshot?.activeRound?.remainingDurationMs ?? null)
@@ -303,6 +304,15 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
     realtime.connectionStatus !== 'connected' ||
     realtime.cancellingResults ||
     !snapshot?.exit.canExit;
+  const exitUnavailableMessage = realtime.cancellingResults
+    ? 'Đang xử lý yêu cầu thoát trận…'
+    : realtime.connectionStatus !== 'connected'
+      ? 'Cần kết nối máy chủ để thoát trận.'
+      : !snapshot
+        ? 'Đang đồng bộ các lựa chọn thoát trận từ máy chủ.'
+        : !snapshot.exit.canExit
+          ? 'Chưa thể thoát trận theo trạng thái hiện tại do máy chủ xác định.'
+          : '';
 
   useEffect(() => {
     if (armedPenalty === null) {
@@ -498,11 +508,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
               </Button>
               {exitDisabled ? (
                 <p className="mt-3 text-sm font-semibold text-amber-100" id="exit-match-help">
-                  {realtime.connectionStatus !== 'connected'
-                    ? 'Cần kết nối máy chủ để thoát trận.'
-                    : snapshot?.exit.blockedReasons.length
-                      ? 'Chưa thể thoát trận theo trạng thái hiện tại do máy chủ xác định.'
-                      : 'Đang đồng bộ các lựa chọn thoát trận từ máy chủ.'}
+                  {exitUnavailableMessage}
                 </p>
               ) : null}
             </div>
@@ -706,10 +712,12 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                 return (
                   <button
                     className={`min-h-20 rounded-xl border p-4 text-left focus-visible:outline-none focus-visible:ring-4 ${option.destructive ? 'border-red-300/50 bg-red-950/40 focus-visible:ring-red-300' : 'border-sky-300/40 bg-white/10 focus-visible:ring-sky-300'}`}
+                    disabled={realtime.cancellingResults}
                     key={mode}
                     ref={index === 0 ? exitMenuFirstOptionRef : undefined}
                     onClick={() => {
                       setExitMenuOpen(false);
+                      setExitAttempted(false);
                       setExitConfirmation(mode);
                     }}
                     type="button"
@@ -740,18 +748,28 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
           busy={realtime.cancellingResults}
           description={exitOption(exitConfirmation).description}
           onCancel={() => {
+            setExitAttempted(false);
             setExitConfirmation(null);
           }}
           onConfirm={() => {
+            setExitAttempted(true);
             void realtime.exitMatch(exitConfirmation).then((ok) => {
-              if (ok) setExitConfirmation(null);
+              if (ok) {
+                setExitAttempted(false);
+                setExitConfirmation(null);
+              }
             });
           }}
           title="Xác nhận thoát trận"
           warning={
-            exitOption(exitConfirmation).destructive
-              ? 'Kết quả hiện tại sẽ bị vô hiệu. Bạn vẫn có thể xem lịch sử thao tác.'
-              : undefined
+            [
+              exitOption(exitConfirmation).destructive
+                ? 'Kết quả hiện tại sẽ bị vô hiệu. Bạn vẫn có thể xem lịch sử thao tác.'
+                : undefined,
+              exitAttempted ? (realtime.resultCancellationErrorMessage ?? undefined) : undefined,
+            ]
+              .filter(Boolean)
+              .join(' ') || undefined
           }
         />
       ) : null}
