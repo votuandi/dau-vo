@@ -7,6 +7,7 @@ import {
   MatchLifecycle,
   MatchStatus,
   PrismaClient,
+  TournamentOfficialRole,
 } from '@prisma/client';
 import {
   RealtimeEvent,
@@ -19,10 +20,13 @@ import {
   type RoundControlResponse,
   type ResultCancellationResponse,
   type ResultCancellationUndoResponse,
+  MatchExitMode,
+  type MatchExitResponse,
 } from '@martial-arts-scoring/shared-types';
 import { hash } from 'bcryptjs';
 import Redis from 'ioredis';
 import { randomBytes } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 
 import { DEFAULT_SPORT } from '../../prisma/default-sport';
 import type { AddressInfo } from 'node:net';
@@ -188,6 +192,26 @@ function completeMatch(socket: Socket): Promise<MatchCompletionResponse> {
   });
 }
 
+function exitMatch(
+  socket: Socket,
+  mode: MatchExitMode,
+): Promise<MatchExitResponse> {
+  return new Promise<MatchExitResponse>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('Timed out waiting for match:exit response')),
+      EVENT_TIMEOUT_MS,
+    );
+    socket.emit(
+      RealtimeEvent.MATCH_EXIT,
+      { mode },
+      (response: MatchExitResponse) => {
+        clearTimeout(timer);
+        resolve(response);
+      },
+    );
+  });
+}
+
 function controlRound(
   socket: Socket,
   event: 'round:pause' | 'round:resume',
@@ -321,6 +345,84 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     testMatchIds.add(match.id);
 
     return { ...match, rawCodes };
+  }
+
+  async function createOfficialCrew(label: string, matchId: string) {
+    const create = async (role: TournamentOfficialRole, name: string) => {
+      const passcode = `${label}-${randomBytes(12).toString('base64url')}`;
+      const digest = createHmac(
+        'sha256',
+        'test-only-official-passcode-secret-not-for-production',
+      )
+        .update(passcode)
+        .digest('hex');
+      const official = await prisma.tournamentOfficial.create({
+        data: {
+          name,
+          normalizedName:
+            `${name}-${randomBytes(4).toString('hex')}`.toLowerCase(),
+          passcodeHash: await hash(passcode, 4),
+          passcodeLookupDigest: digest,
+          role,
+          tournamentId,
+        },
+      });
+      return { official, passcode };
+    };
+    const inspector = await create(
+      TournamentOfficialRole.INSPECTOR,
+      `${label} inspector`,
+    );
+    const referees = await Promise.all(
+      [1, 2, 3].map((position) =>
+        create(TournamentOfficialRole.REFEREE, `${label} referee ${position}`),
+      ),
+    );
+    const loginOfficial = async (
+      expectedRole: TournamentOfficialRole,
+      device: string,
+      passcode: string,
+    ) => {
+      const response = await request(app.getHttpServer())
+        .post('/api/official-access/login')
+        .send({
+          deviceId: `${TEST_PREFIX}-${device}`,
+          expectedRole,
+          privatePasscode: passcode,
+          tournamentCode: (
+            await prisma.tournament.findUniqueOrThrow({
+              where: { id: tournamentId },
+            })
+          ).publicCode,
+        })
+        .expect(200);
+      return cookieFrom(response);
+    };
+    const inspectorCookie = await loginOfficial(
+      TournamentOfficialRole.INSPECTOR,
+      `${label}-inspector`,
+      inspector.passcode,
+    );
+    const refereeCookies = await Promise.all(
+      referees.map(({ passcode }, index) =>
+        loginOfficial(
+          TournamentOfficialRole.REFEREE,
+          `${label}-referee-${index}`,
+          passcode,
+        ),
+      ),
+    );
+    await request(app.getHttpServer())
+      .post(`/api/official/matches/${matchId}/take`)
+      .set('Cookie', inspectorCookie)
+      .send({ refereeIds: referees.map(({ official }) => official.id) })
+      .expect(201);
+    return {
+      inspector: inspector.official,
+      inspectorCookie,
+      referees: referees.map(({ official }) => official),
+      refereeCookies,
+    };
   }
 
   async function login(
@@ -1451,5 +1553,154 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
         where: { matchId: match.id, revertedAt: { not: null } },
       }),
     ).resolves.toBe(1);
+  });
+
+  it.each([
+    [
+      MatchExitMode.CANCEL_RESULTS,
+      0,
+      MatchLifecycle.NOT_STARTED,
+      MatchStatus.WAITING,
+    ],
+    [
+      MatchExitMode.SUSPEND_KEEP_ROUND_1,
+      1,
+      MatchLifecycle.SUSPENDED,
+      MatchStatus.BREAK,
+    ],
+    [
+      MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2,
+      2,
+      MatchLifecycle.SUSPENDED,
+      MatchStatus.AWAITING_RESULT_SAVE,
+    ],
+  ])(
+    'exits a tournament-official match with %s atomically and releases the complete crew',
+    async (mode, resolvedRounds, lifecycle, status) => {
+      const match = await createMatch(`official-exit-${mode}`);
+      const crew = await createOfficialCrew(`official-exit-${mode}`, match.id);
+      const now = new Date();
+      if (resolvedRounds > 0) {
+        await prisma.match.update({
+          where: { id: match.id },
+          data: {
+            currentRound: resolvedRounds,
+            lifecycle: MatchLifecycle.IN_PROGRESS,
+            startedAt: new Date(now.getTime() - 5_000),
+            status:
+              resolvedRounds === 1
+                ? MatchStatus.BREAK
+                : MatchStatus.AWAITING_RESULT_SAVE,
+          },
+        });
+        await prisma.round.createMany({
+          data: Array.from({ length: resolvedRounds }, (_, index) => ({
+            endedAt: now,
+            endsAt: now,
+            matchId: match.id,
+            roundNumber: index + 1,
+            startedAt: new Date(now.getTime() - 2_000),
+          })),
+        });
+      }
+      const inspectorSocket = await connect(crew.inspectorCookie);
+      const refereeSockets = await Promise.all(
+        crew.refereeCookies.map((cookie) => connect(cookie)),
+      );
+      const release = waitForEvent<{ releasedOfficialIds: string[] }>(
+        refereeSockets[0]!,
+        RealtimeEvent.MATCH_ASSIGNMENT_RELEASED,
+        (payload) => payload.releasedOfficialIds.includes(crew.referees[0]!.id),
+      );
+      const acknowledgement = await exitMatch(inspectorSocket, mode);
+      expect(acknowledgement).toMatchObject({ ok: true, exit: { mode } });
+      expect((await release).releasedOfficialIds).toEqual(
+        expect.arrayContaining([
+          crew.inspector.id,
+          ...crew.referees.map(({ id }) => id),
+        ]),
+      );
+      await expect(
+        prisma.match.findUniqueOrThrow({ where: { id: match.id } }),
+      ).resolves.toMatchObject({ finishedAt: null, lifecycle, status });
+      await expect(
+        prisma.matchOfficialAssignment.count({
+          where: { matchId: match.id, releasedAt: null },
+        }),
+      ).resolves.toBe(0);
+      await expect(
+        prisma.round.count({
+          where: { matchId: match.id, invalidatedAt: null },
+        }),
+      ).resolves.toBe(resolvedRounds);
+
+      const freshCrew = await createOfficialCrew(
+        `official-retake-${mode}`,
+        match.id,
+      );
+      expect(freshCrew.inspector.id).not.toBe(crew.inspector.id);
+      await expect(
+        prisma.matchOfficialAssignment.count({
+          where: { matchId: match.id, releasedAt: null },
+        }),
+      ).resolves.toBe(4);
+      if (mode !== MatchExitMode.CANCEL_RESULTS)
+        await expect(
+          prisma.match.findUniqueOrThrow({ where: { id: match.id } }),
+        ).resolves.toMatchObject({
+          lifecycle: MatchLifecycle.IN_PROGRESS,
+          status,
+        });
+    },
+  );
+
+  it('rejects retained-result exit while a scoring window is unresolved without releasing officials or changing state', async () => {
+    const match = await createMatch('official-exit-unresolved');
+    const crew = await createOfficialCrew('official-exit-unresolved', match.id);
+    const now = new Date();
+    await prisma.match.update({
+      where: { id: match.id },
+      data: {
+        currentRound: 1,
+        lifecycle: MatchLifecycle.IN_PROGRESS,
+        startedAt: now,
+        status: MatchStatus.BREAK,
+      },
+    });
+    await prisma.round.create({
+      data: {
+        endedAt: now,
+        endsAt: now,
+        matchId: match.id,
+        roundNumber: 1,
+        startedAt: now,
+      },
+    });
+    await prisma.scoringWindow.create({
+      data: {
+        endsAt: new Date(now.getTime() + 1_000),
+        matchId: match.id,
+        roundNumber: 1,
+        startedAt: now,
+      },
+    });
+    const inspectorSocket = await connect(crew.inspectorCookie);
+    await expect(
+      exitMatch(inspectorSocket, MatchExitMode.SUSPEND_KEEP_ROUND_1),
+    ).resolves.toMatchObject({
+      error: { code: 'MATCH_EXIT_INVALID_STATE' },
+      ok: false,
+    });
+    await expect(
+      prisma.match.findUniqueOrThrow({ where: { id: match.id } }),
+    ).resolves.toMatchObject({
+      lifecycle: MatchLifecycle.IN_PROGRESS,
+      status: MatchStatus.BREAK,
+    });
+    await expect(
+      prisma.matchOfficialAssignment.count({
+        where: { matchId: match.id, releasedAt: null },
+      }),
+    ).resolves.toBe(4);
   });
 });

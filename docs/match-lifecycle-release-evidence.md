@@ -51,6 +51,20 @@ mode; it releases all officials post-commit. If an official is deactivated,
 the assignment/deactivation transaction releases or rejects safely; reactivate
 only after resolving the assignment. Do not alter assignment rows manually.
 
+### Match-exit acceptance matrix
+
+| Inspector action              | Preconditions                                            | Persisted result                     | Assignment/result expectation                                                                      |
+| ----------------------------- | -------------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `CANCEL_RESULTS`              | Before round 1 (or abandon all progress)                 | `NOT_STARTED` / `WAITING`            | Inspector and every referee are released; active assignments clear; the match may be taken again.  |
+| `SUSPEND_KEEP_ROUND_1`        | Round 1 resolved and no unresolved scoring window        | `SUSPENDED` / `BREAK`                | Only valid round-1 history remains; all officials are released; a fresh crew takes and resumes it. |
+| `SUSPEND_KEEP_ROUNDS_1_AND_2` | Rounds 1 and 2 resolved and no unresolved scoring window | `SUSPENDED` / `AWAITING_RESULT_SAVE` | Results remain intact; all officials are released; no bracket progression occurs.                  |
+| `match:complete`              | Authoritative result-save state                          | `COMPLETED` / `FINISHED`             | This is the only completion/progression command.                                                   |
+
+Invalid exit selections, including retained-result modes with unresolved scoring,
+must leave lifecycle, scores, and every assignment untouched. The requesting
+inspector uses the successful command acknowledgement to return to the list;
+release events notify the rest of the crew and other tabs.
+
 Manual acceptance: run the three-referee happy path; two-inspector stale
 selection conflict; suspend after rounds 1 and 2; cancel/reset; reconnect after
 a missed assignment event; and assigned logout (409, then success after
