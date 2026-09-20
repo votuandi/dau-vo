@@ -1554,8 +1554,6 @@ export class MatchLifecycleService implements OnModuleDestroy {
       FROM "match_sessions" AS match_session
       INNER JOIN "match_access_codes" AS access_code
         ON access_code."id" = match_session."access_code_id"
-      LEFT JOIN "match_official_assignments" AS assignment
-        ON assignment."id" = match_session."assignment_id"
       WHERE match_session."id" = ${identity.sessionId}::uuid
         AND match_session."match_id" = ${matchId}::uuid
         AND match_session."active" = true
@@ -1564,7 +1562,16 @@ export class MatchLifecycleService implements OnModuleDestroy {
         AND match_session."token_hash" = ${identity.sessionTokenHash}
         AND match_session."role" = 'INSPECTOR'
         AND access_code."access_role" = 'INSPECTOR'
-        AND (match_session."assignment_id" IS NULL OR assignment."released_at" IS NULL)
+        -- A legacy per-match session is never permitted to control a match
+        -- once the modern official-assignment workflow has claimed it.  The
+        -- session may pre-date the claim, so checking login alone is not a
+        -- sufficient authorization boundary.
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "match_official_assignments" AS active_assignment
+          WHERE active_assignment."match_id" = match_session."match_id"
+            AND active_assignment."released_at" IS NULL
+        )
       FOR UPDATE OF match_session
     `;
 

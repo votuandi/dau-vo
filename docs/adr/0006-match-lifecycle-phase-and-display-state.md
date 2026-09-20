@@ -13,10 +13,13 @@ risk to the established scoring and result-operation history. `status` is a
 deprecated compatibility alias and is scheduled for removal in the final
 contract-hardening prompt.
 
-Phase includes `AWAITING_RESULT_SAVE`, but this foundation does not transition
-to it yet. Round 2 therefore keeps its current automatic `FINISHED` behavior.
-A later prompt will move the end-of-round-2 transition to
-`AWAITING_RESULT_SAVE` and add the explicit, authorized save command.
+Phase includes `AWAITING_RESULT_SAVE`. Ending round 2 moves the match to that
+phase while retaining its active assignment and has no bracket side effect.
+Only the active assigned inspector's explicit `match:complete` command marks
+the match `COMPLETED`, releases officials, and progresses the bracket. A
+suspended match resumes only when a complete new crew is atomically taken;
+the retained round history determines whether it resumes at `BREAK` or
+`AWAITING_RESULT_SAVE`.
 
 Fixture readiness and operational lifecycle are projected into one stable
 `MatchDisplayState`: unresolved bracket fixtures are `NOT_READY`, resolved but
@@ -29,14 +32,17 @@ placeholder `matches` rows and keeps one backend projection authoritative.
 
 The intended lifecycle transitions are:
 
-- `NOT_STARTED -> IN_PROGRESS` when round 1 starts.
-- `IN_PROGRESS -> SUSPENDED` when the later operational-exit flow suspends a match.
-- `SUSPENDED -> IN_PROGRESS` when an authorized later resume flow succeeds.
-- `IN_PROGRESS -> COMPLETED` only with completed phase and `finishedAt`.
-- Result cancellation may move `COMPLETED -> IN_PROGRESS` (round 2 only) or
-  `COMPLETED -> NOT_STARTED` (whole-match reset), preserving and invalidating
-  historical scoring rows under the existing audit operation.
-- Undo restores lifecycle deterministically from the restored phase.
+| From                                   | Command                                      | To                                     | Durable effect                                                                      |
+| -------------------------------------- | -------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------- |
+| `NOT_STARTED` / `SUSPENDED`            | atomic `POST /official/matches/:id/take`     | `IN_PROGRESS`                          | complete inspector/referee crew is created; a suspended match keeps retained rounds |
+| `IN_PROGRESS`                          | `round:start`, `round:pause`, `round:resume` | `IN_PROGRESS`                          | phase advances only through the lifecycle service                                   |
+| `IN_PROGRESS`                          | round 2 ends                                 | `IN_PROGRESS` / `AWAITING_RESULT_SAVE` | no bracket progression and no release                                               |
+| `IN_PROGRESS`                          | `match:exit` cancel or suspend               | `NOT_STARTED` or `SUSPENDED`           | intended history is invalidated or retained; crew is released                       |
+| `IN_PROGRESS` / `AWAITING_RESULT_SAVE` | `match:complete`                             | `COMPLETED`                            | explicit result save, bracket processing, and release occur atomically              |
+
+Normal exit never downgrades a completed match. Result cancellation and undo
+retain their historical audit/result-operation records; unsafe outcome reversal
+continues to be blocked when a downstream prepared fixture exists.
 
 PostgreSQL is authoritative. Realtime snapshots expose both `lifecycle` and
 `phase`; reconnecting clients reconcile from those snapshots. Events are still
