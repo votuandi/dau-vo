@@ -232,7 +232,27 @@ describe('MatchAccessPage official login', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/giam-dinh');
   });
 
-  it('opens the referee console when its correlated authoritative assignment arrives', async () => {
+  it('opens the referee console immediately when its correlated assignment update arrives', async () => {
+    officialAccessApiMock.session.mockResolvedValue({ session: refereeSession });
+    renderPage();
+    await screen.findByText('Đang chờ phân công');
+
+    socketHarness.trigger('official:assignment-updated', {
+      assignment: {
+        id: 'assignment-1',
+        match: { id: 'match-1', publicId: 'M-001', status: 'WAITING' },
+        refereePosition: 1,
+        role: 'REFEREE',
+      },
+      officialId: refereeSession.official.id,
+      tournamentId: refereeSession.tournament.id,
+    });
+
+    expect(await screen.findByText('Referee console ready')).toBeVisible();
+    expect(socketHarness.socket.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('restores the referee console from a correlated assignment snapshot', async () => {
     officialAccessApiMock.session.mockResolvedValue({ session: refereeSession });
     renderPage();
     await screen.findByText('Đang chờ phân công');
@@ -251,6 +271,31 @@ describe('MatchAccessPage official login', () => {
     });
 
     expect(await screen.findByText('Referee console ready')).toBeVisible();
+  });
+
+  it('does not let a late snapshot overwrite a newer assignment event', async () => {
+    officialAccessApiMock.session.mockResolvedValue({ session: refereeSession });
+    renderPage();
+    await screen.findByText('Đang chờ phân công');
+    socketHarness.trigger('official:assignment-updated', {
+      assignment: {
+        id: 'assignment-2',
+        match: { id: 'match-2', publicId: 'M-002', status: 'WAITING' },
+        refereePosition: 1,
+        role: 'REFEREE',
+      },
+      officialId: refereeSession.official.id,
+      tournamentId: refereeSession.tournament.id,
+    });
+    expect(await screen.findByText('Referee console ready')).toBeVisible();
+    socketHarness.trigger('official:assignment-snapshot', {
+      assignment: null,
+      official: refereeSession.official,
+      sessionId: refereeSession.sessionId,
+      status: 'READY',
+      tournament: refereeSession.tournament,
+    });
+    expect(screen.getByText('Referee console ready')).toBeVisible();
   });
 
   it('rejects assignment events for another official and clears the console on release', async () => {

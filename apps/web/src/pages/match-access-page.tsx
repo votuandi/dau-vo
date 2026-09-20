@@ -1,17 +1,14 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, useNavigate } from 'react-router-dom';
-import {
-  MatchRole,
-  RealtimeEvent,
-  TournamentOfficialRole,
-  type OfficialAssignmentSnapshot,
-  type OfficialAssignmentUpdatedPayload,
-  type MatchAssignmentReleasedPayload,
-} from '@martial-arts-scoring/shared-types';
+import { MatchRole, TournamentOfficialRole } from '@martial-arts-scoring/shared-types';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { getOrCreateDeviceId } from '@/features/match-access/device';
+import {
+  officialSessionQueryKey,
+  useOfficialAssignment,
+} from '@/features/match-access/official-realtime';
 import {
   useMatchRealtime,
   type RealtimeRefereeIdentity,
@@ -26,12 +23,11 @@ import {
   type OfficialSession,
 } from '@/services/api/official-access';
 import type { MatchAccessSession } from '@/services/api/match-access';
-import { getSocketClient } from '@/services/socket/client';
 
 interface Props {
   readonly expectedRole: TournamentOfficialRole;
 }
-const sessionKey = ['official-access', 'session'] as const;
+const sessionKey = officialSessionQueryKey;
 const pathFor = (role: TournamentOfficialRole) =>
   role === TournamentOfficialRole.REFEREE ? '/trong-tai' : '/giam-dinh';
 const toConsoleSession = (s: OfficialSession, a: OfficialAssignment): MatchAccessSession => ({
@@ -51,18 +47,6 @@ const realtimeRefereeIdentity = (assignment: OfficialAssignment): RealtimeRefere
         refereePosition: assignment.refereePosition,
       }
     : null;
-const toAssignment = (
-  assignment: OfficialAssignmentSnapshot['assignment'],
-): OfficialAssignment | null =>
-  assignment === null
-    ? null
-    : {
-        ...assignment,
-        role:
-          assignment.role === 'REFEREE'
-            ? TournamentOfficialRole.REFEREE
-            : TournamentOfficialRole.INSPECTOR,
-      };
 function errorMessage(e: unknown) {
   return e instanceof ApiClientError && e.body.code === 'INVALID_OFFICIAL_CREDENTIALS'
     ? 'Mã giải đấu hoặc mã bảo mật riêng không đúng.'
@@ -336,8 +320,6 @@ export function MatchAccessPage({ expectedRole }: Props) {
   const [passcode, setPasscode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [challenge, setChallenge] = useState<string | null>(null);
-  const [assignment, setAssignment] = useState<OfficialAssignment | null>(null);
-  const [connected, setConnected] = useState(false);
   const [revoked, setRevoked] = useState(false);
   const session = useQuery({
     queryKey: sessionKey,
@@ -353,86 +335,10 @@ export function MatchAccessPage({ expectedRole }: Props) {
     staleTime: 0,
   });
   const identity = session.data?.session;
-  useEffect(() => {
-    setAssignment(identity?.activeAssignment ?? null);
-    setRevoked(false);
-    // The assignment is deliberately owned by the authoritative socket after initial recovery.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identity?.sessionId]);
-  useEffect(() => {
-    if (!identity) return;
-    const socket = getSocketClient();
-    const accept = (next: OfficialAssignment | null) => {
-      setAssignment((old) => {
-        if (old?.id !== next?.id || old?.match.id !== next?.match.id) {
-          if (old) qc.removeQueries({ queryKey: ['official-match', old.match.id] });
-        }
-        qc.setQueryData(sessionKey, (current: { session: OfficialSession } | undefined) =>
-          current
-            ? {
-                session: {
-                  ...current.session,
-                  activeAssignment: next,
-                  status: next ? 'IN_MATCH' : 'READY',
-                },
-              }
-            : current,
-        );
-        return next;
-      });
-    };
-    const snapshot = (p: OfficialAssignmentSnapshot) => {
-      if (
-        p.sessionId === identity.sessionId &&
-        p.official.id === identity.official.id &&
-        p.tournament.id === identity.tournament.id
-      )
-        accept(toAssignment(p.assignment));
-    };
-    const updated = (p: OfficialAssignmentUpdatedPayload) => {
-      if (p.officialId === identity.official.id && p.tournamentId === identity.tournament.id)
-        accept(toAssignment(p.assignment));
-    };
-    const released = (p: MatchAssignmentReleasedPayload) => {
-      if (
-        assignment &&
-        p.tournamentId === identity.tournament.id &&
-        p.matchId === assignment.match.id &&
-        p.releasedOfficialIds.includes(identity.official.id)
-      )
-        accept(null);
-    };
-    const revoke = () => {
-      setConnected(false);
-      setRevoked(true);
-      setAssignment(null);
-      qc.setQueryData(sessionKey, null);
-    };
-    const connect = () => {
-      setConnected(true);
-      socket.emit(RealtimeEvent.OFFICIAL_ASSIGNMENT_SNAPSHOT_REQUEST);
-    };
-    const disconnect = () => {
-      setConnected(false);
-    };
-    socket.on('connect', connect);
-    socket.on('disconnect', disconnect);
-    socket.on(RealtimeEvent.OFFICIAL_ASSIGNMENT_SNAPSHOT, snapshot);
-    socket.on(RealtimeEvent.OFFICIAL_ASSIGNMENT_UPDATED, updated);
-    socket.on(RealtimeEvent.MATCH_ASSIGNMENT_RELEASED, released);
-    socket.on(RealtimeEvent.SESSION_REVOKED, revoke);
-    if (socket.connected) connect();
-    else socket.connect();
-    return () => {
-      socket.off('connect', connect);
-      socket.off('disconnect', disconnect);
-      socket.off(RealtimeEvent.OFFICIAL_ASSIGNMENT_SNAPSHOT, snapshot);
-      socket.off(RealtimeEvent.OFFICIAL_ASSIGNMENT_UPDATED, updated);
-      socket.off(RealtimeEvent.MATCH_ASSIGNMENT_RELEASED, released);
-      socket.off(RealtimeEvent.SESSION_REVOKED, revoke);
-      socket.disconnect();
-    };
-  }, [assignment, identity, qc]);
+  const officialRealtime = useOfficialAssignment(identity, () => {
+    setRevoked(true);
+  });
+  const { assignment, connected } = officialRealtime;
   const login = useMutation({
     mutationFn: () =>
       officialAccessApi.login({
@@ -443,6 +349,7 @@ export function MatchAccessPage({ expectedRole }: Props) {
       }),
     onSuccess: (x) => {
       qc.setQueryData(sessionKey, x);
+      setRevoked(false);
       void nav(pathFor(x.session.official.role), { replace: true });
     },
     onError: (e) => {
@@ -470,6 +377,7 @@ export function MatchAccessPage({ expectedRole }: Props) {
     onSuccess: (x) => {
       qc.setQueryData(sessionKey, x);
       setChallenge(null);
+      setRevoked(false);
     },
     onError: (e) => {
       setChallenge(null);
@@ -479,7 +387,6 @@ export function MatchAccessPage({ expectedRole }: Props) {
   const logout = useMutation({
     mutationFn: officialAccessApi.logout,
     onSuccess: () => {
-      setAssignment(null);
       qc.setQueryData(sessionKey, null);
     },
   });
