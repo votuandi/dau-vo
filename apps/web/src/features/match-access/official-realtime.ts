@@ -13,6 +13,7 @@ import {
   type OfficialAssignment,
   type OfficialSession,
 } from '@/services/api/official-access';
+import { ApiClientError } from '@/services/api/client';
 import { disconnectSocket, getSocketClient } from '@/services/socket/client';
 
 export const officialSessionQueryKey = ['official-access', 'session'] as const;
@@ -68,6 +69,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
   const eventEpoch = useRef(0);
   const assignmentEventEpoch = useRef(0);
   const reconciliationIdentityRef = useRef<string | null>(null);
+  const reconciliationEpoch = useRef(0);
   const identityRef = useRef(connectionIdentity(session));
   const assignmentIdentityRef = useRef(connectionIdentity(session));
   const releasedAssignmentIds = useRef(new Set<string>());
@@ -85,10 +87,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
   const acknowledgeAssignmentRelease = useCallback(
     (releasedAssignment: Pick<OfficialAssignment, 'id' | 'match'>) => {
       const current = assignmentRef.current;
-      if (
-        current?.id !== releasedAssignment.id ||
-        current.match.id !== releasedAssignment.match.id
-      )
+      if (current?.id !== releasedAssignment.id || current.match.id !== releasedAssignment.match.id)
         return;
 
       // The command acknowledgement is authoritative for its requester. Keep
@@ -134,6 +133,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
     eventEpoch.current = 0;
     assignmentEventEpoch.current = 0;
     reconciliationIdentityRef.current = null;
+    reconciliationEpoch.current += 1;
   }
 
   useEffect(() => {
@@ -153,9 +153,28 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
     }
     const socket = getSocketClient();
     let disposed = false;
+    let revoked = false;
     const diagnostic = (event: string, details?: Record<string, unknown>) => {
       // Deliberately IDs/status only: never include cookies, tokens, or passcodes.
       console.info('[official-realtime]', event, details);
+    };
+    const revoke = () => {
+      if (disposed || identityRef.current !== identity || revoked) return;
+
+      revoked = true;
+      reconciliationEpoch.current += 1;
+      reconciliationIdentityRef.current = null;
+      assignmentRef.current = null;
+      assignmentIdentityRef.current = null;
+      connectedIdentityRef.current = null;
+      setAssignment(null);
+      setConnected(false);
+      queryClient.setQueryData(officialSessionQueryKey, null);
+      // Stop the authenticated transport before the page drops this session so
+      // Socket.IO cannot retry with a cookie the server has just rejected.
+      disconnectSocket();
+      diagnostic('revoked', { sessionId });
+      revokedRef.current();
     };
     const apply = (next: OfficialAssignment | null, source: string) => {
       if (next !== null && releasedAssignmentIds.current.has(next.id)) {
@@ -192,6 +211,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
         return;
       }
       reconciliationIdentityRef.current = identity;
+      const reconciliationRun = ++reconciliationEpoch.current;
       const startedAtEpoch = eventEpoch.current;
       diagnostic('reconcile-requested', { reason, sessionId });
       try {
@@ -206,9 +226,19 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
         const accepted = apply(response.session.activeAssignment, `http:${reason}`);
         if (accepted && response.session.activeAssignment !== null)
           socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
-      } catch {
-        // The socket's revocation message remains the immediate path; the next
-        // protected request will also clear an invalid cookie normally.
+      } catch (error) {
+        if (
+          !disposed &&
+          identityRef.current === identity &&
+          reconciliationEpoch.current === reconciliationRun &&
+          error instanceof ApiClientError &&
+          error.status === 401
+        ) {
+          revoke();
+          return;
+        }
+        // Transient failures retain the current assignment and allow the
+        // normal socket/reconciliation recovery paths to continue.
         diagnostic('reconcile-failed', { reason, sessionId });
       } finally {
         if (reconciliationIdentityRef.current === identity)
@@ -268,13 +298,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
       }
     };
     const onRevocation = () => {
-      setConnected(false);
-      connectedIdentityRef.current = null;
-      setAssignment(null);
-      assignmentIdentityRef.current = null;
-      queryClient.setQueryData(officialSessionQueryKey, null);
-      diagnostic('revoked', { sessionId });
-      revokedRef.current();
+      revoke();
     };
     const onFocus = () => {
       if (!document.hidden) void reconcile('focus');
@@ -305,7 +329,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
       // This hook owns the authenticated lifecycle, not an individual screen.
       // An assignment rerender leaves `identity` unchanged, while logout,
       // takeover, or another official's login retires the old handshake.
-      disconnectSocket();
+      if (!revoked) disconnectSocket();
     };
   }, [identity, officialId, queryClient, sessionId, tournamentId]);
 

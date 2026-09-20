@@ -668,54 +668,57 @@ export function useMatchRealtime({
   const cancelRoundResult = useCallback(() => changeResults(false), [changeResults]);
   const resetMatchResults = useCallback(() => changeResults(true), [changeResults]);
 
-  const exitMatch = useCallback(async (mode: MatchExitMode): Promise<boolean> => {
-    const socket = getSocketClient();
-    if (resultCancellationInFlightRef.current || !socket.connected) {
-      setResultCancellationErrorMessage(
-        'Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi thoát trận.',
-      );
-      return false;
-    }
-    resultCancellationInFlightRef.current = true;
-    setCancellingResults(true);
-    setResultCancellationErrorMessage(null);
-    try {
-      const response = await new Promise<MatchExitResponse>((resolve, reject) =>
-        socket
-          .timeout(10_000)
-          .emit(
-            RealtimeEvent.MATCH_EXIT,
-            { mode },
-            (error: Error | null, acknowledgement: MatchExitResponse) => {
-              if (error) reject(error);
-              else resolve(acknowledgement);
-            },
-          ),
-      );
-      if (!response.ok) {
-        setResultCancellationErrorMessage(response.error.message);
-        socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+  const exitMatch = useCallback(
+    async (mode: MatchExitMode): Promise<boolean> => {
+      const socket = getSocketClient();
+      if (resultCancellationInFlightRef.current || !socket.connected) {
+        setResultCancellationErrorMessage(
+          'Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi thoát trận.',
+        );
         return false;
       }
-      onMatchExitAcknowledged?.();
-      toast({
-        title:
-          mode === MatchExitMode.CANCEL_RESULTS
-            ? 'Đã hủy kết quả và thoát trận.'
-            : 'Đã lưu trạng thái tạm dừng và thoát trận.',
-        variant: 'success',
-      });
-      return true;
-    } catch {
-      setResultCancellationErrorMessage(
-        'Máy chủ không phản hồi. Vui lòng kiểm tra trạng thái và thử lại.',
-      );
-      return false;
-    } finally {
-      resultCancellationInFlightRef.current = false;
-      setCancellingResults(false);
-    }
-  }, [onMatchExitAcknowledged]);
+      resultCancellationInFlightRef.current = true;
+      setCancellingResults(true);
+      setResultCancellationErrorMessage(null);
+      try {
+        const response = await new Promise<MatchExitResponse>((resolve, reject) =>
+          socket
+            .timeout(10_000)
+            .emit(
+              RealtimeEvent.MATCH_EXIT,
+              { mode },
+              (error: Error | null, acknowledgement: MatchExitResponse) => {
+                if (error) reject(error);
+                else resolve(acknowledgement);
+              },
+            ),
+        );
+        if (!response.ok) {
+          setResultCancellationErrorMessage(response.error.message);
+          socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+          return false;
+        }
+        onMatchExitAcknowledged?.();
+        toast({
+          title:
+            mode === MatchExitMode.CANCEL_RESULTS
+              ? 'Đã hủy kết quả và thoát trận.'
+              : 'Đã lưu trạng thái tạm dừng và thoát trận.',
+          variant: 'success',
+        });
+        return true;
+      } catch {
+        setResultCancellationErrorMessage(
+          'Máy chủ không phản hồi. Vui lòng kiểm tra trạng thái và thử lại.',
+        );
+        return false;
+      } finally {
+        resultCancellationInFlightRef.current = false;
+        setCancellingResults(false);
+      }
+    },
+    [onMatchExitAcknowledged],
+  );
 
   const submitVote = useCallback(async (athlete: AthleteColor) => {
     const socket = getSocketClient();

@@ -128,16 +128,16 @@ function renderPage(expectedRole = TournamentOfficialRole.REFEREE) {
   return {
     queryClient,
     ...render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter
-        initialEntries={[
-          expectedRole === TournamentOfficialRole.REFEREE ? '/trong-tai' : '/giam-dinh',
-        ]}
-      >
-        <MatchAccessPage expectedRole={expectedRole} />
-        <LocationProbe />
-      </MemoryRouter>
-    </QueryClientProvider>,
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter
+          initialEntries={[
+            expectedRole === TournamentOfficialRole.REFEREE ? '/trong-tai' : '/giam-dinh',
+          ]}
+        >
+          <MatchAccessPage expectedRole={expectedRole} />
+          <LocationProbe />
+        </MemoryRouter>
+      </QueryClientProvider>,
     ),
   };
 }
@@ -177,6 +177,7 @@ describe('MatchAccessPage official login', () => {
     const user = userEvent.setup();
     officialAccessApiMock.login.mockResolvedValue({ session: refereeSession });
     renderPage();
+    officialAccessApiMock.session.mockResolvedValue({ session: refereeSession });
 
     await fillLoginForm(user);
     const deviceId = storedDeviceId();
@@ -208,6 +209,7 @@ describe('MatchAccessPage official login', () => {
     );
     officialAccessApiMock.takeover.mockResolvedValue({ session: inspectorSession });
     renderPage(TournamentOfficialRole.INSPECTOR);
+    officialAccessApiMock.session.mockResolvedValue({ session: inspectorSession });
 
     await fillLoginForm(user);
     const deviceId = storedDeviceId();
@@ -234,6 +236,7 @@ describe('MatchAccessPage official login', () => {
     const user = userEvent.setup();
     officialAccessApiMock.login.mockResolvedValue({ session: inspectorSession });
     renderPage(TournamentOfficialRole.INSPECTOR);
+    officialAccessApiMock.session.mockResolvedValue({ session: inspectorSession });
 
     await fillLoginForm(user);
     await user.click(screen.getByRole('button', { name: 'Đăng nhập' }));
@@ -284,7 +287,7 @@ describe('MatchAccessPage official login', () => {
       },
       status: 'IN_MATCH',
     };
-    officialAccessApiMock.session.mockResolvedValueOnce({ session: refereeSession });
+    officialAccessApiMock.session.mockResolvedValue({ session: refereeSession });
     officialAccessApiMock.logout.mockRejectedValue(
       new ApiClientError(409, { code: 'OFFICIAL_IN_MATCH_LOGOUT_FORBIDDEN' }),
     );
@@ -385,7 +388,11 @@ describe('MatchAccessPage official login', () => {
       ...refereeSession,
       activeAssignment: {
         id: 'assignment-missed-focus-release',
-        match: { id: 'match-missed-focus', publicId: 'M-MISSED-FOCUS', status: MatchStatus.WAITING },
+        match: {
+          id: 'match-missed-focus',
+          publicId: 'M-MISSED-FOCUS',
+          status: MatchStatus.WAITING,
+        },
         refereePosition: 1,
         role: TournamentOfficialRole.REFEREE,
       },
@@ -490,7 +497,11 @@ describe('MatchAccessPage official login', () => {
       ...refereeSession,
       activeAssignment: {
         id: 'assignment-transient-error',
-        match: { id: 'match-transient-error', publicId: 'M-TRANSIENT', status: MatchStatus.WAITING },
+        match: {
+          id: 'match-transient-error',
+          publicId: 'M-TRANSIENT',
+          status: MatchStatus.WAITING,
+        },
         refereePosition: 1,
         role: TournamentOfficialRole.REFEREE,
       },
@@ -510,6 +521,75 @@ describe('MatchAccessPage official login', () => {
     });
 
     expect(screen.getByText('Referee console ready')).toBeVisible();
+  });
+
+  it('leaves an assigned console when reconciliation finds a revoked session', async () => {
+    const assignedSession: OfficialSession = {
+      ...refereeSession,
+      activeAssignment: {
+        id: 'assignment-revoked-session',
+        match: { id: 'match-revoked-session', publicId: 'M-REVOKED', status: MatchStatus.WAITING },
+        refereePosition: 1,
+        role: TournamentOfficialRole.REFEREE,
+      },
+      status: 'IN_MATCH',
+    };
+    officialAccessApiMock.session.mockResolvedValue({ session: assignedSession });
+    const { queryClient } = renderPage();
+    expect(await screen.findByText('Referee console ready')).toBeVisible();
+    await waitFor(() => {
+      expect(officialAccessApiMock.session).toHaveBeenCalledTimes(2);
+    });
+
+    officialAccessApiMock.session.mockRejectedValueOnce(new ApiClientError(401, {}));
+    window.dispatchEvent(new Event('focus'));
+
+    expect(await screen.findByRole('heading', { name: 'Phiên đã bị thu hồi' })).toBeVisible();
+    expect(screen.queryByText('Referee console ready')).not.toBeInTheDocument();
+    expect(queryClient.getQueryData(['official-access', 'session'])).toBeNull();
+    expect(socketHarness.socket.disconnect).toHaveBeenCalledOnce();
+    expect(socketHarness.socket.connect).toHaveBeenCalledOnce();
+  });
+
+  it('ignores a delayed 401 reconciliation from a retired official session', async () => {
+    const user = userEvent.setup();
+    officialAccessApiMock.session.mockResolvedValue({ session: refereeSession });
+    officialAccessApiMock.login.mockResolvedValue({ session: secondRefereeSession });
+    renderPage();
+    await screen.findByText('Đang chờ phân công');
+    await waitFor(() => {
+      expect(officialAccessApiMock.session).toHaveBeenCalledTimes(2);
+    });
+
+    let rejectReconciliation: ((reason?: unknown) => void) | undefined;
+    officialAccessApiMock.session.mockImplementationOnce(
+      () =>
+        new Promise<{ session: OfficialSession }>((_, reject) => {
+          rejectReconciliation = reject;
+        }),
+    );
+    window.dispatchEvent(new Event('focus'));
+    await waitFor(() => {
+      expect(officialAccessApiMock.session).toHaveBeenCalledTimes(3);
+    });
+
+    socketHarness.trigger('session:revoked', { code: 'SESSION_REVOKED', message: 'revoked' });
+    expect(await screen.findByRole('heading', { name: 'Phiên đã bị thu hồi' })).toBeVisible();
+    officialAccessApiMock.session.mockResolvedValue({ session: secondRefereeSession });
+
+    await fillLoginForm(user);
+    await user.click(screen.getByRole('button', { name: 'Đăng nhập' }));
+    expect(await screen.findByText('Lê Văn B')).toBeVisible();
+
+    rejectReconciliation?.(new ApiClientError(401, {}));
+    await waitFor(() => {
+      expect(screen.getByText('Lê Văn B')).toBeVisible();
+    });
+
+    expect(screen.getByText('Lê Văn B')).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Phiên đã bị thu hồi' })).not.toBeInTheDocument();
+    expect(socketHarness.socket.disconnect).toHaveBeenCalledOnce();
+    expect(socketHarness.socket.connect).toHaveBeenCalledTimes(2);
   });
 
   it('returns an exiting inspector to the match list from the authoritative exit acknowledgement', async () => {
