@@ -59,7 +59,6 @@ export interface AdminMatch {
     readonly name: string;
     readonly isActive: boolean;
   } | null;
-  readonly status: MatchStatus;
   readonly phase: MatchStatus;
   readonly lifecycle: MatchLifecycle;
   readonly displayState: MatchDisplayState;

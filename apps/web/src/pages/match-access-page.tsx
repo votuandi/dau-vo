@@ -1,11 +1,7 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, useNavigate } from 'react-router-dom';
-import {
-  MatchLifecycle,
-  MatchRole,
-  TournamentOfficialRole,
-} from '@martial-arts-scoring/shared-types';
+import { MatchRole, TournamentOfficialRole } from '@martial-arts-scoring/shared-types';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { toast } from '@/components/ui/toast';
@@ -21,6 +17,7 @@ import {
 import { InspectorConsole } from '@/features/match-access/inspector-console';
 import { RefereeConsole } from '@/features/match-access/referee-console';
 import { ApiClientError } from '@/services/api/client';
+import { presentLifecycle, presentOfficialStatus } from '@/features/match-presentation';
 import {
   officialAccessApi,
   type OfficialAssignment,
@@ -60,21 +57,6 @@ function errorMessage(e: unknown) {
       : 'Không thể kết nối đến máy chủ.';
 }
 
-function lifecycleLabel(lifecycle: OfficialMatch['lifecycle']): string {
-  switch (lifecycle) {
-    case MatchLifecycle.NOT_STARTED:
-      return 'Chưa bắt đầu';
-    case MatchLifecycle.SUSPENDED:
-      return 'Tạm dừng';
-    case MatchLifecycle.IN_PROGRESS:
-      return 'Đang diễn ra';
-    case MatchLifecycle.COMPLETED:
-      return 'Đã hoàn thành';
-    default:
-      return lifecycle satisfies never;
-  }
-}
-
 function isEligible(match: OfficialMatch): boolean {
   return match.claimable && (match.lifecycle === 'NOT_STARTED' || match.lifecycle === 'SUSPENDED');
 }
@@ -86,19 +68,6 @@ function claimabilityMessage(match: OfficialMatch): string {
   return match.lifecycle === 'SUSPENDED'
     ? 'Có thể nhận để tiếp tục trận tạm dừng.'
     : 'Có thể nhận trận.';
-}
-
-function refereeStatusLabel(status: 'READY' | 'IN_MATCH' | 'DISABLED'): string {
-  switch (status) {
-    case 'READY':
-      return 'Sẵn sàng';
-    case 'IN_MATCH':
-      return 'Trong trận';
-    case 'DISABLED':
-      return 'Đình chỉ';
-    default:
-      return status satisfies never;
-  }
 }
 
 function assignmentErrorMessage(code: string | undefined): string {
@@ -310,7 +279,7 @@ function InspectorAssignment({
             <p className="mt-1 text-sm">
               {m.athletes.map((a) => a.name).join(' · ')} · Cần {m.requiredRefereeCount} trọng tài
             </p>
-            <p className="mt-2 text-xs font-semibold">{lifecycleLabel(m.lifecycle)}</p>
+            <p className="mt-2 text-xs font-semibold">{presentLifecycle(m.lifecycle).label}</p>
             <p className="mt-1 text-xs text-muted-foreground">{claimabilityMessage(m)}</p>
           </button>
         ))}
@@ -351,7 +320,8 @@ function InspectorAssignment({
                   key={r.id}
                 >
                   <span>
-                    {r.name} · <span className="font-semibold">{refereeStatusLabel(r.status)}</span>
+                    {r.name} ·{' '}
+                    <span className="font-semibold">{presentOfficialStatus(r.status).label}</span>
                   </span>
                   <input
                     checked={picked.includes(r.id)}

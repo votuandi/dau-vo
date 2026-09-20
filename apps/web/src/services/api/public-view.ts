@@ -24,7 +24,6 @@ export interface PublicTournament {
 export interface PublicMatch {
   readonly id: string;
   readonly publicId: string;
-  readonly status: string;
   readonly phase: MatchPhase;
   readonly lifecycle: MatchLifecycle;
   readonly displayState: MatchDisplayState;

@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AthleteColor, MatchAccessRole, MatchStatus } from '@/types/shared';
-import { formatDateTime, formatDateTimeWithSeconds, matchStatusLabels } from './presentation';
+import { AthleteColor, MatchAccessRole, MatchLifecycle } from '@/types/shared';
+import { formatDateTime, formatDateTimeWithSeconds } from './presentation';
+import {
+  isPausedPhase,
+  isRunningPhase,
+  presentLifecycle,
+  presentPhase,
+} from '@/features/match-presentation';
 import { matchMonitoringQueryOptions } from './queries';
 
 const roleLabels: Record<MatchAccessRole, string> = {
@@ -110,12 +116,8 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
   const monitoring = useQuery(matchMonitoringQueryOptions(matchId));
   const snapshot = monitoring.data?.snapshot;
   const activeRound = snapshot?.activeRound;
-  const running =
-    snapshot?.match.phase === MatchStatus.ROUND_1_RUNNING ||
-    snapshot?.match.phase === MatchStatus.ROUND_2_RUNNING;
-  const paused =
-    snapshot?.match.phase === MatchStatus.ROUND_1_PAUSED ||
-    snapshot?.match.phase === MatchStatus.ROUND_2_PAUSED;
+  const running = isRunningPhase(snapshot?.match.phase);
+  const paused = isPausedPhase(snapshot?.match.phase);
   const timer = useDisplayTimer(running ? activeRound?.endsAt : undefined, snapshot?.generatedAt);
   const displayedTimer =
     paused && activeRound?.remainingDurationMs != null
@@ -147,7 +149,11 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl bg-muted p-4">
               <p className="text-xs font-bold uppercase text-muted-foreground">Trạng thái</p>
-              <p className="mt-2 font-black">{matchStatusLabels[snapshot.match.phase]}</p>
+              <p className="mt-2 font-black">
+                {snapshot.match.lifecycle === MatchLifecycle.SUSPENDED
+                  ? presentLifecycle(snapshot.match.lifecycle).label
+                  : presentPhase(snapshot.match.phase).label}
+              </p>
             </div>
             <div className="rounded-xl bg-muted p-4">
               <p className="text-xs font-bold uppercase text-muted-foreground">Hiệp hiện tại</p>

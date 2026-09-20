@@ -8,7 +8,6 @@ import {
   formatDateTime,
   getApiErrorMessage,
   inputClassName,
-  matchStatusLabels,
   millisecondsToSeconds,
   notifyMutationError,
   notifyMutationSuccess,
@@ -28,7 +27,12 @@ import {
   type UpdateMatchInput,
 } from '@/services/api/admin-management';
 import { AthleteColor } from '@/types/shared';
-import { MatchStatus } from '@/types/shared';
+import { MatchPhase } from '@/types/shared';
+import {
+  matchVariantClassName,
+  presentLifecycle,
+  presentPhase,
+} from '@/features/match-presentation';
 import { useAdminAccessContext } from '@/features/auth/admin-access';
 import { RosterAthleteSelector } from '@/features/admin-management/roster-athlete-selector';
 
@@ -121,7 +125,7 @@ function MatchEditor({
   const selectedWeightClass = activeWeightClasses.find(({ id }) => id === weightClassId);
   const isLegacy =
     match.weightClassId === null || match.athletes.some(({ athleteId }) => athleteId === null);
-  const canReplace = match.status === MatchStatus.WAITING && !isLegacy;
+  const canReplace = match.phase === MatchPhase.WAITING && !isLegacy;
   useEffect(() => {
     const ids = new Set(eligibleAthletes.map(({ id }) => id));
     if (redAthleteId && !ids.has(redAthleteId)) setRedAthleteId(null);
@@ -139,7 +143,7 @@ function MatchEditor({
           <div>
             <p className="text-sm font-semibold">Trạng thái</p>
             <div className="mt-2 flex h-11 items-center rounded-md border border-input bg-muted/40 px-3 text-sm font-bold">
-              {matchStatusLabels[match.status]}
+              {presentPhase(match.phase).label}
             </div>
             <p className="mt-1.5 text-xs text-muted-foreground">
               Trạng thái được điều khiển bởi giám định viên trong trận đấu.
@@ -335,8 +339,15 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
             label="Sao chép ID"
             value={match.publicId}
           />
-          <span className="rounded-full border border-primary/10 bg-accent px-3 py-1 text-xs font-bold text-accent-foreground">
-            {matchStatusLabels[match.status]}
+          <span
+            className={`rounded-full border px-3 py-1 text-xs font-bold ${matchVariantClassName[presentLifecycle(match.lifecycle).variant]}`}
+          >
+            {presentLifecycle(match.lifecycle).label}
+          </span>
+          <span
+            className={`rounded-full border px-3 py-1 text-xs font-bold ${matchVariantClassName[presentPhase(match.phase).variant]}`}
+          >
+            {presentPhase(match.phase).label}
           </span>
         </div>
         <p className="mt-2 text-sm text-muted-foreground">

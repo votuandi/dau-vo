@@ -150,21 +150,20 @@ type StoredMatchView = Prisma.MatchGetPayload<{
   select: typeof matchSelect;
 }>;
 
-export type MatchView = StoredMatchView & {
+export type MatchView = Omit<StoredMatchView, 'status'> & {
   displayState: ReturnType<typeof projectMatchDisplayState>;
   phase: StoredMatchView['status'];
-  /** @deprecated Use phase. Removed in the final contract-hardening prompt. */
-  status: StoredMatchView['status'];
 };
 
 function matchView(match: StoredMatchView): MatchView {
+  const { status, ...safeMatch } = match;
   return {
-    ...match,
+    ...safeMatch,
     displayState: projectMatchDisplayState({
       kind: 'OPERATIONAL_MATCH',
       lifecycle: match.lifecycle,
     }),
-    phase: match.status,
+    phase: status,
   };
 }
 

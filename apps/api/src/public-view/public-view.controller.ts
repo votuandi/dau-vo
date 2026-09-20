@@ -128,8 +128,6 @@ export class PublicViewController {
           }),
           lifecycle: match.lifecycle,
           phase: status,
-          // Deprecated compatibility alias; use phase.
-          status,
           athletes: athletes.map(({ athlete, ...snapshot }) => ({
             ...snapshot,
             imageUrl: imageUrl(athlete?.imagePath ?? null),
@@ -177,8 +175,6 @@ export class PublicViewController {
           lifecycle: safeMatch.lifecycle,
         }),
         phase: status,
-        // Deprecated compatibility alias; use phase.
-        status,
         athletes: athletes.map(({ athlete, ...snapshot }) => ({
           ...snapshot,
           imageUrl: imageUrl(athlete?.imagePath ?? null),

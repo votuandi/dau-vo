@@ -3,9 +3,10 @@ import type {
   BracketFixture,
   BracketPreview,
 } from '@/services/api/admin-management';
-import { bracketRoundLabel } from '@martial-arts-scoring/shared-types';
+import { bracketRoundLabel, MatchLifecycle } from '@martial-arts-scoring/shared-types';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { bracketPresentation, isBracketPreview } from './bracket-graph';
+import { presentDisplayState, presentLifecycle, presentPhase } from '@/features/match-presentation';
 
 type ChartData = Pick<BracketPreview, 'rounds' | 'initialEntrants'> | ActiveBracket;
 interface ConnectorPath {
@@ -143,6 +144,17 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                     <p className="border-b px-3 py-2 text-xs font-bold text-muted-foreground">
                       {fixture.displayReference}
                     </p>
+                    {activeFixture ? (
+                      <p className="border-b px-3 py-2 text-xs font-semibold">
+                        {activeFixture.match
+                          ? activeFixture.match.lifecycle === MatchLifecycle.SUSPENDED
+                            ? presentLifecycle(activeFixture.match.lifecycle).label
+                            : presentLifecycle(activeFixture.match.lifecycle).label +
+                              ' · ' +
+                              presentPhase(activeFixture.match.phase).label
+                          : presentDisplayState(activeFixture.displayState).label}
+                      </p>
+                    ) : null}
                     {fixture.slots.map((slot) => {
                       // Confirmed slots retain Prisma's `resolvedEntrantId`
                       // scalar, so it cannot distinguish preview and persisted
@@ -198,7 +210,8 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                         </div>
                       );
                     })}
-                    {activeFixture?.winnerEntrant ? (
+                    {activeFixture?.winnerEntrant &&
+                    activeFixture.match?.lifecycle === MatchLifecycle.COMPLETED ? (
                       <p className="border-t px-3 py-2 text-sm font-bold">
                         Thắng: {activeFixture.winnerEntrant.snapshotName}
                       </p>
