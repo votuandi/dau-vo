@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { AthleteColor, MatchStatus, RefereeSlot } from '@martial-arts-scoring/shared-types';
-import { Button } from '@/components/ui/button';
 import type { MatchRealtimeState, RealtimeConnectionStatus } from './match-realtime';
 import type { MatchAccessSession } from '@/services/api/match-access';
 
 interface RefereeConsoleProps {
-  readonly isLogoutPending: boolean;
-  readonly onLogout: () => void;
+  /** @deprecated Assigned consoles never render a logout control. */
+  readonly isLogoutPending?: boolean;
+  /** @deprecated Assigned consoles never render a logout control. */
+  readonly onLogout?: () => void;
   readonly realtime: MatchRealtimeState;
   readonly session: MatchAccessSession;
 }
@@ -164,12 +165,7 @@ function AthleteVoteButton({
   );
 }
 
-export function RefereeConsole({
-  isLogoutPending,
-  onLogout,
-  realtime,
-  session,
-}: RefereeConsoleProps) {
+export function RefereeConsole({ realtime, session }: RefereeConsoleProps) {
   const snapshot = realtime.snapshot;
   const status = snapshot?.match.phase;
   const roundIsRunning =
@@ -213,16 +209,6 @@ export function RefereeConsole({
               />
               {connectionLabels[realtime.connectionStatus]}
             </div>
-            <Button
-              className="border-white/20 bg-transparent text-white hover:border-white/30 hover:bg-white/10 hover:text-white"
-              disabled={isLogoutPending}
-              onClick={onLogout}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {isLogoutPending ? 'Đang thoát…' : 'Thoát'}
-            </Button>
           </div>
         </header>
 

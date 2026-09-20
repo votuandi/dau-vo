@@ -69,6 +69,7 @@ export function createMatchSnapshot(overrides: Partial<MatchStatePayload> = {}):
       },
     ],
     completion: { canComplete: false, blockedReasons: ['ROUND_1_NOT_ENDED', 'ROUND_2_NOT_ENDED'] },
+    exit: { canExit: false, allowedModes: [], blockedReasons: [] },
     generatedAt: '2026-09-01T12:00:00.000Z',
     match: {
       currentRound: 1,

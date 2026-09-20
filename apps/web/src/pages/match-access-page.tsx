@@ -1,7 +1,11 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { MatchRole, TournamentOfficialRole } from '@martial-arts-scoring/shared-types';
+import {
+  MatchLifecycle,
+  MatchRole,
+  TournamentOfficialRole,
+} from '@martial-arts-scoring/shared-types';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { toast } from '@/components/ui/toast';
@@ -58,13 +62,13 @@ function errorMessage(e: unknown) {
 
 function lifecycleLabel(lifecycle: OfficialMatch['lifecycle']): string {
   switch (lifecycle) {
-    case 'NOT_STARTED':
+    case MatchLifecycle.NOT_STARTED:
       return 'Chưa bắt đầu';
-    case 'SUSPENDED':
+    case MatchLifecycle.SUSPENDED:
       return 'Tạm dừng';
-    case 'IN_PROGRESS':
+    case MatchLifecycle.IN_PROGRESS:
       return 'Đang diễn ra';
-    case 'COMPLETED':
+    case MatchLifecycle.COMPLETED:
       return 'Đã hoàn thành';
     default:
       return lifecycle satisfies never;
@@ -145,9 +149,7 @@ function Waiting({
       <section aria-live="polite" className="w-full rounded-2xl border bg-card p-7 shadow-xl">
         <p className="text-sm font-bold text-primary">{session.tournament.name}</p>
         <h1 className="mt-2 text-3xl font-black">Đang chờ phân công</h1>
-        <p className="mt-4">
-          {session.official.name} · <strong>{session.status}</strong>
-        </p>
+        <p className="mt-4">{session.official.name}</p>
         <p className="mt-2 text-sm text-muted-foreground">
           {connected
             ? 'Đã kết nối. Vui lòng chờ giám định phân công trận đấu.'
@@ -160,7 +162,7 @@ function Waiting({
           type="button"
           variant="outline"
         >
-          {pending ? 'Đang thoát…' : 'Thoát'}
+          {pending ? 'Đang đăng xuất…' : 'Đăng xuất'}
         </Button>
       </section>
     </main>
@@ -405,14 +407,10 @@ function InspectorAssignment({
 function AssignedConsole({
   session,
   assignment,
-  logout,
-  pending,
   revoked,
 }: {
   session: OfficialSession;
   assignment: OfficialAssignment;
-  logout: () => void;
-  pending: boolean;
   revoked: () => void;
 }) {
   const realtime = useMatchRealtime({
@@ -423,8 +421,6 @@ function AssignedConsole({
     onSessionRevoked: revoked,
   });
   const props = {
-    isLogoutPending: pending,
-    onLogout: logout,
     realtime,
     session: toConsoleSession(session, assignment),
   };
@@ -525,10 +521,6 @@ export function MatchAccessPage({ expectedRole }: Props) {
     return (
       <AssignedConsole
         assignment={assignment}
-        logout={() => {
-          logout.mutate();
-        }}
-        pending={logout.isPending}
         revoked={() => {
           setRevoked(true);
           qc.setQueryData(sessionKey, null);

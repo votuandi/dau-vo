@@ -441,6 +441,7 @@ export function useMatchRealtime({
         socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
         return false;
       }
+      toast({ title: 'Đã lưu kết quả chính thức.', variant: 'success' });
       socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
       return true;
     } catch {

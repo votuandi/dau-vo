@@ -1,5 +1,5 @@
 import { apiClient, request } from '@/services/api/client';
-import type { MatchLifecycle, TournamentOfficialRole } from '@/types/shared';
+import { MatchLifecycle, type TournamentOfficialRole } from '@/types/shared';
 
 export interface OfficialAssignment {
   readonly id: string;

@@ -1,7 +1,12 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { AthleteColor, MatchAccessRole, MatchStatus } from '@martial-arts-scoring/shared-types';
+import {
+  AthleteColor,
+  MatchAccessRole,
+  MatchExitMode,
+  MatchStatus,
+} from '@martial-arts-scoring/shared-types';
 import { InspectorConsole } from './inspector-console';
 import { createMatchSnapshot, createRealtimeState, inspectorSession } from '@/test/factories';
 
@@ -251,10 +256,10 @@ describe('InspectorConsole', () => {
     expect(resumeRound).toHaveBeenCalledOnce();
   });
 
-  it('uses strong application dialogs for round cancellation and full match reset', async () => {
+  it('uses confirmation dialogs for round cancellation and destructive match exit', async () => {
     const user = userEvent.setup();
     const cancelRoundResult = vi.fn(() => Promise.resolve(true));
-    const resetMatchResults = vi.fn(() => Promise.resolve(true));
+    const exitMatch = vi.fn(() => Promise.resolve(true));
     const { rerender } = render(
       <InspectorConsole
         isLogoutPending={false}
@@ -278,16 +283,26 @@ describe('InspectorConsole', () => {
         isLogoutPending={false}
         onLogout={vi.fn()}
         realtime={createRealtimeState({
-          resetMatchResults,
-          snapshot: snapshotFor(MatchStatus.FINISHED),
+          exitMatch,
+          snapshot: createMatchSnapshot({
+            ...snapshotFor(MatchStatus.FINISHED),
+            exit: {
+              canExit: true,
+              allowedModes: [MatchExitMode.CANCEL_RESULTS],
+              blockedReasons: [],
+            },
+          }),
         })}
         session={inspectorSession}
       />,
     );
-    await user.click(screen.getByRole('button', { name: 'HỦY KẾT QUẢ VÀ BẮT ĐẦU LẠI 2 HIỆP ĐẤU' }));
-    expect(resetMatchResults).not.toHaveBeenCalled();
-    expect(screen.getByText(/Tất cả điểm và lỗi của cả hai hiệp/)).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Đặt lại trận đấu' }));
-    expect(resetMatchResults).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole('button', { name: 'THOÁT TRẬN' }));
+    expect(screen.getByRole('dialog', { name: 'Chọn cách thoát trận' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: /Hủy kết quả/ }));
+    expect(exitMatch).not.toHaveBeenCalled();
+    expect(screen.getByText(/Kết quả hiện tại sẽ bị vô hiệu/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Hủy kết quả' }));
+    expect(exitMatch).toHaveBeenCalledOnce();
+    expect(exitMatch).toHaveBeenCalledWith(MatchExitMode.CANCEL_RESULTS);
   });
 });

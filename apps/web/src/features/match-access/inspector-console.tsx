@@ -10,10 +10,43 @@ import {
 import type { MatchAccessSession } from '@/services/api/match-access';
 
 interface InspectorConsoleProps {
-  readonly isLogoutPending: boolean;
-  readonly onLogout: () => void;
+  /** @deprecated Assigned consoles never render a logout control. */
+  readonly isLogoutPending?: boolean;
+  /** @deprecated Assigned consoles never render a logout control. */
+  readonly onLogout?: () => void;
   readonly realtime: MatchRealtimeState;
   readonly session: MatchAccessSession;
+}
+
+interface ExitOption {
+  readonly description: string;
+  readonly destructive: boolean;
+  readonly title: string;
+}
+
+function exitOption(mode: MatchExitMode): ExitOption {
+  switch (mode) {
+    case MatchExitMode.CANCEL_RESULTS:
+      return {
+        title: 'Hủy kết quả',
+        description: 'Toàn bộ kết quả hiện tại bị vô hiệu và trận trở về Chưa bắt đầu.',
+        destructive: true,
+      };
+    case MatchExitMode.SUSPEND_KEEP_ROUND_1:
+      return {
+        title: 'Thoát và lưu kết quả hiệp 1',
+        description: 'Dữ liệu hiệp 2 (nếu có) bị bỏ; trận chuyển sang Tạm hoãn.',
+        destructive: false,
+      };
+    case MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2:
+      return {
+        title: 'Thoát và lưu kết quả 2 hiệp',
+        description: 'Giữ cả hai hiệp, chưa chốt kết quả; trận chuyển sang Tạm hoãn.',
+        destructive: false,
+      };
+    default:
+      return mode satisfies never;
+  }
 }
 
 const connectionLabels: Record<RealtimeConnectionStatus, string> = {
@@ -185,12 +218,7 @@ function PenaltyButton({
   );
 }
 
-export function InspectorConsole({
-  isLogoutPending,
-  onLogout,
-  realtime,
-  session,
-}: InspectorConsoleProps) {
+export function InspectorConsole({ realtime, session }: InspectorConsoleProps) {
   const snapshot = realtime.snapshot;
   const status = snapshot?.match.phase;
   const roundIsRunning =
@@ -203,8 +231,10 @@ export function InspectorConsole({
   );
   const [armedPenalty, setArmedPenalty] = useState<AthleteColor | null>(null);
   const [confirmation, setConfirmation] = useState<
-    'pause' | 'resume' | 'cancel-round' | 'reset-match' | 'complete' | null
+    'pause' | 'resume' | 'cancel-round' | 'complete' | null
   >(null);
+  const [exitMenuOpen, setExitMenuOpen] = useState(false);
+  const [exitConfirmation, setExitConfirmation] = useState<MatchExitMode | null>(null);
   const displayedRemaining = roundIsPaused
     ? (snapshot?.activeRound?.remainingDurationMs ?? null)
     : remainingTime;
@@ -312,24 +342,15 @@ export function InspectorConsole({
               {session.matchPublicId}
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <div aria-live="polite" className="flex items-center gap-2 text-sm font-semibold">
-              <span
-                aria-hidden="true"
-                className={`size-2.5 rounded-full ${connectionDotClasses[realtime.connectionStatus]}`}
-              />
-              {connectionLabels[realtime.connectionStatus]}
-            </div>
-            <Button
-              className="border-white/20 bg-transparent text-white hover:border-white/30 hover:bg-white/10 hover:text-white"
-              disabled={isLogoutPending}
-              onClick={onLogout}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {isLogoutPending ? 'Đang thoát…' : 'Thoát'}
-            </Button>
+          <div
+            aria-live="polite"
+            className="flex items-center gap-2 text-xs font-semibold text-sky-100/75"
+          >
+            <span
+              aria-hidden="true"
+              className={`size-2.5 rounded-full ${connectionDotClasses[realtime.connectionStatus]}`}
+            />
+            {connectionLabels[realtime.connectionStatus]}
           </div>
         </header>
 
@@ -460,9 +481,7 @@ export function InspectorConsole({
             </p>
           ) : null}
 
-          {status === MatchStatus.BREAK ||
-          status === MatchStatus.FINISHED ||
-          status === MatchStatus.AWAITING_RESULT_SAVE ? (
+          {status === MatchStatus.BREAK ? (
             <div className="mx-auto mt-6 grid max-w-xl gap-3">
               <Button
                 disabled={realtime.connectionStatus !== 'connected' || realtime.cancellingResults}
@@ -476,18 +495,6 @@ export function InspectorConsole({
                   ? 'HỦY KẾT QUẢ HIỆP 1 VÀ BẮT ĐẦU LẠI'
                   : 'HỦY KẾT QUẢ HIỆP 2 VÀ BẮT ĐẦU LẠI'}
               </Button>
-              {status === MatchStatus.FINISHED ? (
-                <Button
-                  disabled={realtime.connectionStatus !== 'connected' || realtime.cancellingResults}
-                  onClick={() => {
-                    setConfirmation('reset-match');
-                  }}
-                  type="button"
-                  variant="outline"
-                >
-                  HỦY KẾT QUẢ VÀ BẮT ĐẦU LẠI 2 HIỆP ĐẤU
-                </Button>
-              ) : null}
             </div>
           ) : null}
 
@@ -501,24 +508,16 @@ export function InspectorConsole({
           ) : null}
 
           {snapshot?.exit?.canExit ? (
-            <div className="mx-auto mt-6 grid max-w-xl gap-3" aria-label="Thoát trận">
-              {snapshot.exit.allowedModes.map((mode) => (
-                <Button
-                  key={mode}
-                  disabled={realtime.connectionStatus !== 'connected' || realtime.cancellingResults}
-                  onClick={() => {
-                    void realtime.exitMatch(mode);
-                  }}
-                  type="button"
-                  variant="outline"
-                >
-                  {mode === MatchExitMode.CANCEL_RESULTS
-                    ? 'THOÁT VÀ HỦY KẾT QUẢ'
-                    : mode === MatchExitMode.SUSPEND_KEEP_ROUND_1
-                      ? 'THOÁT, GIỮ HIỆP 1'
-                      : 'THOÁT, GIỮ 2 HIỆP'}
-                </Button>
-              ))}
+            <div className="mx-auto mt-6 max-w-md" aria-label="Thoát trận">
+              <Button
+                className="h-14 w-full text-lg font-black"
+                disabled={realtime.connectionStatus !== 'connected' || realtime.cancellingResults}
+                onClick={() => setExitMenuOpen(true)}
+                type="button"
+                variant="outline"
+              >
+                THOÁT TRẬN
+              </Button>
             </div>
           ) : null}
 
@@ -626,9 +625,7 @@ export function InspectorConsole({
                 ? 'Tiếp tục'
                 : confirmation === 'cancel-round'
                   ? 'Hủy kết quả hiệp'
-                  : confirmation === 'complete'
-                    ? 'Lưu kết quả'
-                    : 'Đặt lại trận đấu'
+                  : 'Lưu kết quả'
           }
           busy={realtime.controllingRound || realtime.cancellingResults || realtime.completingMatch}
           description={
@@ -638,9 +635,7 @@ export function InspectorConsole({
                 ? 'Bạn có chắc muốn tiếp tục hiệp đấu?'
                 : confirmation === 'cancel-round'
                   ? `Hủy kết quả Hiệp ${status === MatchStatus.BREAK ? '1' : '2'}?`
-                  : confirmation === 'complete'
-                    ? 'Xác nhận lưu kết quả chính thức và cập nhật nhánh đấu?'
-                    : 'Hủy toàn bộ kết quả trận đấu?'
+                  : 'Xác nhận lưu kết quả chính thức. Kết quả có thể làm nhánh đấu chuyển tiếp.'
           }
           onCancel={() => {
             setConfirmation(null);
@@ -653,20 +648,76 @@ export function InspectorConsole({
                   ? realtime.resumeRound()
                   : confirmation === 'cancel-round'
                     ? realtime.cancelRoundResult()
-                    : confirmation === 'complete'
-                      ? realtime.completeMatch()
-                      : realtime.resetMatchResults();
+                    : realtime.completeMatch();
             void command.then((ok) => {
               if (ok) setConfirmation(null);
             });
           }}
           title="Xác nhận"
           warning={
-            confirmation === 'reset-match'
-              ? 'Tất cả điểm và lỗi của cả hai hiệp sẽ bị loại khỏi kết quả chính thức. Hành động này có thể được hoàn tác.'
-              : confirmation === 'cancel-round'
-                ? `Tất cả điểm trọng tài và lỗi trong Hiệp ${status === MatchStatus.BREAK ? '1' : '2'} sẽ bị loại khỏi kết quả chính thức. Hành động này có thể được hoàn tác.`
-                : undefined
+            confirmation === 'cancel-round'
+              ? `Tất cả điểm trọng tài và lỗi trong Hiệp ${status === MatchStatus.BREAK ? '1' : '2'} sẽ bị loại khỏi kết quả chính thức. Hành động này có thể được hoàn tác.`
+              : undefined
+          }
+        />
+      ) : null}
+      {exitMenuOpen ? (
+        <div
+          aria-modal="true"
+          className="fixed inset-0 z-50 grid place-items-end bg-slate-950/75 p-4 sm:place-items-center"
+          role="dialog"
+          aria-label="Chọn cách thoát trận"
+        >
+          <section className="w-full max-w-lg rounded-2xl border border-white/15 bg-blue-950 p-5 text-white shadow-2xl">
+            <h2 className="text-xl font-black">Thoát trận</h2>
+            <p className="mt-2 text-sm text-sky-100">Chọn cách xử lý kết quả trước khi rời trận.</p>
+            <div className="mt-5 grid gap-3">
+              {snapshot?.exit.allowedModes.map((mode) => {
+                const option = exitOption(mode);
+                return (
+                  <button
+                    className={`min-h-20 rounded-xl border p-4 text-left focus-visible:outline-none focus-visible:ring-4 ${option.destructive ? 'border-red-300/50 bg-red-950/40 focus-visible:ring-red-300' : 'border-sky-300/40 bg-white/10 focus-visible:ring-sky-300'}`}
+                    key={mode}
+                    onClick={() => {
+                      setExitMenuOpen(false);
+                      setExitConfirmation(mode);
+                    }}
+                    type="button"
+                  >
+                    <span className="block font-black">{option.title}</span>
+                    <span className="mt-1 block text-sm text-sky-100">{option.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <Button
+              className="mt-5"
+              disabled={realtime.cancellingResults}
+              onClick={() => setExitMenuOpen(false)}
+              type="button"
+              variant="outline"
+            >
+              Đóng
+            </Button>
+          </section>
+        </div>
+      ) : null}
+      {exitConfirmation ? (
+        <ConfirmationDialog
+          actionLabel={exitOption(exitConfirmation).title}
+          busy={realtime.cancellingResults}
+          description={exitOption(exitConfirmation).description}
+          onCancel={() => setExitConfirmation(null)}
+          onConfirm={() => {
+            void realtime.exitMatch(exitConfirmation).then((ok) => {
+              if (ok) setExitConfirmation(null);
+            });
+          }}
+          title="Xác nhận thoát trận"
+          warning={
+            exitOption(exitConfirmation).destructive
+              ? 'Kết quả hiện tại sẽ bị vô hiệu. Bạn vẫn có thể xem lịch sử thao tác.'
+              : undefined
           }
         />
       ) : null}
