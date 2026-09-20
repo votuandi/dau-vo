@@ -58,6 +58,7 @@ export class OfficialAccessController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<{ session: OfficialSessionIdentity }> {
+    await this.requireBrowserSessionReleased(request);
     const created = await this.access.login(
       body.tournamentCode,
       body.privatePasscode,
@@ -77,6 +78,7 @@ export class OfficialAccessController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<{ session: OfficialSessionIdentity }> {
+    await this.requireBrowserSessionReleased(request);
     const created = await this.access.takeover(
       body.tournamentCode,
       body.privatePasscode,
@@ -120,5 +122,12 @@ export class OfficialAccessController {
   private async revokeBrowser(request: Request, newToken: string) {
     const old = readOfficialSessionToken(request);
     if (old && old !== newToken) await this.access.revokeSession(old);
+  }
+  private async requireBrowserSessionReleased(request: Request): Promise<void> {
+    const token = readOfficialSessionToken(request);
+    if (!token) return;
+    const current = await this.access.resolveSession(token);
+    if (current && (await this.access.requireActiveAssignment(current)))
+      throw new ConflictException(OFFICIAL_IN_MATCH_LOGOUT_FORBIDDEN);
   }
 }
