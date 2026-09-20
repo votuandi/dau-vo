@@ -14,6 +14,9 @@ import {
   type MatchStatePayload,
   type MatchStateViewer,
   type MatchCompletionBlockedReason,
+  type MatchExitBlockedReason,
+  type MatchExitCapability,
+  MatchExitMode,
   type PresenceUpdatedPayload,
   RefereeSlot as SharedRefereeSlot,
 } from '@martial-arts-scoring/shared-types';
@@ -153,6 +156,7 @@ export class RealtimeMatchStateService {
         violations: violationsByAthlete.get(athlete.id) ?? 0,
       })),
       completion: this.completionCapability(match, validRounds, unresolvedWindow),
+      exit: this.exitCapability(match, validRounds, unresolvedWindow),
       generatedAt: new Date().toISOString(),
       match: {
         currentRound: match.currentRound,
@@ -187,6 +191,30 @@ export class RealtimeMatchStateService {
     if (unresolvedWindow !== null) blockedReasons.push('UNRESOLVED_SCORING_WINDOW');
     if (match.status !== MatchStatus.AWAITING_RESULT_SAVE) blockedReasons.push('NOT_AWAITING_RESULT_SAVE');
     return { canComplete: blockedReasons.length === 0, blockedReasons };
+  }
+
+  /** This projection is informational only; execute-time validation is repeated
+   * under the locked Match row by MatchLifecycleService. */
+  private exitCapability(
+    match: { lifecycle: MatchLifecycle },
+    rounds: Array<{ endedAt: Date | null; roundNumber: number }>,
+    unresolvedWindow: { id: string } | null,
+  ): MatchExitCapability {
+    const blockedReasons: MatchExitBlockedReason[] = [];
+    if (match.lifecycle === MatchLifecycle.COMPLETED) {
+      blockedReasons.push('ALREADY_COMPLETED');
+      return { canExit: false, allowedModes: [], blockedReasons };
+    }
+    const roundOneEnded = rounds.some((round) => round.roundNumber === 1 && round.endedAt !== null);
+    const roundTwoEnded = rounds.some((round) => round.roundNumber === 2 && round.endedAt !== null);
+    const allowedModes: MatchExitMode[] = [MatchExitMode.CANCEL_RESULTS];
+    if (roundOneEnded && unresolvedWindow === null)
+      allowedModes.push(MatchExitMode.SUSPEND_KEEP_ROUND_1);
+    else if (!roundOneEnded) blockedReasons.push('ROUND_1_NOT_ENDED');
+    if (roundTwoEnded && unresolvedWindow === null)
+      allowedModes.push(MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2);
+    else if (roundOneEnded) blockedReasons.push(unresolvedWindow === null ? 'ROUND_2_NOT_ENDED' : 'UNRESOLVED_SCORING_WINDOW');
+    return { canExit: true, allowedModes, blockedReasons };
   }
 
   async publicSnapshot(

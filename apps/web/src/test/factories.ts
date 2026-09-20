@@ -122,6 +122,7 @@ export function createRealtimeState(
     roundControlErrorMessage: null,
     cancelRoundResult: vi.fn(() => Promise.resolve(true)),
     resetMatchResults: vi.fn(() => Promise.resolve(true)),
+    exitMatch: vi.fn(() => Promise.resolve(true)),
     undoResultCancellation: vi.fn(() => Promise.resolve(true)),
     cancellingResults: false,
     completeMatch: vi.fn(() => Promise.resolve(true)),

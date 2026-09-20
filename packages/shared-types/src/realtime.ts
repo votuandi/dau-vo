@@ -2,6 +2,7 @@ import type {
   AthleteColor,
   MatchAccessRole,
   MatchLifecycle,
+  MatchExitMode,
   MatchPhase,
   RefereeSlot,
 } from './enums';
@@ -13,6 +14,7 @@ export const RealtimeEvent = {
   PUBLIC_MATCH_STATE_REQUEST: 'scoreboard:state:request',
   MATCH_FINISHED: 'match:finished',
   MATCH_COMPLETE: 'match:complete',
+  MATCH_EXIT: 'match:exit',
   MATCH_COMPLETED: 'match:completed',
   MATCH_RESET: 'match:reset',
   MATCH_RESET_COMPLETED: 'match:reset:completed',
@@ -58,6 +60,19 @@ export type MatchCompletionBlockedReason =
 export interface MatchCompletionCapability {
   canComplete: boolean;
   blockedReasons: MatchCompletionBlockedReason[];
+}
+
+export type MatchExitBlockedReason =
+  | 'ALREADY_COMPLETED'
+  | 'ROUND_1_NOT_ENDED'
+  | 'ROUND_2_NOT_ENDED'
+  | 'UNRESOLVED_SCORING_WINDOW'
+  | 'NOT_ASSIGNED';
+
+export interface MatchExitCapability {
+  canExit: boolean;
+  allowedModes: MatchExitMode[];
+  blockedReasons: MatchExitBlockedReason[];
 }
 
 export interface OfficialAssignmentSnapshot {
@@ -214,6 +229,7 @@ export interface MatchStatePayload {
   activeScoringWindow: MatchScoringWindowState | null;
   athletes: MatchStateAthlete[];
   completion: MatchCompletionCapability;
+  exit: MatchExitCapability;
   generatedAt: string;
   match: MatchStateIdentity;
   presence: MatchPresenceEntry[];
@@ -223,6 +239,11 @@ export interface MatchStatePayload {
   /** Present only on a direct `match:state:request` response. */
   viewer?: MatchStateViewer;
 }
+
+export interface MatchExitPayload { matchPublicId: string; mode: MatchExitMode; }
+export type MatchExitResponse =
+  | { ok: true; exit: MatchExitPayload }
+  | { ok: false; error: { code: 'MATCH_EXIT_FORBIDDEN' | 'MATCH_EXIT_INVALID_STATE' | 'MATCH_EXIT_FAILED' | 'REALTIME_AUTHENTICATION_REQUIRED'; message: string } };
 
 /**
  * Deliberately minimal state exposed to public scoreboards. It omits internal

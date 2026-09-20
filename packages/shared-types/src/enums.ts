@@ -32,6 +32,13 @@ export enum MatchLifecycle {
   COMPLETED = 'COMPLETED',
 }
 
+/** Server-authoritative choices available when an inspector leaves a match. */
+export enum MatchExitMode {
+  CANCEL_RESULTS = 'CANCEL_RESULTS',
+  SUSPEND_KEEP_ROUND_1 = 'SUSPEND_KEEP_ROUND_1',
+  SUSPEND_KEEP_ROUNDS_1_AND_2 = 'SUSPEND_KEEP_ROUNDS_1_AND_2',
+}
+
 export enum MatchDisplayState {
   NOT_READY = 'NOT_READY',
   READY = 'READY',

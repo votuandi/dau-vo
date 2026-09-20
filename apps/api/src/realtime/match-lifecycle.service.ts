@@ -12,6 +12,8 @@ import {
   type RoundResumedPayload,
   type ResultCancellationPayload,
   type ResultCancellationUndoPayload,
+  MatchExitMode,
+  type MatchExitPayload,
   type RoundEndedPayload,
   type RoundStartedPayload,
 } from '@martial-arts-scoring/shared-types';
@@ -22,6 +24,7 @@ import {
   MatchResultOperationStatus,
   MatchResultOperationType,
   MatchStatus,
+  MatchOfficialAssignmentReleaseReason,
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 
@@ -127,6 +130,14 @@ export interface ResultCancellationTransition {
 export interface ResultCancellationUndoTransition {
   matchId: string;
   payload: ResultCancellationUndoPayload;
+}
+
+export interface MatchExitTransition {
+  matchId: string;
+  matchPublicId: string;
+  tournamentId: string;
+  payload: MatchExitPayload;
+  releasedOfficialIds: string[];
 }
 
 export type RoundExpirationListener = (
@@ -490,6 +501,42 @@ export class MatchLifecycleService implements OnModuleDestroy {
     return this.cancelResults(input, true);
   }
 
+  async exitMatch(input: { matchId: string; identity: InspectorCommandIdentity; mode: MatchExitMode }): Promise<MatchExitTransition> {
+    const result = await this.prisma.$transaction(async (transaction) => {
+      await this.lockMatch(transaction, input.matchId);
+      await this.rulesForMatch(transaction, input.matchId);
+      await this.lockActiveInspectorIdentity(transaction, input.matchId, input.identity);
+      const clock = await this.serverClock(transaction);
+      const match = await transaction.match.findUniqueOrThrow({ where: { id: input.matchId }, select: { currentRound: true, finishedAt: true, lifecycle: true, publicId: true, startedAt: true, status: true, tournamentId: true } });
+      if (match.lifecycle === MatchLifecycle.COMPLETED || match.status === MatchStatus.FINISHED) throw new InvalidResultCancellationStateError(match.status);
+      const rounds = await transaction.round.findMany({ where: { invalidatedAt: null, matchId: input.matchId }, select: { endedAt: true, roundNumber: true } });
+      const hasRoundOne = rounds.some((round) => round.roundNumber === 1 && round.endedAt !== null);
+      const hasRoundTwo = rounds.some((round) => round.roundNumber === 2 && round.endedAt !== null);
+      const unresolved = await transaction.scoringWindow.findFirst({ where: { invalidatedAt: null, matchId: input.matchId, resolvedAt: null }, select: { id: true } });
+      if ((input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 && (!hasRoundOne || unresolved !== null)) || (input.mode === MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2 && (!hasRoundOne || !hasRoundTwo || unresolved !== null))) throw new InvalidResultCancellationStateError(match.status);
+      const roundNumbers: Array<1 | 2> = input.mode === MatchExitMode.CANCEL_RESULTS ? [1, 2] : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 ? [2] : [];
+      const nextStatus = input.mode === MatchExitMode.CANCEL_RESULTS ? MatchStatus.WAITING : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 ? MatchStatus.BREAK : MatchStatus.AWAITING_RESULT_SAVE;
+      const nextLifecycle = input.mode === MatchExitMode.CANCEL_RESULTS ? MatchLifecycle.NOT_STARTED : MatchLifecycle.SUSPENDED;
+      const audit = await transaction.auditLog.create({ data: { eventType: AuditEventType.MATCH_EXITED, matchId: input.matchId, ...auditActor(input.identity), metadata: { mode: input.mode, exitedAt: clock.serverNow.toISOString(), fromStatus: match.status, toStatus: nextStatus } }, select: { id: true } });
+      const operation = await transaction.matchResultOperation.create({ data: { auditLogId: audit.id, matchId: input.matchId, type: input.mode === MatchExitMode.CANCEL_RESULTS ? MatchResultOperationType.MATCH_EXIT_CANCEL_RESULTS : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 ? MatchResultOperationType.MATCH_EXIT_SUSPEND_KEEP_ROUND_1 : MatchResultOperationType.MATCH_EXIT_SUSPEND_KEEP_ROUNDS_1_AND_2, roundNumbers, previousStatus: match.status, previousLifecycle: match.lifecycle, previousCurrentRound: match.currentRound, previousStartedAt: match.startedAt, previousFinishedAt: match.finishedAt, resultingStatus: nextStatus, resultingLifecycle: nextLifecycle, resultingCurrentRound: input.mode === MatchExitMode.CANCEL_RESULTS ? null : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 ? 1 : 2, createdBySessionId: input.identity.kind === 'legacy' ? input.identity.sessionId : null }, select: { id: true } });
+      await transaction.auditLog.update({ where: { id: audit.id }, data: { metadata: { mode: input.mode, exitOperationId: operation.id, invalidatedRoundNumbers: roundNumbers } } });
+      if (roundNumbers.length > 0) {
+        const roundNumber = { in: roundNumbers };
+        await transaction.refereeVote.updateMany({ data: { invalidatedAt: clock.serverNow, invalidatedByAuditId: audit.id }, where: { invalidatedAt: null, matchId: input.matchId, scoringWindow: { roundNumber } } });
+        await transaction.scoreEvent.updateMany({ data: { revertedAt: clock.serverNow, revertedByAuditId: audit.id }, where: { revertedAt: null, matchId: input.matchId, roundNumber } });
+        await transaction.penalty.updateMany({ data: { revertedAt: clock.serverNow, revertedByAuditId: audit.id }, where: { revertedAt: null, matchId: input.matchId, roundNumber } });
+        await transaction.scoringWindow.updateMany({ data: { invalidatedAt: clock.serverNow, invalidatedByAuditId: audit.id }, where: { invalidatedAt: null, matchId: input.matchId, roundNumber } });
+        await transaction.round.updateMany({ data: { invalidatedAt: clock.serverNow, invalidatedByAuditId: audit.id }, where: { invalidatedAt: null, matchId: input.matchId, roundNumber } });
+      }
+      await transaction.match.update({ where: { id: input.matchId }, data: { currentRound: input.mode === MatchExitMode.CANCEL_RESULTS ? null : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 ? 1 : 2, finishedAt: null, lifecycle: nextLifecycle, startedAt: input.mode === MatchExitMode.CANCEL_RESULTS ? null : match.startedAt, status: nextStatus, suspendedAt: nextLifecycle === MatchLifecycle.SUSPENDED ? clock.serverNow : null } });
+      const reason = input.mode === MatchExitMode.CANCEL_RESULTS ? MatchOfficialAssignmentReleaseReason.MATCH_EXIT_CANCELLED : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 ? MatchOfficialAssignmentReleaseReason.MATCH_EXIT_SUSPENDED_KEEP_ROUND_1 : MatchOfficialAssignmentReleaseReason.MATCH_EXIT_SUSPENDED_KEEP_ROUNDS_1_AND_2;
+      const releasedOfficialIds = await this.assignmentLifecycle.releaseForTransition(transaction, { from: match.status, to: nextStatus, matchId: input.matchId, occurredAt: clock.serverNow, reason, ...(input.identity.kind === 'official' ? { assignmentId: input.identity.assignmentId, officialSessionId: input.identity.officialSessionId } : { sessionId: input.identity.sessionId }) });
+      return { matchId: input.matchId, matchPublicId: match.publicId, tournamentId: match.tournamentId, payload: { matchPublicId: match.publicId, mode: input.mode }, releasedOfficialIds };
+    }, { maxWait: TRANSACTION_MAX_WAIT_MS, timeout: TRANSACTION_TIMEOUT_MS });
+    this.cancelExpiration(input.matchId);
+    return result;
+  }
+
   async completeMatch(input: {
     matchId: string;
     identity: InspectorCommandIdentity;
@@ -616,10 +663,12 @@ export class MatchLifecycleService implements OnModuleDestroy {
                 : null,
             matchId: input.matchId,
             previousCurrentRound: match.currentRound,
+            previousLifecycle: this.lifecycleForPhase(match.status),
             previousFinishedAt: match.finishedAt,
             previousStartedAt: match.startedAt,
             previousStatus: match.status,
             resultingCurrentRound,
+            resultingLifecycle: nextStatus === MatchStatus.WAITING ? MatchLifecycle.NOT_STARTED : MatchLifecycle.IN_PROGRESS,
             resultingStatus: nextStatus,
             roundNumbers,
             type: entireMatch
@@ -827,7 +876,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
           data: {
             currentRound: operation.previousCurrentRound,
             finishedAt: operation.previousFinishedAt,
-            lifecycle: this.lifecycleForPhase(operation.previousStatus),
+            lifecycle: operation.previousLifecycle,
             startedAt: operation.previousStartedAt,
             status: operation.previousStatus,
           },

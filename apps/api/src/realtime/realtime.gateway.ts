@@ -25,6 +25,8 @@ import {
   type ResultCancellationResponse,
   type ResultCancellationUndoResponse,
   type MatchCompletionResponse,
+  MatchExitMode,
+  type MatchExitResponse,
   type VoteSubmitError,
   type VoteSubmitPayload,
   type VoteSubmitResponse,
@@ -67,6 +69,7 @@ import {
   type ResultCancellationTransition,
   type ResultCancellationUndoTransition,
   type MatchCompletionTransition,
+  type MatchExitTransition,
 } from './match-lifecycle.service';
 import {
   InactivePenaltySessionError,
@@ -134,6 +137,12 @@ import type {
   RealtimeSocketIdentity,
   ServerToClientEvents,
 } from './realtime.types';
+
+function isExitPayload(value: unknown): value is { mode: MatchExitMode } {
+  if (typeof value !== 'object' || value === null) return false;
+  const mode = (value as { mode?: unknown }).mode;
+  return mode === MatchExitMode.CANCEL_RESULTS || mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 || mode === MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2;
+}
 
 /**
  * This gateway is participant-scoped: every event currently operates on a
@@ -372,6 +381,34 @@ export class RealtimeGateway
       this.logger.error({ error, matchId: transition.matchId }, 'Match completion committed but realtime publication failed');
     }
     return { completed: transition.completed, ok: true };
+  }
+
+  @SubscribeMessage(RealtimeEvent.MATCH_EXIT)
+  async exitMatch(
+    @ConnectedSocket() client: RealtimeSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<MatchExitResponse> {
+    if (this.isScoreboardSocket(client)) return { ok: false, error: { code: 'REALTIME_AUTHENTICATION_REQUIRED', message: 'Phiên đăng nhập không hợp lệ.' } };
+    const command = await this.inspectorCommand(client);
+    if (!command || !isExitPayload(payload)) return { ok: false, error: { code: 'MATCH_EXIT_FORBIDDEN', message: 'Chỉ giám sát viên đang được phân công mới có thể thoát trận.' } };
+    if (!(await this.ensureCommandRoomMembership(client, command.publicMatchId))) return { ok: false, error: { code: 'REALTIME_AUTHENTICATION_REQUIRED', message: 'Phiên đăng nhập không hợp lệ.' } };
+    let transition: MatchExitTransition;
+    try {
+      transition = await this.lifecycle.exitMatch({ matchId: command.matchId, identity: command.identity, mode: payload.mode });
+    } catch (error: unknown) {
+      if (error instanceof InactiveRoundStartSessionError || error instanceof InactiveRoundControlSessionError) {
+        this.revokeCommandSocket(client, command.identity);
+        return { ok: false, error: { code: 'REALTIME_AUTHENTICATION_REQUIRED', message: 'Phiên đăng nhập không còn hiệu lực.' } };
+      }
+      if (error instanceof InvalidResultCancellationStateError) return { ok: false, error: { code: 'MATCH_EXIT_INVALID_STATE', message: 'Trạng thái trận đấu không cho phép lựa chọn thoát này.' } };
+      this.logger.error({ error, matchId: command.matchId }, 'Unable to exit match');
+      return { ok: false, error: { code: 'MATCH_EXIT_FAILED', message: 'Không thể thoát trận. Vui lòng thử lại.' } };
+    }
+    try {
+      if (transition.releasedOfficialIds.length > 0) this.officialRouting.publishReleased({ matchId: transition.matchId, matchPublicId: transition.matchPublicId, tournamentId: transition.tournamentId, releasedOfficialIds: transition.releasedOfficialIds });
+      await this.broadcastMatchState(transition.matchId, transition.matchPublicId);
+    } catch (error: unknown) { this.logger.error({ error, matchId: transition.matchId }, 'Match exit committed but publication failed'); }
+    return { ok: true, exit: transition.payload };
   }
 
   @SubscribeMessage(RealtimeEvent.ROUND_RESUME)

@@ -38,10 +38,11 @@ export class MatchOfficialAssignmentLifecycleService {
       sessionId?: string;
       officialSessionId?: string;
       assignmentId?: string;
+      reason?: MatchOfficialAssignmentReleaseReason;
       to: MatchStatus;
     },
   ): Promise<string[]> {
-    const reason = assignmentReleaseReasonForTransition(input.from, input.to);
+    const reason = input.reason ?? assignmentReleaseReasonForTransition(input.from, input.to);
     if (reason === null) return [];
 
     const assignments = await tx.matchOfficialAssignment.findMany({

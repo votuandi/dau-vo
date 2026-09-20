@@ -4,6 +4,8 @@ import {
   type AthleteColor,
   type MatchFinishedPayload,
   type MatchCompletionResponse,
+  MatchExitMode,
+  type MatchExitResponse,
   type MatchParticipantsNotReadyDetails,
   type MatchPresenceEntry,
   type MatchStatePayload,
@@ -110,6 +112,7 @@ export interface MatchRealtimeState {
   readonly roundControlErrorMessage: string | null;
   readonly cancelRoundResult: () => Promise<boolean>;
   readonly resetMatchResults: () => Promise<boolean>;
+  readonly exitMatch: (mode: MatchExitMode) => Promise<boolean>;
   readonly undoResultCancellation: (operationId: string) => Promise<boolean>;
   readonly cancellingResults: boolean;
   readonly resultCancellationErrorMessage: string | null;
@@ -649,6 +652,25 @@ export function useMatchRealtime({
   const cancelRoundResult = useCallback(() => changeResults(false), [changeResults]);
   const resetMatchResults = useCallback(() => changeResults(true), [changeResults]);
 
+  const exitMatch = useCallback(async (mode: MatchExitMode): Promise<boolean> => {
+    const socket = getSocketClient();
+    if (resultCancellationInFlightRef.current || !socket.connected) {
+      setResultCancellationErrorMessage('Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi thoát trận.');
+      return false;
+    }
+    resultCancellationInFlightRef.current = true;
+    setCancellingResults(true);
+    setResultCancellationErrorMessage(null);
+    try {
+      const response = await new Promise<MatchExitResponse>((resolve, reject) => socket.timeout(10_000).emit(RealtimeEvent.MATCH_EXIT, { mode }, (error: Error | null, acknowledgement: MatchExitResponse) => error ? reject(error) : resolve(acknowledgement)));
+      if (!response.ok) { setResultCancellationErrorMessage(response.error.message); socket.emit(RealtimeEvent.MATCH_STATE_REQUEST); return false; }
+      toast({ title: mode === MatchExitMode.CANCEL_RESULTS ? 'Đã hủy kết quả và thoát trận.' : 'Đã lưu trạng thái tạm dừng và thoát trận.', variant: 'success' });
+      socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+      return true;
+    } catch { setResultCancellationErrorMessage('Máy chủ không phản hồi. Vui lòng kiểm tra trạng thái và thử lại.'); return false; }
+    finally { resultCancellationInFlightRef.current = false; setCancellingResults(false); }
+  }, []);
+
   const submitVote = useCallback(async (athlete: AthleteColor) => {
     const socket = getSocketClient();
     if (voteSubmissionInFlightRef.current || acceptedVoteRef.current !== null) {
@@ -1064,6 +1086,7 @@ export function useMatchRealtime({
     roundControlErrorMessage,
     cancelRoundResult,
     resetMatchResults,
+    exitMatch,
     undoResultCancellation,
     cancellingResults,
     completeMatch,

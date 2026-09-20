@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AthleteColor, MatchStatus } from '@martial-arts-scoring/shared-types';
+import { AthleteColor, MatchExitMode, MatchStatus } from '@martial-arts-scoring/shared-types';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import {
@@ -481,6 +481,16 @@ export function InspectorConsole({
             >
               {realtime.resultCancellationErrorMessage}
             </p>
+          ) : null}
+
+          {snapshot?.exit?.canExit ? (
+            <div className="mx-auto mt-6 grid max-w-xl gap-3" aria-label="Thoát trận">
+              {snapshot.exit.allowedModes.map((mode) => (
+                <Button key={mode} disabled={realtime.connectionStatus !== 'connected' || realtime.cancellingResults} onClick={() => { void realtime.exitMatch(mode); }} type="button" variant="outline">
+                  {mode === MatchExitMode.CANCEL_RESULTS ? 'THOÁT VÀ HỦY KẾT QUẢ' : mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 ? 'THOÁT, GIỮ HIỆP 1' : 'THOÁT, GIỮ 2 HIỆP'}
+                </Button>
+              ))}
+            </div>
           ) : null}
 
           {realtime.roundStartErrorMessage ? (
