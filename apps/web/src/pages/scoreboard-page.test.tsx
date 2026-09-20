@@ -35,6 +35,7 @@ const snapshot: PublicMatchStatePayload = {
       violations: 3,
     },
   ],
+  completion: { canComplete: false, blockedReasons: ['ROUND_1_NOT_ENDED', 'ROUND_2_NOT_ENDED'] },
   generatedAt: '2030-01-01T00:00:00.000Z',
   match: {
     currentRound: 1,

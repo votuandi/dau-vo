@@ -12,6 +12,8 @@ export const RealtimeEvent = {
   PUBLIC_MATCH_STATE: 'scoreboard:state',
   PUBLIC_MATCH_STATE_REQUEST: 'scoreboard:state:request',
   MATCH_FINISHED: 'match:finished',
+  MATCH_COMPLETE: 'match:complete',
+  MATCH_COMPLETED: 'match:completed',
   MATCH_RESET: 'match:reset',
   MATCH_RESET_COMPLETED: 'match:reset:completed',
   RESULT_CANCELLATION_UNDO: 'result-cancellation:undo',
@@ -42,6 +44,21 @@ export const RealtimeEvent = {
   OFFICIAL_ASSIGNMENT_SNAPSHOT_REQUEST: 'official:assignment-snapshot:request',
   OFFICIAL_ASSIGNMENT_SNAPSHOT: 'official:assignment-snapshot',
 } as const;
+
+export type MatchCompletionBlockedReason =
+  | 'ALREADY_COMPLETED'
+  | 'MATCH_SUSPENDED'
+  | 'ROUND_1_NOT_ENDED'
+  | 'ROUND_2_NOT_ENDED'
+  | 'INVALIDATED_ROUND'
+  | 'UNRESOLVED_SCORING_WINDOW'
+  | 'NOT_AWAITING_RESULT_SAVE'
+  | 'RESULT_DECISION_REQUIRED';
+
+export interface MatchCompletionCapability {
+  canComplete: boolean;
+  blockedReasons: MatchCompletionBlockedReason[];
+}
 
 export interface OfficialAssignmentSnapshot {
   assignment: {
@@ -196,6 +213,7 @@ export interface MatchStatePayload {
   activeRound: MatchRoundState | null;
   activeScoringWindow: MatchScoringWindowState | null;
   athletes: MatchStateAthlete[];
+  completion: MatchCompletionCapability;
   generatedAt: string;
   match: MatchStateIdentity;
   presence: MatchPresenceEntry[];
@@ -219,6 +237,7 @@ export interface PublicMatchStatePayload {
     score: number;
     violations: number;
   }>;
+  completion: MatchCompletionCapability;
   generatedAt: string;
   match: Omit<MatchStateIdentity, 'id' | 'startedAt'>;
 }
@@ -296,6 +315,23 @@ export interface MatchFinishedPayload {
   finishedAt: string;
   matchPublicId: string;
 }
+
+export type MatchCompletionErrorCode =
+  | 'SPORT_GROUP_RULES_NOT_IMPLEMENTED'
+  | 'MATCH_COMPLETION_NOT_READY'
+  | 'MATCH_COMPLETION_FORBIDDEN'
+  | 'MATCH_COMPLETION_STALE_ASSIGNMENT'
+  | 'MATCH_ALREADY_COMPLETED'
+  | 'MATCH_COMPLETION_SUSPENDED'
+  | 'MATCH_COMPLETION_UNRESOLVED_ROUND'
+  | 'MATCH_COMPLETION_BRACKET_CONFLICT'
+  | 'BRACKET_PROGRESSION_LOCKED'
+  | 'MATCH_COMPLETION_FAILED'
+  | 'REALTIME_AUTHENTICATION_REQUIRED';
+
+export type MatchCompletionResponse =
+  | { ok: true; completed: MatchFinishedPayload }
+  | { error: { code: MatchCompletionErrorCode; message: string }; ok: false };
 
 export type RoundStartErrorCode =
   | 'SPORT_GROUP_RULES_NOT_IMPLEMENTED'

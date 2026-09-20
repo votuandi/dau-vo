@@ -1,5 +1,6 @@
 import type {
   MatchFinishedPayload,
+  MatchCompletionResponse,
   MatchStatePayload,
   PublicMatchStatePayload,
   PenaltyAddedPayload,
@@ -54,6 +55,9 @@ export interface ClientToServerEvents {
   'match:reset': (
     acknowledge: (response: ResultCancellationResponse) => void,
   ) => void;
+  'match:complete': (
+    acknowledge: (response: MatchCompletionResponse) => void,
+  ) => void;
   'result-cancellation:undo': (
     payload: { operationId: string },
     acknowledge: (response: ResultCancellationUndoResponse) => void,
@@ -77,6 +81,7 @@ export interface ServerToClientEvents {
     payload: MatchAssignmentReleasedPayload,
   ) => void;
   'match:finished': (payload: MatchFinishedPayload) => void;
+  'match:completed': (payload: MatchFinishedPayload) => void;
   'match:state': (payload: MatchStatePayload) => void;
   'scoreboard:state': (payload: PublicMatchStatePayload) => void;
   'penalty:added': (payload: PenaltyAddedPayload) => void;

@@ -39,6 +39,8 @@ import {
   InvalidResultCancellationStateError,
   InvalidRoundStartStateError,
   MatchParticipantsNotReadyError,
+  MatchCompletionNotReadyError,
+  MatchAlreadyCompletedError,
   MatchLifecycleTargetMissingError,
   ResultCancellationUndoNotAllowedError,
 } from './match-lifecycle.errors';
@@ -101,6 +103,14 @@ export interface RoundEndedTransition {
   matchFinished: MatchFinishedPayload | null;
   matchId: string;
   payload: RoundEndedPayload;
+  releasedOfficialIds: string[];
+}
+
+export interface MatchCompletionTransition {
+  matchId: string;
+  matchPublicId: string;
+  tournamentId: string;
+  completed: MatchFinishedPayload;
   releasedOfficialIds: string[];
 }
 
@@ -480,6 +490,46 @@ export class MatchLifecycleService implements OnModuleDestroy {
     return this.cancelResults(input, true);
   }
 
+  async completeMatch(input: {
+    matchId: string;
+    identity: InspectorCommandIdentity;
+  }): Promise<MatchCompletionTransition> {
+    return this.prisma.$transaction(async (transaction) => {
+      await this.lockMatch(transaction, input.matchId);
+      await this.rulesForMatch(transaction, input.matchId);
+      await this.lockActiveInspectorIdentity(transaction, input.matchId, input.identity);
+      const clock = await this.serverClock(transaction);
+      const match = await transaction.match.findUniqueOrThrow({
+        where: { id: input.matchId },
+        select: { finishedAt: true, lifecycle: true, publicId: true, status: true, tournamentId: true },
+      });
+      if (match.lifecycle === MatchLifecycle.COMPLETED || match.status === MatchStatus.FINISHED) {
+        if (match.finishedAt === null) throw new MatchAlreadyCompletedError();
+        return { matchId: input.matchId, matchPublicId: match.publicId, tournamentId: match.tournamentId,
+          completed: { finishedAt: match.finishedAt.toISOString(), matchPublicId: match.publicId }, releasedOfficialIds: [] };
+      }
+      if (match.lifecycle === MatchLifecycle.SUSPENDED || match.status !== MatchStatus.AWAITING_RESULT_SAVE) {
+        throw new MatchCompletionNotReadyError();
+      }
+      const [rounds, unresolved] = await Promise.all([
+        transaction.round.findMany({ where: { invalidatedAt: null, matchId: input.matchId }, select: { endedAt: true, roundNumber: true } }),
+        transaction.scoringWindow.findFirst({ where: { invalidatedAt: null, matchId: input.matchId, resolvedAt: null }, select: { id: true } }),
+      ]);
+      if (unresolved !== null || !rounds.some((round) => round.roundNumber === 1 && round.endedAt !== null) || !rounds.some((round) => round.roundNumber === 2 && round.endedAt !== null)) {
+        throw new MatchCompletionNotReadyError();
+      }
+      await transaction.match.update({ where: { id: input.matchId }, data: { finishedAt: clock.serverNow, lifecycle: MatchLifecycle.COMPLETED, status: MatchStatus.FINISHED } });
+      await this.bracketOutcomes.processFinishedMatch(transaction, input.matchId);
+      await transaction.auditLog.create({ data: { eventType: AuditEventType.MATCH_FINISHED, matchId: input.matchId, ...auditActor(input.identity), metadata: { completedAt: clock.serverNow.toISOString(), assignmentId: input.identity.kind === 'official' ? input.identity.assignmentId : undefined } } });
+      const releasedOfficialIds = await this.assignmentLifecycle.releaseForTransition(transaction, {
+        from: match.status, matchId: input.matchId, occurredAt: clock.serverNow, to: MatchStatus.FINISHED,
+        ...(input.identity.kind === 'official' ? { assignmentId: input.identity.assignmentId, officialSessionId: input.identity.officialSessionId } : { sessionId: input.identity.sessionId }),
+      });
+      return { matchId: input.matchId, matchPublicId: match.publicId, tournamentId: match.tournamentId,
+        completed: { finishedAt: clock.serverNow.toISOString(), matchPublicId: match.publicId }, releasedOfficialIds };
+    }, { maxWait: TRANSACTION_MAX_WAIT_MS, timeout: TRANSACTION_TIMEOUT_MS });
+  }
+
   private async cancelResults(
     input: { matchId: string; identity: InspectorCommandIdentity },
     entireMatch: boolean,
@@ -501,12 +551,15 @@ export class MatchLifecycleService implements OnModuleDestroy {
           where: { id: input.matchId },
         });
         const roundNumbers: Array<1 | 2> = entireMatch
-          ? match.status === MatchStatus.FINISHED
+          ? (match.status === MatchStatus.FINISHED ||
+              match.status === MatchStatus.AWAITING_RESULT_SAVE)
             ? [1, 2]
             : []
           : match.status === MatchStatus.BREAK && match.currentRound === 1
             ? [1]
-            : match.status === MatchStatus.FINISHED && match.currentRound === 2
+            : (match.status === MatchStatus.FINISHED ||
+                match.status === MatchStatus.AWAITING_RESULT_SAVE) &&
+                match.currentRound === 2
               ? [2]
               : [];
         if (roundNumbers.length === 0) {
@@ -965,7 +1018,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
         }
 
         const nextStatus =
-          round.roundNumber === 1 ? MatchStatus.BREAK : MatchStatus.FINISHED;
+          round.roundNumber === 1 ? MatchStatus.BREAK : MatchStatus.AWAITING_RESULT_SAVE;
         const endedAt = round.endsAt;
         const endedRound = await transaction.round.update({
           data: { endedAt },
@@ -983,23 +1036,13 @@ export class MatchLifecycleService implements OnModuleDestroy {
 
         await transaction.match.update({
           data: {
-            finishedAt: round.roundNumber === 2 ? endedAt : undefined,
-            lifecycle:
-              round.roundNumber === 2
-                ? MatchLifecycle.COMPLETED
-                : MatchLifecycle.IN_PROGRESS,
+            lifecycle: MatchLifecycle.IN_PROGRESS,
             status: nextStatus,
           },
           select: { id: true },
           where: { id: matchId },
         });
-        const releasedOfficialIds =
-          await this.assignmentLifecycle.releaseForTransition(transaction, {
-            from: match.status,
-            matchId,
-            occurredAt: endedAt,
-            to: nextStatus,
-          });
+        const releasedOfficialIds: string[] = [];
         await transaction.auditLog.create({
           data: {
             eventType: AuditEventType.ROUND_ENDED,
@@ -1015,28 +1058,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
           select: { id: true },
         });
 
-        const matchFinished =
-          round.roundNumber === 2
-            ? {
-                finishedAt: endedAt.toISOString(),
-                matchPublicId: match.publicId,
-              }
-            : null;
-
-        if (matchFinished !== null) {
-          await this.bracketOutcomes.processFinishedMatch(transaction, matchId);
-          await transaction.auditLog.create({
-            data: {
-              eventType: AuditEventType.MATCH_FINISHED,
-              matchId,
-              metadata: {
-                finishedAt: matchFinished.finishedAt,
-                roundId: round.id,
-              },
-            },
-            select: { id: true },
-          });
-        }
+        const matchFinished = null;
 
         return {
           kind: 'ended',

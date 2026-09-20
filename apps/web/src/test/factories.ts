@@ -68,6 +68,7 @@ export function createMatchSnapshot(overrides: Partial<MatchStatePayload> = {}):
         violations: 0,
       },
     ],
+    completion: { canComplete: false, blockedReasons: ['ROUND_1_NOT_ENDED', 'ROUND_2_NOT_ENDED'] },
     generatedAt: '2026-09-01T12:00:00.000Z',
     match: {
       currentRound: 1,
@@ -123,6 +124,9 @@ export function createRealtimeState(
     resetMatchResults: vi.fn(() => Promise.resolve(true)),
     undoResultCancellation: vi.fn(() => Promise.resolve(true)),
     cancellingResults: false,
+    completeMatch: vi.fn(() => Promise.resolve(true)),
+    completingMatch: false,
+    completionErrorMessage: null,
     resultCancellationErrorMessage: null,
     reconnect: vi.fn(),
     requestSnapshot: vi.fn(),

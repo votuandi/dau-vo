@@ -56,3 +56,17 @@ export class MatchParticipantsNotReadyError extends Error {
     this.name = MatchParticipantsNotReadyError.name;
   }
 }
+
+export class MatchCompletionNotReadyError extends Error {
+  constructor() {
+    super('The match result is not ready to save');
+    this.name = MatchCompletionNotReadyError.name;
+  }
+}
+
+export class MatchAlreadyCompletedError extends Error {
+  constructor() {
+    super('The match has already been completed');
+    this.name = MatchAlreadyCompletedError.name;
+  }
+}

@@ -203,7 +203,7 @@ export function InspectorConsole({
   );
   const [armedPenalty, setArmedPenalty] = useState<AthleteColor | null>(null);
   const [confirmation, setConfirmation] = useState<
-    'pause' | 'resume' | 'cancel-round' | 'reset-match' | null
+    'pause' | 'resume' | 'cancel-round' | 'reset-match' | 'complete' | null
   >(null);
   const displayedRemaining = roundIsPaused
     ? (snapshot?.activeRound?.remainingDurationMs ?? null)
@@ -420,6 +420,22 @@ export function InspectorConsole({
             </Button>
           ) : null}
 
+          {status === MatchStatus.AWAITING_RESULT_SAVE ? (
+            <div className="mx-auto mt-6 max-w-md">
+              <Button
+                className="h-16 w-full text-lg font-black"
+                disabled={realtime.connectionStatus !== 'connected' || realtime.completingMatch || !snapshot?.completion.canComplete}
+                onClick={() => setConfirmation('complete')}
+                type="button"
+              >
+                {realtime.completingMatch ? 'ĐANG LƯU…' : 'LƯU KẾT QUẢ'}
+              </Button>
+              {!snapshot?.completion.canComplete ? <p className="mt-3 text-sm font-semibold text-amber-100">Kết quả chưa sẵn sàng để lưu. Vui lòng chờ các thao tác chấm điểm hoàn tất.</p> : null}
+            </div>
+          ) : null}
+
+          {realtime.completionErrorMessage ? <p className="mx-auto mt-4 max-w-xl rounded-xl bg-red-400/15 px-4 py-3 text-sm font-semibold text-red-100" role="alert">{realtime.completionErrorMessage}</p> : null}
+
           {realtime.roundControlErrorMessage ? (
             <p
               className="mx-auto mt-4 max-w-xl rounded-xl bg-red-400/15 px-4 py-3 text-sm font-semibold text-red-100"
@@ -429,7 +445,7 @@ export function InspectorConsole({
             </p>
           ) : null}
 
-          {status === MatchStatus.BREAK || status === MatchStatus.FINISHED ? (
+          {status === MatchStatus.BREAK || status === MatchStatus.FINISHED || status === MatchStatus.AWAITING_RESULT_SAVE ? (
             <div className="mx-auto mt-6 grid max-w-xl gap-3">
               <Button
                 disabled={realtime.connectionStatus !== 'connected' || realtime.cancellingResults}
@@ -569,11 +585,13 @@ export function InspectorConsole({
               ? 'Tạm dừng'
               : confirmation === 'resume'
                 ? 'Tiếp tục'
-                : confirmation === 'cancel-round'
-                  ? 'Hủy kết quả hiệp'
-                  : 'Đặt lại trận đấu'
+              : confirmation === 'cancel-round'
+                ? 'Hủy kết quả hiệp'
+                : confirmation === 'complete'
+                  ? 'Lưu kết quả'
+                : 'Đặt lại trận đấu'
           }
-          busy={realtime.controllingRound || realtime.cancellingResults}
+          busy={realtime.controllingRound || realtime.cancellingResults || realtime.completingMatch}
           description={
             confirmation === 'pause'
               ? 'Bạn có chắc muốn tạm dừng hiệp đấu hiện tại?'
@@ -581,6 +599,8 @@ export function InspectorConsole({
                 ? 'Bạn có chắc muốn tiếp tục hiệp đấu?'
                 : confirmation === 'cancel-round'
                   ? `Hủy kết quả Hiệp ${status === MatchStatus.BREAK ? '1' : '2'}?`
+                  : confirmation === 'complete'
+                    ? 'Xác nhận lưu kết quả chính thức và cập nhật nhánh đấu?'
                   : 'Hủy toàn bộ kết quả trận đấu?'
           }
           onCancel={() => {
@@ -594,7 +614,9 @@ export function InspectorConsole({
                   ? realtime.resumeRound()
                   : confirmation === 'cancel-round'
                     ? realtime.cancelRoundResult()
-                    : realtime.resetMatchResults();
+                    : confirmation === 'complete'
+                      ? realtime.completeMatch()
+                      : realtime.resetMatchResults();
             void command.then((ok) => {
               if (ok) setConfirmation(null);
             });

@@ -13,6 +13,7 @@ import {
   type MatchScoringWindowState,
   type MatchStatePayload,
   type MatchStateViewer,
+  type MatchCompletionBlockedReason,
   type PresenceUpdatedPayload,
   RefereeSlot as SharedRefereeSlot,
 } from '@martial-arts-scoring/shared-types';
@@ -91,7 +92,7 @@ export class RealtimeMatchStateService {
       throw new NotFoundException('Match not found');
     }
 
-    const [scoreTotals, penaltyTotals, presenceState, unresolvedWindow] =
+    const [scoreTotals, penaltyTotals, presenceState, unresolvedWindow, validRounds] =
       await Promise.all([
         this.prisma.scoreEvent.groupBy({
           _sum: { value: true },
@@ -113,6 +114,10 @@ export class RealtimeMatchStateService {
             startedAt: true,
           },
           where: { invalidatedAt: null, matchId, resolvedAt: null },
+        }),
+        this.prisma.round.findMany({
+          select: { endedAt: true, roundNumber: true },
+          where: { invalidatedAt: null, matchId },
         }),
       ]);
     const scoresByAthlete = new Map(
@@ -147,6 +152,7 @@ export class RealtimeMatchStateService {
         score: scoresByAthlete.get(athlete.id) ?? 0,
         violations: violationsByAthlete.get(athlete.id) ?? 0,
       })),
+      completion: this.completionCapability(match, validRounds, unresolvedWindow),
       generatedAt: new Date().toISOString(),
       match: {
         currentRound: match.currentRound,
@@ -164,6 +170,23 @@ export class RealtimeMatchStateService {
       scoreboardConnectedCount: presenceState.scoreboardConnectedCount,
       ...(viewerState === undefined ? {} : { viewer: viewerState }),
     };
+  }
+
+  private completionCapability(
+    match: { lifecycle: MatchLifecycle; status: MatchStatus },
+    rounds: Array<{ endedAt: Date | null; roundNumber: number }>,
+    unresolvedWindow: { id: string } | null,
+  ): { canComplete: boolean; blockedReasons: MatchCompletionBlockedReason[] } {
+    const blockedReasons: MatchCompletionBlockedReason[] = [];
+    if (match.lifecycle === MatchLifecycle.COMPLETED) blockedReasons.push('ALREADY_COMPLETED');
+    if (match.lifecycle === MatchLifecycle.SUSPENDED) blockedReasons.push('MATCH_SUSPENDED');
+    const roundOne = rounds.find((round) => round.roundNumber === 1);
+    const roundTwo = rounds.find((round) => round.roundNumber === 2);
+    if (!roundOne?.endedAt) blockedReasons.push('ROUND_1_NOT_ENDED');
+    if (!roundTwo?.endedAt) blockedReasons.push('ROUND_2_NOT_ENDED');
+    if (unresolvedWindow !== null) blockedReasons.push('UNRESOLVED_SCORING_WINDOW');
+    if (match.status !== MatchStatus.AWAITING_RESULT_SAVE) blockedReasons.push('NOT_AWAITING_RESULT_SAVE');
+    return { canComplete: blockedReasons.length === 0, blockedReasons };
   }
 
   async publicSnapshot(
@@ -194,6 +217,7 @@ export class RealtimeMatchStateService {
         }),
       ),
       generatedAt: snapshot.generatedAt,
+      completion: snapshot.completion,
       match: {
         currentRound: snapshot.match.currentRound,
         finishedAt: snapshot.match.finishedAt,

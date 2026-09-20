@@ -3,6 +3,7 @@ import {
   RealtimeEvent,
   type AthleteColor,
   type MatchFinishedPayload,
+  type MatchCompletionResponse,
   type MatchParticipantsNotReadyDetails,
   type MatchPresenceEntry,
   type MatchStatePayload,
@@ -100,6 +101,9 @@ export interface MatchRealtimeState {
   readonly scoringWindowMessage: string | null;
   readonly snapshot: MatchStatePayload | null;
   readonly startRound: () => Promise<void>;
+  readonly completeMatch: () => Promise<boolean>;
+  readonly completingMatch: boolean;
+  readonly completionErrorMessage: string | null;
   readonly pauseRound: () => Promise<boolean>;
   readonly resumeRound: () => Promise<boolean>;
   readonly controllingRound: boolean;
@@ -289,6 +293,8 @@ export function useMatchRealtime({
   const [scoringWindowMessage, setScoringWindowMessage] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<MatchStatePayload | null>(null);
   const [startingRound, setStartingRound] = useState(false);
+  const [completingMatch, setCompletingMatch] = useState(false);
+  const [completionErrorMessage, setCompletionErrorMessage] = useState<string | null>(null);
   const [controllingRound, setControllingRound] = useState(false);
   const [roundControlErrorMessage, setRoundControlErrorMessage] = useState<string | null>(null);
   const [cancellingResults, setCancellingResults] = useState(false);
@@ -305,6 +311,7 @@ export function useMatchRealtime({
   const onSessionRevokedRef = useRef(onSessionRevoked);
   const penaltySubmissionInFlightRef = useRef(false);
   const roundStartInFlightRef = useRef(false);
+  const completionInFlightRef = useRef(false);
   const roundControlInFlightRef = useRef(false);
   const resultCancellationInFlightRef = useRef(false);
   const voteSubmissionInFlightRef = useRef(false);
@@ -402,6 +409,35 @@ export function useMatchRealtime({
     } finally {
       roundStartInFlightRef.current = false;
       setStartingRound(false);
+    }
+  }, []);
+
+  const completeMatch = useCallback(async (): Promise<boolean> => {
+    const socket = getSocketClient();
+    if (completionInFlightRef.current || !socket.connected) {
+      setCompletionErrorMessage('Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi lưu kết quả.');
+      return false;
+    }
+    completionInFlightRef.current = true;
+    setCompletingMatch(true);
+    setCompletionErrorMessage(null);
+    try {
+      const response = await new Promise<MatchCompletionResponse>((resolve, reject) => {
+        socket.timeout(10_000).emit(RealtimeEvent.MATCH_COMPLETE, (error: Error | null, acknowledgement: MatchCompletionResponse) => error ? reject(error) : resolve(acknowledgement));
+      });
+      if (!response.ok) {
+        setCompletionErrorMessage(response.error.message);
+        socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+        return false;
+      }
+      socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+      return true;
+    } catch {
+      setCompletionErrorMessage('Máy chủ không phản hồi lệnh lưu kết quả. Vui lòng kiểm tra trạng thái và thử lại.');
+      return false;
+    } finally {
+      completionInFlightRef.current = false;
+      setCompletingMatch(false);
     }
   }, []);
 
@@ -1030,6 +1066,9 @@ export function useMatchRealtime({
     resetMatchResults,
     undoResultCancellation,
     cancellingResults,
+    completeMatch,
+    completingMatch,
+    completionErrorMessage,
     resultCancellationErrorMessage,
     reconnect,
     requestSnapshot,
