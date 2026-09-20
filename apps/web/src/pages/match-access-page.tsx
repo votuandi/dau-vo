@@ -107,11 +107,13 @@ function Waiting({
   connected,
   logout,
   pending,
+  logoutError,
 }: {
   session: OfficialSession;
   connected: boolean;
   logout: () => void;
   pending: boolean;
+  logoutError: string | null;
 }) {
   return (
     <main className="mx-auto grid min-h-dvh w-full max-w-xl place-items-center p-4">
@@ -133,6 +135,11 @@ function Waiting({
         >
           {pending ? 'Đang đăng xuất…' : 'Đăng xuất'}
         </Button>
+        {logoutError ? (
+          <p className="mt-4 text-sm text-destructive" role="alert">
+            {logoutError}
+          </p>
+        ) : null}
       </section>
     </main>
   );
@@ -142,10 +149,12 @@ function InspectorAssignment({
   session,
   logout,
   pending,
+  logoutError,
 }: {
   session: OfficialSession;
   logout: () => void;
   pending: boolean;
+  logoutError: string | null;
 }) {
   const qc = useQueryClient();
   const [selected, setSelected] = useState<OfficialMatch | null>(null);
@@ -252,6 +261,11 @@ function InspectorAssignment({
         <Button disabled={pending} onClick={logout} type="button" variant="outline">
           {pending ? 'Đang đăng xuất…' : 'Đăng xuất'}
         </Button>
+        {logoutError ? (
+          <p className="text-sm text-destructive" role="alert">
+            {logoutError}
+          </p>
+        ) : null}
       </header>
       <p aria-live="polite" className="sr-only">
         {refreshAnnouncement}
@@ -378,10 +392,12 @@ function AssignedConsole({
   session,
   assignment,
   revoked,
+  notice,
 }: {
   session: OfficialSession;
   assignment: OfficialAssignment;
   revoked: () => void;
+  notice: string | null;
 }) {
   const realtime = useMatchRealtime({
     keepSocketConnected: true,
@@ -394,10 +410,22 @@ function AssignedConsole({
     realtime,
     session: toConsoleSession(session, assignment),
   };
-  return assignment.role === TournamentOfficialRole.REFEREE ? (
-    <RefereeConsole {...props} />
-  ) : (
-    <InspectorConsole {...props} />
+  return (
+    <>
+      {assignment.role === TournamentOfficialRole.REFEREE ? (
+        <RefereeConsole {...props} />
+      ) : (
+        <InspectorConsole {...props} />
+      )}
+      {notice ? (
+        <p
+          className="fixed inset-x-4 top-4 z-[60] mx-auto max-w-xl rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 shadow-lg"
+          role="alert"
+        >
+          {notice}
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -410,6 +438,7 @@ export function MatchAccessPage({ expectedRole }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [challenge, setChallenge] = useState<string | null>(null);
   const [revoked, setRevoked] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
   const session = useQuery({
     queryKey: sessionKey,
     queryFn: async () => {
@@ -476,7 +505,30 @@ export function MatchAccessPage({ expectedRole }: Props) {
   const logout = useMutation({
     mutationFn: officialAccessApi.logout,
     onSuccess: () => {
+      setLogoutError(null);
       qc.setQueryData(sessionKey, null);
+    },
+    onError: async (logoutFailure) => {
+      if (
+        logoutFailure instanceof ApiClientError &&
+        logoutFailure.status === 409 &&
+        logoutFailure.body.code === 'OFFICIAL_IN_MATCH_LOGOUT_FORBIDDEN'
+      ) {
+        try {
+          const refreshed = await officialAccessApi.session();
+          qc.setQueryData(sessionKey, refreshed);
+          setLogoutError(
+            'Bạn đã được phân công vào trận trước khi yêu cầu đăng xuất được xử lý. Phiên vẫn được giữ.',
+          );
+        } catch {
+          setLogoutError(
+            'Không thể đăng xuất vì bạn đang được phân công vào trận. Phiên vẫn được giữ; đang chờ đồng bộ lại.',
+          );
+          void qc.invalidateQueries({ queryKey: sessionKey });
+        }
+        return;
+      }
+      setLogoutError(errorMessage(logoutFailure));
     },
   });
   if (session.isPending)
@@ -495,6 +547,7 @@ export function MatchAccessPage({ expectedRole }: Props) {
           setRevoked(true);
           qc.setQueryData(sessionKey, null);
         }}
+        notice={logoutError}
         session={identity}
       />
     );
@@ -502,18 +555,22 @@ export function MatchAccessPage({ expectedRole }: Props) {
     return identity.official.role === TournamentOfficialRole.INSPECTOR ? (
       <InspectorAssignment
         logout={() => {
+          setLogoutError(null);
           logout.mutate();
         }}
         pending={logout.isPending}
+        logoutError={logoutError}
         session={identity}
       />
     ) : (
       <Waiting
         connected={connected}
         logout={() => {
+          setLogoutError(null);
           logout.mutate();
         }}
         pending={logout.isPending}
+        logoutError={logoutError}
         session={identity}
       />
     );

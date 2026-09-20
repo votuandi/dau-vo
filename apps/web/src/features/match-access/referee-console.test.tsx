@@ -14,8 +14,6 @@ describe('RefereeConsole', () => {
   it('only presents a vote as recorded after the accepted-vote state arrives', () => {
     const { rerender } = render(
       <RefereeConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({ submittingVote: AthleteColor.RED })}
         session={refereeSession}
       />,
@@ -28,8 +26,6 @@ describe('RefereeConsole', () => {
 
     rerender(
       <RefereeConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({ lastAcceptedVote: acceptedRedVote })}
         session={refereeSession}
       />,
@@ -45,8 +41,6 @@ describe('RefereeConsole', () => {
     const submitVote = vi.fn(() => Promise.resolve());
     const { rerender } = render(
       <RefereeConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({ lastAcceptedVote: acceptedRedVote, submitVote })}
         session={refereeSession}
       />,
@@ -57,8 +51,6 @@ describe('RefereeConsole', () => {
 
     rerender(
       <RefereeConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           snapshot: createMatchSnapshot({
             activeScoringWindow: null,
@@ -84,8 +76,6 @@ describe('RefereeConsole', () => {
   ] as const)('shows %s as %s and disables voting', (connectionStatus, label) => {
     render(
       <RefereeConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({ connectionStatus })}
         session={refereeSession}
       />,

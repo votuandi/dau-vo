@@ -63,8 +63,6 @@ describe('InspectorConsole', () => {
     const submitPenalty = vi.fn(() => Promise.resolve());
     const { rerender } = render(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.WAITING),
           startRound,
@@ -81,8 +79,6 @@ describe('InspectorConsole', () => {
 
     rerender(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING),
           startRound,
@@ -106,8 +102,6 @@ describe('InspectorConsole', () => {
 
     rerender(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.BREAK),
           startRound,
@@ -117,14 +111,12 @@ describe('InspectorConsole', () => {
       />,
     );
 
-    expect(screen.getByText('GIẢI LAO')).toBeVisible();
+    expect(screen.getByText('NGHỈ GIỮA HIỆP')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'BẮT ĐẦU HIỆP 2' }));
     expect(startRound).toHaveBeenCalledTimes(2);
 
     rerender(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.ROUND_2_RUNNING),
           startRound,
@@ -139,8 +131,6 @@ describe('InspectorConsole', () => {
 
     rerender(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.FINISHED),
           startRound,
@@ -150,7 +140,7 @@ describe('InspectorConsole', () => {
       />,
     );
 
-    expect(screen.getByText('TRẬN ĐẤU ĐÃ KẾT THÚC')).toBeVisible();
+    expect(screen.getByText('KẾT QUẢ CUỐI CÙNG')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Ghi lỗi XANH' })).toBeDisabled();
   });
@@ -158,8 +148,6 @@ describe('InspectorConsole', () => {
   it('disables controls when the session is revoked or realtime connection is lost', () => {
     render(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           connectionStatus: 'revoked',
           snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING),
@@ -182,8 +170,6 @@ describe('InspectorConsole', () => {
 
     render(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           presence,
           snapshot: createMatchSnapshot({
@@ -220,8 +206,6 @@ describe('InspectorConsole', () => {
     const resumeRound = vi.fn(() => Promise.resolve(true));
     const { rerender } = render(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           pauseRound,
           snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING),
@@ -238,8 +222,6 @@ describe('InspectorConsole', () => {
 
     rerender(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           resumeRound,
           snapshot: snapshotFor(MatchStatus.ROUND_1_PAUSED),
@@ -247,7 +229,7 @@ describe('InspectorConsole', () => {
         session={inspectorSession}
       />,
     );
-    expect(screen.getByText('HIỆP 1 · TẠM DỪNG')).toBeVisible();
+    expect(screen.getByText('HIỆP 1 TẠM DỪNG')).toBeVisible();
     expect(screen.getByRole('timer')).toHaveTextContent('01:00');
     expect(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'TIẾP TỤC' }));
@@ -262,8 +244,6 @@ describe('InspectorConsole', () => {
     const exitMatch = vi.fn(() => Promise.resolve(true));
     const { rerender } = render(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           cancelRoundResult,
           snapshot: snapshotFor(MatchStatus.BREAK),
@@ -280,8 +260,6 @@ describe('InspectorConsole', () => {
 
     rerender(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           exitMatch,
           snapshot: createMatchSnapshot({
@@ -304,5 +282,41 @@ describe('InspectorConsole', () => {
     await user.click(screen.getByRole('button', { name: 'Hủy kết quả' }));
     expect(exitMatch).toHaveBeenCalledOnce();
     expect(exitMatch).toHaveBeenCalledWith(MatchExitMode.CANCEL_RESULTS);
+  });
+
+  it('keeps saving visible but disabled before round 2 is complete, using the server reason', () => {
+    render(
+      <InspectorConsole
+        realtime={createRealtimeState({ snapshot: snapshotFor(MatchStatus.BREAK) })}
+        session={inspectorSession}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'LƯU KẾT QUẢ' })).toBeDisabled();
+    expect(screen.getByText(/Hiệp 2 chưa kết thúc/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'THOÁT TRẬN' })).toBeVisible();
+  });
+
+  it('enables save only from the authoritative completion capability and completes after confirmation', async () => {
+    const user = userEvent.setup();
+    const completeMatch = vi.fn(() => Promise.resolve(true));
+    render(
+      <InspectorConsole
+        realtime={createRealtimeState({
+          completeMatch,
+          snapshot: createMatchSnapshot({
+            ...snapshotFor(MatchStatus.AWAITING_RESULT_SAVE),
+            completion: { canComplete: true, blockedReasons: [] },
+          }),
+        })}
+        session={inspectorSession}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'LƯU KẾT QUẢ' }));
+    expect(completeMatch).not.toHaveBeenCalled();
+    expect(screen.getByText(/Xác nhận lưu kết quả chính thức/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Lưu kết quả' }));
+    expect(completeMatch).toHaveBeenCalledOnce();
   });
 });

@@ -4,10 +4,6 @@ import type { MatchRealtimeState, RealtimeConnectionStatus } from './match-realt
 import type { MatchAccessSession } from '@/services/api/match-access';
 
 interface RefereeConsoleProps {
-  /** @deprecated Assigned consoles never render a logout control. */
-  readonly isLogoutPending?: boolean;
-  /** @deprecated Assigned consoles never render a logout control. */
-  readonly onLogout?: () => void;
   readonly realtime: MatchRealtimeState;
   readonly session: MatchAccessSession;
 }

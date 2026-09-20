@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { AthleteColor, MatchExitMode, MatchStatus } from '@martial-arts-scoring/shared-types';
+import {
+  AthleteColor,
+  MatchExitMode,
+  MatchStatus,
+  type MatchCompletionBlockedReason,
+} from '@martial-arts-scoring/shared-types';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import {
@@ -8,12 +13,9 @@ import {
   type RealtimeConnectionStatus,
 } from './match-realtime';
 import type { MatchAccessSession } from '@/services/api/match-access';
+import { presentPhase } from '@/features/match-presentation';
 
 interface InspectorConsoleProps {
-  /** @deprecated Assigned consoles never render a logout control. */
-  readonly isLogoutPending?: boolean;
-  /** @deprecated Assigned consoles never render a logout control. */
-  readonly onLogout?: () => void;
   readonly realtime: MatchRealtimeState;
   readonly session: MatchAccessSession;
 }
@@ -69,27 +71,23 @@ const connectionDotClasses: Record<RealtimeConnectionStatus, string> = {
   revoked: 'bg-red-500',
 };
 
-function displayPhase(status: MatchStatus | undefined): string {
-  switch (status) {
-    case MatchStatus.WAITING:
-      return 'CHỜ BẮT ĐẦU';
-    case MatchStatus.ROUND_1_RUNNING:
-      return 'HIỆP 1';
-    case MatchStatus.ROUND_1_PAUSED:
-      return 'HIỆP 1 · TẠM DỪNG';
-    case MatchStatus.BREAK:
-      return 'GIẢI LAO';
-    case MatchStatus.ROUND_2_RUNNING:
-      return 'HIỆP 2';
-    case MatchStatus.ROUND_2_PAUSED:
-      return 'HIỆP 2 · TẠM DỪNG';
-    case MatchStatus.AWAITING_RESULT_SAVE:
-      return 'CHỜ LƯU KẾT QUẢ';
-    case MatchStatus.FINISHED:
-      return 'TRẬN ĐẤU ĐÃ KẾT THÚC';
-    default:
-      return 'ĐANG ĐỒNG BỘ';
-  }
+const completionBlockedReasonLabels: Record<MatchCompletionBlockedReason, string> = {
+  ALREADY_COMPLETED: 'Kết quả đã được lưu.',
+  INVALIDATED_ROUND: 'Có hiệp đã bị hủy kết quả.',
+  MATCH_SUSPENDED: 'Trận đang tạm hoãn.',
+  NOT_AWAITING_RESULT_SAVE: 'Trận chưa ở bước chờ lưu kết quả.',
+  RESULT_DECISION_REQUIRED: 'Cần xác định kết quả trận đấu trước khi lưu.',
+  ROUND_1_NOT_ENDED: 'Hiệp 1 chưa kết thúc.',
+  ROUND_2_NOT_ENDED: 'Hiệp 2 chưa kết thúc.',
+  UNRESOLVED_SCORING_WINDOW: 'Đang chờ hoàn tất chấm điểm.',
+};
+
+function completionHelp(
+  blockedReasons: readonly MatchCompletionBlockedReason[] | undefined,
+): string {
+  if (!blockedReasons) return 'Đang đồng bộ điều kiện lưu kết quả từ máy chủ.';
+  if (blockedReasons.length === 0) return '';
+  return blockedReasons.map((reason) => completionBlockedReasonLabels[reason]).join(' ');
 }
 
 function formatRemainingTime(milliseconds: number): string {
@@ -235,6 +233,7 @@ export function InspectorConsole({ realtime, session }: InspectorConsoleProps) {
   >(null);
   const [exitMenuOpen, setExitMenuOpen] = useState(false);
   const [exitConfirmation, setExitConfirmation] = useState<MatchExitMode | null>(null);
+  const exitMenuFirstOptionRef = useRef<HTMLButtonElement>(null);
   const displayedRemaining = roundIsPaused
     ? (snapshot?.activeRound?.remainingDurationMs ?? null)
     : remainingTime;
@@ -296,6 +295,14 @@ export function InspectorConsole({ realtime, session }: InspectorConsoleProps) {
   const startLabel = status === MatchStatus.BREAK ? 'BẮT ĐẦU HIỆP 2' : 'BẮT ĐẦU HIỆP 1';
   const redAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
   const blueAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
+  const completionBlockedReasons = snapshot?.completion.blockedReasons;
+  const completionUnavailableMessage = completionHelp(completionBlockedReasons);
+  const saveResultDisabled =
+    realtime.connectionStatus !== 'connected' ||
+    realtime.completingMatch ||
+    snapshot?.completion.canComplete !== true;
+  const exitDisabled =
+    realtime.connectionStatus !== 'connected' || realtime.cancellingResults || !snapshot?.exit.canExit;
 
   useEffect(() => {
     if (armedPenalty === null) {
@@ -315,6 +322,18 @@ export function InspectorConsole({ realtime, session }: InspectorConsoleProps) {
       setArmedPenalty(null);
     }
   }, [roundIsRunning]);
+
+  useEffect(() => {
+    if (!exitMenuOpen) return;
+    exitMenuFirstOptionRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setExitMenuOpen(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [exitMenuOpen]);
 
   function handlePenaltyPress(athlete: AthleteColor): void {
     if (penaltyControlsDisabled) {
@@ -355,7 +374,9 @@ export function InspectorConsole({ realtime, session }: InspectorConsoleProps) {
         </header>
 
         <section className="mt-3 rounded-3xl border border-white/15 bg-white/10 px-5 py-7 text-center shadow-2xl shadow-blue-950/20 backdrop-blur-xl sm:mt-5 sm:px-8 sm:py-9">
-          <p className="text-sm font-black tracking-[0.2em] text-sky-200">{displayPhase(status)}</p>
+          <p className="text-sm font-black tracking-[0.2em] text-sky-200">
+            {status ? presentPhase(status).label.toUpperCase() : 'ĐANG ĐỒNG BỘ'}
+          </p>
           <p
             aria-label={`Thời gian còn lại ${formatRemainingTime(displayedRemaining ?? 0)}`}
             className="mt-2 font-mono text-6xl font-black tabular-nums tracking-tight sm:text-8xl"
@@ -441,27 +462,51 @@ export function InspectorConsole({ realtime, session }: InspectorConsoleProps) {
             </Button>
           ) : null}
 
-          {status === MatchStatus.AWAITING_RESULT_SAVE ? (
-            <div className="mx-auto mt-6 max-w-md">
+          <div className="mx-auto mt-6 grid max-w-md gap-3 sm:grid-cols-2 sm:max-w-2xl">
+            <div>
               <Button
+                aria-describedby={saveResultDisabled ? 'save-result-help' : undefined}
                 className="h-16 w-full text-lg font-black"
-                disabled={
-                  realtime.connectionStatus !== 'connected' ||
-                  realtime.completingMatch ||
-                  !snapshot?.completion.canComplete
-                }
-                onClick={() => setConfirmation('complete')}
+                disabled={saveResultDisabled}
+                onClick={() => {
+                  setConfirmation('complete');
+                }}
                 type="button"
               >
                 {realtime.completingMatch ? 'ĐANG LƯU…' : 'LƯU KẾT QUẢ'}
               </Button>
-              {!snapshot?.completion.canComplete ? (
-                <p className="mt-3 text-sm font-semibold text-amber-100">
-                  Kết quả chưa sẵn sàng để lưu. Vui lòng chờ các thao tác chấm điểm hoàn tất.
+              {saveResultDisabled ? (
+                <p className="mt-3 text-sm font-semibold text-amber-100" id="save-result-help">
+                  {realtime.connectionStatus !== 'connected'
+                    ? 'Cần kết nối máy chủ để kiểm tra điều kiện lưu kết quả.'
+                    : completionUnavailableMessage}
                 </p>
               ) : null}
             </div>
-          ) : null}
+            <div>
+              <Button
+                aria-describedby={exitDisabled ? 'exit-match-help' : undefined}
+                className="h-16 w-full text-lg font-black"
+                disabled={exitDisabled}
+                onClick={() => {
+                  setExitMenuOpen(true);
+                }}
+                type="button"
+                variant="outline"
+              >
+                THOÁT TRẬN
+              </Button>
+              {exitDisabled ? (
+                <p className="mt-3 text-sm font-semibold text-amber-100" id="exit-match-help">
+                  {realtime.connectionStatus !== 'connected'
+                    ? 'Cần kết nối máy chủ để thoát trận.'
+                    : snapshot?.exit.blockedReasons.length
+                      ? 'Chưa thể thoát trận theo trạng thái hiện tại do máy chủ xác định.'
+                      : 'Đang đồng bộ các lựa chọn thoát trận từ máy chủ.'}
+                </p>
+              ) : null}
+            </div>
+          </div>
 
           {realtime.completionErrorMessage ? (
             <p
@@ -491,9 +536,7 @@ export function InspectorConsole({ realtime, session }: InspectorConsoleProps) {
                 type="button"
                 variant="outline"
               >
-                {status === MatchStatus.BREAK
-                  ? 'HỦY KẾT QUẢ HIỆP 1 VÀ BẮT ĐẦU LẠI'
-                  : 'HỦY KẾT QUẢ HIỆP 2 VÀ BẮT ĐẦU LẠI'}
+                HỦY KẾT QUẢ HIỆP 1 VÀ BẮT ĐẦU LẠI
               </Button>
             </div>
           ) : null}
@@ -505,20 +548,6 @@ export function InspectorConsole({ realtime, session }: InspectorConsoleProps) {
             >
               {realtime.resultCancellationErrorMessage}
             </p>
-          ) : null}
-
-          {snapshot?.exit?.canExit ? (
-            <div className="mx-auto mt-6 max-w-md" aria-label="Thoát trận">
-              <Button
-                className="h-14 w-full text-lg font-black"
-                disabled={realtime.connectionStatus !== 'connected' || realtime.cancellingResults}
-                onClick={() => setExitMenuOpen(true)}
-                type="button"
-                variant="outline"
-              >
-                THOÁT TRẬN
-              </Button>
-            </div>
           ) : null}
 
           {realtime.roundStartErrorMessage ? (
@@ -672,12 +701,13 @@ export function InspectorConsole({ realtime, session }: InspectorConsoleProps) {
             <h2 className="text-xl font-black">Thoát trận</h2>
             <p className="mt-2 text-sm text-sky-100">Chọn cách xử lý kết quả trước khi rời trận.</p>
             <div className="mt-5 grid gap-3">
-              {snapshot?.exit.allowedModes.map((mode) => {
+              {snapshot?.exit.allowedModes.map((mode, index) => {
                 const option = exitOption(mode);
                 return (
                   <button
                     className={`min-h-20 rounded-xl border p-4 text-left focus-visible:outline-none focus-visible:ring-4 ${option.destructive ? 'border-red-300/50 bg-red-950/40 focus-visible:ring-red-300' : 'border-sky-300/40 bg-white/10 focus-visible:ring-sky-300'}`}
                     key={mode}
+                    ref={index === 0 ? exitMenuFirstOptionRef : undefined}
                     onClick={() => {
                       setExitMenuOpen(false);
                       setExitConfirmation(mode);
@@ -693,7 +723,9 @@ export function InspectorConsole({ realtime, session }: InspectorConsoleProps) {
             <Button
               className="mt-5"
               disabled={realtime.cancellingResults}
-              onClick={() => setExitMenuOpen(false)}
+              onClick={() => {
+                setExitMenuOpen(false);
+              }}
               type="button"
               variant="outline"
             >
@@ -707,7 +739,9 @@ export function InspectorConsole({ realtime, session }: InspectorConsoleProps) {
           actionLabel={exitOption(exitConfirmation).title}
           busy={realtime.cancellingResults}
           description={exitOption(exitConfirmation).description}
-          onCancel={() => setExitConfirmation(null)}
+          onCancel={() => {
+            setExitConfirmation(null);
+          }}
           onConfirm={() => {
             void realtime.exitMatch(exitConfirmation).then((ok) => {
               if (ok) setExitConfirmation(null);

@@ -262,6 +262,36 @@ describe('MatchAccessPage official login', () => {
     expect(await screen.findByText('Referee console ready')).toBeVisible();
     expect(socketHarness.socket.disconnect).not.toHaveBeenCalled();
     expect(socketHarness.socket.emit).toHaveBeenCalledWith('match:state:request');
+    expect(screen.queryByRole('button', { name: 'Đăng xuất' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the session and reconciles an assignment when logout loses a race with assignment', async () => {
+    const user = userEvent.setup();
+    const assignedSession: OfficialSession = {
+      ...refereeSession,
+      activeAssignment: {
+        id: 'assignment-race',
+        match: { id: 'match-race', publicId: 'M-RACE', status: 'WAITING' },
+        refereePosition: 1,
+        role: TournamentOfficialRole.REFEREE,
+      },
+      status: 'IN_MATCH',
+    };
+    officialAccessApiMock.session.mockResolvedValueOnce({ session: refereeSession });
+    officialAccessApiMock.logout.mockRejectedValue(
+      new ApiClientError(409, { code: 'OFFICIAL_IN_MATCH_LOGOUT_FORBIDDEN' }),
+    );
+    renderPage();
+    await screen.findByText('Đang chờ phân công');
+    officialAccessApiMock.session.mockResolvedValue({ session: assignedSession });
+
+    await user.click(screen.getByRole('button', { name: 'Đăng xuất' }));
+
+    expect(await screen.findByText('Referee console ready')).toBeVisible();
+    expect(
+      screen.getByText('Bạn đã được phân công vào trận trước khi yêu cầu đăng xuất được xử lý. Phiên vẫn được giữ.'),
+    ).toHaveAttribute('role', 'alert');
+    expect(screen.queryByRole('button', { name: 'Đăng xuất' })).not.toBeInTheDocument();
   });
 
   it('restores the referee console from a correlated assignment snapshot', async () => {
