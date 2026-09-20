@@ -903,6 +903,11 @@ export class MatchOfficialAssignmentsService {
       matchPublicId: match.publicId,
       tournamentId: match.tournamentId,
     });
+    // A take may also resume a suspended match.  Publish the canonical state
+    // after commit so match and public scoreboard rooms converge immediately.
+    // Idempotent takes deliberately do not enter this path, avoiding a false
+    // lifecycle transition notification.
+    this.routing.publishMatchStateSnapshot(match.id, match.publicId);
     for (const assignment of match.officialAssignments)
       this.routing.publishAssignment({
         officialId: assignment.officialId,

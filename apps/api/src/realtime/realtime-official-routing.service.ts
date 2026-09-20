@@ -23,9 +23,40 @@ export class RealtimeOfficialRoutingService {
   private readonly logger = new Logger(RealtimeOfficialRoutingService.name);
   private server: Server<ClientToServerEvents, ServerToClientEvents> | null =
     null;
+  private matchStatePublisher:
+    ((matchId: string, matchPublicId: string) => Promise<void>) | null = null;
 
   bind(server: Server<ClientToServerEvents, ServerToClientEvents>): void {
     this.server = server;
+  }
+
+  /**
+   * Binds the gateway-owned authoritative snapshot projection.  Assignment
+   * writes invoke this only after their transaction commits, keeping the
+   * domain service independent from Socket.IO rooms and payload projections.
+   */
+  bindMatchStatePublisher(
+    publisher: (matchId: string, matchPublicId: string) => Promise<void>,
+  ): void {
+    this.matchStatePublisher = publisher;
+  }
+
+  publishMatchStateSnapshot(matchId: string, matchPublicId: string): void {
+    if (this.matchStatePublisher === null) {
+      this.logger.error(
+        { matchId, matchPublicId },
+        'Match state publisher is unbound after bootstrap',
+      );
+      return;
+    }
+    void this.matchStatePublisher(matchId, matchPublicId).catch(
+      (error: unknown) => {
+        this.logger.error(
+          { error, matchId, matchPublicId },
+          'Authoritative match state publication failed',
+        );
+      },
+    );
   }
 
   publishAssignment(payload: OfficialAssignmentUpdatedPayload): void {

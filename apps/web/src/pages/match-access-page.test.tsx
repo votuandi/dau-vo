@@ -261,6 +261,7 @@ describe('MatchAccessPage official login', () => {
 
     expect(await screen.findByText('Referee console ready')).toBeVisible();
     expect(socketHarness.socket.disconnect).not.toHaveBeenCalled();
+    expect(socketHarness.socket.emit).toHaveBeenCalledWith('match:state:request');
   });
 
   it('restores the referee console from a correlated assignment snapshot', async () => {

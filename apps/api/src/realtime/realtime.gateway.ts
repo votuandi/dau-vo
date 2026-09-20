@@ -187,6 +187,9 @@ export class RealtimeGateway
 
   afterInit(server: Server): void {
     this.officialRouting.bind(server);
+    this.officialRouting.bindMatchStatePublisher((matchId, matchPublicId) =>
+      this.broadcastMatchState(matchId, matchPublicId),
+    );
     this.sessionRegistry.bind(server);
     server.use((socket, next) => {
       void this.authenticate(socket as RealtimeSocket).then(

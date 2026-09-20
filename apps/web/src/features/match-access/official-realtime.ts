@@ -170,6 +170,9 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
       }
       assignmentEventEpoch.current += 1;
       apply(assignmentFromSnapshot(payload.assignment), 'updated');
+      // Revalidation joins the newly assigned match room before replying with
+      // the private, recipient-specific state snapshot.
+      if (payload.assignment !== null) socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
     };
     const onReleased = (payload: MatchAssignmentReleasedPayload) => {
       if (
