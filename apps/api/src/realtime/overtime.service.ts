@@ -1,0 +1,367 @@
+import { Inject, Injectable } from '@nestjs/common';
+import {
+  AthleteColor,
+  AuditEventType,
+  MatchAppealScope,
+  MatchLifecycle,
+  MatchOutcomeMethod,
+  MatchStatus,
+  RoundStage,
+  ScoreEventType,
+  type Prisma,
+} from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { auditActor, type InspectorCommandIdentity } from './command-identity';
+import {
+  AppealIdentityError,
+  AppealStateError,
+  RegulationAppealService,
+  type RegulationAppealInput,
+} from './regulation-appeal.service';
+
+export type OvertimeAppealTransition = {
+  appealId: string;
+  matchId: string;
+  matchPublicId: string;
+  phase: MatchStatus;
+  attemptNumber: number;
+  isTie: boolean;
+};
+
+@Injectable()
+export class OvertimeService {
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(RegulationAppealService)
+    private readonly appeals: RegulationAppealService,
+  ) {}
+
+  async complete(input: {
+    matchId: string;
+    identity: InspectorCommandIdentity;
+    payload: RegulationAppealInput;
+  }): Promise<OvertimeAppealTransition> {
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.lockMatch(tx, input.matchId);
+        await this.assertInspector(tx, input.matchId, input.identity);
+        const match = await tx.match.findUniqueOrThrow({
+          where: { id: input.matchId },
+          select: { publicId: true, status: true, lifecycle: true },
+        });
+        if (
+          match.status !== MatchStatus.OVERTIME_APPEAL ||
+          match.lifecycle !== MatchLifecycle.IN_PROGRESS
+        )
+          throw new AppealStateError(
+            'Match is not awaiting an overtime appeal',
+          );
+        const round = await tx.round.findFirst({
+          where: {
+            matchId: input.matchId,
+            stage: RoundStage.OVERTIME,
+            invalidatedAt: null,
+            endedAt: { not: null },
+          },
+          orderBy: { attemptNumber: 'desc' },
+          select: { id: true, attemptNumber: true },
+        });
+        if (!round)
+          throw new AppealStateError('A completed overtime round is required');
+        const unresolved = await tx.scoringWindow.findFirst({
+          where: {
+            matchId: input.matchId,
+            roundId: round.id,
+            invalidatedAt: null,
+            resolvedAt: null,
+          },
+        });
+        const prior = await tx.matchAppeal.findFirst({
+          where: {
+            matchId: input.matchId,
+            scope: MatchAppealScope.OVERTIME,
+            attemptNumber: round.attemptNumber,
+            invalidatedAt: null,
+          },
+        });
+        if (unresolved || prior)
+          throw new AppealStateError(
+            'Overtime appeal inputs are incomplete or already committed',
+          );
+        const [athletes, summaries] = await Promise.all([
+          tx.matchAthlete.findMany({
+            where: { matchId: input.matchId },
+            select: { id: true, color: true },
+          }),
+          tx.roundAthleteResult.findMany({
+            where: {
+              matchId: input.matchId,
+              roundId: round.id,
+              invalidatedAt: null,
+            },
+            select: { athleteId: true, refereePoints: true },
+          }),
+        ]);
+        if (athletes.length !== 2 || summaries.length !== 2)
+          throw new AppealStateError('Overtime round summary is missing');
+        const score = (color: AthleteColor) => {
+          const athlete = athletes.find((x) => x.color === color)!;
+          const base =
+            summaries.find((x) => x.athleteId === athlete.id)?.refereePoints ??
+            0;
+          const adjustment = input.payload[color];
+          return {
+            athlete,
+            base,
+            ...adjustment,
+            final: base + adjustment.bonusPoints - adjustment.penaltyPoints,
+          };
+        };
+        const red = score(AthleteColor.RED),
+          blue = score(AthleteColor.BLUE),
+          isTie = red.final === blue.final;
+        const clock = (
+          await tx.$queryRaw<
+            Array<{ now: Date }>
+          >`SELECT clock_timestamp() AS now`
+        )[0]!.now;
+        const appeal = await tx.matchAppeal.create({
+          data: {
+            matchId: input.matchId,
+            scope: MatchAppealScope.OVERTIME,
+            attemptNumber: round.attemptNumber,
+            sourceRoundId: round.id,
+            idempotencyKey: input.payload.idempotencyKey,
+            completedAt: clock,
+            ...(input.identity.kind === 'official'
+              ? { completedInspectorAssignmentId: input.identity.assignmentId }
+              : { completedInspectorSessionId: input.identity.sessionId }),
+            sourceRounds: { create: { roundId: round.id } },
+            adjustments: {
+              create: [red, blue].map((x) => ({
+                athleteId: x.athlete.id,
+                baseRefereeScore: x.base,
+                bonusPoints: x.bonusPoints,
+                penaltyPoints: x.penaltyPoints,
+                finalScore: x.final,
+              })),
+            },
+          },
+          select: { id: true },
+        });
+        const phase = isTie
+          ? MatchStatus.OVERTIME_TIEBREAK_DECISION
+          : MatchStatus.RESULT_PUBLICATION_READY;
+        await tx.match.update({
+          where: { id: input.matchId },
+          data: { status: phase },
+        });
+        await tx.auditLog.create({
+          data: {
+            eventType: AuditEventType.MATCH_ACTION,
+            matchId: input.matchId,
+            ...auditActor(input.identity),
+            metadata: {
+              action: 'OVERTIME_APPEAL_COMPLETED',
+              appealId: appeal.id,
+              attemptNumber: round.attemptNumber,
+              isTie,
+              phase,
+            },
+          },
+        });
+        return {
+          appealId: appeal.id,
+          matchId: input.matchId,
+          matchPublicId: match.publicId,
+          phase,
+          attemptNumber: round.attemptNumber,
+          isTie,
+        };
+      },
+      { maxWait: 5000, timeout: 10000 },
+    );
+  }
+
+  async restart(input: {
+    matchId: string;
+    identity: InspectorCommandIdentity;
+  }) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.lockMatch(tx, input.matchId);
+        await this.assertInspector(tx, input.matchId, input.identity);
+        const match = await tx.match.findUniqueOrThrow({
+          where: { id: input.matchId },
+          select: { publicId: true, status: true },
+        });
+        if (match.status !== MatchStatus.OVERTIME_TIEBREAK_DECISION)
+          throw new AppealStateError(
+            'Only a tied committed overtime appeal may be restarted',
+          );
+        const appeal = await tx.matchAppeal.findFirstOrThrow({
+          where: {
+            matchId: input.matchId,
+            scope: MatchAppealScope.OVERTIME,
+            status: 'COMPLETED',
+            invalidatedAt: null,
+          },
+          orderBy: { attemptNumber: 'desc' },
+          select: { id: true, attemptNumber: true, sourceRoundId: true },
+        });
+        const audit = await tx.auditLog.create({
+          data: {
+            eventType: AuditEventType.MATCH_ACTION,
+            matchId: input.matchId,
+            ...auditActor(input.identity),
+            metadata: {
+              action: 'OVERTIME_RESTARTED',
+              attemptNumber: appeal.attemptNumber,
+            },
+          },
+          select: { id: true },
+        });
+        await Promise.all([
+          tx.round.update({
+            where: { id: appeal.sourceRoundId },
+            data: { invalidatedAt: new Date(), invalidatedByAuditId: audit.id },
+          }),
+          tx.roundAthleteResult.updateMany({
+            where: { roundId: appeal.sourceRoundId, invalidatedAt: null },
+            data: { invalidatedAt: new Date(), invalidatedByAuditId: audit.id },
+          }),
+          tx.scoreEvent.updateMany({
+            where: { roundId: appeal.sourceRoundId, revertedAt: null },
+            data: { revertedAt: new Date(), revertedByAuditId: audit.id },
+          }),
+          tx.fault.updateMany({
+            where: { roundId: appeal.sourceRoundId, invalidatedAt: null },
+            data: { invalidatedAt: new Date(), invalidatedByAuditId: audit.id },
+          }),
+          tx.scoringWindow.updateMany({
+            where: { roundId: appeal.sourceRoundId, invalidatedAt: null },
+            data: { invalidatedAt: new Date(), invalidatedByAuditId: audit.id },
+          }),
+          tx.matchAppeal.update({
+            where: { id: appeal.id },
+            data: {
+              status: 'INVALIDATED',
+              invalidatedAt: new Date(),
+              invalidatedByAuditId: audit.id,
+            },
+          }),
+          tx.match.update({
+            where: { id: input.matchId },
+            data: { status: MatchStatus.OVERTIME_READY },
+          }),
+        ]);
+        return {
+          matchId: input.matchId,
+          matchPublicId: match.publicId,
+          attemptNumber: appeal.attemptNumber + 1,
+          phase: MatchStatus.OVERTIME_READY,
+        };
+      },
+      { maxWait: 5000, timeout: 10000 },
+    );
+  }
+
+  async manualWinner(input: {
+    matchId: string;
+    identity: InspectorCommandIdentity;
+    winner: AthleteColor;
+  }) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.lockMatch(tx, input.matchId);
+        await this.assertInspector(tx, input.matchId, input.identity);
+        const match = await tx.match.findUniqueOrThrow({
+          where: { id: input.matchId },
+          select: { publicId: true, status: true },
+        });
+        if (match.status !== MatchStatus.OVERTIME_TIEBREAK_DECISION)
+          throw new AppealStateError(
+            'Manual winner requires a tied overtime appeal',
+          );
+        const appeal = await tx.matchAppeal.findFirstOrThrow({
+          where: {
+            matchId: input.matchId,
+            scope: MatchAppealScope.OVERTIME,
+            status: 'COMPLETED',
+            invalidatedAt: null,
+          },
+          orderBy: { attemptNumber: 'desc' },
+          select: { id: true, attemptNumber: true, sourceRoundId: true },
+        });
+        const athlete = await tx.matchAthlete.findUniqueOrThrow({
+          where: {
+            matchId_color: { matchId: input.matchId, color: input.winner },
+          },
+          select: { id: true },
+        });
+        await tx.matchOutcome.create({
+          data: {
+            matchId: input.matchId,
+            winnerAthleteId: athlete.id,
+            winnerColor: input.winner,
+            method: MatchOutcomeMethod.MANUAL_AFTER_OVERTIME_TIE,
+            sourceAppealId: appeal.id,
+            sourceOvertimeRoundId: appeal.sourceRoundId,
+            snapshot: {
+              pendingPublication: true,
+              attemptNumber: appeal.attemptNumber,
+            },
+            ...(input.identity.kind === 'official'
+              ? { publishedInspectorAssignmentId: input.identity.assignmentId }
+              : { publishedInspectorSessionId: input.identity.sessionId }),
+          },
+        });
+        await tx.match.update({
+          where: { id: input.matchId },
+          data: { status: MatchStatus.RESULT_PUBLICATION_READY },
+        });
+        await tx.auditLog.create({
+          data: {
+            eventType: AuditEventType.MATCH_ACTION,
+            matchId: input.matchId,
+            ...auditActor(input.identity),
+            metadata: {
+              action: 'MANUAL_AFTER_OVERTIME_TIE_SELECTED',
+              winner: input.winner,
+              appealId: appeal.id,
+              attemptNumber: appeal.attemptNumber,
+              pendingPublication: true,
+            },
+          },
+        });
+        return {
+          matchId: input.matchId,
+          matchPublicId: match.publicId,
+          attemptNumber: appeal.attemptNumber,
+          phase: MatchStatus.RESULT_PUBLICATION_READY,
+          winner: input.winner,
+        };
+      },
+      { maxWait: 5000, timeout: 10000 },
+    );
+  }
+  private async lockMatch(tx: Prisma.TransactionClient, matchId: string) {
+    await tx.$queryRaw`SELECT id FROM matches WHERE id=${matchId}::uuid FOR UPDATE`;
+  }
+  private async assertInspector(
+    tx: Prisma.TransactionClient,
+    matchId: string,
+    identity: InspectorCommandIdentity,
+  ) {
+    const rows =
+      identity.kind === 'official'
+        ? await tx.$queryRaw<
+            Array<{ id: string }>
+          >`SELECT a.id FROM match_official_assignments a JOIN tournament_official_sessions s ON s.official_id=a.official_id WHERE a.id=${identity.assignmentId}::uuid AND a.match_id=${matchId}::uuid AND a.released_at IS NULL AND a.role='INSPECTOR' AND s.id=${identity.officialSessionId}::uuid AND s.active=true AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp() FOR UPDATE OF a,s`
+        : await tx.$queryRaw<
+            Array<{ id: string }>
+          >`SELECT id FROM match_sessions WHERE id=${identity.sessionId}::uuid AND match_id=${matchId}::uuid AND active=true AND revoked_at IS NULL AND expires_at>clock_timestamp() AND role='INSPECTOR' FOR UPDATE`;
+    if (rows.length !== 1)
+      throw new AppealIdentityError('Inspector assignment or session is stale');
+  }
+}

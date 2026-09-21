@@ -26,6 +26,7 @@ import {
   MatchStatus,
   MatchOfficialAssignmentReleaseReason,
   MatchRulesVersion,
+  RoundStage,
   ScoreEventType,
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
@@ -58,6 +59,7 @@ const EXPIRATION_RETRY_DELAY_MS = 1_000;
 const RUNNING_STATUSES = [
   MatchStatus.ROUND_1_RUNNING,
   MatchStatus.ROUND_2_RUNNING,
+  MatchStatus.OVERTIME_RUNNING,
 ] as const satisfies readonly MatchStatus[];
 
 interface LockedRow {
@@ -75,6 +77,8 @@ interface LifecycleRound {
   remainingDurationMs: number | null;
   id: string;
   roundNumber: number;
+  stage: RoundStage;
+  attemptNumber: number;
   startedAt: Date;
 }
 
@@ -237,22 +241,33 @@ export class MatchLifecycleService implements OnModuleDestroy {
         // First-round setup is verified only after the match lock and command
         // identity lock. Presence is delivery state, but it is sampled here,
         // not trusted from an earlier gateway snapshot.
-        if (match.status === MatchStatus.WAITING && match.currentRound === null)
+        if (
+          (match.status === MatchStatus.WAITING &&
+            match.currentRound === null) ||
+          match.status === MatchStatus.OVERTIME_READY
+        )
           await this.assertStartReadiness(
             transaction,
             input.matchId,
             match.publicId,
             match.requiredRefereeCount,
           );
-        const roundNumber = this.nextRoundNumber(
+        const descriptor = this.nextRoundDescriptor(
           match.status,
           match.currentRound,
           match.startedAt,
+          await transaction.round.findMany({
+            where: { matchId: input.matchId, stage: RoundStage.OVERTIME },
+            select: { attemptNumber: true },
+          }),
         );
+        const roundNumber = descriptor.roundNumber;
         const nextStatus =
-          roundNumber === 1
-            ? MatchStatus.ROUND_1_RUNNING
-            : MatchStatus.ROUND_2_RUNNING;
+          descriptor.stage === RoundStage.OVERTIME
+            ? MatchStatus.OVERTIME_RUNNING
+            : roundNumber === 1
+              ? MatchStatus.ROUND_1_RUNNING
+              : MatchStatus.ROUND_2_RUNNING;
         const endsAt = new Date(
           clock.serverNow.getTime() + match.roundDurationMs,
         );
@@ -262,6 +277,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
             endsAt,
             matchId: input.matchId,
             roundNumber,
+            stage: descriptor.stage,
+            attemptNumber: descriptor.attemptNumber,
             startedAt: clock.serverNow,
           },
           select: {
@@ -271,6 +288,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
             pausedAt: true,
             remainingDurationMs: true,
             roundNumber: true,
+            stage: true,
+            attemptNumber: true,
             startedAt: true,
           },
         });
@@ -279,7 +298,10 @@ export class MatchLifecycleService implements OnModuleDestroy {
           data: {
             currentRound: roundNumber,
             lifecycle: MatchLifecycle.IN_PROGRESS,
-            startedAt: roundNumber === 1 ? clock.serverNow : match.startedAt,
+            startedAt:
+              roundNumber === 1 && descriptor.stage === RoundStage.REGULATION
+                ? clock.serverNow
+                : match.startedAt,
             status: nextStatus,
           },
           select: { id: true },
@@ -294,6 +316,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
               fromStatus: match.status,
               roundId: round.id,
               roundNumber,
+              stage: descriptor.stage,
+              attemptNumber: descriptor.attemptNumber,
               startedAt: clock.serverNow.toISOString(),
               toStatus: nextStatus,
               ...(input.identity.kind === 'official'
@@ -350,13 +374,20 @@ export class MatchLifecycleService implements OnModuleDestroy {
             ? 1
             : match.status === MatchStatus.ROUND_2_RUNNING
               ? 2
-              : null;
+              : match.status === MatchStatus.OVERTIME_RUNNING
+                ? 1
+                : null;
         if (roundNumber === null || match.currentRound !== roundNumber) {
           throw new InvalidRoundControlStateError(match.status);
         }
         const round = await transaction.round.findFirstOrThrow({
           orderBy: { createdAt: 'desc' },
-          where: { invalidatedAt: null, matchId: input.matchId, roundNumber },
+          where: {
+            invalidatedAt: null,
+            matchId: input.matchId,
+            roundNumber,
+            endedAt: null,
+          },
         });
         const remainingDurationMs = Math.max(
           0,
@@ -366,9 +397,11 @@ export class MatchLifecycleService implements OnModuleDestroy {
           throw new InvalidRoundControlStateError(match.status);
         }
         const status =
-          roundNumber === 1
-            ? MatchStatus.ROUND_1_PAUSED
-            : MatchStatus.ROUND_2_PAUSED;
+          match.status === MatchStatus.OVERTIME_RUNNING
+            ? MatchStatus.OVERTIME_PAUSED
+            : roundNumber === 1
+              ? MatchStatus.ROUND_1_PAUSED
+              : MatchStatus.ROUND_2_PAUSED;
         const pausedRound = await transaction.round.update({
           data: { pausedAt: clock.serverNow, remainingDurationMs },
           where: { id: round.id },
@@ -429,12 +462,19 @@ export class MatchLifecycleService implements OnModuleDestroy {
             ? 1
             : match.status === MatchStatus.ROUND_2_PAUSED
               ? 2
-              : null;
+              : match.status === MatchStatus.OVERTIME_PAUSED
+                ? 1
+                : null;
         if (roundNumber === null || match.currentRound !== roundNumber)
           throw new InvalidRoundControlStateError(match.status);
         const round = await transaction.round.findFirstOrThrow({
           orderBy: { createdAt: 'desc' },
-          where: { invalidatedAt: null, matchId: input.matchId, roundNumber },
+          where: {
+            invalidatedAt: null,
+            matchId: input.matchId,
+            roundNumber,
+            endedAt: null,
+          },
         });
         if (round.pausedAt === null || round.remainingDurationMs === null)
           throw new InvalidRoundControlStateError(match.status);
@@ -442,9 +482,11 @@ export class MatchLifecycleService implements OnModuleDestroy {
           clock.serverNow.getTime() + round.remainingDurationMs,
         );
         const status =
-          roundNumber === 1
-            ? MatchStatus.ROUND_1_RUNNING
-            : MatchStatus.ROUND_2_RUNNING;
+          match.status === MatchStatus.OVERTIME_PAUSED
+            ? MatchStatus.OVERTIME_RUNNING
+            : roundNumber === 1
+              ? MatchStatus.ROUND_1_RUNNING
+              : MatchStatus.ROUND_2_RUNNING;
         const resumedRound = await transaction.round.update({
           data: { endsAt, pausedAt: null, remainingDurationMs: null },
           where: { id: round.id },
@@ -1304,9 +1346,10 @@ export class MatchLifecycleService implements OnModuleDestroy {
         currentRound: true,
         id: true,
         publicId: true,
+        status: true,
         rounds: {
           orderBy: { roundNumber: 'desc' },
-          select: { id: true, roundNumber: true },
+          select: { id: true, roundNumber: true, stage: true },
           where: { endedAt: null, invalidatedAt: null },
         },
       },
@@ -1315,7 +1358,11 @@ export class MatchLifecycleService implements OnModuleDestroy {
 
     for (const match of matches) {
       const activeRound = match.rounds.find(
-        ({ roundNumber }) => roundNumber === match.currentRound,
+        ({ roundNumber, stage }) =>
+          roundNumber === match.currentRound &&
+          (match.status === MatchStatus.OVERTIME_RUNNING
+            ? stage === RoundStage.OVERTIME
+            : stage === RoundStage.REGULATION),
       );
 
       if (activeRound === undefined) {
@@ -1409,6 +1456,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
               pausedAt: true,
               remainingDurationMs: true,
               roundNumber: true,
+              stage: true,
+              attemptNumber: true,
               startedAt: true,
             },
             where: { id: roundId, matchId },
@@ -1419,7 +1468,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
           round === null ||
           round.endedAt !== null ||
           match.currentRound !== round.roundNumber ||
-          match.status !== this.runningStatus(round.roundNumber)
+          match.status !== this.runningStatus(round.roundNumber, round.stage)
         ) {
           return { kind: 'inactive' };
         }
@@ -1431,11 +1480,14 @@ export class MatchLifecycleService implements OnModuleDestroy {
         }
 
         const nextStatus =
-          round.roundNumber === 1
-            ? MatchStatus.BREAK
-            : match.rulesVersion === MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2
-              ? MatchStatus.REGULATION_APPEAL
-              : MatchStatus.AWAITING_RESULT_SAVE;
+          round.stage === RoundStage.OVERTIME
+            ? MatchStatus.OVERTIME_APPEAL
+            : round.roundNumber === 1
+              ? MatchStatus.BREAK
+              : match.rulesVersion ===
+                  MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2
+                ? MatchStatus.REGULATION_APPEAL
+                : MatchStatus.AWAITING_RESULT_SAVE;
         const endedAt = round.endsAt;
         const endedRound = await transaction.round.update({
           data: { endedAt },
@@ -1446,6 +1498,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
             pausedAt: true,
             remainingDurationMs: true,
             roundNumber: true,
+            stage: true,
+            attemptNumber: true,
             startedAt: true,
           },
           where: { id: round.id },
@@ -1753,17 +1807,18 @@ export class MatchLifecycleService implements OnModuleDestroy {
     return clock;
   }
 
-  private nextRoundNumber(
+  private nextRoundDescriptor(
     status: MatchStatus,
     currentRound: number | null,
     startedAt: Date | null,
-  ): 1 | 2 {
+    overtimeRounds: Array<{ attemptNumber: number }>,
+  ): { stage: RoundStage; roundNumber: 1 | 2; attemptNumber: number } {
     if (
       status === MatchStatus.WAITING &&
       currentRound === null &&
       startedAt === null
     ) {
-      return 1;
+      return { stage: RoundStage.REGULATION, roundNumber: 1, attemptNumber: 0 };
     }
 
     if (
@@ -1771,13 +1826,25 @@ export class MatchLifecycleService implements OnModuleDestroy {
       currentRound === 1 &&
       startedAt !== null
     ) {
-      return 2;
+      return { stage: RoundStage.REGULATION, roundNumber: 2, attemptNumber: 0 };
     }
+
+    if (status === MatchStatus.OVERTIME_READY)
+      return {
+        stage: RoundStage.OVERTIME,
+        roundNumber: 1,
+        attemptNumber:
+          Math.max(0, ...overtimeRounds.map((x) => x.attemptNumber)) + 1,
+      };
 
     throw new InvalidRoundStartStateError(status);
   }
 
-  private runningStatus(roundNumber: number): MatchStatus | null {
+  private runningStatus(
+    roundNumber: number,
+    stage: RoundStage = RoundStage.REGULATION,
+  ): MatchStatus | null {
+    if (stage === RoundStage.OVERTIME) return MatchStatus.OVERTIME_RUNNING;
     switch (roundNumber) {
       case 1:
         return MatchStatus.ROUND_1_RUNNING;
@@ -1789,7 +1856,11 @@ export class MatchLifecycleService implements OnModuleDestroy {
   }
 
   private sharedRound(round: LifecycleRound): MatchRoundState {
-    if (round.roundNumber !== 1 && round.roundNumber !== 2) {
+    if (
+      round.stage === RoundStage.REGULATION &&
+      round.roundNumber !== 1 &&
+      round.roundNumber !== 2
+    ) {
       throw new Error(`Unsupported round number: ${String(round.roundNumber)}`);
     }
 
@@ -1799,7 +1870,9 @@ export class MatchLifecycleService implements OnModuleDestroy {
       pausedAt: round.pausedAt?.toISOString() ?? null,
       remainingDurationMs: round.remainingDurationMs,
       id: round.id,
-      roundNumber: round.roundNumber,
+      roundNumber: round.roundNumber as 1 | 2,
+      stage: round.stage,
+      attemptNumber: round.attemptNumber,
       startedAt: round.startedAt.toISOString(),
     };
   }
@@ -1824,13 +1897,16 @@ export class MatchLifecycleService implements OnModuleDestroy {
         return SharedMatchStatus.REGULATION_APPEAL;
       case MatchStatus.OVERTIME_READY:
         return SharedMatchStatus.OVERTIME_READY;
+      case MatchStatus.OVERTIME_RUNNING:
+        return SharedMatchStatus.OVERTIME_RUNNING;
+      case MatchStatus.OVERTIME_PAUSED:
+        return SharedMatchStatus.OVERTIME_PAUSED;
+      case MatchStatus.OVERTIME_APPEAL:
+        return SharedMatchStatus.OVERTIME_APPEAL;
+      case MatchStatus.OVERTIME_TIEBREAK_DECISION:
+        return SharedMatchStatus.OVERTIME_TIEBREAK_DECISION;
       case MatchStatus.RESULT_PUBLICATION_READY:
         return SharedMatchStatus.RESULT_PUBLICATION_READY;
-      case MatchStatus.OVERTIME_RUNNING:
-      case MatchStatus.OVERTIME_PAUSED:
-      case MatchStatus.OVERTIME_APPEAL:
-      case MatchStatus.OVERTIME_TIEBREAK_DECISION:
-        throw new Error(`Unsupported match status in this phase: ${status}`);
       case MatchStatus.FINISHED:
         return SharedMatchStatus.FINISHED;
       default: {

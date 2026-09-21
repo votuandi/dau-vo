@@ -16,6 +16,7 @@ import {
   AthleteColor,
   AuditEventType,
   MatchStatus,
+  RoundStage,
   type RefereeSlot,
   ScoreEventType,
 } from '@prisma/client';
@@ -64,6 +65,7 @@ interface ActiveRound {
   endsAt: Date;
   id: string;
   roundNumber: number;
+  stage: RoundStage;
   startedAt: Date;
 }
 
@@ -231,6 +233,7 @@ export class ScoringService implements OnModuleDestroy {
                 endsAt: true,
                 id: true,
                 roundNumber: true,
+                stage: true,
                 startedAt: true,
               },
               where: { endedAt: null },
@@ -241,7 +244,8 @@ export class ScoringService implements OnModuleDestroy {
         });
         if (
           match.status === MatchStatus.ROUND_1_PAUSED ||
-          match.status === MatchStatus.ROUND_2_PAUSED
+          match.status === MatchStatus.ROUND_2_PAUSED ||
+          match.status === MatchStatus.OVERTIME_PAUSED
         ) {
           throw new RoundPausedForVoteError();
         }
@@ -696,16 +700,28 @@ export class ScoringService implements OnModuleDestroy {
   }): ActiveRound | null {
     if (
       match.status !== MatchStatus.ROUND_1_RUNNING &&
-      match.status !== MatchStatus.ROUND_2_RUNNING
+      match.status !== MatchStatus.ROUND_2_RUNNING &&
+      match.status !== MatchStatus.OVERTIME_RUNNING
     ) {
       return null;
     }
-    const expectedRound = match.status === MatchStatus.ROUND_1_RUNNING ? 1 : 2;
+    const expectedRound =
+      match.status === MatchStatus.ROUND_1_RUNNING
+        ? 1
+        : match.status === MatchStatus.ROUND_2_RUNNING
+          ? 2
+          : 1;
     if (match.currentRound !== expectedRound) {
       return null;
     }
     return (
-      match.rounds.find((round) => round.roundNumber === expectedRound) ?? null
+      match.rounds.find(
+        (round) =>
+          round.roundNumber === expectedRound &&
+          (match.status === MatchStatus.OVERTIME_RUNNING
+            ? round.stage === RoundStage.OVERTIME
+            : round.stage === RoundStage.REGULATION),
+      ) ?? null
     );
   }
 

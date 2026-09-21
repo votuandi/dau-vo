@@ -32,6 +32,7 @@ import {
   type AppealCompletePayload,
   type AppealCompleteResponse,
   type AppealCompleteResult,
+  type OvertimeActionResponse,
   MatchExitMode,
   type MatchExitResponse,
   type MatchExitCommandPayload,
@@ -112,6 +113,7 @@ import {
   MAX_REGULATION_APPEAL_POINTS,
   RegulationAppealService,
 } from './regulation-appeal.service';
+import { OvertimeService } from './overtime.service';
 import {
   MATCH_SOCKET_PATH,
   BRACKET_PROGRESSION_LOCKED_ERROR,
@@ -232,6 +234,8 @@ export class RealtimeGateway
     private readonly scoring: ScoringService,
     @Inject(RegulationAppealService)
     private readonly appeals: RegulationAppealService,
+    @Inject(OvertimeService)
+    private readonly overtime: OvertimeService,
     @Inject(PenaltyService)
     private readonly penalties: PenaltyService,
     @Inject(FaultService)
@@ -497,11 +501,23 @@ export class RealtimeGateway
     )
       return { ok: false, error: REALTIME_AUTHENTICATION_ERROR };
     try {
-      const transition = await this.appeals.complete({
-        matchId: command.matchId,
-        identity: command.identity,
-        payload,
-      });
+      let transition:
+        | Awaited<ReturnType<RegulationAppealService['complete']>>
+        | Awaited<ReturnType<OvertimeService['complete']>>;
+      try {
+        transition = await this.overtime.complete({
+          matchId: command.matchId,
+          identity: command.identity,
+          payload,
+        });
+      } catch (error) {
+        if (!(error instanceof AppealStateError)) throw error;
+        transition = await this.appeals.complete({
+          matchId: command.matchId,
+          identity: command.identity,
+          payload,
+        });
+      }
       await this.broadcastMatchState(
         transition.matchId,
         transition.matchPublicId,
@@ -512,7 +528,9 @@ export class RealtimeGateway
           appealId: transition.appealId,
           matchPublicId: transition.matchPublicId,
           phase: transition.phase as AppealCompleteResult['phase'],
-          regulation: transition.regulation,
+          ...('regulation' in transition
+            ? { regulation: transition.regulation }
+            : {}),
           isTie: transition.isTie,
         },
       };
@@ -546,6 +564,99 @@ export class RealtimeGateway
         error: {
           code: 'APPEAL_FAILED',
           message: 'The appeal could not be completed',
+        },
+      };
+    }
+  }
+
+  @SubscribeMessage(RealtimeEvent.OVERTIME_RESTART)
+  async restartOvertime(
+    @ConnectedSocket() client: RealtimeSocket,
+  ): Promise<OvertimeActionResponse> {
+    return this.overtimeAction(client, (command) =>
+      this.overtime.restart(command),
+    );
+  }
+
+  @SubscribeMessage(RealtimeEvent.OVERTIME_MANUAL_WINNER)
+  async selectManualWinner(
+    @ConnectedSocket() client: RealtimeSocket,
+    @MessageBody() winner: unknown,
+  ): Promise<OvertimeActionResponse> {
+    if (winner !== AthleteColor.RED && winner !== AthleteColor.BLUE)
+      return {
+        ok: false,
+        error: {
+          code: 'OVERTIME_ACTION_INVALID_STATE',
+          message: 'Winner must be RED or BLUE',
+        },
+      };
+    return this.overtimeAction(client, (command) =>
+      this.overtime.manualWinner({ ...command, winner }),
+    );
+  }
+
+  private async overtimeAction(
+    client: RealtimeSocket,
+    invoke: (command: {
+      matchId: string;
+      identity: InspectorCommandIdentity;
+    }) => Promise<{
+      matchId: string;
+      matchPublicId: string;
+      attemptNumber: number;
+      phase: import('@prisma/client').MatchStatus;
+      winner?: AthleteColor;
+    }>,
+  ): Promise<OvertimeActionResponse> {
+    if (this.isScoreboardSocket(client))
+      return { ok: false, error: REALTIME_AUTHENTICATION_ERROR };
+    const command = await this.inspectorCommand(client);
+    if (
+      !command ||
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    )
+      return {
+        ok: false,
+        error: {
+          code: 'OVERTIME_ACTION_FORBIDDEN',
+          message: 'Only the active inspector may control overtime',
+        },
+      };
+    try {
+      const result = await invoke(command);
+      await this.broadcastMatchState(result.matchId, result.matchPublicId);
+      return {
+        ok: true,
+        overtime: {
+          matchPublicId: result.matchPublicId,
+          phase: result.phase as never,
+          attemptNumber: result.attemptNumber,
+          winner: result.winner as never,
+        },
+      };
+    } catch (error) {
+      if (error instanceof AppealIdentityError) {
+        this.revokeCommandSocket(client, command.identity);
+        return { ok: false, error: REALTIME_AUTHENTICATION_ERROR };
+      }
+      if (error instanceof AppealStateError)
+        return {
+          ok: false,
+          error: {
+            code: 'OVERTIME_ACTION_INVALID_STATE',
+            message: error.message,
+          },
+        };
+      this.logger.error(
+        { error, matchId: command.matchId },
+        'Unable to transition overtime',
+      );
+      return {
+        ok: false,
+        error: {
+          code: 'OVERTIME_ACTION_FAILED',
+          message: 'The overtime action could not be completed',
         },
       };
     }

@@ -85,6 +85,8 @@ export class RealtimeMatchStateService {
             pausedAt: true,
             remainingDurationMs: true,
             roundNumber: true,
+            stage: true,
+            attemptNumber: true,
             startedAt: true,
           },
           where: { endedAt: null, invalidatedAt: null },
@@ -474,6 +476,8 @@ export class RealtimeMatchStateService {
       pausedAt: Date | null;
       remainingDurationMs: number | null;
       roundNumber: number;
+      stage: import('@prisma/client').RoundStage;
+      attemptNumber: number;
       startedAt: Date;
     }>,
   ): MatchRoundState | null {
@@ -481,20 +485,31 @@ export class RealtimeMatchStateService {
       status !== MatchStatus.ROUND_1_RUNNING &&
       status !== MatchStatus.ROUND_1_PAUSED &&
       status !== MatchStatus.ROUND_2_RUNNING &&
-      status !== MatchStatus.ROUND_2_PAUSED
+      status !== MatchStatus.ROUND_2_PAUSED &&
+      status !== MatchStatus.OVERTIME_RUNNING &&
+      status !== MatchStatus.OVERTIME_PAUSED
     ) {
       return null;
     }
 
     const round = rounds.find(
-      (candidate) => candidate.roundNumber === currentRound,
+      (candidate) =>
+        candidate.roundNumber === currentRound &&
+        (status === MatchStatus.OVERTIME_RUNNING ||
+        status === MatchStatus.OVERTIME_PAUSED
+          ? candidate.stage === 'OVERTIME'
+          : candidate.stage === 'REGULATION'),
     );
 
     if (round === undefined) {
       return null;
     }
 
-    if (round.roundNumber !== 1 && round.roundNumber !== 2) {
+    if (
+      round.stage === 'REGULATION' &&
+      round.roundNumber !== 1 &&
+      round.roundNumber !== 2
+    ) {
       throw new Error(`Unsupported round number: ${String(round.roundNumber)}`);
     }
 
@@ -504,7 +519,9 @@ export class RealtimeMatchStateService {
       id: round.id,
       pausedAt: round.pausedAt?.toISOString() ?? null,
       remainingDurationMs: round.remainingDurationMs,
-      roundNumber: round.roundNumber,
+      roundNumber: round.roundNumber as 1 | 2,
+      stage: round.stage,
+      attemptNumber: round.attemptNumber,
       startedAt: round.startedAt.toISOString(),
     };
   }
@@ -838,13 +855,16 @@ export class RealtimeMatchStateService {
         return SharedMatchStatus.REGULATION_APPEAL;
       case MatchStatus.OVERTIME_READY:
         return SharedMatchStatus.OVERTIME_READY;
+      case MatchStatus.OVERTIME_RUNNING:
+        return SharedMatchStatus.OVERTIME_RUNNING;
+      case MatchStatus.OVERTIME_PAUSED:
+        return SharedMatchStatus.OVERTIME_PAUSED;
+      case MatchStatus.OVERTIME_APPEAL:
+        return SharedMatchStatus.OVERTIME_APPEAL;
+      case MatchStatus.OVERTIME_TIEBREAK_DECISION:
+        return SharedMatchStatus.OVERTIME_TIEBREAK_DECISION;
       case MatchStatus.RESULT_PUBLICATION_READY:
         return SharedMatchStatus.RESULT_PUBLICATION_READY;
-      case MatchStatus.OVERTIME_RUNNING:
-      case MatchStatus.OVERTIME_PAUSED:
-      case MatchStatus.OVERTIME_APPEAL:
-      case MatchStatus.OVERTIME_TIEBREAK_DECISION:
-        throw new Error(`Unsupported match status in this phase: ${status}`);
       case MatchStatus.FINISHED:
         return SharedMatchStatus.FINISHED;
       default: {

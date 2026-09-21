@@ -39,6 +39,8 @@ export type {
   AppealCompletePayload,
   AppealCompleteResult,
   AppealCompleteResponse,
+  OvertimeActionResult,
+  OvertimeActionResponse,
   MatchExitBlockedReason,
   MatchExitCapability,
   ResultCapabilityBlockedReason,

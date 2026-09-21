@@ -15,6 +15,8 @@ export const RealtimeEvent = {
   MATCH_FINISHED: 'match:finished',
   MATCH_COMPLETE: 'match:complete',
   APPEAL_COMPLETE: 'appeal:complete',
+  OVERTIME_RESTART: 'overtime:restart',
+  OVERTIME_MANUAL_WINNER: 'overtime:manual-winner',
   MATCH_EXIT: 'match:exit',
   MATCH_COMPLETED: 'match:completed',
   MATCH_RESET: 'match:reset',
@@ -219,7 +221,10 @@ export interface MatchRoundState {
   pausedAt: string | null;
   remainingDurationMs: number | null;
   id: string;
+  /** Regulation is 1/2; overtime is its own stable attempt descriptor. */
   roundNumber: 1 | 2;
+  stage?: 'REGULATION' | 'OVERTIME';
+  attemptNumber?: number;
   startedAt: string;
 }
 
@@ -231,6 +236,8 @@ export interface MatchScoringWindowState {
   endsAt: string;
   id: string;
   roundNumber: 1 | 2;
+  stage?: 'REGULATION' | 'OVERTIME';
+  attemptNumber?: number;
   startedAt: string;
 }
 
@@ -412,9 +419,28 @@ export interface AppealCompleteResult {
   appealId: string;
   matchPublicId: string;
   phase: MatchPhase;
-  regulation: { RED: RegulationScoreBreakdown; BLUE: RegulationScoreBreakdown };
+  regulation?: { RED: RegulationScoreBreakdown; BLUE: RegulationScoreBreakdown };
   isTie: boolean;
 }
+export interface OvertimeActionResult {
+  matchPublicId: string;
+  phase: MatchPhase;
+  attemptNumber: number;
+  winner?: AthleteColor;
+}
+export type OvertimeActionResponse =
+  | { ok: true; overtime: OvertimeActionResult }
+  | {
+      ok: false;
+      error: {
+        code:
+          | 'OVERTIME_ACTION_FORBIDDEN'
+          | 'OVERTIME_ACTION_INVALID_STATE'
+          | 'OVERTIME_ACTION_FAILED'
+          | 'REALTIME_AUTHENTICATION_REQUIRED';
+        message: string;
+      };
+    };
 export type AppealCompleteResponse =
   | { ok: true; appeal: AppealCompleteResult }
   | {
