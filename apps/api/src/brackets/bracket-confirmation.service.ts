@@ -25,6 +25,7 @@ import {
   buildSingleEliminationBracket,
   type GeneratedSingleEliminationBracket,
 } from './single-elimination-bracket.generator';
+import { projectMatchDisplayState } from '../match-display-state';
 
 const fail = (code: string, message: string) =>
   new ConflictException({ code, message });
@@ -46,7 +47,9 @@ const bracketInclude = {
         orderBy: { side: 'asc' },
         include: { directEntrant: true, resolvedEntrant: true },
       },
-      match: { select: { id: true, publicId: true, status: true } },
+      match: {
+        select: { id: true, publicId: true, status: true, lifecycle: true },
+      },
       winnerEntrant: true,
     },
   },
@@ -386,7 +389,27 @@ export class BracketConfirmationService {
         championEntrant: b.championEntrant,
       },
       entrants: b.entrants,
-      fixtures: b.fixtures,
+      fixtures: b.fixtures.map((fixture) => ({
+        ...fixture,
+        displayState: projectMatchDisplayState({
+          kind: 'BRACKET_FIXTURE',
+          fixtureStatus: fixture.status,
+          ...(fixture.match === null
+            ? {}
+            : { lifecycle: fixture.match.lifecycle }),
+        }),
+        match:
+          fixture.match === null
+            ? null
+            : {
+                id: fixture.match.id,
+                publicId: fixture.match.publicId,
+                lifecycle: fixture.match.lifecycle,
+                phase: fixture.match.status,
+                /** @deprecated compatibility alias; use phase. */
+                status: fixture.match.status,
+              },
+      })),
       staffing: b.roundStaffing.map((staffing) => ({
         ...staffing,
         roundLabel: this.roundLabel(staffing.roundNumber, b.roundCount),

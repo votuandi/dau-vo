@@ -3,6 +3,9 @@ import {
   RealtimeEvent,
   type AthleteColor,
   type MatchFinishedPayload,
+  type MatchCompletionResponse,
+  MatchExitMode,
+  type MatchExitResponse,
   type MatchParticipantsNotReadyDetails,
   type MatchPresenceEntry,
   type MatchStatePayload,
@@ -60,6 +63,8 @@ interface UseMatchRealtimeOptions {
   readonly keepSocketConnected?: boolean;
   readonly matchPublicId: string;
   readonly onAuthenticationRequired: () => void;
+  /** The server acknowledgement confirms this official's assignment was released. */
+  readonly onMatchExitAcknowledged?: () => void;
   readonly onSessionRevoked: (payload: SessionRevokedPayload) => void;
   readonly refereeIdentity: RealtimeRefereeIdentity;
 }
@@ -86,6 +91,12 @@ function voteAcknowledgementMatchesReferee(
   );
 }
 
+function createMatchExitTraceId(): string {
+  const generated = globalThis.crypto?.randomUUID?.();
+  if (generated) return generated;
+  return `match-exit-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+}
+
 export interface MatchRealtimeState {
   readonly connectionStatus: RealtimeConnectionStatus;
   readonly connect: () => void;
@@ -100,12 +111,16 @@ export interface MatchRealtimeState {
   readonly scoringWindowMessage: string | null;
   readonly snapshot: MatchStatePayload | null;
   readonly startRound: () => Promise<void>;
+  readonly completeMatch: () => Promise<boolean>;
+  readonly completingMatch: boolean;
+  readonly completionErrorMessage: string | null;
   readonly pauseRound: () => Promise<boolean>;
   readonly resumeRound: () => Promise<boolean>;
   readonly controllingRound: boolean;
   readonly roundControlErrorMessage: string | null;
   readonly cancelRoundResult: () => Promise<boolean>;
   readonly resetMatchResults: () => Promise<boolean>;
+  readonly exitMatch: (mode: MatchExitMode) => Promise<boolean>;
   readonly undoResultCancellation: (operationId: string) => Promise<boolean>;
   readonly cancellingResults: boolean;
   readonly resultCancellationErrorMessage: string | null;
@@ -272,6 +287,7 @@ export function useMatchRealtime({
   keepSocketConnected = false,
   matchPublicId,
   onAuthenticationRequired,
+  onMatchExitAcknowledged,
   onSessionRevoked,
   refereeIdentity,
 }: UseMatchRealtimeOptions): MatchRealtimeState {
@@ -289,6 +305,8 @@ export function useMatchRealtime({
   const [scoringWindowMessage, setScoringWindowMessage] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<MatchStatePayload | null>(null);
   const [startingRound, setStartingRound] = useState(false);
+  const [completingMatch, setCompletingMatch] = useState(false);
+  const [completionErrorMessage, setCompletionErrorMessage] = useState<string | null>(null);
   const [controllingRound, setControllingRound] = useState(false);
   const [roundControlErrorMessage, setRoundControlErrorMessage] = useState<string | null>(null);
   const [cancellingResults, setCancellingResults] = useState(false);
@@ -305,6 +323,7 @@ export function useMatchRealtime({
   const onSessionRevokedRef = useRef(onSessionRevoked);
   const penaltySubmissionInFlightRef = useRef(false);
   const roundStartInFlightRef = useRef(false);
+  const completionInFlightRef = useRef(false);
   const roundControlInFlightRef = useRef(false);
   const resultCancellationInFlightRef = useRef(false);
   const voteSubmissionInFlightRef = useRef(false);
@@ -402,6 +421,48 @@ export function useMatchRealtime({
     } finally {
       roundStartInFlightRef.current = false;
       setStartingRound(false);
+    }
+  }, []);
+
+  const completeMatch = useCallback(async (): Promise<boolean> => {
+    const socket = getSocketClient();
+    if (completionInFlightRef.current || !socket.connected) {
+      setCompletionErrorMessage(
+        'Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi lưu kết quả.',
+      );
+      return false;
+    }
+    completionInFlightRef.current = true;
+    setCompletingMatch(true);
+    setCompletionErrorMessage(null);
+    try {
+      const response = await new Promise<MatchCompletionResponse>((resolve, reject) => {
+        socket
+          .timeout(10_000)
+          .emit(
+            RealtimeEvent.MATCH_COMPLETE,
+            (error: Error | null, acknowledgement: MatchCompletionResponse) => {
+              if (error) reject(error);
+              else resolve(acknowledgement);
+            },
+          );
+      });
+      if (!response.ok) {
+        setCompletionErrorMessage(response.error.message);
+        socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+        return false;
+      }
+      toast({ title: 'Đã lưu kết quả chính thức.', variant: 'success' });
+      socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+      return true;
+    } catch {
+      setCompletionErrorMessage(
+        'Máy chủ không phản hồi lệnh lưu kết quả. Vui lòng kiểm tra trạng thái và thử lại.',
+      );
+      return false;
+    } finally {
+      completionInFlightRef.current = false;
+      setCompletingMatch(false);
     }
   }, []);
 
@@ -612,6 +673,97 @@ export function useMatchRealtime({
   );
   const cancelRoundResult = useCallback(() => changeResults(false), [changeResults]);
   const resetMatchResults = useCallback(() => changeResults(true), [changeResults]);
+
+  const exitMatch = useCallback(
+    async (mode: MatchExitMode): Promise<boolean> => {
+      const socket = getSocketClient();
+      const traceId = createMatchExitTraceId();
+      const startedAt = performance.now();
+      if (resultCancellationInFlightRef.current || !socket.connected) {
+        console.info('[match-realtime]', 'match-exit-not-sent', {
+          inFlight: resultCancellationInFlightRef.current,
+          matchPublicId,
+          socketConnected: socket.connected,
+          socketId: socket.id,
+          traceId,
+        });
+        setResultCancellationErrorMessage(
+          'Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi thoát trận.',
+        );
+        return false;
+      }
+      resultCancellationInFlightRef.current = true;
+      setCancellingResults(true);
+      setResultCancellationErrorMessage(null);
+      console.info('[match-realtime]', 'match-exit-requested', {
+        matchPublicId,
+        mode,
+        socketId: socket.id,
+        traceId,
+      });
+      try {
+        const response = await new Promise<MatchExitResponse>((resolve, reject) =>
+          socket
+            .timeout(10_000)
+            .emit(
+              RealtimeEvent.MATCH_EXIT,
+              { mode, traceId },
+              (error: Error | null, acknowledgement: MatchExitResponse) => {
+                if (error) reject(error);
+                else resolve(acknowledgement);
+              },
+            ),
+        );
+        if (!response.ok) {
+          console.info('[match-realtime]', 'match-exit-rejected', {
+            durationMs: Math.round(performance.now() - startedAt),
+            errorCode: response.error.code,
+            errorMessage: response.error.message,
+            matchPublicId,
+            mode,
+            socketId: socket.id,
+            traceId,
+          });
+          setResultCancellationErrorMessage(response.error.message);
+          socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+          return false;
+        }
+        console.info('[match-realtime]', 'match-exit-acknowledged', {
+          durationMs: Math.round(performance.now() - startedAt),
+          matchPublicId,
+          mode,
+          socketId: socket.id,
+          traceId,
+        });
+        onMatchExitAcknowledged?.();
+        toast({
+          title:
+            mode === MatchExitMode.CANCEL_RESULTS
+              ? 'Đã hủy kết quả và thoát trận.'
+              : 'Đã lưu trạng thái tạm dừng và thoát trận.',
+          variant: 'success',
+        });
+        return true;
+      } catch (error: unknown) {
+        console.info('[match-realtime]', 'match-exit-transport-failed', {
+          durationMs: Math.round(performance.now() - startedAt),
+          errorMessage: error instanceof Error ? error.message : String(error),
+          matchPublicId,
+          mode,
+          socketId: socket.id,
+          traceId,
+        });
+        setResultCancellationErrorMessage(
+          'Máy chủ không phản hồi. Vui lòng kiểm tra trạng thái và thử lại.',
+        );
+        return false;
+      } finally {
+        resultCancellationInFlightRef.current = false;
+        setCancellingResults(false);
+      }
+    },
+    [matchPublicId, onMatchExitAcknowledged],
+  );
 
   const submitVote = useCallback(async (athlete: AthleteColor) => {
     const socket = getSocketClient();
@@ -1028,8 +1180,12 @@ export function useMatchRealtime({
     roundControlErrorMessage,
     cancelRoundResult,
     resetMatchResults,
+    exitMatch,
     undoResultCancellation,
     cancellingResults,
+    completeMatch,
+    completingMatch,
+    completionErrorMessage,
     resultCancellationErrorMessage,
     reconnect,
     requestSnapshot,

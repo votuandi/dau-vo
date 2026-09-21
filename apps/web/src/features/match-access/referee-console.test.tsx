@@ -3,22 +3,12 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { AthleteColor } from '@martial-arts-scoring/shared-types';
 import { RefereeConsole } from './referee-console';
-import {
-  acceptedRedVote,
-  createRealtimeState,
-  createMatchSnapshot,
-  refereeSession,
-} from '@/test/factories';
+import { acceptedRedVote, createRealtimeState, createMatchSnapshot } from '@/test/factories';
 
 describe('RefereeConsole', () => {
   it('only presents a vote as recorded after the accepted-vote state arrives', () => {
     const { rerender } = render(
-      <RefereeConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
-        realtime={createRealtimeState({ submittingVote: AthleteColor.RED })}
-        session={refereeSession}
-      />,
+      <RefereeConsole realtime={createRealtimeState({ submittingVote: AthleteColor.RED })} />,
     );
 
     expect(screen.getByText('Đã gửi lựa chọn RED; đang chờ máy chủ xác nhận.')).toBeVisible();
@@ -27,12 +17,7 @@ describe('RefereeConsole', () => {
     expect(screen.getByRole('button', { name: /Chấm điểm BLUE/i })).toBeDisabled();
 
     rerender(
-      <RefereeConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
-        realtime={createRealtimeState({ lastAcceptedVote: acceptedRedVote })}
-        session={refereeSession}
-      />,
+      <RefereeConsole realtime={createRealtimeState({ lastAcceptedVote: acceptedRedVote })} />,
     );
 
     expect(screen.getByText(/Máy chủ đã ghi nhận lựa chọn RED/)).toBeVisible();
@@ -45,10 +30,7 @@ describe('RefereeConsole', () => {
     const submitVote = vi.fn(() => Promise.resolve());
     const { rerender } = render(
       <RefereeConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({ lastAcceptedVote: acceptedRedVote, submitVote })}
-        session={refereeSession}
       />,
     );
 
@@ -57,15 +39,12 @@ describe('RefereeConsole', () => {
 
     rerender(
       <RefereeConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           snapshot: createMatchSnapshot({
             activeScoringWindow: null,
           }),
           submitVote,
         })}
-        session={refereeSession}
       />,
     );
 
@@ -82,14 +61,7 @@ describe('RefereeConsole', () => {
     ['disconnected', 'Mất kết nối'],
     ['reconnecting', 'Đang kết nối lại'],
   ] as const)('shows %s as %s and disables voting', (connectionStatus, label) => {
-    render(
-      <RefereeConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
-        realtime={createRealtimeState({ connectionStatus })}
-        session={refereeSession}
-      />,
-    );
+    render(<RefereeConsole realtime={createRealtimeState({ connectionStatus })} />);
 
     expect(screen.getByText(label)).toBeVisible();
     expect(screen.getByRole('button', { name: /Chấm điểm RED/i })).toBeDisabled();

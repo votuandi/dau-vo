@@ -1,5 +1,8 @@
 import type {
   MatchFinishedPayload,
+  MatchCompletionResponse,
+  MatchExitCommandPayload,
+  MatchExitResponse,
   MatchStatePayload,
   PublicMatchStatePayload,
   PenaltyAddedPayload,
@@ -36,6 +39,7 @@ export interface ServerToClientEvents {
   'match:assignment-released': (payload: MatchAssignmentReleasedPayload) => void;
   'match:officials-updated': (payload: MatchOfficialsUpdatedPayload) => void;
   'match:finished': (payload: MatchFinishedPayload) => void;
+  'match:completed': (payload: MatchFinishedPayload) => void;
   'match:state': (payload: MatchStatePayload) => void;
   'scoreboard:state': (payload: PublicMatchStatePayload) => void;
   'penalty:added': (payload: PenaltyAddedPayload) => void;
@@ -68,6 +72,11 @@ export interface ClientToServerEvents {
   'round:resume': (acknowledge: (response: RoundControlResponse) => void) => void;
   'round:cancel': (acknowledge: (response: ResultCancellationResponse) => void) => void;
   'match:reset': (acknowledge: (response: ResultCancellationResponse) => void) => void;
+  'match:complete': (acknowledge: (response: MatchCompletionResponse) => void) => void;
+  'match:exit': (
+    payload: MatchExitCommandPayload,
+    acknowledge: (response: MatchExitResponse) => void,
+  ) => void;
   'result-cancellation:undo': (
     payload: { operationId: string },
     acknowledge: (response: ResultCancellationUndoResponse) => void,

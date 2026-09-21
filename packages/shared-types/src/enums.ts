@@ -10,14 +10,42 @@ export enum TournamentStatus {
   ARCHIVED = 'ARCHIVED',
 }
 
-export enum MatchStatus {
+/** Detailed round/scoring phase. This is intentionally not match lifecycle. */
+export enum MatchPhase {
   WAITING = 'WAITING',
   ROUND_1_RUNNING = 'ROUND_1_RUNNING',
   ROUND_1_PAUSED = 'ROUND_1_PAUSED',
   BREAK = 'BREAK',
   ROUND_2_RUNNING = 'ROUND_2_RUNNING',
   ROUND_2_PAUSED = 'ROUND_2_PAUSED',
+  AWAITING_RESULT_SAVE = 'AWAITING_RESULT_SAVE',
   FINISHED = 'FINISHED',
+}
+
+/** @deprecated Use MatchPhase. Kept temporarily for source compatibility. */
+export { MatchPhase as MatchStatus };
+
+export enum MatchLifecycle {
+  NOT_STARTED = 'NOT_STARTED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  SUSPENDED = 'SUSPENDED',
+  COMPLETED = 'COMPLETED',
+}
+
+/** Server-authoritative choices available when an inspector leaves a match. */
+export enum MatchExitMode {
+  CANCEL_RESULTS = 'CANCEL_RESULTS',
+  SUSPEND_KEEP_ROUND_1 = 'SUSPEND_KEEP_ROUND_1',
+  SUSPEND_KEEP_ROUNDS_1_AND_2 = 'SUSPEND_KEEP_ROUNDS_1_AND_2',
+}
+
+export enum MatchDisplayState {
+  NOT_READY = 'NOT_READY',
+  READY = 'READY',
+  NOT_STARTED = 'NOT_STARTED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  SUSPENDED = 'SUSPENDED',
+  COMPLETED = 'COMPLETED',
 }
 
 export enum MatchRole {

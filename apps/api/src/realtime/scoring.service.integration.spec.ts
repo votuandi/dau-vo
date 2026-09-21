@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import {
   AthleteColor,
   MatchAccessRole,
+  MatchLifecycle,
   MatchRole,
   MatchStatus,
   RefereeSlot,
@@ -78,6 +79,13 @@ describe('ScoringService (PostgreSQL integration)', () => {
           ],
         },
         breakDurationMs: 60_000,
+        lifecycle:
+          status === MatchStatus.WAITING
+            ? MatchLifecycle.NOT_STARTED
+            : status === MatchStatus.FINISHED
+              ? MatchLifecycle.COMPLETED
+              : MatchLifecycle.IN_PROGRESS,
+        finishedAt: status === MatchStatus.FINISHED ? now : undefined,
         currentRound: status === MatchStatus.ROUND_1_RUNNING ? 1 : null,
         publicId: randomBytes(6).toString('hex').toUpperCase(),
         roundDurationMs: 20_000,
@@ -407,14 +415,21 @@ describe('ScoringService (PostgreSQL integration)', () => {
     ).resolves.toBe(1);
 
     await prisma.match.update({
-      data: { status: MatchStatus.BREAK },
+      data: {
+        lifecycle: MatchLifecycle.IN_PROGRESS,
+        status: MatchStatus.BREAK,
+      },
       where: { id: current.matchId },
     });
     await expect(
       vote(current, RefereeSlot.REFEREE_2, AthleteColor.RED),
     ).rejects.toBeInstanceOf(MatchNotRunningForVoteError);
     await prisma.match.update({
-      data: { status: MatchStatus.FINISHED },
+      data: {
+        finishedAt: new Date(),
+        lifecycle: MatchLifecycle.COMPLETED,
+        status: MatchStatus.FINISHED,
+      },
       where: { id: current.matchId },
     });
     await expect(
@@ -439,7 +454,10 @@ describe('ScoringService (PostgreSQL integration)', () => {
     await vote(current, RefereeSlot.REFEREE_1, AthleteColor.RED);
     await vote(current, RefereeSlot.REFEREE_2, AthleteColor.RED);
     await prisma.match.update({
-      data: { status: MatchStatus.ROUND_1_PAUSED },
+      data: {
+        lifecycle: MatchLifecycle.IN_PROGRESS,
+        status: MatchStatus.ROUND_1_PAUSED,
+      },
       where: { id: current.matchId },
     });
 

@@ -36,9 +36,19 @@ enum MatchStatus {
   BREAK
   ROUND_2_RUNNING
   ROUND_2_PAUSED
+  AWAITING_RESULT_SAVE
   FINISHED
 
   @@map("match_status")
+}
+
+enum MatchLifecycle {
+  NOT_STARTED
+  IN_PROGRESS
+  SUSPENDED
+  COMPLETED
+
+  @@map("match_lifecycle")
 }
 
 enum MatchRole {
@@ -58,6 +68,9 @@ enum TournamentOfficialRole {
 enum MatchOfficialAssignmentReleaseReason {
   MATCH_FINISHED
   OPERATIONAL_CANCELLED
+  MATCH_EXIT_CANCELLED
+  MATCH_EXIT_SUSPENDED_KEEP_ROUND_1
+  MATCH_EXIT_SUSPENDED_KEEP_ROUNDS_1_AND_2
   RESET_REQUIRES_SETUP
   INSPECTOR_RELEASED
   REPLACED
@@ -94,6 +107,9 @@ enum ScoreEventType {
 enum MatchResultOperationType {
   ROUND_RESET
   MATCH_RESET
+  MATCH_EXIT_CANCEL_RESULTS
+  MATCH_EXIT_SUSPEND_KEEP_ROUND_1
+  MATCH_EXIT_SUSPEND_KEEP_ROUNDS_1_AND_2
 
   @@map("match_result_operation_type")
 }
@@ -124,6 +140,7 @@ enum AuditEventType {
   ROUND_RESULT_CANCEL_UNDONE
   MATCH_RESULT_RESET
   MATCH_RESULT_RESET_UNDONE
+  MATCH_EXITED
   ROUND_ENDED
   MATCH_FINISHED
   PRICING_VERSION_CREATED
@@ -448,6 +465,8 @@ model Match {
   bracketFixtureId     String?                @unique(map: "matches_bracket_fixture_id_key") @map("bracket_fixture_id") @db.Uuid
   requiredRefereeCount Int                    @default(3) @map("required_referee_count") @db.SmallInt
   status               MatchStatus            @default(WAITING)
+  lifecycle            MatchLifecycle         @default(NOT_STARTED)
+  suspendedAt          DateTime?               @map("suspended_at") @db.Timestamptz(3)
   currentRound         Int?                   @map("current_round") @db.SmallInt
   roundDurationMs      Int                    @map("round_duration_ms")
   breakDurationMs      Int                    @map("break_duration_ms")
@@ -475,6 +494,7 @@ model Match {
   @@index([tournamentId], map: "matches_tournament_id_idx")
   @@index([tournamentId, weightClassId], map: "matches_tournament_id_weight_class_id_idx")
   @@index([status], map: "matches_status_idx")
+  @@index([lifecycle], map: "matches_lifecycle_idx")
   @@map("matches")
 }
 
@@ -673,10 +693,12 @@ model MatchResultOperation {
   type                  MatchResultOperationType
   roundNumbers          Int[]                      @map("round_numbers") @db.SmallInt
   previousStatus        MatchStatus                @map("previous_status")
+  previousLifecycle     MatchLifecycle             @map("previous_lifecycle") @default(IN_PROGRESS)
   previousCurrentRound  Int?                       @map("previous_current_round") @db.SmallInt
   previousStartedAt     DateTime?                  @map("previous_started_at") @db.Timestamptz(3)
   previousFinishedAt    DateTime?                  @map("previous_finished_at") @db.Timestamptz(3)
   resultingStatus       MatchStatus                @map("resulting_status")
+  resultingLifecycle    MatchLifecycle             @map("resulting_lifecycle") @default(IN_PROGRESS)
   resultingCurrentRound Int?                       @map("resulting_current_round") @db.SmallInt
   createdBySessionId    String?                    @map("created_by_session_id") @db.Uuid
   status                MatchResultOperationStatus @default(APPLIED)

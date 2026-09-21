@@ -1,4 +1,11 @@
-import type { AthleteColor, MatchAccessRole, MatchStatus, RefereeSlot } from './enums';
+import type {
+  AthleteColor,
+  MatchAccessRole,
+  MatchLifecycle,
+  MatchExitMode,
+  MatchPhase,
+  RefereeSlot,
+} from './enums';
 
 export const RealtimeEvent = {
   MATCH_STATE: 'match:state',
@@ -6,6 +13,9 @@ export const RealtimeEvent = {
   PUBLIC_MATCH_STATE: 'scoreboard:state',
   PUBLIC_MATCH_STATE_REQUEST: 'scoreboard:state:request',
   MATCH_FINISHED: 'match:finished',
+  MATCH_COMPLETE: 'match:complete',
+  MATCH_EXIT: 'match:exit',
+  MATCH_COMPLETED: 'match:completed',
   MATCH_RESET: 'match:reset',
   MATCH_RESET_COMPLETED: 'match:reset:completed',
   RESULT_CANCELLATION_UNDO: 'result-cancellation:undo',
@@ -36,6 +46,34 @@ export const RealtimeEvent = {
   OFFICIAL_ASSIGNMENT_SNAPSHOT_REQUEST: 'official:assignment-snapshot:request',
   OFFICIAL_ASSIGNMENT_SNAPSHOT: 'official:assignment-snapshot',
 } as const;
+
+export type MatchCompletionBlockedReason =
+  | 'ALREADY_COMPLETED'
+  | 'MATCH_SUSPENDED'
+  | 'ROUND_1_NOT_ENDED'
+  | 'ROUND_2_NOT_ENDED'
+  | 'INVALIDATED_ROUND'
+  | 'UNRESOLVED_SCORING_WINDOW'
+  | 'NOT_AWAITING_RESULT_SAVE'
+  | 'RESULT_DECISION_REQUIRED';
+
+export interface MatchCompletionCapability {
+  canComplete: boolean;
+  blockedReasons: MatchCompletionBlockedReason[];
+}
+
+export type MatchExitBlockedReason =
+  | 'ALREADY_COMPLETED'
+  | 'ROUND_1_NOT_ENDED'
+  | 'ROUND_2_NOT_ENDED'
+  | 'UNRESOLVED_SCORING_WINDOW'
+  | 'NOT_ASSIGNED';
+
+export interface MatchExitCapability {
+  canExit: boolean;
+  allowedModes: MatchExitMode[];
+  blockedReasons: MatchExitBlockedReason[];
+}
 
 export interface OfficialAssignmentSnapshot {
   assignment: {
@@ -142,7 +180,10 @@ export interface MatchStateIdentity {
   id: string;
   publicId: string;
   startedAt: string | null;
-  status: MatchStatus;
+  lifecycle: MatchLifecycle;
+  phase: MatchPhase;
+  /** @deprecated Use phase. */
+  status: MatchPhase;
 }
 
 export interface MatchRoundState {
@@ -187,6 +228,8 @@ export interface MatchStatePayload {
   activeRound: MatchRoundState | null;
   activeScoringWindow: MatchScoringWindowState | null;
   athletes: MatchStateAthlete[];
+  completion: MatchCompletionCapability;
+  exit: MatchExitCapability;
   generatedAt: string;
   match: MatchStateIdentity;
   presence: MatchPresenceEntry[];
@@ -196,6 +239,30 @@ export interface MatchStatePayload {
   /** Present only on a direct `match:state:request` response. */
   viewer?: MatchStateViewer;
 }
+
+export interface MatchExitCommandPayload {
+  mode: MatchExitMode;
+  /** Optional local-development correlation ID; it must not contain credentials. */
+  traceId?: string;
+}
+
+export interface MatchExitPayload {
+  matchPublicId: string;
+  mode: MatchExitMode;
+}
+export type MatchExitResponse =
+  | { ok: true; exit: MatchExitPayload }
+  | {
+      ok: false;
+      error: {
+        code:
+          | 'MATCH_EXIT_FORBIDDEN'
+          | 'MATCH_EXIT_INVALID_STATE'
+          | 'MATCH_EXIT_FAILED'
+          | 'REALTIME_AUTHENTICATION_REQUIRED';
+        message: string;
+      };
+    };
 
 /**
  * Deliberately minimal state exposed to public scoreboards. It omits internal
@@ -210,6 +277,7 @@ export interface PublicMatchStatePayload {
     score: number;
     violations: number;
   }>;
+  completion: MatchCompletionCapability;
   generatedAt: string;
   match: Omit<MatchStateIdentity, 'id' | 'startedAt'>;
 }
@@ -217,19 +285,19 @@ export interface PublicMatchStatePayload {
 export interface RoundStartedPayload {
   matchPublicId: string;
   round: MatchRoundState;
-  status: MatchStatus;
+  status: MatchPhase;
 }
 
 export interface RoundEndedPayload {
   matchPublicId: string;
   round: MatchRoundState;
-  status: MatchStatus;
+  status: MatchPhase;
 }
 
 export interface RoundPausedPayload {
   matchPublicId: string;
   round: MatchRoundState;
-  status: MatchStatus;
+  status: MatchPhase;
 }
 
 export type RoundResumedPayload = RoundPausedPayload;
@@ -249,7 +317,7 @@ export interface ResultCancellationPayload {
   actionId: string;
   matchPublicId: string;
   roundNumbers: Array<1 | 2>;
-  status: MatchStatus;
+  status: MatchPhase;
 }
 
 export type ResultCancellationErrorCode =
@@ -268,7 +336,7 @@ export interface ResultCancellationUndoPayload {
   matchPublicId: string;
   operationId: string;
   roundNumbers: Array<1 | 2>;
-  status: MatchStatus;
+  status: MatchPhase;
 }
 
 export type ResultCancellationUndoErrorCode =
@@ -287,6 +355,23 @@ export interface MatchFinishedPayload {
   finishedAt: string;
   matchPublicId: string;
 }
+
+export type MatchCompletionErrorCode =
+  | 'SPORT_GROUP_RULES_NOT_IMPLEMENTED'
+  | 'MATCH_COMPLETION_NOT_READY'
+  | 'MATCH_COMPLETION_FORBIDDEN'
+  | 'MATCH_COMPLETION_STALE_ASSIGNMENT'
+  | 'MATCH_ALREADY_COMPLETED'
+  | 'MATCH_COMPLETION_SUSPENDED'
+  | 'MATCH_COMPLETION_UNRESOLVED_ROUND'
+  | 'MATCH_COMPLETION_BRACKET_CONFLICT'
+  | 'BRACKET_PROGRESSION_LOCKED'
+  | 'MATCH_COMPLETION_FAILED'
+  | 'REALTIME_AUTHENTICATION_REQUIRED';
+
+export type MatchCompletionResponse =
+  | { ok: true; completed: MatchFinishedPayload }
+  | { error: { code: MatchCompletionErrorCode; message: string }; ok: false };
 
 export type RoundStartErrorCode =
   | 'SPORT_GROUP_RULES_NOT_IMPLEMENTED'

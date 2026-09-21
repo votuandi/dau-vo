@@ -36,6 +36,7 @@ const matchStatusLabels: Record<MatchStatus, string> = {
   [MatchStatus.BREAK]: 'Nghỉ giữa hiệp',
   [MatchStatus.ROUND_2_RUNNING]: 'Hiệp 2 đang diễn ra',
   [MatchStatus.ROUND_2_PAUSED]: 'Hiệp 2 đang tạm dừng',
+  [MatchStatus.AWAITING_RESULT_SAVE]: 'Chờ lưu kết quả',
   [MatchStatus.FINISHED]: 'Đã kết thúc',
 };
 
@@ -136,7 +137,7 @@ function MatchLifecycle({
   readonly realtime: MatchRealtimeState;
 }) {
   const snapshot = realtime.snapshot;
-  const status = snapshot?.match.status;
+  const status = snapshot?.match.phase;
   const isRoundRunning =
     status === MatchStatus.ROUND_1_RUNNING || status === MatchStatus.ROUND_2_RUNNING;
   const remainingTime = useRemainingTime(
@@ -229,7 +230,7 @@ function MatchLifecycle({
 }
 
 function RefereeVoteControls({ realtime }: { readonly realtime: MatchRealtimeState }) {
-  const status = realtime.snapshot?.match.status;
+  const status = realtime.snapshot?.match.phase;
   const roundIsRunning =
     status === MatchStatus.ROUND_1_RUNNING || status === MatchStatus.ROUND_2_RUNNING;
   const controlsEnabled =
@@ -300,7 +301,7 @@ function RefereeVoteControls({ realtime }: { readonly realtime: MatchRealtimeSta
 }
 
 function InspectorPenaltyControls({ realtime }: { readonly realtime: MatchRealtimeState }) {
-  const status = realtime.snapshot?.match.status;
+  const status = realtime.snapshot?.match.phase;
   const roundIsRunning =
     status === MatchStatus.ROUND_1_RUNNING || status === MatchStatus.ROUND_2_RUNNING;
   const controlsEnabled =
@@ -448,7 +449,7 @@ export function MatchRealtimePanel({
             <div className="flex flex-wrap justify-between gap-3 text-sm">
               <div>
                 <span className="text-muted-foreground">Trạng thái: </span>
-                <strong>{matchStatusLabels[realtime.snapshot.match.status]}</strong>
+                <strong>{matchStatusLabels[realtime.snapshot.match.phase]}</strong>
               </div>
               <div>
                 <span className="text-muted-foreground">Hiệp hiện tại: </span>

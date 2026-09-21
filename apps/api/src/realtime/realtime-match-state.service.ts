@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   AthleteColor as SharedAthleteColor,
   MatchAccessRole as SharedMatchAccessRole,
+  MatchLifecycle as SharedMatchLifecycle,
   MatchStatus as SharedMatchStatus,
   type MatchPresenceEntry,
   type MatchOfficialPresenceEntry,
@@ -12,12 +13,17 @@ import {
   type MatchScoringWindowState,
   type MatchStatePayload,
   type MatchStateViewer,
+  type MatchCompletionBlockedReason,
+  type MatchExitBlockedReason,
+  type MatchExitCapability,
+  MatchExitMode,
   type PresenceUpdatedPayload,
   RefereeSlot as SharedRefereeSlot,
 } from '@martial-arts-scoring/shared-types';
 import {
   AthleteColor,
   MatchAccessRole,
+  MatchLifecycle,
   MatchStatus,
   RefereeSlot,
 } from '@prisma/client';
@@ -62,6 +68,7 @@ export class RealtimeMatchStateService {
           },
         },
         currentRound: true,
+        lifecycle: true,
         finishedAt: true,
         id: true,
         publicId: true,
@@ -88,30 +95,39 @@ export class RealtimeMatchStateService {
       throw new NotFoundException('Match not found');
     }
 
-    const [scoreTotals, penaltyTotals, presenceState, unresolvedWindow] =
-      await Promise.all([
-        this.prisma.scoreEvent.groupBy({
-          _sum: { value: true },
-          by: ['athleteId'],
-          where: { matchId, revertedAt: null },
-        }),
-        this.prisma.penalty.groupBy({
-          _count: { id: true },
-          by: ['athleteId'],
-          where: { matchId, revertedAt: null },
-        }),
-        this.presence(match.id, match.publicId),
-        this.prisma.scoringWindow.findFirst({
-          orderBy: { startedAt: 'asc' },
-          select: {
-            endsAt: true,
-            id: true,
-            roundNumber: true,
-            startedAt: true,
-          },
-          where: { invalidatedAt: null, matchId, resolvedAt: null },
-        }),
-      ]);
+    const [
+      scoreTotals,
+      penaltyTotals,
+      presenceState,
+      unresolvedWindow,
+      validRounds,
+    ] = await Promise.all([
+      this.prisma.scoreEvent.groupBy({
+        _sum: { value: true },
+        by: ['athleteId'],
+        where: { matchId, revertedAt: null },
+      }),
+      this.prisma.penalty.groupBy({
+        _count: { id: true },
+        by: ['athleteId'],
+        where: { matchId, revertedAt: null },
+      }),
+      this.presence(match.id, match.publicId),
+      this.prisma.scoringWindow.findFirst({
+        orderBy: { startedAt: 'asc' },
+        select: {
+          endsAt: true,
+          id: true,
+          roundNumber: true,
+          startedAt: true,
+        },
+        where: { invalidatedAt: null, matchId, resolvedAt: null },
+      }),
+      this.prisma.round.findMany({
+        select: { endedAt: true, roundNumber: true },
+        where: { invalidatedAt: null, matchId },
+      }),
+    ]);
     const scoresByAthlete = new Map(
       scoreTotals.map((total) => [total.athleteId, total._sum.value ?? 0]),
     );
@@ -144,12 +160,20 @@ export class RealtimeMatchStateService {
         score: scoresByAthlete.get(athlete.id) ?? 0,
         violations: violationsByAthlete.get(athlete.id) ?? 0,
       })),
+      completion: this.completionCapability(
+        match,
+        validRounds,
+        unresolvedWindow,
+      ),
+      exit: this.exitCapability(match, validRounds, unresolvedWindow),
       generatedAt: new Date().toISOString(),
       match: {
         currentRound: match.currentRound,
         finishedAt: match.finishedAt?.toISOString() ?? null,
         id: match.id,
         publicId: match.publicId,
+        lifecycle: this.sharedMatchLifecycle(match.lifecycle),
+        phase: this.sharedMatchStatus(match.status),
         startedAt: match.startedAt?.toISOString() ?? null,
         status: this.sharedMatchStatus(match.status),
       },
@@ -159,6 +183,60 @@ export class RealtimeMatchStateService {
       scoreboardConnectedCount: presenceState.scoreboardConnectedCount,
       ...(viewerState === undefined ? {} : { viewer: viewerState }),
     };
+  }
+
+  private completionCapability(
+    match: { lifecycle: MatchLifecycle; status: MatchStatus },
+    rounds: Array<{ endedAt: Date | null; roundNumber: number }>,
+    unresolvedWindow: { id: string } | null,
+  ): { canComplete: boolean; blockedReasons: MatchCompletionBlockedReason[] } {
+    const blockedReasons: MatchCompletionBlockedReason[] = [];
+    if (match.lifecycle === MatchLifecycle.COMPLETED)
+      blockedReasons.push('ALREADY_COMPLETED');
+    if (match.lifecycle === MatchLifecycle.SUSPENDED)
+      blockedReasons.push('MATCH_SUSPENDED');
+    const roundOne = rounds.find((round) => round.roundNumber === 1);
+    const roundTwo = rounds.find((round) => round.roundNumber === 2);
+    if (!roundOne?.endedAt) blockedReasons.push('ROUND_1_NOT_ENDED');
+    if (!roundTwo?.endedAt) blockedReasons.push('ROUND_2_NOT_ENDED');
+    if (unresolvedWindow !== null)
+      blockedReasons.push('UNRESOLVED_SCORING_WINDOW');
+    if (match.status !== MatchStatus.AWAITING_RESULT_SAVE)
+      blockedReasons.push('NOT_AWAITING_RESULT_SAVE');
+    return { canComplete: blockedReasons.length === 0, blockedReasons };
+  }
+
+  /** This projection is informational only; execute-time validation is repeated
+   * under the locked Match row by MatchLifecycleService. */
+  private exitCapability(
+    match: { lifecycle: MatchLifecycle },
+    rounds: Array<{ endedAt: Date | null; roundNumber: number }>,
+    unresolvedWindow: { id: string } | null,
+  ): MatchExitCapability {
+    const blockedReasons: MatchExitBlockedReason[] = [];
+    if (match.lifecycle === MatchLifecycle.COMPLETED) {
+      blockedReasons.push('ALREADY_COMPLETED');
+      return { canExit: false, allowedModes: [], blockedReasons };
+    }
+    const roundOneEnded = rounds.some(
+      (round) => round.roundNumber === 1 && round.endedAt !== null,
+    );
+    const roundTwoEnded = rounds.some(
+      (round) => round.roundNumber === 2 && round.endedAt !== null,
+    );
+    const allowedModes: MatchExitMode[] = [MatchExitMode.CANCEL_RESULTS];
+    if (roundOneEnded && unresolvedWindow === null)
+      allowedModes.push(MatchExitMode.SUSPEND_KEEP_ROUND_1);
+    else if (!roundOneEnded) blockedReasons.push('ROUND_1_NOT_ENDED');
+    if (roundTwoEnded && unresolvedWindow === null)
+      allowedModes.push(MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2);
+    else if (roundOneEnded)
+      blockedReasons.push(
+        unresolvedWindow === null
+          ? 'ROUND_2_NOT_ENDED'
+          : 'UNRESOLVED_SCORING_WINDOW',
+      );
+    return { canExit: true, allowedModes, blockedReasons };
   }
 
   async publicSnapshot(
@@ -189,10 +267,13 @@ export class RealtimeMatchStateService {
         }),
       ),
       generatedAt: snapshot.generatedAt,
+      completion: snapshot.completion,
       match: {
         currentRound: snapshot.match.currentRound,
         finishedAt: snapshot.match.finishedAt,
         publicId: snapshot.match.publicId,
+        lifecycle: snapshot.match.lifecycle,
+        phase: snapshot.match.phase,
         status: snapshot.match.status,
       },
     };
@@ -631,11 +712,32 @@ export class RealtimeMatchStateService {
         return SharedMatchStatus.ROUND_2_RUNNING;
       case MatchStatus.ROUND_2_PAUSED:
         return SharedMatchStatus.ROUND_2_PAUSED;
+      case MatchStatus.AWAITING_RESULT_SAVE:
+        return SharedMatchStatus.AWAITING_RESULT_SAVE;
       case MatchStatus.FINISHED:
         return SharedMatchStatus.FINISHED;
       default: {
         const exhaustiveStatus: never = status;
         throw new Error(`Unsupported match status: ${exhaustiveStatus}`);
+      }
+    }
+  }
+
+  private sharedMatchLifecycle(
+    lifecycle: MatchLifecycle,
+  ): SharedMatchLifecycle {
+    switch (lifecycle) {
+      case MatchLifecycle.NOT_STARTED:
+        return SharedMatchLifecycle.NOT_STARTED;
+      case MatchLifecycle.IN_PROGRESS:
+        return SharedMatchLifecycle.IN_PROGRESS;
+      case MatchLifecycle.SUSPENDED:
+        return SharedMatchLifecycle.SUSPENDED;
+      case MatchLifecycle.COMPLETED:
+        return SharedMatchLifecycle.COMPLETED;
+      default: {
+        const exhaustiveLifecycle: never = lifecycle;
+        throw new Error(`Unsupported match lifecycle: ${exhaustiveLifecycle}`);
       }
     }
   }

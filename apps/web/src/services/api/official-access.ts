@@ -1,11 +1,11 @@
 import { apiClient, request } from '@/services/api/client';
-import type { TournamentOfficialRole } from '@/types/shared';
+import { MatchLifecycle, MatchStatus, type TournamentOfficialRole } from '@/types/shared';
 
 export interface OfficialAssignment {
   readonly id: string;
   readonly role: TournamentOfficialRole;
   readonly refereePosition: number | null;
-  readonly match: { readonly id: string; readonly publicId: string; readonly status: string };
+  readonly match: { readonly id: string; readonly publicId: string; readonly status: MatchStatus };
 }
 export interface OfficialSession {
   readonly sessionId: string;
@@ -23,7 +23,8 @@ export interface OfficialSession {
 export interface OfficialMatch {
   readonly id: string;
   readonly publicId: string;
-  readonly status: string;
+  readonly lifecycle: MatchLifecycle;
+  readonly status: MatchStatus;
   readonly requiredRefereeCount: number;
   readonly athletes: readonly { readonly color: string; readonly name: string }[];
   readonly claimable: boolean;
@@ -31,7 +32,7 @@ export interface OfficialMatch {
 export interface OfficialReferee {
   readonly id: string;
   readonly name: string;
-  readonly isActive: boolean;
+  readonly status: 'READY' | 'IN_MATCH' | 'DISABLED';
   readonly assignedMatchId: string | null;
 }
 
@@ -56,6 +57,7 @@ export const officialAccessApi = {
     apiClient.get<{
       match: {
         id: string;
+        lifecycle: MatchLifecycle;
         requiredRefereeCount: number;
         officialAssignments: readonly {
           officialId: string;
@@ -66,8 +68,6 @@ export const officialAccessApi = {
       };
       referees: readonly OfficialReferee[];
     }>(`official/matches/${matchId}`),
-  claim: (matchId: string) => apiClient.post(`official/matches/${matchId}/claim`, {}),
-  confirm: (matchId: string, refereeIds: readonly string[]) =>
-    apiClient.post(`official/matches/${matchId}/referees`, { refereeIds }),
-  release: (matchId: string) => apiClient.delete(`official/matches/${matchId}/claim`),
+  take: (matchId: string, refereeIds: readonly string[]) =>
+    apiClient.post(`official/matches/${matchId}/take`, { refereeIds }),
 };

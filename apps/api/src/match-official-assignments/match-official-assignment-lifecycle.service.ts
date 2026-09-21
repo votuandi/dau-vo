@@ -3,6 +3,7 @@ import {
   AuditEventType,
   MatchOfficialAssignmentReleaseReason,
   MatchStatus,
+  TournamentOfficialRole,
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 
@@ -38,10 +39,13 @@ export class MatchOfficialAssignmentLifecycleService {
       sessionId?: string;
       officialSessionId?: string;
       assignmentId?: string;
+      reason?: MatchOfficialAssignmentReleaseReason;
       to: MatchStatus;
     },
   ): Promise<string[]> {
-    const reason = assignmentReleaseReasonForTransition(input.from, input.to);
+    const reason =
+      input.reason ??
+      assignmentReleaseReasonForTransition(input.from, input.to);
     if (reason === null) return [];
 
     const assignments = await tx.matchOfficialAssignment.findMany({
@@ -50,8 +54,25 @@ export class MatchOfficialAssignmentLifecycleService {
     });
     if (assignments.length === 0) return [];
 
+    // The database trigger verifies every referee still has an active
+    // inspector authorizer on UPDATE.  `updateMany` does not guarantee its
+    // row order, so releasing the complete crew in one statement can release
+    // the inspector first and reject a later referee row.  Keep both updates
+    // in this caller's transaction, but retire referees before the inspector.
     await tx.matchOfficialAssignment.updateMany({
-      where: { matchId: input.matchId, releasedAt: null },
+      where: {
+        matchId: input.matchId,
+        releasedAt: null,
+        role: TournamentOfficialRole.REFEREE,
+      },
+      data: { releaseReason: reason, releasedAt: input.occurredAt },
+    });
+    await tx.matchOfficialAssignment.updateMany({
+      where: {
+        matchId: input.matchId,
+        releasedAt: null,
+        role: TournamentOfficialRole.INSPECTOR,
+      },
       data: { releaseReason: reason, releasedAt: input.occurredAt },
     });
     await tx.auditLog.create({

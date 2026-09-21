@@ -30,6 +30,7 @@
     "prisma:report:legacy-admin-entitlements": "tsx prisma/report-legacy-admin-entitlements.ts",
     "prisma:verify:legacy-admin-entitlements": "powershell -ExecutionPolicy Bypass -File prisma/verify-legacy-admin-entitlements-migration.ps1",
     "prisma:verify:sport-catalog": "powershell -ExecutionPolicy Bypass -File prisma/verify-sport-catalog-migration.ps1",
+    "prisma:verify:match-lifecycle": "powershell -ExecutionPolicy Bypass -File prisma/verify-match-lifecycle-foundation-migration.ps1",
     "prisma:studio": "node --env-file-if-exists=../../.env ./node_modules/prisma/build/index.js studio",
     "postinstall": "prisma generate"
   },

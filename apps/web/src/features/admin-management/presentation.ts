@@ -1,4 +1,4 @@
-import { AthleteColor, MatchAccessRole, MatchStatus, TournamentStatus } from '@/types/shared';
+import { AthleteColor, MatchAccessRole, TournamentStatus } from '@/types/shared';
 import { ApiClientError } from '@/services/api/client';
 import { toast } from '@/components/ui/toast';
 
@@ -64,16 +64,6 @@ export const tournamentStatusLabels: Record<TournamentStatus, string> = {
   [TournamentStatus.ACTIVE]: 'Đang diễn ra',
   [TournamentStatus.FINISHED]: 'Đã kết thúc',
   [TournamentStatus.ARCHIVED]: 'Đã lưu trữ',
-};
-
-export const matchStatusLabels: Record<MatchStatus, string> = {
-  [MatchStatus.WAITING]: 'Chờ thi đấu',
-  [MatchStatus.ROUND_1_RUNNING]: 'Hiệp 1',
-  [MatchStatus.ROUND_1_PAUSED]: 'Hiệp 1 tạm dừng',
-  [MatchStatus.BREAK]: 'Nghỉ giữa hiệp',
-  [MatchStatus.ROUND_2_RUNNING]: 'Hiệp 2',
-  [MatchStatus.ROUND_2_PAUSED]: 'Hiệp 2 tạm dừng',
-  [MatchStatus.FINISHED]: 'Đã kết thúc',
 };
 
 export const accessCodeRoleLabels: Record<MatchAccessRole, string> = {

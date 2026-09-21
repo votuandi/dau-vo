@@ -20,3 +20,7 @@ export const OFFICIAL_SESSION_ALREADY_ACTIVE = {
   code: 'OFFICIAL_SESSION_ALREADY_ACTIVE',
   message: 'This official is already active on another device/browser.',
 } as const;
+export const OFFICIAL_IN_MATCH_LOGOUT_FORBIDDEN = {
+  code: 'OFFICIAL_IN_MATCH_LOGOUT_FORBIDDEN',
+  message: 'An official assigned to a match cannot log out.',
+} as const;

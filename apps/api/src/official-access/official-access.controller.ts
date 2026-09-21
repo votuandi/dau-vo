@@ -14,6 +14,8 @@ import { ConfigService } from '@nestjs/config';
 import type { CookieOptions, Request, Response } from 'express';
 import type { EnvironmentVariables } from '../config/environment';
 import { OFFICIAL_SESSION_COOKIE } from './official-access.constants';
+import { OFFICIAL_IN_MATCH_LOGOUT_FORBIDDEN } from './official-access.constants';
+import { ConflictException } from '@nestjs/common';
 import { OfficialAccessService } from './official-access.service';
 // These must remain runtime imports for Nest validation metadata.
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
@@ -56,6 +58,7 @@ export class OfficialAccessController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<{ session: OfficialSessionIdentity }> {
+    await this.requireBrowserSessionReleased(request);
     const created = await this.access.login(
       body.tournamentCode,
       body.privatePasscode,
@@ -75,6 +78,7 @@ export class OfficialAccessController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<{ session: OfficialSessionIdentity }> {
+    await this.requireBrowserSessionReleased(request);
     const created = await this.access.takeover(
       body.tournamentCode,
       body.privatePasscode,
@@ -89,11 +93,14 @@ export class OfficialAccessController {
   }
   @Post('logout')
   @HttpCode(204)
+  @UseGuards(OfficialSessionGuard)
   @Header('Cache-Control', 'no-store')
   async logout(
-    @Req() request: Request,
+    @Req() request: AuthenticatedOfficialRequest,
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
+    if (await this.access.requireActiveAssignment(request.officialSession))
+      throw new ConflictException(OFFICIAL_IN_MATCH_LOGOUT_FORBIDDEN);
     const token = readOfficialSessionToken(request);
     if (token) await this.access.revokeSession(token);
     response.clearCookie(OFFICIAL_SESSION_COOKIE, this.options);
@@ -115,5 +122,12 @@ export class OfficialAccessController {
   private async revokeBrowser(request: Request, newToken: string) {
     const old = readOfficialSessionToken(request);
     if (old && old !== newToken) await this.access.revokeSession(old);
+  }
+  private async requireBrowserSessionReleased(request: Request): Promise<void> {
+    const token = readOfficialSessionToken(request);
+    if (!token) return;
+    const current = await this.access.resolveSession(token);
+    if (current && (await this.access.requireActiveAssignment(current)))
+      throw new ConflictException(OFFICIAL_IN_MATCH_LOGOUT_FORBIDDEN);
   }
 }

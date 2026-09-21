@@ -35,7 +35,8 @@ reviewed destructive release after an inventory and backup verification.
 
 Operator checklist: display the tournament public code; create officials and
 securely distribute one-time private passcodes; configure bracket-round staffing;
-have an inspector log in, claim, assign, confirm readiness, and start; rotate a
+have an inspector log in, select the exact referee team, take the match
+atomically, confirm readiness, and start; rotate a
 compromised passcode; release or replace a stuck assignment.
 
 Release note: per-match referee/inspector codes are no longer generated or
@@ -89,7 +90,7 @@ contains identifiers, role/status, entitlement timing/quota, and an optional
 reason; it deliberately excludes passwords, password hashes, session data and
 contact-profile PII.
 
-Socket.IO uses `/api/socket.io`. `public-match-state:request` is limited to a scoreboard socket authenticated by a valid public match ID. `match-state:request` requires a current participant session. `round:start`, `round:pause`, `round:resume`, `round:cancel`, `match:reset`, `result-cancellation:undo`, and `penalty:add` require the current inspector session for its server-derived match; `vote:submit` requires the current referee session and server-derived referee slot. Every participant command revalidates the persisted session before use.
+Socket.IO uses `/api/socket.io`. `public-match-state:request` is limited to a scoreboard socket authenticated by a valid public match ID. `match-state:request` requires a current participant session. `round:start`, `round:pause`, `round:resume`, `match:exit`, `match:complete`, `round:cancel`, `match:reset`, `result-cancellation:undo`, and `penalty:add` require the current assigned inspector session for its server-derived match; `vote:submit` requires the current assigned referee session and server-derived referee slot. Ending round 2 enters `AWAITING_RESULT_SAVE`; only `match:complete` progresses the bracket. Every participant command revalidates the persisted session before use.
 
 ## Retention and recovery
 

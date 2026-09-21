@@ -1,8 +1,14 @@
-import { type AthleteColor, type MatchStatus, type TournamentStatus } from '@/types/shared';
-import type { MatchStatePayload } from '@martial-arts-scoring/shared-types';
+import type {
+  AthleteColor,
+  MatchDisplayState,
+  MatchLifecycle,
+  MatchStatePayload,
+  MatchStatus,
+  TournamentStatus,
+} from '@martial-arts-scoring/shared-types';
 import { apiClient } from '@/services/api/client';
 import type { ApiRequestOptions } from '@/services/api/client';
-import type { TournamentOfficialRole } from '@/types/shared';
+import type { TournamentOfficialRole } from '@martial-arts-scoring/shared-types';
 
 type ApiRequestWithoutBody = Omit<ApiRequestOptions<never>, 'body' | 'method'>;
 
@@ -53,7 +59,9 @@ export interface AdminMatch {
     readonly name: string;
     readonly isActive: boolean;
   } | null;
-  readonly status: MatchStatus;
+  readonly phase: MatchStatus;
+  readonly lifecycle: MatchLifecycle;
+  readonly displayState: MatchDisplayState;
   readonly currentRound: number | null;
   readonly roundDurationMs: number;
   readonly breakDurationMs: number;
@@ -346,7 +354,14 @@ export interface ActiveBracket {
     readonly roundNumber: number;
     readonly position: number;
     readonly status: string;
-    readonly match: { readonly id: string; readonly publicId: string } | null;
+    readonly displayState: MatchDisplayState;
+    readonly match: {
+      readonly id: string;
+      readonly publicId: string;
+      readonly lifecycle: MatchLifecycle;
+      readonly phase: MatchStatus;
+      readonly status: MatchStatus;
+    } | null;
     readonly winnerEntrant: { readonly id: string; readonly snapshotName: string } | null;
     readonly slots: readonly {
       readonly side: 'RED' | 'BLUE';

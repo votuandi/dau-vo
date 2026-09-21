@@ -1,9 +1,14 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { AthleteColor, MatchAccessRole, MatchStatus } from '@martial-arts-scoring/shared-types';
+import {
+  AthleteColor,
+  MatchAccessRole,
+  MatchExitMode,
+  MatchStatus,
+} from '@martial-arts-scoring/shared-types';
 import { InspectorConsole } from './inspector-console';
-import { createMatchSnapshot, createRealtimeState, inspectorSession } from '@/test/factories';
+import { createMatchSnapshot, createRealtimeState } from '@/test/factories';
 
 function snapshotFor(status: MatchStatus) {
   const active =
@@ -44,6 +49,7 @@ function snapshotFor(status: MatchStatus) {
       ...base.match,
       currentRound: status === MatchStatus.WAITING ? null : roundNumber,
       finishedAt: status === MatchStatus.FINISHED ? '2026-09-01T12:04:00.000Z' : null,
+      phase: status,
       startedAt: status === MatchStatus.WAITING ? null : base.match.startedAt,
       status,
     },
@@ -57,14 +63,11 @@ describe('InspectorConsole', () => {
     const submitPenalty = vi.fn(() => Promise.resolve());
     const { rerender } = render(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.WAITING),
           startRound,
           submitPenalty,
         })}
-        session={inspectorSession}
       />,
     );
 
@@ -75,14 +78,11 @@ describe('InspectorConsole', () => {
 
     rerender(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING),
           startRound,
           submitPenalty,
         })}
-        session={inspectorSession}
       />,
     );
 
@@ -100,31 +100,25 @@ describe('InspectorConsole', () => {
 
     rerender(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.BREAK),
           startRound,
           submitPenalty,
         })}
-        session={inspectorSession}
       />,
     );
 
-    expect(screen.getByText('GIẢI LAO')).toBeVisible();
+    expect(screen.getByText('NGHỈ GIỮA HIỆP')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'BẮT ĐẦU HIỆP 2' }));
     expect(startRound).toHaveBeenCalledTimes(2);
 
     rerender(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.ROUND_2_RUNNING),
           startRound,
           submitPenalty,
         })}
-        session={inspectorSession}
       />,
     );
 
@@ -133,18 +127,15 @@ describe('InspectorConsole', () => {
 
     rerender(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.FINISHED),
           startRound,
           submitPenalty,
         })}
-        session={inspectorSession}
       />,
     );
 
-    expect(screen.getByText('TRẬN ĐẤU ĐÃ KẾT THÚC')).toBeVisible();
+    expect(screen.getByText('KẾT QUẢ CUỐI CÙNG')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Ghi lỗi XANH' })).toBeDisabled();
   });
@@ -152,13 +143,10 @@ describe('InspectorConsole', () => {
   it('disables controls when the session is revoked or realtime connection is lost', () => {
     render(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           connectionStatus: 'revoked',
           snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING),
         })}
-        session={inspectorSession}
       />,
     );
 
@@ -176,8 +164,6 @@ describe('InspectorConsole', () => {
 
     render(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           presence,
           snapshot: createMatchSnapshot({
@@ -192,7 +178,6 @@ describe('InspectorConsole', () => {
             },
           }),
         })}
-        session={inspectorSession}
       />,
     );
 
@@ -214,13 +199,10 @@ describe('InspectorConsole', () => {
     const resumeRound = vi.fn(() => Promise.resolve(true));
     const { rerender } = render(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           pauseRound,
           snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING),
         })}
-        session={inspectorSession}
       />,
     );
 
@@ -232,16 +214,13 @@ describe('InspectorConsole', () => {
 
     rerender(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           resumeRound,
           snapshot: snapshotFor(MatchStatus.ROUND_1_PAUSED),
         })}
-        session={inspectorSession}
       />,
     );
-    expect(screen.getByText('HIỆP 1 · TẠM DỪNG')).toBeVisible();
+    expect(screen.getByText('HIỆP 1 TẠM DỪNG')).toBeVisible();
     expect(screen.getByRole('timer')).toHaveTextContent('01:00');
     expect(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'TIẾP TỤC' }));
@@ -250,19 +229,16 @@ describe('InspectorConsole', () => {
     expect(resumeRound).toHaveBeenCalledOnce();
   });
 
-  it('uses strong application dialogs for round cancellation and full match reset', async () => {
+  it('uses confirmation dialogs for round cancellation and destructive match exit', async () => {
     const user = userEvent.setup();
     const cancelRoundResult = vi.fn(() => Promise.resolve(true));
-    const resetMatchResults = vi.fn(() => Promise.resolve(true));
+    const exitMatch = vi.fn(() => Promise.resolve(true));
     const { rerender } = render(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
           cancelRoundResult,
           snapshot: snapshotFor(MatchStatus.BREAK),
         })}
-        session={inspectorSession}
       />,
     );
     await user.click(screen.getByRole('button', { name: 'HỦY KẾT QUẢ HIỆP 1 VÀ BẮT ĐẦU LẠI' }));
@@ -274,19 +250,174 @@ describe('InspectorConsole', () => {
 
     rerender(
       <InspectorConsole
-        isLogoutPending={false}
-        onLogout={vi.fn()}
         realtime={createRealtimeState({
-          resetMatchResults,
-          snapshot: snapshotFor(MatchStatus.FINISHED),
+          exitMatch,
+          snapshot: createMatchSnapshot({
+            ...snapshotFor(MatchStatus.FINISHED),
+            exit: {
+              canExit: true,
+              allowedModes: [MatchExitMode.CANCEL_RESULTS],
+              blockedReasons: [],
+            },
+          }),
         })}
-        session={inspectorSession}
       />,
     );
-    await user.click(screen.getByRole('button', { name: 'HỦY KẾT QUẢ VÀ BẮT ĐẦU LẠI 2 HIỆP ĐẤU' }));
-    expect(resetMatchResults).not.toHaveBeenCalled();
-    expect(screen.getByText(/Tất cả điểm và lỗi của cả hai hiệp/)).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Đặt lại trận đấu' }));
-    expect(resetMatchResults).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole('button', { name: 'THOÁT TRẬN' }));
+    expect(screen.getByRole('dialog', { name: 'Chọn cách thoát trận' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: /Hủy kết quả/ }));
+    expect(exitMatch).not.toHaveBeenCalled();
+    expect(screen.getByText(/Kết quả hiện tại sẽ bị vô hiệu/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Hủy kết quả' }));
+    expect(exitMatch).toHaveBeenCalledOnce();
+    expect(exitMatch).toHaveBeenCalledWith(MatchExitMode.CANCEL_RESULTS);
+  });
+
+  it('prioritizes the in-flight exit message and disables exit choices', () => {
+    render(
+      <InspectorConsole
+        realtime={createRealtimeState({
+          cancellingResults: true,
+          snapshot: createMatchSnapshot({
+            exit: {
+              canExit: true,
+              allowedModes: [MatchExitMode.CANCEL_RESULTS],
+              blockedReasons: ['ROUND_1_NOT_ENDED'],
+            },
+          }),
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'THOÁT TRẬN' })).toBeDisabled();
+    expect(screen.getByText('Đang xử lý yêu cầu thoát trận…')).toBeVisible();
+  });
+
+  it('explains that a server connection is required before exiting', () => {
+    render(
+      <InspectorConsole
+        realtime={createRealtimeState({
+          connectionStatus: 'disconnected',
+          snapshot: createMatchSnapshot({
+            exit: {
+              canExit: true,
+              allowedModes: [MatchExitMode.CANCEL_RESULTS],
+              blockedReasons: [],
+            },
+          }),
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'THOÁT TRẬN' })).toBeDisabled();
+    expect(screen.getByText('Cần kết nối máy chủ để thoát trận.')).toBeVisible();
+  });
+
+  it('waits for an authoritative snapshot before offering exit choices', () => {
+    render(<InspectorConsole realtime={createRealtimeState({ snapshot: null })} />);
+
+    expect(screen.getByRole('button', { name: 'THOÁT TRẬN' })).toBeDisabled();
+    expect(screen.getByText('Đang đồng bộ các lựa chọn thoát trận từ máy chủ.')).toBeVisible();
+  });
+
+  it('only reports that exit is unavailable when the authoritative capability forbids it', () => {
+    render(
+      <InspectorConsole
+        realtime={createRealtimeState({
+          snapshot: createMatchSnapshot({
+            exit: { canExit: false, allowedModes: [], blockedReasons: ['ALREADY_COMPLETED'] },
+          }),
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'THOÁT TRẬN' })).toBeDisabled();
+    expect(
+      screen.getByText('Chưa thể thoát trận theo trạng thái hiện tại do máy chủ xác định.'),
+    ).toBeVisible();
+  });
+
+  it('allows cancel-results before round 1 despite informational limitations on other exit modes', () => {
+    render(
+      <InspectorConsole
+        realtime={createRealtimeState({
+          snapshot: createMatchSnapshot({
+            exit: {
+              canExit: true,
+              allowedModes: [MatchExitMode.CANCEL_RESULTS],
+              blockedReasons: ['ROUND_1_NOT_ENDED'],
+            },
+          }),
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'THOÁT TRẬN' })).toBeEnabled();
+    expect(
+      screen.queryByText('Chưa thể thoát trận theo trạng thái hiện tại do máy chủ xác định.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps a rejected exit confirmation open and surfaces the server message', async () => {
+    const user = userEvent.setup();
+    const exitMatch = vi.fn(() => Promise.resolve(false));
+    render(
+      <InspectorConsole
+        realtime={createRealtimeState({
+          exitMatch,
+          resultCancellationErrorMessage: 'Máy chủ từ chối thao tác này.',
+          snapshot: createMatchSnapshot({
+            exit: {
+              canExit: true,
+              allowedModes: [MatchExitMode.CANCEL_RESULTS],
+              blockedReasons: [],
+            },
+          }),
+        })}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'THOÁT TRẬN' }));
+    await user.click(screen.getByRole('button', { name: /Hủy kết quả/ }));
+    await user.click(screen.getByRole('button', { name: 'Hủy kết quả' }));
+
+    expect(exitMatch).toHaveBeenCalledWith(MatchExitMode.CANCEL_RESULTS);
+    expect(screen.getByRole('dialog')).toBeVisible();
+    expect(screen.getByText('Máy chủ từ chối thao tác này.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Hủy kết quả' })).toBeEnabled();
+  });
+
+  it('keeps saving visible but disabled before round 2 is complete, using the server reason', () => {
+    render(
+      <InspectorConsole
+        realtime={createRealtimeState({ snapshot: snapshotFor(MatchStatus.BREAK) })}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'LƯU KẾT QUẢ' })).toBeDisabled();
+    expect(screen.getByText(/Hiệp 2 chưa kết thúc/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'THOÁT TRẬN' })).toBeVisible();
+  });
+
+  it('enables save only from the authoritative completion capability and completes after confirmation', async () => {
+    const user = userEvent.setup();
+    const completeMatch = vi.fn(() => Promise.resolve(true));
+    render(
+      <InspectorConsole
+        realtime={createRealtimeState({
+          completeMatch,
+          snapshot: createMatchSnapshot({
+            ...snapshotFor(MatchStatus.AWAITING_RESULT_SAVE),
+            completion: { canComplete: true, blockedReasons: [] },
+          }),
+        })}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'LƯU KẾT QUẢ' }));
+    expect(completeMatch).not.toHaveBeenCalled();
+    expect(screen.getByText(/Xác nhận lưu kết quả chính thức/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Lưu kết quả' }));
+    expect(completeMatch).toHaveBeenCalledOnce();
   });
 });

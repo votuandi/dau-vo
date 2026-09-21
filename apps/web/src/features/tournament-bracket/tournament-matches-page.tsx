@@ -23,11 +23,9 @@ import {
   type BracketDrawSetup,
   type ActiveBracket,
 } from '@/services/api/admin-management';
-import { TournamentStatus } from '@/types/shared';
-import {
-  bracketFixtureStatusLabel as fixtureStatusLabel,
-  bracketRoundLabel as roundLabel,
-} from '@martial-arts-scoring/shared-types';
+import { MatchDisplayState, MatchLifecycle, TournamentStatus } from '@/types/shared';
+import { bracketRoundLabel as roundLabel } from '@martial-arts-scoring/shared-types';
+import { presentDisplayState, presentLifecycle, presentPhase } from '@/features/match-presentation';
 import { BracketChart } from './bracket-chart';
 import { BracketPreviewPanel } from './bracket-preview-dialog';
 import { BracketDrawSetupDialog } from './bracket-draw-setup-dialog';
@@ -855,12 +853,15 @@ function FixtureList({
               return (
                 <li className="rounded-xl border p-3" key={f.id}>
                   <div className="font-bold">
-                    {f.displayReference} · {fixtureStatusLabel(f.status)}
+                    {f.displayReference} ·{' '}
+                    {f.match
+                      ? `${presentLifecycle(f.match.lifecycle).label} · ${presentPhase(f.match.phase).label}`
+                      : presentDisplayState(f.displayState).label}
                   </div>
                   <p className="text-sm">
                     RED: {person('RED')} — BLUE: {person('BLUE')}
                   </p>
-                  {f.winnerEntrant ? (
+                  {f.winnerEntrant && f.match?.lifecycle === MatchLifecycle.COMPLETED ? (
                     <p className="text-sm">Người thắng: {f.winnerEntrant.snapshotName}</p>
                   ) : null}
                   {f.roundNumber === data.bracket.roundCount && data.bracket.championEntrant ? (
@@ -868,7 +869,7 @@ function FixtureList({
                       Vô địch: {data.bracket.championEntrant.snapshotName}
                     </p>
                   ) : null}
-                  {f.status === 'PENDING_PARTICIPANTS' ? (
+                  {f.displayState === MatchDisplayState.NOT_READY ? (
                     <p className="text-sm text-muted-foreground">
                       Đang chờ kết quả các trận trước.
                     </p>

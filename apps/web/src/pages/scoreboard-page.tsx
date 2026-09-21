@@ -1,28 +1,13 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { AthleteColor, MatchStatus } from '@martial-arts-scoring/shared-types';
+import { AthleteColor, MatchLifecycle } from '@martial-arts-scoring/shared-types';
 import { useScoreboardRealtime } from '@/features/scoreboard/scoreboard-realtime';
-
-function phaseLabel(status: MatchStatus | undefined): string {
-  switch (status) {
-    case MatchStatus.ROUND_1_RUNNING:
-      return 'HIỆP 1';
-    case MatchStatus.ROUND_1_PAUSED:
-      return 'HIỆP 1 · PAUSED';
-    case MatchStatus.ROUND_2_RUNNING:
-      return 'HIỆP 2';
-    case MatchStatus.ROUND_2_PAUSED:
-      return 'HIỆP 2 · PAUSED';
-    case MatchStatus.BREAK:
-      return 'GIẢI LAO';
-    case MatchStatus.FINISHED:
-      return 'TRẬN ĐẤU ĐÃ KẾT THÚC';
-    case MatchStatus.WAITING:
-      return 'CHỜ BẮT ĐẦU';
-    default:
-      return 'ĐANG KẾT NỐI';
-  }
-}
+import {
+  isPausedPhase,
+  isRunningPhase,
+  presentLifecycle,
+  presentPhase,
+} from '@/features/match-presentation';
 
 function formatRemaining(milliseconds: number): string {
   const seconds = Math.max(0, Math.ceil(milliseconds / 1_000));
@@ -155,12 +140,13 @@ export function ScoreboardPage() {
 function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }) {
   const { connectionStatus, snapshot } = useScoreboardRealtime(matchPublicId);
   const activeRound = snapshot?.activeRound;
-  const running =
-    snapshot?.match.status === MatchStatus.ROUND_1_RUNNING ||
-    snapshot?.match.status === MatchStatus.ROUND_2_RUNNING;
-  const paused =
-    snapshot?.match.status === MatchStatus.ROUND_1_PAUSED ||
-    snapshot?.match.status === MatchStatus.ROUND_2_PAUSED;
+  const running = isRunningPhase(snapshot?.match.phase);
+  const paused = isPausedPhase(snapshot?.match.phase);
+  const presentation = snapshot
+    ? snapshot.match.lifecycle === MatchLifecycle.SUSPENDED
+      ? presentLifecycle(snapshot.match.lifecycle)
+      : presentPhase(snapshot.match.phase)
+    : null;
   const remaining = useDisplayTimer(
     running ? activeRound?.endsAt : undefined,
     snapshot?.generatedAt,
@@ -186,8 +172,9 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
       </header>
       <section className="my-4 rounded-[2rem] border border-white/15 bg-white/10 px-6 py-5 text-center shadow-2xl shadow-blue-950/20 backdrop-blur-xl sm:my-7">
         <p className="text-2xl font-black tracking-[0.2em] text-sky-100 sm:text-4xl">
-          {phaseLabel(snapshot?.match.status)}
+          {presentation?.label ?? 'ĐANG KẾT NỐI'}
         </p>
+        {presentation ? <p className="mt-2 text-sm text-sky-100/85">{presentation.help}</p> : null}
         <p className="mt-2 font-mono text-7xl font-black tabular-nums sm:text-9xl">
           {running && remaining !== null
             ? formatRemaining(remaining)

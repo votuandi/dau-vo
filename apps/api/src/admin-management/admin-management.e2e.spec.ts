@@ -7,6 +7,7 @@ import {
   AuditEventType,
   MatchAccessRole,
   MatchRole,
+  MatchLifecycle,
   MatchStatus,
   RefereeSlot,
   TournamentStatus,
@@ -79,6 +80,9 @@ interface MatchView {
   tournamentId: string;
   publicId: string;
   status: MatchStatus;
+  phase: MatchStatus;
+  lifecycle: MatchLifecycle;
+  displayState: string;
   roundDurationMs: number;
   breakDurationMs: number;
   athletes: AthleteView[];
@@ -841,6 +845,12 @@ describe('Admin tournament and match management (integration)', () => {
     ).expect(200);
     const fetchedMatch = (getResponse.body as MatchResponseBody).match;
     expect(fetchedMatch.id).toBe(creation.match.id);
+    expect(fetchedMatch).toMatchObject({
+      lifecycle: MatchLifecycle.NOT_STARTED,
+      phase: MatchStatus.WAITING,
+      status: MatchStatus.WAITING,
+      displayState: 'NOT_STARTED',
+    });
     expectExactlyOneAthletePerColor(fetchedMatch.athletes);
     for (const { code } of creation.accessCodes) {
       expect(JSON.stringify(getResponse.body)).not.toContain(code);
@@ -1235,7 +1245,10 @@ describe('Admin tournament and match management (integration)', () => {
       createAthlete(tournament.id, 'unsafe-replacement-blue', weight.id),
     ]);
     await prisma.match.update({
-      data: { status: MatchStatus.ROUND_1_RUNNING },
+      data: {
+        lifecycle: MatchLifecycle.IN_PROGRESS,
+        status: MatchStatus.ROUND_1_RUNNING,
+      },
       where: { id: creation.match.id },
     });
     await authenticated(

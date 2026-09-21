@@ -12,15 +12,19 @@ import {
   type RoundResumedPayload,
   type ResultCancellationPayload,
   type ResultCancellationUndoPayload,
+  MatchExitMode,
+  type MatchExitPayload,
   type RoundEndedPayload,
   type RoundStartedPayload,
 } from '@martial-arts-scoring/shared-types';
 import {
   AuditEventType,
   MatchAccessRole,
+  MatchLifecycle,
   MatchResultOperationStatus,
   MatchResultOperationType,
   MatchStatus,
+  MatchOfficialAssignmentReleaseReason,
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 
@@ -38,6 +42,8 @@ import {
   InvalidResultCancellationStateError,
   InvalidRoundStartStateError,
   MatchParticipantsNotReadyError,
+  MatchCompletionNotReadyError,
+  MatchAlreadyCompletedError,
   MatchLifecycleTargetMissingError,
   ResultCancellationUndoNotAllowedError,
 } from './match-lifecycle.errors';
@@ -103,6 +109,14 @@ export interface RoundEndedTransition {
   releasedOfficialIds: string[];
 }
 
+export interface MatchCompletionTransition {
+  matchId: string;
+  matchPublicId: string;
+  tournamentId: string;
+  completed: MatchFinishedPayload;
+  releasedOfficialIds: string[];
+}
+
 export interface RoundControlTransition {
   matchId: string;
   payload: RoundPausedPayload | RoundResumedPayload;
@@ -116,6 +130,14 @@ export interface ResultCancellationTransition {
 export interface ResultCancellationUndoTransition {
   matchId: string;
   payload: ResultCancellationUndoPayload;
+}
+
+export interface MatchExitTransition {
+  matchId: string;
+  matchPublicId: string;
+  tournamentId: string;
+  payload: MatchExitPayload;
+  releasedOfficialIds: string[];
 }
 
 export type RoundExpirationListener = (
@@ -251,6 +273,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
         await transaction.match.update({
           data: {
             currentRound: roundNumber,
+            lifecycle: MatchLifecycle.IN_PROGRESS,
             startedAt: roundNumber === 1 ? clock.serverNow : match.startedAt,
             status: nextStatus,
           },
@@ -478,6 +501,404 @@ export class MatchLifecycleService implements OnModuleDestroy {
     return this.cancelResults(input, true);
   }
 
+  async exitMatch(input: {
+    matchId: string;
+    identity: InspectorCommandIdentity;
+    mode: MatchExitMode;
+    traceId?: string;
+  }): Promise<MatchExitTransition> {
+    const logFields = {
+      assignmentId:
+        input.identity.kind === 'official'
+          ? input.identity.assignmentId
+          : undefined,
+      identityKind: input.identity.kind,
+      matchId: input.matchId,
+      officialId:
+        input.identity.kind === 'official'
+          ? input.identity.officialId
+          : undefined,
+      officialSessionId:
+        input.identity.kind === 'official'
+          ? input.identity.officialSessionId
+          : undefined,
+      sessionId:
+        input.identity.kind === 'legacy' ? input.identity.sessionId : undefined,
+      mode: input.mode,
+      traceId: input.traceId,
+    };
+    this.logger.log(logFields, 'Match exit lifecycle transaction started');
+    const result = await this.prisma.$transaction(
+      async (transaction) => {
+        await this.lockMatch(transaction, input.matchId);
+        this.logger.log(logFields, 'Match exit lifecycle match lock acquired');
+        await this.rulesForMatch(transaction, input.matchId);
+        await this.lockActiveInspectorIdentity(
+          transaction,
+          input.matchId,
+          input.identity,
+        );
+        this.logger.log(
+          logFields,
+          'Match exit lifecycle active inspector identity verified',
+        );
+        const clock = await this.serverClock(transaction);
+        const match = await transaction.match.findUniqueOrThrow({
+          where: { id: input.matchId },
+          select: {
+            currentRound: true,
+            finishedAt: true,
+            lifecycle: true,
+            publicId: true,
+            startedAt: true,
+            status: true,
+            tournamentId: true,
+          },
+        });
+        if (
+          match.lifecycle === MatchLifecycle.COMPLETED ||
+          match.status === MatchStatus.FINISHED
+        )
+          throw new InvalidResultCancellationStateError(match.status);
+        const rounds = await transaction.round.findMany({
+          where: { invalidatedAt: null, matchId: input.matchId },
+          select: { endedAt: true, roundNumber: true },
+        });
+        const hasRoundOne = rounds.some(
+          (round) => round.roundNumber === 1 && round.endedAt !== null,
+        );
+        const hasRoundTwo = rounds.some(
+          (round) => round.roundNumber === 2 && round.endedAt !== null,
+        );
+        const unresolved = await transaction.scoringWindow.findFirst({
+          where: {
+            invalidatedAt: null,
+            matchId: input.matchId,
+            resolvedAt: null,
+          },
+          select: { id: true },
+        });
+        if (
+          (input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 &&
+            (!hasRoundOne || unresolved !== null)) ||
+          (input.mode === MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2 &&
+            (!hasRoundOne || !hasRoundTwo || unresolved !== null))
+        )
+          throw new InvalidResultCancellationStateError(match.status);
+        const roundNumbers: Array<1 | 2> =
+          input.mode === MatchExitMode.CANCEL_RESULTS
+            ? [1, 2]
+            : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1
+              ? [2]
+              : [];
+        const nextStatus =
+          input.mode === MatchExitMode.CANCEL_RESULTS
+            ? MatchStatus.WAITING
+            : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1
+              ? MatchStatus.BREAK
+              : MatchStatus.AWAITING_RESULT_SAVE;
+        const nextLifecycle =
+          input.mode === MatchExitMode.CANCEL_RESULTS
+            ? MatchLifecycle.NOT_STARTED
+            : MatchLifecycle.SUSPENDED;
+        this.logger.log(
+          {
+            ...logFields,
+            completedRounds: rounds
+              .filter((round) => round.endedAt !== null)
+              .map((round) => round.roundNumber),
+            currentRound: match.currentRound,
+            currentStatus: match.status,
+            nextLifecycle,
+            nextStatus,
+            unresolvedScoringWindow: unresolved !== null,
+          },
+          'Match exit lifecycle state evaluated',
+        );
+        const audit = await transaction.auditLog.create({
+          data: {
+            eventType: AuditEventType.MATCH_EXITED,
+            matchId: input.matchId,
+            ...auditActor(input.identity),
+            metadata: {
+              mode: input.mode,
+              exitedAt: clock.serverNow.toISOString(),
+              fromStatus: match.status,
+              toStatus: nextStatus,
+            },
+          },
+          select: { id: true },
+        });
+        const operation = await transaction.matchResultOperation.create({
+          data: {
+            auditLogId: audit.id,
+            matchId: input.matchId,
+            type:
+              input.mode === MatchExitMode.CANCEL_RESULTS
+                ? MatchResultOperationType.MATCH_EXIT_CANCEL_RESULTS
+                : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1
+                  ? MatchResultOperationType.MATCH_EXIT_SUSPEND_KEEP_ROUND_1
+                  : MatchResultOperationType.MATCH_EXIT_SUSPEND_KEEP_ROUNDS_1_AND_2,
+            roundNumbers,
+            previousStatus: match.status,
+            previousLifecycle: match.lifecycle,
+            previousCurrentRound: match.currentRound,
+            previousStartedAt: match.startedAt,
+            previousFinishedAt: match.finishedAt,
+            resultingStatus: nextStatus,
+            resultingLifecycle: nextLifecycle,
+            resultingCurrentRound:
+              input.mode === MatchExitMode.CANCEL_RESULTS
+                ? null
+                : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1
+                  ? 1
+                  : 2,
+            createdBySessionId:
+              input.identity.kind === 'legacy'
+                ? input.identity.sessionId
+                : null,
+          },
+          select: { id: true },
+        });
+        await transaction.auditLog.update({
+          where: { id: audit.id },
+          data: {
+            metadata: {
+              mode: input.mode,
+              exitOperationId: operation.id,
+              invalidatedRoundNumbers: roundNumbers,
+            },
+          },
+        });
+        if (roundNumbers.length > 0) {
+          const roundNumber = { in: roundNumbers };
+          await transaction.refereeVote.updateMany({
+            data: {
+              invalidatedAt: clock.serverNow,
+              invalidatedByAuditId: audit.id,
+            },
+            where: {
+              invalidatedAt: null,
+              matchId: input.matchId,
+              scoringWindow: { roundNumber },
+            },
+          });
+          await transaction.scoreEvent.updateMany({
+            data: { revertedAt: clock.serverNow, revertedByAuditId: audit.id },
+            where: { revertedAt: null, matchId: input.matchId, roundNumber },
+          });
+          await transaction.penalty.updateMany({
+            data: { revertedAt: clock.serverNow, revertedByAuditId: audit.id },
+            where: { revertedAt: null, matchId: input.matchId, roundNumber },
+          });
+          await transaction.scoringWindow.updateMany({
+            data: {
+              invalidatedAt: clock.serverNow,
+              invalidatedByAuditId: audit.id,
+            },
+            where: { invalidatedAt: null, matchId: input.matchId, roundNumber },
+          });
+          await transaction.round.updateMany({
+            data: {
+              invalidatedAt: clock.serverNow,
+              invalidatedByAuditId: audit.id,
+            },
+            where: { invalidatedAt: null, matchId: input.matchId, roundNumber },
+          });
+        }
+        await transaction.match.update({
+          where: { id: input.matchId },
+          data: {
+            currentRound:
+              input.mode === MatchExitMode.CANCEL_RESULTS
+                ? null
+                : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1
+                  ? 1
+                  : 2,
+            finishedAt: null,
+            lifecycle: nextLifecycle,
+            startedAt:
+              input.mode === MatchExitMode.CANCEL_RESULTS
+                ? null
+                : match.startedAt,
+            status: nextStatus,
+            suspendedAt:
+              nextLifecycle === MatchLifecycle.SUSPENDED
+                ? clock.serverNow
+                : null,
+          },
+        });
+        this.logger.log(
+          { ...logFields, nextLifecycle, nextStatus },
+          'Match exit lifecycle match row updated',
+        );
+        const reason =
+          input.mode === MatchExitMode.CANCEL_RESULTS
+            ? MatchOfficialAssignmentReleaseReason.MATCH_EXIT_CANCELLED
+            : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1
+              ? MatchOfficialAssignmentReleaseReason.MATCH_EXIT_SUSPENDED_KEEP_ROUND_1
+              : MatchOfficialAssignmentReleaseReason.MATCH_EXIT_SUSPENDED_KEEP_ROUNDS_1_AND_2;
+        const releasedOfficialIds =
+          await this.assignmentLifecycle.releaseForTransition(transaction, {
+            from: match.status,
+            to: nextStatus,
+            matchId: input.matchId,
+            occurredAt: clock.serverNow,
+            reason,
+            ...(input.identity.kind === 'official'
+              ? {
+                  assignmentId: input.identity.assignmentId,
+                  officialSessionId: input.identity.officialSessionId,
+                }
+              : { sessionId: input.identity.sessionId }),
+          });
+        this.logger.log(
+          {
+            ...logFields,
+            releasedOfficialCount: releasedOfficialIds.length,
+            releasedOfficialIds,
+          },
+          'Match exit lifecycle official assignments released',
+        );
+        return {
+          matchId: input.matchId,
+          matchPublicId: match.publicId,
+          tournamentId: match.tournamentId,
+          payload: { matchPublicId: match.publicId, mode: input.mode },
+          releasedOfficialIds,
+        };
+      },
+      { maxWait: TRANSACTION_MAX_WAIT_MS, timeout: TRANSACTION_TIMEOUT_MS },
+    );
+    this.cancelExpiration(input.matchId);
+    return result;
+  }
+
+  async completeMatch(input: {
+    matchId: string;
+    identity: InspectorCommandIdentity;
+  }): Promise<MatchCompletionTransition> {
+    return this.prisma.$transaction(
+      async (transaction) => {
+        await this.lockMatch(transaction, input.matchId);
+        await this.rulesForMatch(transaction, input.matchId);
+        await this.lockActiveInspectorIdentity(
+          transaction,
+          input.matchId,
+          input.identity,
+        );
+        const clock = await this.serverClock(transaction);
+        const match = await transaction.match.findUniqueOrThrow({
+          where: { id: input.matchId },
+          select: {
+            finishedAt: true,
+            lifecycle: true,
+            publicId: true,
+            status: true,
+            tournamentId: true,
+          },
+        });
+        if (
+          match.lifecycle === MatchLifecycle.COMPLETED ||
+          match.status === MatchStatus.FINISHED
+        ) {
+          if (match.finishedAt === null) throw new MatchAlreadyCompletedError();
+          return {
+            matchId: input.matchId,
+            matchPublicId: match.publicId,
+            tournamentId: match.tournamentId,
+            completed: {
+              finishedAt: match.finishedAt.toISOString(),
+              matchPublicId: match.publicId,
+            },
+            releasedOfficialIds: [],
+          };
+        }
+        if (
+          match.lifecycle === MatchLifecycle.SUSPENDED ||
+          match.status !== MatchStatus.AWAITING_RESULT_SAVE
+        ) {
+          throw new MatchCompletionNotReadyError();
+        }
+        const [rounds, unresolved] = await Promise.all([
+          transaction.round.findMany({
+            where: { invalidatedAt: null, matchId: input.matchId },
+            select: { endedAt: true, roundNumber: true },
+          }),
+          transaction.scoringWindow.findFirst({
+            where: {
+              invalidatedAt: null,
+              matchId: input.matchId,
+              resolvedAt: null,
+            },
+            select: { id: true },
+          }),
+        ]);
+        if (
+          unresolved !== null ||
+          !rounds.some(
+            (round) => round.roundNumber === 1 && round.endedAt !== null,
+          ) ||
+          !rounds.some(
+            (round) => round.roundNumber === 2 && round.endedAt !== null,
+          )
+        ) {
+          throw new MatchCompletionNotReadyError();
+        }
+        await transaction.match.update({
+          where: { id: input.matchId },
+          data: {
+            finishedAt: clock.serverNow,
+            lifecycle: MatchLifecycle.COMPLETED,
+            status: MatchStatus.FINISHED,
+          },
+        });
+        await this.bracketOutcomes.processFinishedMatch(
+          transaction,
+          input.matchId,
+        );
+        await transaction.auditLog.create({
+          data: {
+            eventType: AuditEventType.MATCH_FINISHED,
+            matchId: input.matchId,
+            ...auditActor(input.identity),
+            metadata: {
+              completedAt: clock.serverNow.toISOString(),
+              assignmentId:
+                input.identity.kind === 'official'
+                  ? input.identity.assignmentId
+                  : undefined,
+            },
+          },
+        });
+        const releasedOfficialIds =
+          await this.assignmentLifecycle.releaseForTransition(transaction, {
+            from: match.status,
+            matchId: input.matchId,
+            occurredAt: clock.serverNow,
+            to: MatchStatus.FINISHED,
+            ...(input.identity.kind === 'official'
+              ? {
+                  assignmentId: input.identity.assignmentId,
+                  officialSessionId: input.identity.officialSessionId,
+                }
+              : { sessionId: input.identity.sessionId }),
+          });
+        return {
+          matchId: input.matchId,
+          matchPublicId: match.publicId,
+          tournamentId: match.tournamentId,
+          completed: {
+            finishedAt: clock.serverNow.toISOString(),
+            matchPublicId: match.publicId,
+          },
+          releasedOfficialIds,
+        };
+      },
+      { maxWait: TRANSACTION_MAX_WAIT_MS, timeout: TRANSACTION_TIMEOUT_MS },
+    );
+  }
+
   private async cancelResults(
     input: { matchId: string; identity: InspectorCommandIdentity },
     entireMatch: boolean,
@@ -499,12 +920,15 @@ export class MatchLifecycleService implements OnModuleDestroy {
           where: { id: input.matchId },
         });
         const roundNumbers: Array<1 | 2> = entireMatch
-          ? match.status === MatchStatus.FINISHED
+          ? match.status === MatchStatus.FINISHED ||
+            match.status === MatchStatus.AWAITING_RESULT_SAVE
             ? [1, 2]
             : []
           : match.status === MatchStatus.BREAK && match.currentRound === 1
             ? [1]
-            : match.status === MatchStatus.FINISHED && match.currentRound === 2
+            : (match.status === MatchStatus.FINISHED ||
+                  match.status === MatchStatus.AWAITING_RESULT_SAVE) &&
+                match.currentRound === 2
               ? [2]
               : [];
         if (roundNumbers.length === 0) {
@@ -561,10 +985,15 @@ export class MatchLifecycleService implements OnModuleDestroy {
                 : null,
             matchId: input.matchId,
             previousCurrentRound: match.currentRound,
+            previousLifecycle: this.lifecycleForPhase(match.status),
             previousFinishedAt: match.finishedAt,
             previousStartedAt: match.startedAt,
             previousStatus: match.status,
             resultingCurrentRound,
+            resultingLifecycle:
+              nextStatus === MatchStatus.WAITING
+                ? MatchLifecycle.NOT_STARTED
+                : MatchLifecycle.IN_PROGRESS,
             resultingStatus: nextStatus,
             roundNumbers,
             type: entireMatch
@@ -632,6 +1061,10 @@ export class MatchLifecycleService implements OnModuleDestroy {
           data: {
             currentRound: resultingCurrentRound,
             finishedAt: null,
+            lifecycle:
+              nextStatus === MatchStatus.WAITING
+                ? MatchLifecycle.NOT_STARTED
+                : MatchLifecycle.IN_PROGRESS,
             startedAt:
               nextStatus === MatchStatus.WAITING ? null : match.startedAt,
             status: nextStatus,
@@ -768,6 +1201,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
           data: {
             currentRound: operation.previousCurrentRound,
             finishedAt: operation.previousFinishedAt,
+            lifecycle: operation.previousLifecycle,
             startedAt: operation.previousStartedAt,
             status: operation.previousStatus,
           },
@@ -958,7 +1392,9 @@ export class MatchLifecycleService implements OnModuleDestroy {
         }
 
         const nextStatus =
-          round.roundNumber === 1 ? MatchStatus.BREAK : MatchStatus.FINISHED;
+          round.roundNumber === 1
+            ? MatchStatus.BREAK
+            : MatchStatus.AWAITING_RESULT_SAVE;
         const endedAt = round.endsAt;
         const endedRound = await transaction.round.update({
           data: { endedAt },
@@ -976,19 +1412,13 @@ export class MatchLifecycleService implements OnModuleDestroy {
 
         await transaction.match.update({
           data: {
-            finishedAt: round.roundNumber === 2 ? endedAt : undefined,
+            lifecycle: MatchLifecycle.IN_PROGRESS,
             status: nextStatus,
           },
           select: { id: true },
           where: { id: matchId },
         });
-        const releasedOfficialIds =
-          await this.assignmentLifecycle.releaseForTransition(transaction, {
-            from: match.status,
-            matchId,
-            occurredAt: endedAt,
-            to: nextStatus,
-          });
+        const releasedOfficialIds: string[] = [];
         await transaction.auditLog.create({
           data: {
             eventType: AuditEventType.ROUND_ENDED,
@@ -1004,28 +1434,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
           select: { id: true },
         });
 
-        const matchFinished =
-          round.roundNumber === 2
-            ? {
-                finishedAt: endedAt.toISOString(),
-                matchPublicId: match.publicId,
-              }
-            : null;
-
-        if (matchFinished !== null) {
-          await this.bracketOutcomes.processFinishedMatch(transaction, matchId);
-          await transaction.auditLog.create({
-            data: {
-              eventType: AuditEventType.MATCH_FINISHED,
-              matchId,
-              metadata: {
-                finishedAt: matchFinished.finishedAt,
-                roundId: round.id,
-              },
-            },
-            select: { id: true },
-          });
-        }
+        const matchFinished = null;
 
         return {
           kind: 'ended',
@@ -1198,8 +1607,6 @@ export class MatchLifecycleService implements OnModuleDestroy {
       FROM "match_sessions" AS match_session
       INNER JOIN "match_access_codes" AS access_code
         ON access_code."id" = match_session."access_code_id"
-      LEFT JOIN "match_official_assignments" AS assignment
-        ON assignment."id" = match_session."assignment_id"
       WHERE match_session."id" = ${identity.sessionId}::uuid
         AND match_session."match_id" = ${matchId}::uuid
         AND match_session."active" = true
@@ -1208,7 +1615,16 @@ export class MatchLifecycleService implements OnModuleDestroy {
         AND match_session."token_hash" = ${identity.sessionTokenHash}
         AND match_session."role" = 'INSPECTOR'
         AND access_code."access_role" = 'INSPECTOR'
-        AND (match_session."assignment_id" IS NULL OR assignment."released_at" IS NULL)
+        -- A legacy per-match session is never permitted to control a match
+        -- once the modern official-assignment workflow has claimed it.  The
+        -- session may pre-date the claim, so checking login alone is not a
+        -- sufficient authorization boundary.
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "match_official_assignments" AS active_assignment
+          WHERE active_assignment."match_id" = match_session."match_id"
+            AND active_assignment."released_at" IS NULL
+        )
       FOR UPDATE OF match_session
     `;
 
@@ -1314,11 +1730,33 @@ export class MatchLifecycleService implements OnModuleDestroy {
         return SharedMatchStatus.ROUND_2_RUNNING;
       case MatchStatus.ROUND_2_PAUSED:
         return SharedMatchStatus.ROUND_2_PAUSED;
+      case MatchStatus.AWAITING_RESULT_SAVE:
+        return SharedMatchStatus.AWAITING_RESULT_SAVE;
       case MatchStatus.FINISHED:
         return SharedMatchStatus.FINISHED;
       default: {
         const exhaustiveStatus: never = status;
         throw new Error(`Unsupported match status: ${exhaustiveStatus}`);
+      }
+    }
+  }
+
+  private lifecycleForPhase(phase: MatchStatus): MatchLifecycle {
+    switch (phase) {
+      case MatchStatus.WAITING:
+        return MatchLifecycle.NOT_STARTED;
+      case MatchStatus.ROUND_1_RUNNING:
+      case MatchStatus.ROUND_1_PAUSED:
+      case MatchStatus.BREAK:
+      case MatchStatus.ROUND_2_RUNNING:
+      case MatchStatus.ROUND_2_PAUSED:
+      case MatchStatus.AWAITING_RESULT_SAVE:
+        return MatchLifecycle.IN_PROGRESS;
+      case MatchStatus.FINISHED:
+        return MatchLifecycle.COMPLETED;
+      default: {
+        const exhaustivePhase: never = phase;
+        throw new Error(`Unsupported match phase: ${exhaustivePhase}`);
       }
     }
   }
