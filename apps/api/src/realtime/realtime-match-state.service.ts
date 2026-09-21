@@ -16,6 +16,7 @@ import {
   type MatchCompletionBlockedReason,
   type MatchExitBlockedReason,
   type MatchExitCapability,
+  type ResultCapability,
   MatchExitMode,
   type PresenceUpdatedPayload,
   RefereeSlot as SharedRefereeSlot,
@@ -105,6 +106,8 @@ export class RealtimeMatchStateService {
       presenceState,
       unresolvedWindow,
       validRounds,
+      completedAppeal,
+      validRoundResults,
     ] = await Promise.all([
       this.prisma.scoreEvent.findMany({
         select: {
@@ -139,6 +142,22 @@ export class RealtimeMatchStateService {
       this.prisma.round.findMany({
         select: { endedAt: true, id: true, roundNumber: true },
         where: { invalidatedAt: null, matchId },
+      }),
+      this.prisma.matchAppeal.findFirst({
+        where: {
+          matchId,
+          scope: 'REGULATION',
+          attemptNumber: 0,
+          status: 'COMPLETED',
+          invalidatedAt: null,
+        },
+        include: {
+          adjustments: { include: { athlete: { select: { color: true } } } },
+        },
+      }),
+      this.prisma.roundAthleteResult.findMany({
+        where: { matchId, invalidatedAt: null },
+        select: { athleteId: true, roundId: true },
       }),
     ]);
     const canonical = calculateMatchScoreProjection({
@@ -198,6 +217,13 @@ export class RealtimeMatchStateService {
         validRounds,
         unresolvedWindow,
       ),
+      result: this.resultCapability(
+        match,
+        validRounds,
+        unresolvedWindow,
+        completedAppeal,
+        validRoundResults.length,
+      ),
       exit: this.exitCapability(match, validRounds, unresolvedWindow),
       generatedAt: new Date().toISOString(),
       match: {
@@ -215,6 +241,63 @@ export class RealtimeMatchStateService {
       readiness: this.readinessFromPresence(presenceState),
       scoreboardConnectedCount: presenceState.scoreboardConnectedCount,
       ...(viewerState === undefined ? {} : { viewer: viewerState }),
+    };
+  }
+
+  private resultCapability(
+    match: { lifecycle: MatchLifecycle; status: MatchStatus },
+    rounds: Array<{ endedAt: Date | null; roundNumber: number }>,
+    unresolved: { id: string } | null,
+    appeal: {
+      adjustments: Array<{
+        baseRefereeScore: number;
+        bonusPoints: number;
+        penaltyPoints: number;
+        finalScore: number;
+        athlete: { color: AthleteColor };
+      }>;
+    } | null,
+    validRoundResultCount: number,
+  ): ResultCapability {
+    const reasons: ResultCapability['blockedReasons'] = [];
+    if (match.lifecycle === MatchLifecycle.SUSPENDED)
+      reasons.push('MATCH_SUSPENDED');
+    if (match.lifecycle === MatchLifecycle.COMPLETED)
+      reasons.push('MATCH_COMPLETED');
+    if (unresolved) reasons.push('UNRESOLVED_SCORING_WINDOW');
+    if (
+      rounds.filter(
+        (r) => r.endedAt && (r.roundNumber === 1 || r.roundNumber === 2),
+      ).length !== 2 ||
+      validRoundResultCount < 4
+    )
+      reasons.push('ROUND_SUMMARIES_MISSING');
+    if (appeal) reasons.push('APPEAL_ALREADY_COMPLETED');
+    if (match.status !== MatchStatus.REGULATION_APPEAL)
+      reasons.push('NOT_REGULATION_APPEAL');
+    const byColor = new Map(
+      appeal?.adjustments.map((x) => [x.athlete.color, x]) ?? [],
+    );
+    const render = (color: AthleteColor) => {
+      const x = byColor.get(color);
+      return x
+        ? {
+            base: x.baseRefereeScore,
+            bonusPoints: x.bonusPoints,
+            penaltyPoints: x.penaltyPoints,
+            final: x.finalScore,
+          }
+        : null;
+    };
+    const red = render(AthleteColor.RED);
+    const blue = render(AthleteColor.BLUE);
+    return {
+      canCompleteAppeal: reasons.length === 0,
+      canStartOvertime: match.status === MatchStatus.OVERTIME_READY,
+      canPublishResult: match.status === MatchStatus.RESULT_PUBLICATION_READY,
+      blockedReasons: reasons,
+      regulation: { RED: red, BLUE: blue },
+      isTie: red && blue ? red.final === blue.final : null,
     };
   }
 
@@ -301,6 +384,10 @@ export class RealtimeMatchStateService {
       ),
       generatedAt: snapshot.generatedAt,
       completion: snapshot.completion,
+      result: {
+        regulation: snapshot.result.regulation,
+        isTie: snapshot.result.isTie,
+      },
       match: {
         currentRound: snapshot.match.currentRound,
         finishedAt: snapshot.match.finishedAt,
@@ -747,6 +834,17 @@ export class RealtimeMatchStateService {
         return SharedMatchStatus.ROUND_2_PAUSED;
       case MatchStatus.AWAITING_RESULT_SAVE:
         return SharedMatchStatus.AWAITING_RESULT_SAVE;
+      case MatchStatus.REGULATION_APPEAL:
+        return SharedMatchStatus.REGULATION_APPEAL;
+      case MatchStatus.OVERTIME_READY:
+        return SharedMatchStatus.OVERTIME_READY;
+      case MatchStatus.RESULT_PUBLICATION_READY:
+        return SharedMatchStatus.RESULT_PUBLICATION_READY;
+      case MatchStatus.OVERTIME_RUNNING:
+      case MatchStatus.OVERTIME_PAUSED:
+      case MatchStatus.OVERTIME_APPEAL:
+      case MatchStatus.OVERTIME_TIEBREAK_DECISION:
+        throw new Error(`Unsupported match status in this phase: ${status}`);
       case MatchStatus.FINISHED:
         return SharedMatchStatus.FINISHED;
       default: {

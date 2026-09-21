@@ -158,6 +158,43 @@ export class ScoringService implements OnModuleDestroy {
     }
   }
 
+  /** Used by a locked round-end transaction so a voting window whose deadline
+   * has already passed cannot leave a stale regulation summary behind. */
+  async resolveDueWindowsLocked(
+    transaction: Prisma.TransactionClient,
+    matchId: string,
+    matchPublicId: string,
+    resolvedAt: Date,
+  ): Promise<void> {
+    for (;;) {
+      const window = await transaction.scoringWindow.findFirst({
+        orderBy: { startedAt: 'asc' },
+        select: {
+          endsAt: true,
+          id: true,
+          matchId: true,
+          roundElapsedMs: true,
+          roundId: true,
+          roundNumber: true,
+          startedAt: true,
+        },
+        where: {
+          matchId,
+          invalidatedAt: null,
+          resolvedAt: null,
+          endsAt: { lte: resolvedAt },
+        },
+      });
+      if (!window) return;
+      await this.resolveLockedWindow(
+        transaction,
+        window,
+        resolvedAt,
+        matchPublicId,
+      );
+    }
+  }
+
   async submitVote(input: {
     athlete: AthleteColor;
     matchId: string;

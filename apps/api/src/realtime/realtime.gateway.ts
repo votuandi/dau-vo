@@ -29,6 +29,9 @@ import {
   type ResultCancellationResponse,
   type ResultCancellationUndoResponse,
   type MatchCompletionResponse,
+  type AppealCompletePayload,
+  type AppealCompleteResponse,
+  type AppealCompleteResult,
   MatchExitMode,
   type MatchExitResponse,
   type MatchExitCommandPayload,
@@ -102,6 +105,13 @@ import {
   ScoringService,
   type ScoringResolutionTransition,
 } from './scoring.service';
+import {
+  AppealIdempotencyError,
+  AppealIdentityError,
+  AppealStateError,
+  MAX_REGULATION_APPEAL_POINTS,
+  RegulationAppealService,
+} from './regulation-appeal.service';
 import {
   MATCH_SOCKET_PATH,
   BRACKET_PROGRESSION_LOCKED_ERROR,
@@ -220,6 +230,8 @@ export class RealtimeGateway
     private readonly lifecycle: MatchLifecycleService,
     @Inject(ScoringService)
     private readonly scoring: ScoringService,
+    @Inject(RegulationAppealService)
+    private readonly appeals: RegulationAppealService,
     @Inject(PenaltyService)
     private readonly penalties: PenaltyService,
     @Inject(FaultService)
@@ -453,6 +465,90 @@ export class RealtimeGateway
       );
     }
     return { completed: transition.completed, ok: true };
+  }
+
+  @SubscribeMessage(RealtimeEvent.APPEAL_COMPLETE)
+  async completeAppeal(
+    @ConnectedSocket() client: RealtimeSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<AppealCompleteResponse> {
+    if (!this.isAppealPayload(payload))
+      return {
+        ok: false,
+        error: {
+          code: 'APPEAL_INVALID_PAYLOAD',
+          message:
+            'Appeal must contain complete integer RED and BLUE adjustments and an idempotency key',
+        },
+      };
+    if (this.isScoreboardSocket(client))
+      return { ok: false, error: REALTIME_AUTHENTICATION_ERROR };
+    const command = await this.inspectorCommand(client);
+    if (!command)
+      return {
+        ok: false,
+        error: {
+          code: 'APPEAL_FORBIDDEN',
+          message: 'Only the active inspector may complete an appeal',
+        },
+      };
+    if (
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    )
+      return { ok: false, error: REALTIME_AUTHENTICATION_ERROR };
+    try {
+      const transition = await this.appeals.complete({
+        matchId: command.matchId,
+        identity: command.identity,
+        payload,
+      });
+      await this.broadcastMatchState(
+        transition.matchId,
+        transition.matchPublicId,
+      );
+      return {
+        ok: true,
+        appeal: {
+          appealId: transition.appealId,
+          matchPublicId: transition.matchPublicId,
+          phase: transition.phase as AppealCompleteResult['phase'],
+          regulation: transition.regulation,
+          isTie: transition.isTie,
+        },
+      };
+    } catch (error: unknown) {
+      if (error instanceof AppealIdentityError) {
+        this.revokeCommandSocket(client, command.identity);
+        return {
+          ok: false,
+          error: { code: 'APPEAL_STALE_ASSIGNMENT', message: error.message },
+        };
+      }
+      if (error instanceof AppealIdempotencyError)
+        return {
+          ok: false,
+          error: {
+            code: 'APPEAL_IDEMPOTENCY_CONFLICT',
+            message: error.message,
+          },
+        };
+      if (error instanceof AppealStateError)
+        return {
+          ok: false,
+          error: { code: 'APPEAL_INVALID_STATE', message: error.message },
+        };
+      this.logger.error(
+        { error, matchId: command.matchId },
+        'Unable to complete regulation appeal',
+      );
+      return {
+        ok: false,
+        error: {
+          code: 'APPEAL_FAILED',
+          message: 'The appeal could not be completed',
+        },
+      };
+    }
   }
 
   @SubscribeMessage(RealtimeEvent.MATCH_EXIT)
@@ -1682,6 +1778,59 @@ export class RealtimeGateway
         (typeof candidate.traceId === 'string' &&
           candidate.traceId.length <= 128))
     );
+  }
+
+  private isAppealPayload(payload: unknown): payload is AppealCompletePayload {
+    if (
+      typeof payload !== 'object' ||
+      payload === null ||
+      Array.isArray(payload)
+    )
+      return false;
+    const value = payload as Record<string, unknown>;
+    if (
+      !Object.keys(value).every(
+        (key) =>
+          key === 'RED' ||
+          key === 'BLUE' ||
+          key === 'idempotencyKey' ||
+          key === 'traceId',
+      )
+    )
+      return false;
+    if (
+      typeof value.idempotencyKey !== 'string' ||
+      value.idempotencyKey.length < 1 ||
+      value.idempotencyKey.length > 255
+    )
+      return false;
+    if (
+      value.traceId !== undefined &&
+      (typeof value.traceId !== 'string' || value.traceId.length > 128)
+    )
+      return false;
+    const adjustment = (candidate: unknown): boolean => {
+      if (
+        typeof candidate !== 'object' ||
+        candidate === null ||
+        Array.isArray(candidate)
+      )
+        return false;
+      const record = candidate as Record<string, unknown>;
+      return (
+        Object.keys(record).length === 2 &&
+        Object.keys(record).every(
+          (key) => key === 'bonusPoints' || key === 'penaltyPoints',
+        ) &&
+        Number.isInteger(record.bonusPoints) &&
+        Number.isInteger(record.penaltyPoints) &&
+        (record.bonusPoints as number) >= 0 &&
+        (record.penaltyPoints as number) >= 0 &&
+        (record.bonusPoints as number) <= MAX_REGULATION_APPEAL_POINTS &&
+        (record.penaltyPoints as number) <= MAX_REGULATION_APPEAL_POINTS
+      );
+    };
+    return adjustment(value.RED) && adjustment(value.BLUE);
   }
 
   private isResultCancellationUndoPayload(

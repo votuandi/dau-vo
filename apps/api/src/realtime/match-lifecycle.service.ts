@@ -25,6 +25,8 @@ import {
   MatchResultOperationType,
   MatchStatus,
   MatchOfficialAssignmentReleaseReason,
+  MatchRulesVersion,
+  ScoreEventType,
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 
@@ -35,6 +37,7 @@ import { MatchOfficialAssignmentLifecycleService } from '../match-official-assig
 import { RealtimeOfficialRoutingService } from './realtime-official-routing.service';
 import { RealtimeSessionRegistryService } from './realtime-session-registry.service';
 import { auditActor, type InspectorCommandIdentity } from './command-identity';
+import { ScoringService } from './scoring.service';
 import {
   InactiveRoundStartSessionError,
   InactiveRoundControlSessionError,
@@ -168,6 +171,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
     private readonly officialRouting: RealtimeOfficialRoutingService,
     @Inject(RealtimeSessionRegistryService)
     private readonly sessions: RealtimeSessionRegistryService,
+    @Inject(ScoringService)
+    private readonly scoring: ScoringService,
   ) {}
 
   onModuleDestroy(): void {
@@ -1391,6 +1396,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
             select: {
               currentRound: true,
               publicId: true,
+              rulesVersion: true,
               status: true,
             },
             where: { id: matchId },
@@ -1427,7 +1433,9 @@ export class MatchLifecycleService implements OnModuleDestroy {
         const nextStatus =
           round.roundNumber === 1
             ? MatchStatus.BREAK
-            : MatchStatus.AWAITING_RESULT_SAVE;
+            : match.rulesVersion === MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2
+              ? MatchStatus.REGULATION_APPEAL
+              : MatchStatus.AWAITING_RESULT_SAVE;
         const endedAt = round.endsAt;
         const endedRound = await transaction.round.update({
           data: { endedAt },
@@ -1442,6 +1450,53 @@ export class MatchLifecycleService implements OnModuleDestroy {
           },
           where: { id: round.id },
         });
+
+        await this.scoring.resolveDueWindowsLocked(
+          transaction,
+          matchId,
+          match.publicId,
+          clock.serverNow,
+        );
+
+        if (match.rulesVersion === MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2) {
+          const [athletes, eventTotals, faultTotals] = await Promise.all([
+            transaction.matchAthlete.findMany({
+              where: { matchId },
+              select: { id: true },
+            }),
+            transaction.scoreEvent.groupBy({
+              by: ['athleteId'],
+              _sum: { value: true },
+              where: {
+                matchId,
+                roundId: round.id,
+                type: ScoreEventType.REFEREE_POINT,
+                revertedAt: null,
+              },
+            }),
+            transaction.fault.groupBy({
+              by: ['athleteId'],
+              _count: { id: true },
+              where: { matchId, roundId: round.id, invalidatedAt: null },
+            }),
+          ]);
+          const points = new Map(
+            eventTotals.map((x) => [x.athleteId, x._sum.value ?? 0]),
+          );
+          const faults = new Map(
+            faultTotals.map((x) => [x.athleteId, x._count.id]),
+          );
+          await transaction.roundAthleteResult.createMany({
+            data: athletes.map((athlete) => ({
+              matchId,
+              roundId: round.id,
+              athleteId: athlete.id,
+              refereePoints: points.get(athlete.id) ?? 0,
+              faultCount: faults.get(athlete.id) ?? 0,
+              capturedAt: endedAt,
+            })),
+          });
+        }
 
         await transaction.match.update({
           data: {
@@ -1765,6 +1820,17 @@ export class MatchLifecycleService implements OnModuleDestroy {
         return SharedMatchStatus.ROUND_2_PAUSED;
       case MatchStatus.AWAITING_RESULT_SAVE:
         return SharedMatchStatus.AWAITING_RESULT_SAVE;
+      case MatchStatus.REGULATION_APPEAL:
+        return SharedMatchStatus.REGULATION_APPEAL;
+      case MatchStatus.OVERTIME_READY:
+        return SharedMatchStatus.OVERTIME_READY;
+      case MatchStatus.RESULT_PUBLICATION_READY:
+        return SharedMatchStatus.RESULT_PUBLICATION_READY;
+      case MatchStatus.OVERTIME_RUNNING:
+      case MatchStatus.OVERTIME_PAUSED:
+      case MatchStatus.OVERTIME_APPEAL:
+      case MatchStatus.OVERTIME_TIEBREAK_DECISION:
+        throw new Error(`Unsupported match status in this phase: ${status}`);
       case MatchStatus.FINISHED:
         return SharedMatchStatus.FINISHED;
       default: {
@@ -1784,6 +1850,14 @@ export class MatchLifecycleService implements OnModuleDestroy {
       case MatchStatus.ROUND_2_RUNNING:
       case MatchStatus.ROUND_2_PAUSED:
       case MatchStatus.AWAITING_RESULT_SAVE:
+      case MatchStatus.REGULATION_APPEAL:
+      case MatchStatus.OVERTIME_READY:
+      case MatchStatus.RESULT_PUBLICATION_READY:
+        return MatchLifecycle.IN_PROGRESS;
+      case MatchStatus.OVERTIME_RUNNING:
+      case MatchStatus.OVERTIME_PAUSED:
+      case MatchStatus.OVERTIME_APPEAL:
+      case MatchStatus.OVERTIME_TIEBREAK_DECISION:
         return MatchLifecycle.IN_PROGRESS;
       case MatchStatus.FINISHED:
         return MatchLifecycle.COMPLETED;

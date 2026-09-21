@@ -1,6 +1,8 @@
 import type {
   MatchFinishedPayload,
   MatchCompletionResponse,
+  AppealCompletePayload,
+  AppealCompleteResponse,
   MatchExitCommandPayload,
   MatchExitResponse,
   MatchStatePayload,
@@ -66,6 +68,10 @@ export interface ClientToServerEvents {
   ) => void;
   'match:complete': (
     acknowledge: (response: MatchCompletionResponse) => void,
+  ) => void;
+  'appeal:complete': (
+    payload: AppealCompletePayload,
+    acknowledge: (response: AppealCompleteResponse) => void,
   ) => void;
   'match:exit': (
     payload: MatchExitCommandPayload,

@@ -14,6 +14,7 @@ export const RealtimeEvent = {
   PUBLIC_MATCH_STATE_REQUEST: 'scoreboard:state:request',
   MATCH_FINISHED: 'match:finished',
   MATCH_COMPLETE: 'match:complete',
+  APPEAL_COMPLETE: 'appeal:complete',
   MATCH_EXIT: 'match:exit',
   MATCH_COMPLETED: 'match:completed',
   MATCH_RESET: 'match:reset',
@@ -62,6 +63,30 @@ export type MatchCompletionBlockedReason =
 export interface MatchCompletionCapability {
   canComplete: boolean;
   blockedReasons: MatchCompletionBlockedReason[];
+}
+
+export type ResultCapabilityBlockedReason =
+  | 'MATCH_SUSPENDED'
+  | 'MATCH_COMPLETED'
+  | 'NOT_REGULATION_APPEAL'
+  | 'ROUND_SUMMARIES_MISSING'
+  | 'UNRESOLVED_SCORING_WINDOW'
+  | 'APPEAL_ALREADY_COMPLETED'
+  | 'NOT_OVERTIME_READY'
+  | 'NOT_AWAITING_PUBLICATION';
+export interface RegulationScoreBreakdown {
+  base: number;
+  bonusPoints: number;
+  penaltyPoints: number;
+  final: number;
+}
+export interface ResultCapability {
+  canCompleteAppeal: boolean;
+  canStartOvertime: boolean;
+  canPublishResult: boolean;
+  blockedReasons: ResultCapabilityBlockedReason[];
+  regulation: { RED: RegulationScoreBreakdown | null; BLUE: RegulationScoreBreakdown | null };
+  isTie: boolean | null;
 }
 
 export type MatchExitBlockedReason =
@@ -231,6 +256,7 @@ export interface MatchStatePayload {
   activeScoringWindow: MatchScoringWindowState | null;
   athletes: MatchStateAthlete[];
   completion: MatchCompletionCapability;
+  result: ResultCapability;
   exit: MatchExitCapability;
   generatedAt: string;
   match: MatchStateIdentity;
@@ -280,6 +306,7 @@ export interface PublicMatchStatePayload {
     violations: number;
   }>;
   completion: MatchCompletionCapability;
+  result: Pick<ResultCapability, 'isTie' | 'regulation'>;
   generatedAt: string;
   match: Omit<MatchStateIdentity, 'id' | 'startedAt'>;
 }
@@ -374,6 +401,36 @@ export type MatchCompletionErrorCode =
 export type MatchCompletionResponse =
   | { ok: true; completed: MatchFinishedPayload }
   | { error: { code: MatchCompletionErrorCode; message: string }; ok: false };
+
+export interface AppealCompletePayload {
+  RED: { bonusPoints: number; penaltyPoints: number };
+  BLUE: { bonusPoints: number; penaltyPoints: number };
+  idempotencyKey: string;
+  traceId?: string;
+}
+export interface AppealCompleteResult {
+  appealId: string;
+  matchPublicId: string;
+  phase: MatchPhase;
+  regulation: { RED: RegulationScoreBreakdown; BLUE: RegulationScoreBreakdown };
+  isTie: boolean;
+}
+export type AppealCompleteResponse =
+  | { ok: true; appeal: AppealCompleteResult }
+  | {
+      ok: false;
+      error: {
+        code:
+          | 'APPEAL_INVALID_PAYLOAD'
+          | 'APPEAL_FORBIDDEN'
+          | 'APPEAL_INVALID_STATE'
+          | 'APPEAL_STALE_ASSIGNMENT'
+          | 'APPEAL_IDEMPOTENCY_CONFLICT'
+          | 'APPEAL_FAILED'
+          | 'REALTIME_AUTHENTICATION_REQUIRED';
+        message: string;
+      };
+    };
 
 export type RoundStartErrorCode =
   | 'SPORT_GROUP_RULES_NOT_IMPLEMENTED'
