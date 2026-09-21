@@ -38,6 +38,7 @@ export type {
   MatchCompletionResponse,
   MatchExitBlockedReason,
   MatchExitCapability,
+  MatchExitCommandPayload,
   MatchExitPayload,
   MatchExitResponse,
   MatchRoundState,

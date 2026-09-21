@@ -91,6 +91,12 @@ function voteAcknowledgementMatchesReferee(
   );
 }
 
+function createMatchExitTraceId(): string {
+  const generated = globalThis.crypto?.randomUUID?.();
+  if (generated) return generated;
+  return `match-exit-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+}
+
 export interface MatchRealtimeState {
   readonly connectionStatus: RealtimeConnectionStatus;
   readonly connect: () => void;
@@ -671,7 +677,16 @@ export function useMatchRealtime({
   const exitMatch = useCallback(
     async (mode: MatchExitMode): Promise<boolean> => {
       const socket = getSocketClient();
+      const traceId = createMatchExitTraceId();
+      const startedAt = performance.now();
       if (resultCancellationInFlightRef.current || !socket.connected) {
+        console.info('[match-realtime]', 'match-exit-not-sent', {
+          inFlight: resultCancellationInFlightRef.current,
+          matchPublicId,
+          socketConnected: socket.connected,
+          socketId: socket.id,
+          traceId,
+        });
         setResultCancellationErrorMessage(
           'Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi thoát trận.',
         );
@@ -680,13 +695,19 @@ export function useMatchRealtime({
       resultCancellationInFlightRef.current = true;
       setCancellingResults(true);
       setResultCancellationErrorMessage(null);
+      console.info('[match-realtime]', 'match-exit-requested', {
+        matchPublicId,
+        mode,
+        socketId: socket.id,
+        traceId,
+      });
       try {
         const response = await new Promise<MatchExitResponse>((resolve, reject) =>
           socket
             .timeout(10_000)
             .emit(
               RealtimeEvent.MATCH_EXIT,
-              { mode },
+              { mode, traceId },
               (error: Error | null, acknowledgement: MatchExitResponse) => {
                 if (error) reject(error);
                 else resolve(acknowledgement);
@@ -694,10 +715,26 @@ export function useMatchRealtime({
             ),
         );
         if (!response.ok) {
+          console.info('[match-realtime]', 'match-exit-rejected', {
+            durationMs: Math.round(performance.now() - startedAt),
+            errorCode: response.error.code,
+            errorMessage: response.error.message,
+            matchPublicId,
+            mode,
+            socketId: socket.id,
+            traceId,
+          });
           setResultCancellationErrorMessage(response.error.message);
           socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
           return false;
         }
+        console.info('[match-realtime]', 'match-exit-acknowledged', {
+          durationMs: Math.round(performance.now() - startedAt),
+          matchPublicId,
+          mode,
+          socketId: socket.id,
+          traceId,
+        });
         onMatchExitAcknowledged?.();
         toast({
           title:
@@ -707,7 +744,15 @@ export function useMatchRealtime({
           variant: 'success',
         });
         return true;
-      } catch {
+      } catch (error: unknown) {
+        console.info('[match-realtime]', 'match-exit-transport-failed', {
+          durationMs: Math.round(performance.now() - startedAt),
+          errorMessage: error instanceof Error ? error.message : String(error),
+          matchPublicId,
+          mode,
+          socketId: socket.id,
+          traceId,
+        });
         setResultCancellationErrorMessage(
           'Máy chủ không phản hồi. Vui lòng kiểm tra trạng thái và thử lại.',
         );
@@ -717,7 +762,7 @@ export function useMatchRealtime({
         setCancellingResults(false);
       }
     },
-    [onMatchExitAcknowledged],
+    [matchPublicId, onMatchExitAcknowledged],
   );
 
   const submitVote = useCallback(async (athlete: AthleteColor) => {

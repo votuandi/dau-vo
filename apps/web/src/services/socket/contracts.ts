@@ -1,7 +1,7 @@
 import type {
   MatchFinishedPayload,
   MatchCompletionResponse,
-  MatchExitMode,
+  MatchExitCommandPayload,
   MatchExitResponse,
   MatchStatePayload,
   PublicMatchStatePayload,
@@ -74,7 +74,7 @@ export interface ClientToServerEvents {
   'match:reset': (acknowledge: (response: ResultCancellationResponse) => void) => void;
   'match:complete': (acknowledge: (response: MatchCompletionResponse) => void) => void;
   'match:exit': (
-    payload: { mode: MatchExitMode },
+    payload: MatchExitCommandPayload,
     acknowledge: (response: MatchExitResponse) => void,
   ) => void;
   'result-cancellation:undo': (

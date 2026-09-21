@@ -27,6 +27,7 @@ import {
   type MatchCompletionResponse,
   MatchExitMode,
   type MatchExitResponse,
+  type MatchExitCommandPayload,
   type VoteSubmitError,
   type VoteSubmitPayload,
   type VoteSubmitResponse,
@@ -138,14 +139,40 @@ import type {
   ServerToClientEvents,
 } from './realtime.types';
 
-function isExitPayload(value: unknown): value is { mode: MatchExitMode } {
+const MAX_MATCH_EXIT_TRACE_ID_LENGTH = 128;
+
+function isExitPayload(value: unknown): value is MatchExitCommandPayload {
   if (typeof value !== 'object' || value === null) return false;
-  const mode = (value as { mode?: unknown }).mode;
+  const { mode, traceId } = value as { mode?: unknown; traceId?: unknown };
   return (
-    mode === MatchExitMode.CANCEL_RESULTS ||
-    mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 ||
-    mode === MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2
+    (mode === MatchExitMode.CANCEL_RESULTS ||
+      mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 ||
+      mode === MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2) &&
+    (traceId === undefined ||
+      (typeof traceId === 'string' &&
+        traceId.length > 0 &&
+        traceId.length <= MAX_MATCH_EXIT_TRACE_ID_LENGTH))
   );
+}
+
+function exitTraceId(payload: unknown): string | undefined {
+  if (typeof payload !== 'object' || payload === null) return undefined;
+  const traceId = (payload as { traceId?: unknown }).traceId;
+  return typeof traceId === 'string' &&
+    traceId.length > 0 &&
+    traceId.length <= MAX_MATCH_EXIT_TRACE_ID_LENGTH
+    ? traceId
+    : undefined;
+}
+
+function prismaErrorDetails(error: unknown): Record<string, unknown> {
+  if (typeof error !== 'object' || error === null) return {};
+  const candidate = error as { code?: unknown; meta?: unknown };
+  return {
+    prismaErrorCode:
+      typeof candidate.code === 'string' ? candidate.code : undefined,
+    prismaMeta: candidate.meta,
+  };
 }
 
 /**
@@ -419,7 +446,20 @@ export class RealtimeGateway
     @ConnectedSocket() client: RealtimeSocket,
     @MessageBody() payload: unknown,
   ): Promise<MatchExitResponse> {
-    if (this.isScoreboardSocket(client))
+    const startedAt = Date.now();
+    const traceId = exitTraceId(payload);
+    const baseLog = {
+      clientId: client.id,
+      connectionKind: client.data.connectionKind,
+      mode:
+        typeof payload === 'object' && payload !== null
+          ? (payload as { mode?: unknown }).mode
+          : undefined,
+      traceId,
+    };
+    this.logger.log(baseLog, 'Match exit received');
+    if (this.isScoreboardSocket(client)) {
+      this.logger.warn(baseLog, 'Match exit rejected: scoreboard socket');
       return {
         ok: false,
         error: {
@@ -427,8 +467,10 @@ export class RealtimeGateway
           message: 'Phiên đăng nhập không hợp lệ.',
         },
       };
+    }
     const command = await this.inspectorCommand(client);
-    if (!command || !isExitPayload(payload))
+    if (!command) {
+      this.logger.warn(baseLog, 'Match exit rejected: authorization failed');
       return {
         ok: false,
         error: {
@@ -437,9 +479,48 @@ export class RealtimeGateway
             'Chỉ giám sát viên đang được phân công mới có thể thoát trận.',
         },
       };
+    }
+    if (!isExitPayload(payload)) {
+      this.logger.warn(baseLog, 'Match exit rejected: payload invalid');
+      return {
+        ok: false,
+        error: {
+          code: 'MATCH_EXIT_FORBIDDEN',
+          message:
+            'Chỉ giám sát viên đang được phân công mới có thể thoát trận.',
+        },
+      };
+    }
+    const commandLog = {
+      ...baseLog,
+      assignmentId:
+        command.identity.kind === 'official'
+          ? command.identity.assignmentId
+          : undefined,
+      identityKind: command.identity.kind,
+      matchId: command.matchId,
+      officialId:
+        command.identity.kind === 'official'
+          ? command.identity.officialId
+          : undefined,
+      officialSessionId:
+        command.identity.kind === 'official'
+          ? command.identity.officialSessionId
+          : undefined,
+      publicMatchId: command.publicMatchId,
+      sessionId:
+        command.identity.kind === 'legacy'
+          ? command.identity.sessionId
+          : undefined,
+    };
+    this.logger.log(commandLog, 'Match exit command authorized');
     if (
       !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
-    )
+    ) {
+      this.logger.warn(
+        commandLog,
+        'Match exit rejected: room membership failed',
+      );
       return {
         ok: false,
         error: {
@@ -447,12 +528,14 @@ export class RealtimeGateway
           message: 'Phiên đăng nhập không hợp lệ.',
         },
       };
+    }
     let transition: MatchExitTransition;
     try {
       transition = await this.lifecycle.exitMatch({
         matchId: command.matchId,
         identity: command.identity,
         mode: payload.mode,
+        traceId: payload.traceId,
       });
     } catch (error: unknown) {
       if (
@@ -477,7 +560,12 @@ export class RealtimeGateway
           },
         };
       this.logger.error(
-        { error, matchId: command.matchId },
+        {
+          ...commandLog,
+          durationMs: Date.now() - startedAt,
+          ...prismaErrorDetails(error),
+          error,
+        },
         'Unable to exit match',
       );
       return {
@@ -488,6 +576,14 @@ export class RealtimeGateway
         },
       };
     }
+    this.logger.log(
+      {
+        ...commandLog,
+        durationMs: Date.now() - startedAt,
+        releasedOfficialCount: transition.releasedOfficialIds.length,
+      },
+      'Match exit committed',
+    );
     try {
       if (transition.releasedOfficialIds.length > 0)
         this.officialRouting.publishReleased({

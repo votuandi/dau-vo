@@ -240,6 +240,12 @@ export interface MatchStatePayload {
   viewer?: MatchStateViewer;
 }
 
+export interface MatchExitCommandPayload {
+  mode: MatchExitMode;
+  /** Optional local-development correlation ID; it must not contain credentials. */
+  traceId?: string;
+}
+
 export interface MatchExitPayload {
   matchPublicId: string;
   mode: MatchExitMode;

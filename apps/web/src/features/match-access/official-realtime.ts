@@ -158,6 +158,21 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
       // Deliberately IDs/status only: never include cookies, tokens, or passcodes.
       console.info('[official-realtime]', event, details);
     };
+    const assignmentDiagnostic = (
+      event: string,
+      next: OfficialAssignment | null,
+      details?: Record<string, unknown>,
+    ) => {
+      diagnostic(event, {
+        assigned: next !== null,
+        assignmentId: next?.id ?? null,
+        matchId: next?.match.id ?? null,
+        matchPublicId: next?.match.publicId ?? null,
+        matchStatus: next?.match.status ?? null,
+        sessionId,
+        ...details,
+      });
+    };
     const revoke = () => {
       if (disposed || identityRef.current !== identity || revoked) return;
 
@@ -178,7 +193,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
     };
     const apply = (next: OfficialAssignment | null, source: string) => {
       if (next !== null && releasedAssignmentIds.current.has(next.id)) {
-        diagnostic('assignment-rejected', { source: 'retired', sessionId });
+        assignmentDiagnostic('assignment-rejected', next, { source: 'retired' });
         return false;
       }
       eventEpoch.current += 1;
@@ -200,7 +215,7 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
                 }
               : current,
         );
-        diagnostic('assignment-accepted', { source, assigned: next !== null, sessionId });
+        assignmentDiagnostic('assignment-accepted', next, { source });
         return next;
       });
       return true;
@@ -216,6 +231,9 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
       diagnostic('reconcile-requested', { reason, sessionId });
       try {
         const response = await officialAccessApi.session();
+        assignmentDiagnostic('reconcile-response-received', response.session.activeAssignment, {
+          source: `http:${reason}`,
+        });
         if (
           disposed ||
           identityRef.current !== identity ||
@@ -263,21 +281,27 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
         payload.official.id !== officialId ||
         payload.tournament.id !== tournamentId
       ) {
-        diagnostic('assignment-rejected', { source: 'snapshot', sessionId });
+        assignmentDiagnostic('assignment-rejected', assignmentFromSnapshot(payload.assignment), {
+          source: 'snapshot',
+        });
         return;
       }
       // Socket.IO preserves a connection's ordering, but an async server
       // revalidation may still have built this snapshot before an assignment
       // update. HTTP reconciliation is the recovery path after an update.
       if (assignmentEventEpoch.current > 0) {
-        diagnostic('assignment-rejected', { source: 'stale-snapshot', sessionId });
+        assignmentDiagnostic('assignment-rejected', assignmentFromSnapshot(payload.assignment), {
+          source: 'stale-snapshot',
+        });
         return;
       }
       apply(assignmentFromSnapshot(payload.assignment), 'snapshot');
     };
     const onUpdated = (payload: OfficialAssignmentUpdatedPayload) => {
       if (payload.officialId !== officialId || payload.tournamentId !== tournamentId) {
-        diagnostic('assignment-rejected', { source: 'updated', sessionId });
+        assignmentDiagnostic('assignment-rejected', assignmentFromSnapshot(payload.assignment), {
+          source: 'updated',
+        });
         return;
       }
       assignmentEventEpoch.current += 1;
@@ -292,6 +316,10 @@ export function useOfficialAssignment(session: OfficialSession | undefined, onRe
         !payload.releasedOfficialIds.includes(officialId)
       )
         return;
+      assignmentDiagnostic('assignment-released-received', assignmentRef.current, {
+        releasedOfficialIds: payload.releasedOfficialIds,
+        source: 'match:assignment-released',
+      });
       if (assignmentRef.current?.match.id === payload.matchId) {
         assignmentEventEpoch.current += 1;
         apply(null, 'released');

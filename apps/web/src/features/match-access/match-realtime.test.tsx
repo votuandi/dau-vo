@@ -272,7 +272,10 @@ describe('useMatchRealtime', () => {
     expect(onMatchExitAcknowledged).toHaveBeenCalledOnce();
     expect(socketHarness.socket.emit).toHaveBeenCalledWith(
       RealtimeEvent.MATCH_EXIT,
-      { mode: MatchExitMode.CANCEL_RESULTS },
+      expect.objectContaining({
+        mode: MatchExitMode.CANCEL_RESULTS,
+        traceId: expect.any(String),
+      }),
       expect.any(Function),
     );
     expect(socketHarness.socket.emit).not.toHaveBeenCalledWith(RealtimeEvent.MATCH_STATE_REQUEST);

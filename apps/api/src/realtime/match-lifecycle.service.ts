@@ -505,15 +505,42 @@ export class MatchLifecycleService implements OnModuleDestroy {
     matchId: string;
     identity: InspectorCommandIdentity;
     mode: MatchExitMode;
+    traceId?: string;
   }): Promise<MatchExitTransition> {
+    const logFields = {
+      assignmentId:
+        input.identity.kind === 'official'
+          ? input.identity.assignmentId
+          : undefined,
+      identityKind: input.identity.kind,
+      matchId: input.matchId,
+      officialId:
+        input.identity.kind === 'official'
+          ? input.identity.officialId
+          : undefined,
+      officialSessionId:
+        input.identity.kind === 'official'
+          ? input.identity.officialSessionId
+          : undefined,
+      sessionId:
+        input.identity.kind === 'legacy' ? input.identity.sessionId : undefined,
+      mode: input.mode,
+      traceId: input.traceId,
+    };
+    this.logger.log(logFields, 'Match exit lifecycle transaction started');
     const result = await this.prisma.$transaction(
       async (transaction) => {
         await this.lockMatch(transaction, input.matchId);
+        this.logger.log(logFields, 'Match exit lifecycle match lock acquired');
         await this.rulesForMatch(transaction, input.matchId);
         await this.lockActiveInspectorIdentity(
           transaction,
           input.matchId,
           input.identity,
+        );
+        this.logger.log(
+          logFields,
+          'Match exit lifecycle active inspector identity verified',
         );
         const clock = await this.serverClock(transaction);
         const match = await transaction.match.findUniqueOrThrow({
@@ -574,6 +601,20 @@ export class MatchLifecycleService implements OnModuleDestroy {
           input.mode === MatchExitMode.CANCEL_RESULTS
             ? MatchLifecycle.NOT_STARTED
             : MatchLifecycle.SUSPENDED;
+        this.logger.log(
+          {
+            ...logFields,
+            completedRounds: rounds
+              .filter((round) => round.endedAt !== null)
+              .map((round) => round.roundNumber),
+            currentRound: match.currentRound,
+            currentStatus: match.status,
+            nextLifecycle,
+            nextStatus,
+            unresolvedScoringWindow: unresolved !== null,
+          },
+          'Match exit lifecycle state evaluated',
+        );
         const audit = await transaction.auditLog.create({
           data: {
             eventType: AuditEventType.MATCH_EXITED,
@@ -687,6 +728,10 @@ export class MatchLifecycleService implements OnModuleDestroy {
                 : null,
           },
         });
+        this.logger.log(
+          { ...logFields, nextLifecycle, nextStatus },
+          'Match exit lifecycle match row updated',
+        );
         const reason =
           input.mode === MatchExitMode.CANCEL_RESULTS
             ? MatchOfficialAssignmentReleaseReason.MATCH_EXIT_CANCELLED
@@ -707,6 +752,14 @@ export class MatchLifecycleService implements OnModuleDestroy {
                 }
               : { sessionId: input.identity.sessionId }),
           });
+        this.logger.log(
+          {
+            ...logFields,
+            releasedOfficialCount: releasedOfficialIds.length,
+            releasedOfficialIds,
+          },
+          'Match exit lifecycle official assignments released',
+        );
         return {
           matchId: input.matchId,
           matchPublicId: match.publicId,
