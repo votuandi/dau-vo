@@ -691,6 +691,17 @@ export class MatchLifecycleService implements OnModuleDestroy {
             data: { revertedAt: clock.serverNow, revertedByAuditId: audit.id },
             where: { revertedAt: null, matchId: input.matchId, roundNumber },
           });
+          await transaction.fault.updateMany({
+            data: {
+              invalidatedAt: clock.serverNow,
+              invalidatedByAuditId: audit.id,
+            },
+            where: {
+              invalidatedAt: null,
+              matchId: input.matchId,
+              round: { roundNumber },
+            },
+          });
           await transaction.scoringWindow.updateMany({
             data: {
               invalidatedAt: clock.serverNow,
@@ -1043,6 +1054,17 @@ export class MatchLifecycleService implements OnModuleDestroy {
             ...(entireMatch ? {} : { roundNumber }),
           },
         });
+        await transaction.fault.updateMany({
+          data: {
+            invalidatedAt: clock.serverNow,
+            invalidatedByAuditId: audit.id,
+          },
+          where: {
+            invalidatedAt: null,
+            matchId: input.matchId,
+            ...(entireMatch ? {} : { round: { roundNumber } }),
+          },
+        });
         await transaction.scoringWindow.updateMany({
           data: {
             invalidatedAt: clock.serverNow,
@@ -1168,6 +1190,13 @@ export class MatchLifecycleService implements OnModuleDestroy {
               revertedAt: null,
             },
           }),
+          transaction.fault.count({
+            where: {
+              createdAt: { gt: operation.createdAt },
+              invalidatedAt: null,
+              matchId: input.matchId,
+            },
+          }),
         ]);
         if (
           match.status !== operation.resultingStatus ||
@@ -1188,6 +1217,10 @@ export class MatchLifecycleService implements OnModuleDestroy {
         await transaction.penalty.updateMany({
           data: { revertedAt: null, revertedByAuditId: null },
           where: { matchId: input.matchId, revertedByAuditId: auditId },
+        });
+        await transaction.fault.updateMany({
+          data: { invalidatedAt: null, invalidatedByAuditId: null },
+          where: { invalidatedByAuditId: auditId, matchId: input.matchId },
         });
         await transaction.scoringWindow.updateMany({
           data: { invalidatedAt: null, invalidatedByAuditId: null },

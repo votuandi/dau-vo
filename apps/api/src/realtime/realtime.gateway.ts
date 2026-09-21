@@ -20,6 +20,10 @@ import {
   RealtimeEvent,
   type PenaltyAddPayload,
   type PenaltyAddResponse,
+  type FaultRecordPayload,
+  type FaultRecordResponse,
+  type FaultRecordError,
+  type FaultRecordedPayload,
   type RoundStartResponse,
   type RoundControlResponse,
   type ResultCancellationResponse,
@@ -78,6 +82,14 @@ import {
   RoundEndedForPenaltyError,
 } from './penalty.errors';
 import { PenaltyService, type PenaltyTransition } from './penalty.service';
+import { FaultService } from './fault.service';
+import {
+  FaultMatchNotRunningError,
+  FaultRoundEndedError,
+  FaultRoundPausedError,
+  InactiveFaultInspectorError,
+  InvalidFaultStateError,
+} from './fault.errors';
 import {
   DuplicateRefereeVoteError,
   InactiveVoteSessionError,
@@ -210,6 +222,8 @@ export class RealtimeGateway
     private readonly scoring: ScoringService,
     @Inject(PenaltyService)
     private readonly penalties: PenaltyService,
+    @Inject(FaultService)
+    private readonly faults: FaultService,
   ) {}
 
   afterInit(server: Server): void {
@@ -951,6 +965,96 @@ export class RealtimeGateway
     }
   }
 
+  @SubscribeMessage(RealtimeEvent.FAULT_RECORD)
+  async faultRecord(
+    @ConnectedSocket() client: RealtimeSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<FaultRecordResponse> {
+    if (this.isScoreboardSocket(client))
+      return {
+        ok: false,
+        error: {
+          code: 'REALTIME_AUTHENTICATION_REQUIRED',
+          message: 'Authentication required',
+        },
+      };
+    const command = await this.inspectorCommand(client);
+    if (!command)
+      return {
+        ok: false,
+        error: {
+          code: 'FAULT_FORBIDDEN',
+          message: 'Only an active inspector may record a fault',
+        },
+      };
+    if (
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    )
+      return {
+        ok: false,
+        error: {
+          code: 'REALTIME_AUTHENTICATION_REQUIRED',
+          message: 'Authentication required',
+        },
+      };
+    if (!this.isFaultPayload(payload))
+      return {
+        ok: false,
+        error: {
+          code: 'FAULT_INVALID_ATHLETE',
+          message: 'Athlete must be RED or BLUE',
+        },
+      };
+    try {
+      const transition = await this.faults.record({
+        athlete: payload.athlete,
+        identity: command.identity,
+        matchId: command.matchId,
+        traceId: payload.traceId,
+      });
+      const faultPayload: FaultRecordedPayload = {
+        matchPublicId: transition.matchPublicId,
+        fault: {
+          ...transition.fault,
+          athlete: transition.fault
+            .athlete as unknown as FaultRecordedPayload['fault']['athlete'],
+        },
+      };
+      this.server
+        .to(matchRoom(transition.matchPublicId))
+        .emit(RealtimeEvent.FAULT_RECORDED, faultPayload);
+      await this.broadcastMatchState(
+        transition.matchId,
+        transition.matchPublicId,
+      );
+      return { ok: true, fault: faultPayload.fault };
+    } catch (error) {
+      const mapped: [FaultRecordError['code'], string] =
+        error instanceof InactiveFaultInspectorError
+          ? ['FAULT_STALE_ASSIGNMENT', 'Inspector assignment is stale']
+          : error instanceof FaultRoundPausedError
+            ? ['FAULT_ROUND_PAUSED', 'Round is paused']
+            : error instanceof FaultMatchNotRunningError
+              ? ['FAULT_MATCH_NOT_RUNNING', 'Match is not running']
+              : error instanceof FaultRoundEndedError
+                ? ['FAULT_ROUND_ENDED', 'Round has ended']
+                : error instanceof InvalidFaultStateError
+                  ? ['FAULT_INVALID_STATE', 'Invalid match state']
+                  : ['FAULT_FAILED', 'Fault could not be recorded'];
+      this.logger.error(
+        { error, matchId: command.matchId },
+        'Unable to record fault',
+      );
+      return {
+        ok: false,
+        error: {
+          code: mapped[0] as FaultRecordError['code'],
+          message: mapped[1],
+        },
+      };
+    }
+  }
+
   @SubscribeMessage(RealtimeEvent.PENALTY_ADD)
   async penaltyAdd(
     @ConnectedSocket() client: RealtimeSocket,
@@ -1563,6 +1667,21 @@ export class RealtimeGateway
 
   private isPenaltyPayload(payload: unknown): payload is PenaltyAddPayload {
     return this.isVotePayload(payload);
+  }
+
+  private isFaultPayload(payload: unknown): payload is FaultRecordPayload {
+    if (typeof payload !== 'object' || payload === null) return false;
+    const keys = Object.keys(payload);
+    if (!keys.every((key) => key === 'athlete' || key === 'traceId'))
+      return false;
+    const candidate = payload as Record<string, unknown>;
+    return (
+      (candidate.athlete === AthleteColor.RED ||
+        candidate.athlete === AthleteColor.BLUE) &&
+      (candidate.traceId === undefined ||
+        (typeof candidate.traceId === 'string' &&
+          candidate.traceId.length <= 128))
+    );
   }
 
   private isResultCancellationUndoPayload(

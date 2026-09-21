@@ -8,6 +8,9 @@ import type {
   PenaltyAddedPayload,
   PenaltyAddPayload,
   PenaltyAddResponse,
+  FaultRecordPayload,
+  FaultRecordResponse,
+  FaultRecordedPayload,
   PresenceUpdatedPayload,
   RoundEndedPayload,
   RoundStartedPayload,
@@ -43,6 +46,10 @@ export interface ClientToServerEvents {
   'penalty:add': (
     payload: PenaltyAddPayload,
     acknowledge: (response: PenaltyAddResponse) => void,
+  ) => void;
+  'fault:record': (
+    payload: FaultRecordPayload,
+    acknowledge: (response: FaultRecordResponse) => void,
   ) => void;
   'round:start': (acknowledge: (response: RoundStartResponse) => void) => void;
   'round:pause': (
@@ -91,6 +98,7 @@ export interface ServerToClientEvents {
   'match:state': (payload: MatchStatePayload) => void;
   'scoreboard:state': (payload: PublicMatchStatePayload) => void;
   'penalty:added': (payload: PenaltyAddedPayload) => void;
+  'fault:recorded': (payload: FaultRecordedPayload) => void;
   'presence:updated': (payload: PresenceUpdatedPayload) => void;
   'round:ended': (payload: RoundEndedPayload) => void;
   'round:started': (payload: RoundStartedPayload) => void;

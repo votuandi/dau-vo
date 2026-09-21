@@ -9,6 +9,7 @@ import { RealtimeGateway } from './realtime.gateway';
 import { RealtimeMatchStateService } from './realtime-match-state.service';
 import { MatchLifecycleService } from './match-lifecycle.service';
 import { PenaltyService } from './penalty.service';
+import { FaultService } from './fault.service';
 import { ScoringService } from './scoring.service';
 import { MatchOfficialAssignmentsModule } from '../match-official-assignments/match-official-assignments.module';
 
@@ -25,6 +26,7 @@ import { MatchOfficialAssignmentsModule } from '../match-official-assignments/ma
   providers: [
     MatchLifecycleService,
     PenaltyService,
+    FaultService,
     RealtimeGateway,
     RealtimeMatchStateService,
     ScoringService,

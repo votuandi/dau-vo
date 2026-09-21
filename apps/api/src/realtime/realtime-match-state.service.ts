@@ -25,12 +25,14 @@ import {
   MatchAccessRole,
   MatchLifecycle,
   MatchStatus,
+  MatchRulesVersion,
   RefereeSlot,
 } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
 import { RealtimeSessionRegistryService } from './realtime-session-registry.service';
+import { calculateMatchScoreProjection } from './match-score-projection';
 
 const ACCESS_ROLES = [
   MatchAccessRole.REFEREE_1,
@@ -72,6 +74,7 @@ export class RealtimeMatchStateService {
         finishedAt: true,
         id: true,
         publicId: true,
+        rulesVersion: true,
         rounds: {
           orderBy: { roundNumber: 'desc' },
           select: {
@@ -96,21 +99,31 @@ export class RealtimeMatchStateService {
     }
 
     const [
-      scoreTotals,
+      scoreEvents,
       penaltyTotals,
+      faults,
       presenceState,
       unresolvedWindow,
       validRounds,
     ] = await Promise.all([
-      this.prisma.scoreEvent.groupBy({
-        _sum: { value: true },
-        by: ['athleteId'],
-        where: { matchId, revertedAt: null },
+      this.prisma.scoreEvent.findMany({
+        select: {
+          athleteId: true,
+          revertedAt: true,
+          roundId: true,
+          type: true,
+          value: true,
+        },
+        where: { matchId },
       }),
       this.prisma.penalty.groupBy({
         _count: { id: true },
         by: ['athleteId'],
         where: { matchId, revertedAt: null },
+      }),
+      this.prisma.fault.findMany({
+        select: { athleteId: true, invalidatedAt: true, roundId: true },
+        where: { matchId },
       }),
       this.presence(match.id, match.publicId),
       this.prisma.scoringWindow.findFirst({
@@ -124,15 +137,24 @@ export class RealtimeMatchStateService {
         where: { invalidatedAt: null, matchId, resolvedAt: null },
       }),
       this.prisma.round.findMany({
-        select: { endedAt: true, roundNumber: true },
+        select: { endedAt: true, id: true, roundNumber: true },
         where: { invalidatedAt: null, matchId },
       }),
     ]);
+    const canonical = calculateMatchScoreProjection({
+      athletes: match.athletes.map(({ id, color }) => ({ id, color })),
+      faults,
+      scoreEvents,
+      validRoundIds: validRounds.map((round) => round.id),
+    });
     const scoresByAthlete = new Map(
-      scoreTotals.map((total) => [total.athleteId, total._sum.value ?? 0]),
+      canonical.map((value) => [value.athleteId, value.refereeScore]),
     );
     const violationsByAthlete = new Map(
       penaltyTotals.map((total) => [total.athleteId, total._count.id]),
+    );
+    const faultByAthlete = new Map(
+      canonical.map((value) => [value.athleteId, value.faultCount]),
     );
     const activeRound = this.activeRound(
       match.status,
@@ -157,8 +179,19 @@ export class RealtimeMatchStateService {
         id: athlete.id,
         name: athlete.name,
         organization: athlete.organization,
-        score: scoresByAthlete.get(athlete.id) ?? 0,
-        violations: violationsByAthlete.get(athlete.id) ?? 0,
+        score:
+          match.rulesVersion === MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2
+            ? (scoresByAthlete.get(athlete.id) ?? 0)
+            : scoreEvents
+                .filter(
+                  (event) =>
+                    event.athleteId === athlete.id && event.revertedAt === null,
+                )
+                .reduce((total, event) => total + event.value, 0),
+        violations:
+          match.rulesVersion === MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2
+            ? (faultByAthlete.get(athlete.id) ?? 0)
+            : (violationsByAthlete.get(athlete.id) ?? 0),
       })),
       completion: this.completionCapability(
         match,

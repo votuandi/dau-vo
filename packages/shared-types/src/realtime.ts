@@ -22,6 +22,8 @@ export const RealtimeEvent = {
   RESULT_CANCELLATION_UNDONE: 'result-cancellation:undone',
   PENALTY_ADD: 'penalty:add',
   PENALTY_ADDED: 'penalty:added',
+  FAULT_RECORD: 'fault:record',
+  FAULT_RECORDED: 'fault:recorded',
   PRESENCE_UPDATED: 'presence:updated',
   ROUND_ENDED: 'round:ended',
   ROUND_CANCEL: 'round:cancel',
@@ -499,6 +501,37 @@ export interface ScoreUpdatedPayload {
 export interface PenaltyAddPayload {
   athlete: AthleteColor;
 }
+
+export interface FaultRecordPayload {
+  athlete: AthleteColor;
+  traceId?: string;
+}
+export type FaultRecordErrorCode =
+  | 'REALTIME_AUTHENTICATION_REQUIRED'
+  | 'FAULT_FORBIDDEN'
+  | 'FAULT_STALE_ASSIGNMENT'
+  | 'FAULT_INVALID_ATHLETE'
+  | 'FAULT_ROUND_PAUSED'
+  | 'FAULT_MATCH_NOT_RUNNING'
+  | 'FAULT_ROUND_ENDED'
+  | 'FAULT_INVALID_STATE'
+  | 'FAULT_FAILED';
+export interface FaultRecordError {
+  code: FaultRecordErrorCode;
+  message: string;
+}
+export interface FaultRecordedPayload {
+  matchPublicId: string;
+  fault: {
+    athlete: AthleteColor;
+    athleteId: string;
+    createdAt: string;
+    id: string;
+    roundId: string;
+  };
+}
+export type FaultRecordResponse =
+  { ok: true; fault: FaultRecordedPayload['fault'] } | { ok: false; error: FaultRecordError };
 
 export type PenaltyAddErrorCode =
   | 'SPORT_GROUP_RULES_NOT_IMPLEMENTED'
