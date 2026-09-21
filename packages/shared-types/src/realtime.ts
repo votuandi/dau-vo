@@ -15,8 +15,11 @@ export const RealtimeEvent = {
   MATCH_FINISHED: 'match:finished',
   MATCH_COMPLETE: 'match:complete',
   APPEAL_COMPLETE: 'appeal:complete',
+  OVERTIME_START: 'overtime:start',
   OVERTIME_RESTART: 'overtime:restart',
   OVERTIME_MANUAL_WINNER: 'overtime:manual-winner',
+  RESULT_PUBLISH: 'result:publish',
+  RESULT_PUBLISHED: 'result:published',
   MATCH_EXIT: 'match:exit',
   MATCH_COMPLETED: 'match:completed',
   MATCH_RESET: 'match:reset',
@@ -215,31 +218,31 @@ export interface MatchStateIdentity {
   status: MatchPhase;
 }
 
-export interface MatchRoundState {
+/** A round identity is deliberately not a number: overtime attempts are not
+ * regulation rounds. `roundNumber` remains a temporary UI compatibility alias
+ * and will be removed once legacy consoles render `descriptor` directly. */
+export type RoundDescriptor =
+  | { stage: 'REGULATION'; roundNumber: 1 | 2; attemptNumber: 0 }
+  | { stage: 'OVERTIME'; roundNumber: number; attemptNumber: number };
+
+export type MatchRoundState = RoundDescriptor & {
   endedAt: string | null;
   endsAt: string;
   pausedAt: string | null;
   remainingDurationMs: number | null;
   id: string;
-  /** Regulation is 1/2; overtime is its own stable attempt descriptor. */
-  roundNumber: 1 | 2;
-  stage?: 'REGULATION' | 'OVERTIME';
-  attemptNumber?: number;
   startedAt: string;
-}
+};
 
 /**
  * The current unresolved voting window. This is match-wide state, so it is
  * safe to include in ordinary room broadcasts.
  */
-export interface MatchScoringWindowState {
+export type MatchScoringWindowState = RoundDescriptor & {
   endsAt: string;
   id: string;
-  roundNumber: 1 | 2;
-  stage?: 'REGULATION' | 'OVERTIME';
-  attemptNumber?: number;
   startedAt: string;
-}
+};
 
 export interface MatchStateAthlete {
   color: AthleteColor;
@@ -304,7 +307,7 @@ export type MatchExitResponse =
  * database IDs, session/presence data, access codes, and referee vote details.
  */
 export interface PublicMatchStatePayload {
-  activeRound: MatchRoundState | null;
+  activeRound: Omit<MatchRoundState, 'id'> | null;
   athletes: Array<{
     color: AthleteColor;
     name: string;
@@ -312,11 +315,47 @@ export interface PublicMatchStatePayload {
     score: number;
     violations: number;
   }>;
-  completion: MatchCompletionCapability;
-  result: Pick<ResultCapability, 'isTie' | 'regulation'>;
+  /** Committed appeal scores only; no draft, capability, or referee votes. */
+  committedScores: { RED: number | null; BLUE: number | null };
   generatedAt: string;
-  match: Omit<MatchStateIdentity, 'id' | 'startedAt'>;
+  match: Omit<MatchStateIdentity, 'id' | 'startedAt'> & {
+    outcome: {
+      winner: AthleteColor;
+      method: 'REGULATION_SCORE' | 'OVERTIME_SCORE' | 'MANUAL_AFTER_OVERTIME_TIE';
+    } | null;
+  };
 }
+
+export interface ResultPublishPayload {
+  idempotencyKey: string;
+  traceId?: string;
+}
+export interface ResultPublishedPayload {
+  matchPublicId: string;
+  outcome: {
+    winner: AthleteColor;
+    method: 'REGULATION_SCORE' | 'OVERTIME_SCORE' | 'MANUAL_AFTER_OVERTIME_TIE';
+  };
+  phase: 'FINISHED';
+  finishedAt: string;
+}
+export type ResultPublishResponse =
+  | { ok: true; publication: ResultPublishedPayload }
+  | {
+      ok: false;
+      error: {
+        code:
+          | 'RESULT_PUBLISH_INVALID_PAYLOAD'
+          | 'RESULT_PUBLISH_FORBIDDEN'
+          | 'RESULT_PUBLISH_STALE_ASSIGNMENT'
+          | 'RESULT_PUBLISH_INVALID_STATE'
+          | 'RESULT_PUBLISH_CONFLICT'
+          | 'RESULT_PUBLISH_FAILED'
+          | 'REALTIME_AUTHENTICATION_REQUIRED';
+        message: string;
+        blockedReasons?: ResultCapabilityBlockedReason[];
+      };
+    };
 
 export interface RoundStartedPayload {
   matchPublicId: string;

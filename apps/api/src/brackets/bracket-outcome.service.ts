@@ -23,7 +23,11 @@ export class BracketOutcomeService {
     @Inject(SportRulesRegistry) private readonly rules: SportRulesRegistry,
   ) {}
 
-  async processFinishedMatch(tx: Prisma.TransactionClient, matchId: string) {
+  async processFinishedMatch(
+    tx: Prisma.TransactionClient,
+    matchId: string,
+    publishedWinnerColor?: AthleteColor,
+  ) {
     const match = await tx.match.findUniqueOrThrow({
       where: { id: matchId },
       include: {
@@ -43,9 +47,11 @@ export class BracketOutcomeService {
       evaluatedAt: new Date().toISOString(),
       eventCount: events.length,
     };
-    const winnerColor = this.rules
-      .resolve(match.tournament.sport.sportGroup.code)
-      .determineWinner(totals);
+    const winnerColor =
+      publishedWinnerColor ??
+      this.rules
+        .resolve(match.tournament.sport.sportGroup.code)
+        .determineWinner(totals);
     if (!match.bracketFixtureId) return { snapshot, winnerColor };
     await this.lockFixtureAndDownstream(tx, match.bracketFixtureId);
     const fixture = await tx.bracketFixture.findUniqueOrThrow({

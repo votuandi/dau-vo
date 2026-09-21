@@ -1870,9 +1870,17 @@ export class MatchLifecycleService implements OnModuleDestroy {
       pausedAt: round.pausedAt?.toISOString() ?? null,
       remainingDurationMs: round.remainingDurationMs,
       id: round.id,
-      roundNumber: round.roundNumber as 1 | 2,
-      stage: round.stage,
-      attemptNumber: round.attemptNumber,
+      ...(round.stage === RoundStage.REGULATION
+        ? {
+            roundNumber: round.roundNumber as 1 | 2,
+            stage: 'REGULATION' as const,
+            attemptNumber: 0,
+          }
+        : {
+            roundNumber: round.roundNumber,
+            stage: 'OVERTIME' as const,
+            attemptNumber: round.attemptNumber,
+          }),
       startedAt: round.startedAt.toISOString(),
     };
   }

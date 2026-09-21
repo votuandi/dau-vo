@@ -33,6 +33,8 @@ import {
   type AppealCompleteResponse,
   type AppealCompleteResult,
   type OvertimeActionResponse,
+  type ResultPublishPayload,
+  type ResultPublishResponse,
   MatchExitMode,
   type MatchExitResponse,
   type MatchExitCommandPayload,
@@ -114,6 +116,10 @@ import {
   RegulationAppealService,
 } from './regulation-appeal.service';
 import { OvertimeService } from './overtime.service';
+import {
+  ResultPublicationConflictError,
+  ResultPublicationService,
+} from './result-publication.service';
 import {
   MATCH_SOCKET_PATH,
   BRACKET_PROGRESSION_LOCKED_ERROR,
@@ -236,6 +242,8 @@ export class RealtimeGateway
     private readonly appeals: RegulationAppealService,
     @Inject(OvertimeService)
     private readonly overtime: OvertimeService,
+    @Inject(ResultPublicationService)
+    private readonly publication: ResultPublicationService,
     @Inject(PenaltyService)
     private readonly penalties: PenaltyService,
     @Inject(FaultService)
@@ -401,6 +409,14 @@ export class RealtimeGateway
     return { ok: true, round: transition.payload.round };
   }
 
+  /** Explicit adapter for overtime clients; lifecycle validation still owns phase. */
+  @SubscribeMessage(RealtimeEvent.OVERTIME_START)
+  async overtimeStart(
+    @ConnectedSocket() client: RealtimeSocket,
+  ): Promise<RoundStartResponse> {
+    return this.roundStart(client);
+  }
+
   @SubscribeMessage(RealtimeEvent.ROUND_PAUSE)
   async roundPause(
     @ConnectedSocket() client: RealtimeSocket,
@@ -412,6 +428,10 @@ export class RealtimeGateway
   async completeMatch(
     @ConnectedSocket() client: RealtimeSocket,
   ): Promise<MatchCompletionResponse> {
+    // Kept as a protocol compatibility endpoint only.  FINISHED/COMPLETED is
+    // now exclusively committed by result:publish after an appeal outcome.
+    return { error: MATCH_COMPLETION_NOT_READY_ERROR, ok: false };
+    /*
     if (this.isScoreboardSocket(client))
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
     const command = await this.inspectorCommand(client);
@@ -468,7 +488,123 @@ export class RealtimeGateway
         'Match completion committed but realtime publication failed',
       );
     }
-    return { completed: transition.completed, ok: true };
+    return { completed: transition.completed, ok: true }; */
+  }
+
+  @SubscribeMessage(RealtimeEvent.RESULT_PUBLISH)
+  async publishResult(
+    @ConnectedSocket() client: RealtimeSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<ResultPublishResponse> {
+    if (!this.isPublishPayload(payload))
+      return {
+        ok: false,
+        error: {
+          code: 'RESULT_PUBLISH_INVALID_PAYLOAD',
+          message: 'A valid idempotency key is required.',
+        },
+      };
+    if (this.isScoreboardSocket(client))
+      return { ok: false, error: REALTIME_AUTHENTICATION_ERROR };
+    const command = await this.inspectorCommand(client);
+    if (
+      !command ||
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    )
+      return {
+        ok: false,
+        error: {
+          code: 'RESULT_PUBLISH_FORBIDDEN',
+          message: 'Only the active inspector may publish a result.',
+        },
+      };
+    try {
+      const transition = await this.publication.publish({
+        ...command,
+        traceId: payload.traceId,
+      });
+      const published = {
+        ...transition.publication,
+        outcome: {
+          winner: transition.publication.outcome.winner as never,
+          method: transition.publication.outcome.method as never,
+        },
+      };
+      this.logger.log(
+        {
+          traceId: payload.traceId,
+          matchPublicId: transition.matchPublicId,
+          phaseBefore: 'RESULT_PUBLICATION_READY',
+          phaseAfter: 'FINISHED',
+          outcomeId: transition.publication.outcome.winner,
+          operation: 'result:publish',
+          resultCode: 'RESULT_PUBLISHED',
+        },
+        'Result published',
+      );
+      this.server
+        .to(matchRoom(transition.matchPublicId))
+        .emit(RealtimeEvent.RESULT_PUBLISHED, published);
+      if (transition.releasedOfficialIds.length)
+        this.officialRouting.publishReleased({
+          matchId: transition.matchId,
+          matchPublicId: transition.matchPublicId,
+          tournamentId: transition.tournamentId,
+          releasedOfficialIds: transition.releasedOfficialIds,
+        });
+      await this.broadcastMatchState(
+        transition.matchId,
+        transition.matchPublicId,
+      );
+      return { ok: true, publication: published };
+    } catch (error: unknown) {
+      if (error instanceof AppealIdentityError) {
+        this.revokeCommandSocket(client, command.identity);
+        return {
+          ok: false,
+          error: {
+            code: 'RESULT_PUBLISH_STALE_ASSIGNMENT',
+            message: 'Inspector assignment is stale.',
+          },
+        };
+      }
+      if (error instanceof AppealStateError)
+        return {
+          ok: false,
+          error: {
+            code: 'RESULT_PUBLISH_INVALID_STATE',
+            message: error.message,
+          },
+        };
+      if (
+        error instanceof ResultPublicationConflictError ||
+        error instanceof BracketProgressionLockedError
+      )
+        return {
+          ok: false,
+          error: {
+            code: 'RESULT_PUBLISH_CONFLICT',
+            message: 'Result conflicts with an existing official outcome.',
+          },
+        };
+      this.logger.error(
+        {
+          error,
+          matchPublicId: command.publicMatchId,
+          traceId: payload.traceId,
+          operation: 'result:publish',
+          resultCode: 'RESULT_PUBLISH_FAILED',
+        },
+        'Unable to publish result',
+      );
+      return {
+        ok: false,
+        error: {
+          code: 'RESULT_PUBLISH_FAILED',
+          message: 'Unable to publish the result.',
+        },
+      };
+    }
   }
 
   @SubscribeMessage(RealtimeEvent.APPEAL_COMPLETE)
@@ -1736,7 +1872,7 @@ export class RealtimeGateway
       .to(scoreboardRoom(expectedPublicId))
       .emit(
         RealtimeEvent.PUBLIC_MATCH_STATE,
-        this.matchState.toPublicSnapshot(snapshot),
+        await this.matchState.publicSnapshot(expectedPublicId),
       );
   }
 
@@ -1942,6 +2078,26 @@ export class RealtimeGateway
       );
     };
     return adjustment(value.RED) && adjustment(value.BLUE);
+  }
+
+  private isPublishPayload(payload: unknown): payload is ResultPublishPayload {
+    if (
+      typeof payload !== 'object' ||
+      payload === null ||
+      Array.isArray(payload)
+    )
+      return false;
+    const value = payload as Record<string, unknown>;
+    return (
+      Object.keys(value).every(
+        (key) => key === 'idempotencyKey' || key === 'traceId',
+      ) &&
+      typeof value.idempotencyKey === 'string' &&
+      value.idempotencyKey.length > 0 &&
+      value.idempotencyKey.length <= 255 &&
+      (value.traceId === undefined ||
+        (typeof value.traceId === 'string' && value.traceId.length <= 128))
+    );
   }
 
   private isResultCancellationUndoPayload(

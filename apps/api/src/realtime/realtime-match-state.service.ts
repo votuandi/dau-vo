@@ -137,6 +137,7 @@ export class RealtimeMatchStateService {
           endsAt: true,
           id: true,
           roundNumber: true,
+          round: { select: { stage: true, attemptNumber: true } },
           startedAt: true,
         },
         where: { invalidatedAt: null, matchId, resolvedAt: null },
@@ -369,12 +370,27 @@ export class RealtimeMatchStateService {
       throw new NotFoundException('Match not found');
     }
 
-    return this.toPublicSnapshot(await this.snapshot(match.id));
+    const [snapshot, outcome] = await Promise.all([
+      this.snapshot(match.id),
+      this.prisma.matchOutcome.findUnique({
+        where: { matchId: match.id },
+        select: { winnerColor: true, method: true },
+      }),
+    ]);
+    return this.toPublicSnapshot(snapshot, outcome);
   }
 
-  toPublicSnapshot(snapshot: MatchStatePayload): PublicMatchStatePayload {
+  toPublicSnapshot(
+    snapshot: MatchStatePayload,
+    outcome?: {
+      winnerColor: AthleteColor;
+      method: import('@prisma/client').MatchOutcomeMethod;
+    } | null,
+  ): PublicMatchStatePayload {
     return {
-      activeRound: snapshot.activeRound,
+      activeRound: snapshot.activeRound
+        ? (({ id: _id, ...round }) => round)(snapshot.activeRound)
+        : null,
       athletes: snapshot.athletes.map(
         ({ color, name, organization, score, violations }) => ({
           color,
@@ -385,10 +401,9 @@ export class RealtimeMatchStateService {
         }),
       ),
       generatedAt: snapshot.generatedAt,
-      completion: snapshot.completion,
-      result: {
-        regulation: snapshot.result.regulation,
-        isTie: snapshot.result.isTie,
+      committedScores: {
+        RED: snapshot.result.regulation.RED?.final ?? null,
+        BLUE: snapshot.result.regulation.BLUE?.final ?? null,
       },
       match: {
         currentRound: snapshot.match.currentRound,
@@ -397,6 +412,12 @@ export class RealtimeMatchStateService {
         lifecycle: snapshot.match.lifecycle,
         phase: snapshot.match.phase,
         status: snapshot.match.status,
+        outcome: outcome
+          ? {
+              winner: this.sharedAthleteColor(outcome.winnerColor),
+              method: outcome.method,
+            }
+          : null,
       },
     };
   }
@@ -519,9 +540,17 @@ export class RealtimeMatchStateService {
       id: round.id,
       pausedAt: round.pausedAt?.toISOString() ?? null,
       remainingDurationMs: round.remainingDurationMs,
-      roundNumber: round.roundNumber as 1 | 2,
-      stage: round.stage,
-      attemptNumber: round.attemptNumber,
+      ...(round.stage === 'REGULATION'
+        ? {
+            roundNumber: round.roundNumber as 1 | 2,
+            stage: 'REGULATION' as const,
+            attemptNumber: 0,
+          }
+        : {
+            roundNumber: round.roundNumber,
+            stage: 'OVERTIME' as const,
+            attemptNumber: round.attemptNumber,
+          }),
       startedAt: round.startedAt.toISOString(),
     };
   }
@@ -530,18 +559,42 @@ export class RealtimeMatchStateService {
     endsAt: Date;
     id: string;
     roundNumber: number;
+    round: {
+      stage: import('@prisma/client').RoundStage;
+      attemptNumber: number;
+    } | null;
     startedAt: Date;
   }): MatchScoringWindowState {
-    if (window.roundNumber !== 1 && window.roundNumber !== 2) {
+    if (window.round === null) {
+      throw new Error('Scoring window is missing its round descriptor');
+    }
+    if (
+      window.round.stage === 'REGULATION' &&
+      window.roundNumber !== 1 &&
+      window.roundNumber !== 2
+    ) {
       throw new Error(
         `Unsupported scoring window round number: ${String(window.roundNumber)}`,
       );
     }
 
+    const descriptor =
+      window.round.stage === 'REGULATION'
+        ? {
+            stage: 'REGULATION' as const,
+            roundNumber: window.roundNumber as 1 | 2,
+            attemptNumber: 0 as const,
+          }
+        : {
+            stage: 'OVERTIME' as const,
+            roundNumber: window.roundNumber,
+            attemptNumber: window.round.attemptNumber,
+          };
+
     return {
       endsAt: window.endsAt.toISOString(),
       id: window.id,
-      roundNumber: window.roundNumber,
+      ...descriptor,
       startedAt: window.startedAt.toISOString(),
     };
   }
