@@ -60,13 +60,13 @@ describe('InspectorConsole', () => {
   it('renders the authoritative WAITING → Round 1 → BREAK → Round 2 → FINISHED workflow', async () => {
     const user = userEvent.setup();
     const startRound = vi.fn(() => Promise.resolve());
-    const submitPenalty = vi.fn(() => Promise.resolve());
+    const submitFault = vi.fn(() => Promise.resolve());
     const { rerender } = render(
       <InspectorConsole
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.WAITING),
           startRound,
-          submitPenalty,
+          submitFault,
         })}
       />,
     );
@@ -74,14 +74,14 @@ describe('InspectorConsole', () => {
     expect(screen.getByText('CHỜ BẮT ĐẦU')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'BẮT ĐẦU HIỆP 1' }));
     expect(startRound).toHaveBeenCalledOnce();
-    expect(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toBeDisabled();
 
     rerender(
       <InspectorConsole
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING),
           startRound,
-          submitPenalty,
+          submitFault,
         })}
       />,
     );
@@ -91,19 +91,21 @@ describe('InspectorConsole', () => {
     expect(screen.getAllByText('Lỗi vi phạm:')).toHaveLength(2);
     expect(screen.getAllByText('5')).toHaveLength(1);
     expect(screen.getAllByText('3')).toHaveLength(1);
-    const redPenalty = screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' });
-    await user.click(redPenalty);
-    expect(submitPenalty).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' })).toHaveTextContent('XÁC NHẬN LỖI ĐỎ');
-    await user.click(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' }));
-    expect(submitPenalty).toHaveBeenCalledExactlyOnceWith(AthleteColor.RED);
+    const redFault = screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' });
+    await user.click(redFault);
+    expect(submitFault).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toHaveTextContent(
+      'XÁC NHẬN LỖI ĐỎ',
+    );
+    await user.click(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' }));
+    expect(submitFault).toHaveBeenCalledExactlyOnceWith(AthleteColor.RED);
 
     rerender(
       <InspectorConsole
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.BREAK),
           startRound,
-          submitPenalty,
+          submitFault,
         })}
       />,
     );
@@ -117,27 +119,27 @@ describe('InspectorConsole', () => {
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.ROUND_2_RUNNING),
           startRound,
-          submitPenalty,
+          submitFault,
         })}
       />,
     );
 
     expect(screen.getByText('HIỆP 2')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Ghi lỗi XANH' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV XANH' })).toBeEnabled();
 
     rerender(
       <InspectorConsole
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.FINISHED),
           startRound,
-          submitPenalty,
+          submitFault,
         })}
       />,
     );
 
     expect(screen.getByText('KẾT QUẢ CUỐI CÙNG')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Ghi lỗi XANH' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV XANH' })).toBeDisabled();
   });
 
   it('disables controls when the session is revoked or realtime connection is lost', () => {
@@ -151,8 +153,26 @@ describe('InspectorConsole', () => {
     );
 
     expect(screen.getByText('Mất kết nối')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Ghi lỗi XANH' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV XANH' })).toBeDisabled();
+  });
+
+  it('enables fault recording for a running legacy match', () => {
+    render(
+      <InspectorConsole
+        realtime={createRealtimeState({
+          snapshot: createMatchSnapshot({
+            match: {
+              ...snapshotFor(MatchStatus.ROUND_1_RUNNING).match,
+              rulesVersion: 'LEGACY_SCORE_PENALTY_V1',
+            },
+          }),
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV XANH' })).toBeEnabled();
   });
 
   it('shows match-scoped readiness and disables round start until every required display is connected', () => {
@@ -222,7 +242,7 @@ describe('InspectorConsole', () => {
     );
     expect(screen.getByText('HIỆP 1 TẠM DỪNG')).toBeVisible();
     expect(screen.getByRole('timer')).toHaveTextContent('01:00');
-    expect(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'TIẾP TỤC' }));
     expect(resumeRound).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Tiếp tục' }));
@@ -401,11 +421,11 @@ describe('InspectorConsole', () => {
 
   it('enables save only from the authoritative completion capability and completes after confirmation', async () => {
     const user = userEvent.setup();
-    const completeMatch = vi.fn(() => Promise.resolve(true));
+    const publishResult = vi.fn(() => Promise.resolve(true));
     render(
       <InspectorConsole
         realtime={createRealtimeState({
-          completeMatch,
+          publishResult,
           snapshot: createMatchSnapshot({
             ...snapshotFor(MatchStatus.AWAITING_RESULT_SAVE),
             completion: { canComplete: true, blockedReasons: [] },
@@ -415,9 +435,9 @@ describe('InspectorConsole', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'LƯU KẾT QUẢ' }));
-    expect(completeMatch).not.toHaveBeenCalled();
+    expect(publishResult).not.toHaveBeenCalled();
     expect(screen.getByText(/Xác nhận lưu kết quả chính thức/)).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Lưu kết quả' }));
-    expect(completeMatch).toHaveBeenCalledOnce();
+    expect(publishResult).toHaveBeenCalledOnce();
   });
 });

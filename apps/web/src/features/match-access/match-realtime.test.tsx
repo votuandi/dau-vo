@@ -274,6 +274,7 @@ describe('useMatchRealtime', () => {
       RealtimeEvent.MATCH_EXIT,
       expect.objectContaining({
         mode: MatchExitMode.CANCEL_RESULTS,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         traceId: expect.any(String),
       }),
       expect.any(Function),

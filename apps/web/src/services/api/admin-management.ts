@@ -74,6 +74,31 @@ export interface AdminMatch {
 
 export interface AdminMatchMonitoring {
   readonly snapshot: MatchStatePayload;
+  readonly rounds: readonly {
+    id: string;
+    stage: 'REGULATION' | 'OVERTIME';
+    roundNumber: number;
+    attemptNumber: number;
+    startedAt: string;
+    endedAt: string | null;
+    invalidatedAt: string | null;
+  }[];
+  readonly appeals: readonly {
+    id: string;
+    scope: 'REGULATION' | 'OVERTIME';
+    attemptNumber: number;
+    completedAt: string;
+    invalidatedAt: string | null;
+    adjustments: readonly {
+      color: AthleteColor;
+      baseRefereeScore: number;
+      bonusPoints: number;
+      penaltyPoints: number;
+      finalScore: number;
+    }[];
+  }[];
+  readonly outcome: { winnerColor: AthleteColor; method: string; publishedAt: string } | null;
+  readonly diagnostics: readonly string[];
   readonly scoringWindows: readonly {
     id: string;
     roundNumber: number;
@@ -469,10 +494,17 @@ export const adminManagementApi = {
     apiClient.get<ActiveBracket>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket`,
     ),
-  cancelBracket: (tournamentId: string, weightClassId: string, reason: string) =>
-    apiClient.post<{ readonly bracket: { readonly id: string; readonly status: 'CANCELLED' } }>(
+  cancelBracket: (
+    tournamentId: string,
+    weightClassId: string,
+    reason: string,
+    force = false,
+  ) =>
+    apiClient.post<{
+      readonly bracket: { readonly id: string; readonly status: 'CANCELLED' | 'DELETED' };
+    }>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/cancel`,
-      { reason },
+      { force, reason },
     ),
   updateBracketRoundStaffing: (
     tournamentId: string,

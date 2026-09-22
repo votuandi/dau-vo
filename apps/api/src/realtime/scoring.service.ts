@@ -16,6 +16,7 @@ import {
   AthleteColor,
   AuditEventType,
   MatchStatus,
+  RoundStage,
   type RefereeSlot,
   ScoreEventType,
 } from '@prisma/client';
@@ -64,6 +65,7 @@ interface ActiveRound {
   endsAt: Date;
   id: string;
   roundNumber: number;
+  stage: RoundStage;
   startedAt: Date;
 }
 
@@ -158,6 +160,43 @@ export class ScoringService implements OnModuleDestroy {
     }
   }
 
+  /** Used by a locked round-end transaction so a voting window whose deadline
+   * has already passed cannot leave a stale regulation summary behind. */
+  async resolveDueWindowsLocked(
+    transaction: Prisma.TransactionClient,
+    matchId: string,
+    matchPublicId: string,
+    resolvedAt: Date,
+  ): Promise<void> {
+    for (;;) {
+      const window = await transaction.scoringWindow.findFirst({
+        orderBy: { startedAt: 'asc' },
+        select: {
+          endsAt: true,
+          id: true,
+          matchId: true,
+          roundElapsedMs: true,
+          roundId: true,
+          roundNumber: true,
+          startedAt: true,
+        },
+        where: {
+          matchId,
+          invalidatedAt: null,
+          resolvedAt: null,
+          endsAt: { lte: resolvedAt },
+        },
+      });
+      if (!window) return;
+      await this.resolveLockedWindow(
+        transaction,
+        window,
+        resolvedAt,
+        matchPublicId,
+      );
+    }
+  }
+
   async submitVote(input: {
     athlete: AthleteColor;
     matchId: string;
@@ -194,6 +233,7 @@ export class ScoringService implements OnModuleDestroy {
                 endsAt: true,
                 id: true,
                 roundNumber: true,
+                stage: true,
                 startedAt: true,
               },
               where: { endedAt: null },
@@ -204,7 +244,8 @@ export class ScoringService implements OnModuleDestroy {
         });
         if (
           match.status === MatchStatus.ROUND_1_PAUSED ||
-          match.status === MatchStatus.ROUND_2_PAUSED
+          match.status === MatchStatus.ROUND_2_PAUSED ||
+          match.status === MatchStatus.OVERTIME_PAUSED
         ) {
           throw new RoundPausedForVoteError();
         }
@@ -659,16 +700,28 @@ export class ScoringService implements OnModuleDestroy {
   }): ActiveRound | null {
     if (
       match.status !== MatchStatus.ROUND_1_RUNNING &&
-      match.status !== MatchStatus.ROUND_2_RUNNING
+      match.status !== MatchStatus.ROUND_2_RUNNING &&
+      match.status !== MatchStatus.OVERTIME_RUNNING
     ) {
       return null;
     }
-    const expectedRound = match.status === MatchStatus.ROUND_1_RUNNING ? 1 : 2;
+    const expectedRound =
+      match.status === MatchStatus.ROUND_1_RUNNING
+        ? 1
+        : match.status === MatchStatus.ROUND_2_RUNNING
+          ? 2
+          : 1;
     if (match.currentRound !== expectedRound) {
       return null;
     }
     return (
-      match.rounds.find((round) => round.roundNumber === expectedRound) ?? null
+      match.rounds.find(
+        (round) =>
+          round.roundNumber === expectedRound &&
+          (match.status === MatchStatus.OVERTIME_RUNNING
+            ? round.stage === RoundStage.OVERTIME
+            : round.stage === RoundStage.REGULATION),
+      ) ?? null
     );
   }
 

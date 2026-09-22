@@ -16,8 +16,12 @@ function monitoringFixture(
   overrides: Partial<AdminMatchMonitoringResponse> = {},
 ): AdminMatchMonitoringResponse {
   return {
+    appeals: [],
     auditLogs: [],
+    diagnostics: [],
+    outcome: null,
     penalties: [],
+    rounds: [],
     scoreEvents: [
       {
         athlete: { color: AthleteColor.RED, name: 'Vận động viên Đỏ' },

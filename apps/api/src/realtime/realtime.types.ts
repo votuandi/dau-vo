@@ -1,6 +1,8 @@
 import type {
   MatchFinishedPayload,
   MatchCompletionResponse,
+  AppealCompletePayload,
+  AppealCompleteResponse,
   MatchExitCommandPayload,
   MatchExitResponse,
   MatchStatePayload,
@@ -8,6 +10,9 @@ import type {
   PenaltyAddedPayload,
   PenaltyAddPayload,
   PenaltyAddResponse,
+  FaultRecordPayload,
+  FaultRecordResponse,
+  FaultRecordedPayload,
   PresenceUpdatedPayload,
   RoundEndedPayload,
   RoundStartedPayload,
@@ -31,6 +36,9 @@ import type {
   VoteRejectedPayload,
   VoteSubmitPayload,
   VoteSubmitResponse,
+  ResultPublishPayload,
+  ResultPublishResponse,
+  ResultPublishedPayload,
 } from '@martial-arts-scoring/shared-types';
 import type { MatchAccessRole } from '@prisma/client';
 import type { MatchRole, RefereeSlot } from '@prisma/client';
@@ -44,7 +52,14 @@ export interface ClientToServerEvents {
     payload: PenaltyAddPayload,
     acknowledge: (response: PenaltyAddResponse) => void,
   ) => void;
+  'fault:record': (
+    payload: FaultRecordPayload,
+    acknowledge: (response: FaultRecordResponse) => void,
+  ) => void;
   'round:start': (acknowledge: (response: RoundStartResponse) => void) => void;
+  'overtime:start': (
+    acknowledge: (response: RoundStartResponse) => void,
+  ) => void;
   'round:pause': (
     acknowledge: (response: RoundControlResponse) => void,
   ) => void;
@@ -59,6 +74,14 @@ export interface ClientToServerEvents {
   ) => void;
   'match:complete': (
     acknowledge: (response: MatchCompletionResponse) => void,
+  ) => void;
+  'appeal:complete': (
+    payload: AppealCompletePayload,
+    acknowledge: (response: AppealCompleteResponse) => void,
+  ) => void;
+  'result:publish': (
+    payload: ResultPublishPayload,
+    acknowledge: (response: ResultPublishResponse) => void,
   ) => void;
   'match:exit': (
     payload: MatchExitCommandPayload,
@@ -88,9 +111,11 @@ export interface ServerToClientEvents {
   ) => void;
   'match:finished': (payload: MatchFinishedPayload) => void;
   'match:completed': (payload: MatchFinishedPayload) => void;
+  'result:published': (payload: ResultPublishedPayload) => void;
   'match:state': (payload: MatchStatePayload) => void;
   'scoreboard:state': (payload: PublicMatchStatePayload) => void;
   'penalty:added': (payload: PenaltyAddedPayload) => void;
+  'fault:recorded': (payload: FaultRecordedPayload) => void;
   'presence:updated': (payload: PresenceUpdatedPayload) => void;
   'round:ended': (payload: RoundEndedPayload) => void;
   'round:started': (payload: RoundStartedPayload) => void;

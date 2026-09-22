@@ -18,3 +18,9 @@ export class RoundEndedForPenaltyError extends Error {
     this.name = RoundEndedForPenaltyError.name;
   }
 }
+
+export class PenaltyLegacyOnlyError extends Error {
+  constructor() {
+    super('Legacy penalties are unavailable for this match rules version');
+  }
+}

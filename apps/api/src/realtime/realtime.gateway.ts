@@ -20,17 +20,28 @@ import {
   RealtimeEvent,
   type PenaltyAddPayload,
   type PenaltyAddResponse,
+  type FaultRecordPayload,
+  type FaultRecordResponse,
+  type FaultRecordError,
+  type FaultRecordedPayload,
   type RoundStartResponse,
   type RoundControlResponse,
   type ResultCancellationResponse,
   type ResultCancellationUndoResponse,
   type MatchCompletionResponse,
+  type AppealCompletePayload,
+  type AppealCompleteResponse,
+  type AppealCompleteResult,
+  type OvertimeActionResponse,
+  type ResultPublishPayload,
+  type ResultPublishResponse,
   MatchExitMode,
   type MatchExitResponse,
   type MatchExitCommandPayload,
   type VoteSubmitError,
   type VoteSubmitPayload,
   type VoteSubmitResponse,
+  AthleteColor as SharedAthleteColor,
 } from '@martial-arts-scoring/shared-types';
 import {
   AthleteColor,
@@ -38,6 +49,7 @@ import {
   MatchRole,
   RefereeSlot,
 } from '@prisma/client';
+import type { MatchStatus } from '@prisma/client';
 import type { Server } from 'socket.io';
 
 import { MATCH_SESSION_COOKIE } from '../match-access/match-access.constants';
@@ -60,7 +72,6 @@ import {
   InvalidRoundStartStateError,
   MatchParticipantsNotReadyError,
   ResultCancellationUndoNotAllowedError,
-  MatchCompletionNotReadyError,
 } from './match-lifecycle.errors';
 import {
   MatchLifecycleService,
@@ -69,15 +80,23 @@ import {
   type RoundControlTransition,
   type ResultCancellationTransition,
   type ResultCancellationUndoTransition,
-  type MatchCompletionTransition,
   type MatchExitTransition,
 } from './match-lifecycle.service';
 import {
   InactivePenaltySessionError,
   MatchNotRunningForPenaltyError,
+  PenaltyLegacyOnlyError,
   RoundEndedForPenaltyError,
 } from './penalty.errors';
 import { PenaltyService, type PenaltyTransition } from './penalty.service';
+import { FaultService } from './fault.service';
+import {
+  FaultMatchNotRunningError,
+  FaultRoundEndedError,
+  FaultRoundPausedError,
+  InactiveFaultInspectorError,
+  InvalidFaultStateError,
+} from './fault.errors';
 import {
   DuplicateRefereeVoteError,
   InactiveVoteSessionError,
@@ -91,15 +110,26 @@ import {
   type ScoringResolutionTransition,
 } from './scoring.service';
 import {
+  AppealIdempotencyError,
+  AppealIdentityError,
+  AppealStateError,
+  MAX_REGULATION_APPEAL_POINTS,
+  RegulationAppealService,
+} from './regulation-appeal.service';
+import { OvertimeService } from './overtime.service';
+import {
+  ResultPublicationConflictError,
+  ResultPublicationService,
+} from './result-publication.service';
+import {
   MATCH_SOCKET_PATH,
   BRACKET_PROGRESSION_LOCKED_ERROR,
   MATCH_PARTICIPANTS_NOT_READY_ERROR,
-  MATCH_COMPLETION_FORBIDDEN_ERROR,
   MATCH_COMPLETION_NOT_READY_ERROR,
-  MATCH_COMPLETION_FAILED_ERROR,
   PENALTY_FAILED_ERROR,
   PENALTY_FORBIDDEN_ERROR,
   PENALTY_INVALID_ATHLETE_ERROR,
+  PENALTY_LEGACY_ONLY_ERROR,
   PENALTY_MATCH_NOT_RUNNING_ERROR,
   PENALTY_ROUND_ENDED_ERROR,
   REALTIME_AUTHENTICATION_ERROR,
@@ -147,7 +177,8 @@ function isExitPayload(value: unknown): value is MatchExitCommandPayload {
   return (
     (mode === MatchExitMode.CANCEL_RESULTS ||
       mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 ||
-      mode === MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2) &&
+      mode === MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2 ||
+      mode === MatchExitMode.SUSPEND_KEEP_V2_PHASE) &&
     (traceId === undefined ||
       (typeof traceId === 'string' &&
         traceId.length > 0 &&
@@ -208,8 +239,16 @@ export class RealtimeGateway
     private readonly lifecycle: MatchLifecycleService,
     @Inject(ScoringService)
     private readonly scoring: ScoringService,
+    @Inject(RegulationAppealService)
+    private readonly appeals: RegulationAppealService,
+    @Inject(OvertimeService)
+    private readonly overtime: OvertimeService,
+    @Inject(ResultPublicationService)
+    private readonly publication: ResultPublicationService,
     @Inject(PenaltyService)
     private readonly penalties: PenaltyService,
+    @Inject(FaultService)
+    private readonly faults: FaultService,
   ) {}
 
   afterInit(server: Server): void {
@@ -371,6 +410,38 @@ export class RealtimeGateway
     return { ok: true, round: transition.payload.round };
   }
 
+  /** Explicit adapter for overtime clients; lifecycle validation still owns phase. */
+  @SubscribeMessage(RealtimeEvent.OVERTIME_START)
+  async overtimeStart(
+    @ConnectedSocket() client: RealtimeSocket,
+  ): Promise<RoundStartResponse> {
+    // Starting overtime is the same lifecycle transition as starting a round.
+    // Keep its round-start response intact, though: the client needs the
+    // readiness and invalid-state errors produced by that transition rather
+    // than treating an overtime start as one of the post-overtime actions.
+    this.logger.log(
+      { socketId: client.id },
+      'Overtime start command received',
+    );
+    const response = await this.roundStart(client);
+    if (response.ok) {
+      this.logger.log(
+        {
+          attemptNumber: response.round.attemptNumber,
+          roundId: response.round.id,
+          stage: response.round.stage,
+        },
+        'Overtime start command completed',
+      );
+    } else {
+      this.logger.warn(
+        { error: response.error, socketId: client.id },
+        'Overtime start command rejected',
+      );
+    }
+    return response;
+  }
+
   @SubscribeMessage(RealtimeEvent.ROUND_PAUSE)
   async roundPause(
     @ConnectedSocket() client: RealtimeSocket,
@@ -380,65 +451,319 @@ export class RealtimeGateway
 
   @SubscribeMessage(RealtimeEvent.MATCH_COMPLETE)
   async completeMatch(
-    @ConnectedSocket() client: RealtimeSocket,
+    @ConnectedSocket() _client: RealtimeSocket,
   ): Promise<MatchCompletionResponse> {
+    // Kept as a protocol compatibility endpoint only.  FINISHED/COMPLETED is
+    // now exclusively committed by result:publish after an appeal outcome.
+    return { error: MATCH_COMPLETION_NOT_READY_ERROR, ok: false };
+  }
+
+  @SubscribeMessage(RealtimeEvent.RESULT_PUBLISH)
+  async publishResult(
+    @ConnectedSocket() client: RealtimeSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<ResultPublishResponse> {
+    if (!this.isPublishPayload(payload))
+      return {
+        ok: false,
+        error: {
+          code: 'RESULT_PUBLISH_INVALID_PAYLOAD',
+          message: 'A valid idempotency key is required.',
+        },
+      };
     if (this.isScoreboardSocket(client))
-      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+      return { ok: false, error: REALTIME_AUTHENTICATION_ERROR };
     const command = await this.inspectorCommand(client);
-    if (!command) return { error: MATCH_COMPLETION_FORBIDDEN_ERROR, ok: false };
     if (
+      !command ||
       !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
     )
-      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
-    let transition: MatchCompletionTransition;
+      return {
+        ok: false,
+        error: {
+          code: 'RESULT_PUBLISH_FORBIDDEN',
+          message: 'Only the active inspector may publish a result.',
+        },
+      };
     try {
-      transition = await this.lifecycle.completeMatch({
-        matchId: command.matchId,
-        identity: command.identity,
+      const transition = await this.publication.publish({
+        ...command,
+        idempotencyKey: payload.idempotencyKey,
+        traceId: payload.traceId,
       });
-    } catch (error: unknown) {
-      if (error instanceof SportGroupRulesNotImplementedError)
-        return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
-      if (error instanceof InactiveRoundStartSessionError) {
-        this.revokeCommandSocket(client, command.identity);
-        return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
-      }
-      if (error instanceof MatchCompletionNotReadyError)
-        return { error: MATCH_COMPLETION_NOT_READY_ERROR, ok: false };
-      if (error instanceof BracketProgressionLockedError)
-        return { error: BRACKET_PROGRESSION_LOCKED_ERROR, ok: false };
-      this.logger.error(
-        { error, matchId: command.matchId },
-        'Unable to save match result',
+      const published = {
+        ...transition.publication,
+        outcome: {
+          winner: transition.publication.outcome.winner as never,
+          method: transition.publication.outcome.method as never,
+        },
+      };
+      this.logger.log(
+        {
+          traceId: payload.traceId,
+          matchPublicId: transition.matchPublicId,
+          phaseBefore: 'RESULT_PUBLICATION_READY',
+          phaseAfter: 'FINISHED',
+          outcomeId: transition.publication.outcome.winner,
+          operation: 'result:publish',
+          resultCode: 'RESULT_PUBLISHED',
+        },
+        'Result published',
       );
-      return { error: MATCH_COMPLETION_FAILED_ERROR, ok: false };
-    }
-    try {
       this.server
         .to(matchRoom(transition.matchPublicId))
-        .emit(RealtimeEvent.MATCH_COMPLETED, transition.completed);
-      this.server
-        .to(matchRoom(transition.matchPublicId))
-        .emit(RealtimeEvent.MATCH_FINISHED, transition.completed);
-      if (transition.releasedOfficialIds.length > 0) {
+        .emit(RealtimeEvent.RESULT_PUBLISHED, published);
+      if (transition.releasedOfficialIds.length)
         this.officialRouting.publishReleased({
           matchId: transition.matchId,
           matchPublicId: transition.matchPublicId,
           tournamentId: transition.tournamentId,
           releasedOfficialIds: transition.releasedOfficialIds,
         });
+      await this.broadcastMatchState(
+        transition.matchId,
+        transition.matchPublicId,
+      );
+      return { ok: true, publication: published };
+    } catch (error: unknown) {
+      if (error instanceof AppealIdentityError) {
+        this.revokeCommandSocket(client, command.identity);
+        return {
+          ok: false,
+          error: {
+            code: 'RESULT_PUBLISH_STALE_ASSIGNMENT',
+            message: 'Inspector assignment is stale.',
+          },
+        };
+      }
+      if (error instanceof AppealStateError)
+        return {
+          ok: false,
+          error: {
+            code: 'RESULT_PUBLISH_INVALID_STATE',
+            message: error.message,
+          },
+        };
+      if (
+        error instanceof ResultPublicationConflictError ||
+        error instanceof BracketProgressionLockedError
+      )
+        return {
+          ok: false,
+          error: {
+            code: 'RESULT_PUBLISH_CONFLICT',
+            message: 'Result conflicts with an existing official outcome.',
+          },
+        };
+      this.logger.error(
+        {
+          error,
+          matchPublicId: command.publicMatchId,
+          traceId: payload.traceId,
+          operation: 'result:publish',
+          resultCode: 'RESULT_PUBLISH_FAILED',
+        },
+        'Unable to publish result',
+      );
+      return {
+        ok: false,
+        error: {
+          code: 'RESULT_PUBLISH_FAILED',
+          message: 'Unable to publish the result.',
+        },
+      };
+    }
+  }
+
+  @SubscribeMessage(RealtimeEvent.APPEAL_COMPLETE)
+  async completeAppeal(
+    @ConnectedSocket() client: RealtimeSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<AppealCompleteResponse> {
+    if (!this.isAppealPayload(payload))
+      return {
+        ok: false,
+        error: {
+          code: 'APPEAL_INVALID_PAYLOAD',
+          message:
+            'Appeal must contain complete integer RED and BLUE adjustments and an idempotency key',
+        },
+      };
+    if (this.isScoreboardSocket(client))
+      return { ok: false, error: REALTIME_AUTHENTICATION_ERROR };
+    const command = await this.inspectorCommand(client);
+    if (!command)
+      return {
+        ok: false,
+        error: {
+          code: 'APPEAL_FORBIDDEN',
+          message: 'Only the active inspector may complete an appeal',
+        },
+      };
+    if (
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    )
+      return { ok: false, error: REALTIME_AUTHENTICATION_ERROR };
+    try {
+      let transition:
+        | Awaited<ReturnType<RegulationAppealService['complete']>>
+        | Awaited<ReturnType<OvertimeService['complete']>>;
+      try {
+        transition = await this.overtime.complete({
+          matchId: command.matchId,
+          identity: command.identity,
+          payload,
+        });
+      } catch (error) {
+        if (!(error instanceof AppealStateError)) throw error;
+        transition = await this.appeals.complete({
+          matchId: command.matchId,
+          identity: command.identity,
+          payload,
+        });
       }
       await this.broadcastMatchState(
         transition.matchId,
         transition.matchPublicId,
       );
+      return {
+        ok: true,
+        appeal: {
+          appealId: transition.appealId,
+          matchPublicId: transition.matchPublicId,
+          phase: transition.phase as AppealCompleteResult['phase'],
+          ...('regulation' in transition
+            ? { regulation: transition.regulation }
+            : {}),
+          isTie: transition.isTie,
+        },
+      };
     } catch (error: unknown) {
+      if (error instanceof AppealIdentityError) {
+        this.revokeCommandSocket(client, command.identity);
+        return {
+          ok: false,
+          error: { code: 'APPEAL_STALE_ASSIGNMENT', message: error.message },
+        };
+      }
+      if (error instanceof AppealIdempotencyError)
+        return {
+          ok: false,
+          error: {
+            code: 'APPEAL_IDEMPOTENCY_CONFLICT',
+            message: error.message,
+          },
+        };
+      if (error instanceof AppealStateError)
+        return {
+          ok: false,
+          error: { code: 'APPEAL_INVALID_STATE', message: error.message },
+        };
       this.logger.error(
-        { error, matchId: transition.matchId },
-        'Match completion committed but realtime publication failed',
+        { error, matchId: command.matchId },
+        'Unable to complete regulation appeal',
       );
+      return {
+        ok: false,
+        error: {
+          code: 'APPEAL_FAILED',
+          message: 'The appeal could not be completed',
+        },
+      };
     }
-    return { completed: transition.completed, ok: true };
+  }
+
+  @SubscribeMessage(RealtimeEvent.OVERTIME_RESTART)
+  async restartOvertime(
+    @ConnectedSocket() client: RealtimeSocket,
+  ): Promise<OvertimeActionResponse> {
+    return this.overtimeAction(client, (command) =>
+      this.overtime.restart(command),
+    );
+  }
+
+  @SubscribeMessage(RealtimeEvent.OVERTIME_MANUAL_WINNER)
+  async selectManualWinner(
+    @ConnectedSocket() client: RealtimeSocket,
+    @MessageBody() winner: unknown,
+  ): Promise<OvertimeActionResponse> {
+    if (winner !== AthleteColor.RED && winner !== AthleteColor.BLUE)
+      return {
+        ok: false,
+        error: {
+          code: 'OVERTIME_ACTION_INVALID_STATE',
+          message: 'Winner must be RED or BLUE',
+        },
+      };
+    return this.overtimeAction(client, (command) =>
+      this.overtime.manualWinner({ ...command, winner }),
+    );
+  }
+
+  private async overtimeAction(
+    client: RealtimeSocket,
+    invoke: (command: {
+      matchId: string;
+      identity: InspectorCommandIdentity;
+    }) => Promise<{
+      matchId: string;
+      matchPublicId: string;
+      attemptNumber: number;
+      phase: MatchStatus;
+      winner?: AthleteColor;
+    }>,
+  ): Promise<OvertimeActionResponse> {
+    if (this.isScoreboardSocket(client))
+      return { ok: false, error: REALTIME_AUTHENTICATION_ERROR };
+    const command = await this.inspectorCommand(client);
+    if (
+      !command ||
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    )
+      return {
+        ok: false,
+        error: {
+          code: 'OVERTIME_ACTION_FORBIDDEN',
+          message: 'Only the active inspector may control overtime',
+        },
+      };
+    try {
+      const result = await invoke(command);
+      await this.broadcastMatchState(result.matchId, result.matchPublicId);
+      return {
+        ok: true,
+        overtime: {
+          matchPublicId: result.matchPublicId,
+          phase: result.phase as never,
+          attemptNumber: result.attemptNumber,
+          winner: result.winner as never,
+        },
+      };
+    } catch (error) {
+      if (error instanceof AppealIdentityError) {
+        this.revokeCommandSocket(client, command.identity);
+        return { ok: false, error: REALTIME_AUTHENTICATION_ERROR };
+      }
+      if (error instanceof AppealStateError)
+        return {
+          ok: false,
+          error: {
+            code: 'OVERTIME_ACTION_INVALID_STATE',
+            message: error.message,
+          },
+        };
+      this.logger.error(
+        { error, matchId: command.matchId },
+        'Unable to transition overtime',
+      );
+      return {
+        ok: false,
+        error: {
+          code: 'OVERTIME_ACTION_FAILED',
+          message: 'The overtime action could not be completed',
+        },
+      };
+    }
   }
 
   @SubscribeMessage(RealtimeEvent.MATCH_EXIT)
@@ -951,6 +1276,98 @@ export class RealtimeGateway
     }
   }
 
+  @SubscribeMessage(RealtimeEvent.FAULT_RECORD)
+  async faultRecord(
+    @ConnectedSocket() client: RealtimeSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<FaultRecordResponse> {
+    if (this.isScoreboardSocket(client))
+      return {
+        ok: false,
+        error: {
+          code: 'REALTIME_AUTHENTICATION_REQUIRED',
+          message: 'Authentication required',
+        },
+      };
+    const command = await this.inspectorCommand(client);
+    if (!command)
+      return {
+        ok: false,
+        error: {
+          code: 'FAULT_FORBIDDEN',
+          message: 'Only an active inspector may record a fault',
+        },
+      };
+    if (
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    )
+      return {
+        ok: false,
+        error: {
+          code: 'REALTIME_AUTHENTICATION_REQUIRED',
+          message: 'Authentication required',
+        },
+      };
+    if (!this.isFaultPayload(payload))
+      return {
+        ok: false,
+        error: {
+          code: 'FAULT_INVALID_ATHLETE',
+          message: 'Athlete must be RED or BLUE',
+        },
+      };
+    try {
+      const transition = await this.faults.record({
+        athlete: payload.athlete,
+        identity: command.identity,
+        matchId: command.matchId,
+        traceId: payload.traceId,
+      });
+      const faultPayload: FaultRecordedPayload = {
+        matchPublicId: transition.matchPublicId,
+        fault: {
+          ...transition.fault,
+          athlete:
+            transition.fault.athlete === AthleteColor.RED
+              ? SharedAthleteColor.RED
+              : SharedAthleteColor.BLUE,
+        },
+      };
+      this.server
+        .to(matchRoom(transition.matchPublicId))
+        .emit(RealtimeEvent.FAULT_RECORDED, faultPayload);
+      await this.broadcastMatchState(
+        transition.matchId,
+        transition.matchPublicId,
+      );
+      return { ok: true, fault: faultPayload.fault };
+    } catch (error) {
+      const mapped: [FaultRecordError['code'], string] =
+        error instanceof InactiveFaultInspectorError
+          ? ['FAULT_STALE_ASSIGNMENT', 'Inspector assignment is stale']
+          : error instanceof FaultRoundPausedError
+            ? ['FAULT_ROUND_PAUSED', 'Round is paused']
+            : error instanceof FaultMatchNotRunningError
+              ? ['FAULT_MATCH_NOT_RUNNING', 'Match is not running']
+              : error instanceof FaultRoundEndedError
+                ? ['FAULT_ROUND_ENDED', 'Round has ended']
+                : error instanceof InvalidFaultStateError
+                  ? ['FAULT_INVALID_STATE', 'Invalid match state']
+                  : ['FAULT_FAILED', 'Fault could not be recorded'];
+      this.logger.error(
+        { error, matchId: command.matchId },
+        'Unable to record fault',
+      );
+      return {
+        ok: false,
+        error: {
+          code: mapped[0] as FaultRecordError['code'],
+          message: mapped[1],
+        },
+      };
+    }
+  }
+
   @SubscribeMessage(RealtimeEvent.PENALTY_ADD)
   async penaltyAdd(
     @ConnectedSocket() client: RealtimeSocket,
@@ -988,6 +1405,9 @@ export class RealtimeGateway
       }
       if (error instanceof MatchNotRunningForPenaltyError) {
         return { error: PENALTY_MATCH_NOT_RUNNING_ERROR, ok: false };
+      }
+      if (error instanceof PenaltyLegacyOnlyError) {
+        return { error: PENALTY_LEGACY_ONLY_ERROR, ok: false };
       }
       if (error instanceof RoundEndedForPenaltyError) {
         return { error: PENALTY_ROUND_ENDED_ERROR, ok: false };
@@ -1425,7 +1845,7 @@ export class RealtimeGateway
       .to(scoreboardRoom(expectedPublicId))
       .emit(
         RealtimeEvent.PUBLIC_MATCH_STATE,
-        this.matchState.toPublicSnapshot(snapshot),
+        await this.matchState.publicSnapshot(expectedPublicId),
       );
   }
 
@@ -1563,6 +1983,94 @@ export class RealtimeGateway
 
   private isPenaltyPayload(payload: unknown): payload is PenaltyAddPayload {
     return this.isVotePayload(payload);
+  }
+
+  private isFaultPayload(payload: unknown): payload is FaultRecordPayload {
+    if (typeof payload !== 'object' || payload === null) return false;
+    const keys = Object.keys(payload);
+    if (!keys.every((key) => key === 'athlete' || key === 'traceId'))
+      return false;
+    const candidate = payload as Record<string, unknown>;
+    return (
+      (candidate.athlete === AthleteColor.RED ||
+        candidate.athlete === AthleteColor.BLUE) &&
+      (candidate.traceId === undefined ||
+        (typeof candidate.traceId === 'string' &&
+          candidate.traceId.length <= 128))
+    );
+  }
+
+  private isAppealPayload(payload: unknown): payload is AppealCompletePayload {
+    if (
+      typeof payload !== 'object' ||
+      payload === null ||
+      Array.isArray(payload)
+    )
+      return false;
+    const value = payload as Record<string, unknown>;
+    if (
+      !Object.keys(value).every(
+        (key) =>
+          key === 'RED' ||
+          key === 'BLUE' ||
+          key === 'idempotencyKey' ||
+          key === 'traceId',
+      )
+    )
+      return false;
+    if (
+      typeof value.idempotencyKey !== 'string' ||
+      value.idempotencyKey.length < 1 ||
+      value.idempotencyKey.length > 255
+    )
+      return false;
+    if (
+      value.traceId !== undefined &&
+      (typeof value.traceId !== 'string' || value.traceId.length > 128)
+    )
+      return false;
+    const adjustment = (candidate: unknown): boolean => {
+      if (
+        typeof candidate !== 'object' ||
+        candidate === null ||
+        Array.isArray(candidate)
+      )
+        return false;
+      const record = candidate as Record<string, unknown>;
+      return (
+        Object.keys(record).length === 2 &&
+        Object.keys(record).every(
+          (key) => key === 'bonusPoints' || key === 'penaltyPoints',
+        ) &&
+        Number.isInteger(record.bonusPoints) &&
+        Number.isInteger(record.penaltyPoints) &&
+        (record.bonusPoints as number) >= 0 &&
+        (record.penaltyPoints as number) >= 0 &&
+        (record.bonusPoints as number) <= MAX_REGULATION_APPEAL_POINTS &&
+        (record.penaltyPoints as number) <= MAX_REGULATION_APPEAL_POINTS
+      );
+    };
+    return adjustment(value.RED) && adjustment(value.BLUE);
+  }
+
+  private isPublishPayload(payload: unknown): payload is ResultPublishPayload {
+    if (
+      typeof payload !== 'object' ||
+      payload === null ||
+      Array.isArray(payload)
+    )
+      return false;
+    const value = payload as Record<string, unknown>;
+    return (
+      Object.keys(value).every(
+        (key) => key === 'idempotencyKey' || key === 'traceId',
+      ) &&
+      typeof value.idempotencyKey === 'string' &&
+      value.idempotencyKey.length > 0 &&
+      value.idempotencyKey.length <= 255 &&
+      (value.traceId === undefined ||
+        (typeof value.traceId === 'string' && value.traceId.length <= 128))
+    );
   }
 
   private isResultCancellationUndoPayload(

@@ -1,5 +1,21 @@
 # Release readiness runbook
 
+## Fault, appeal, overtime, and result-publication V2 cutover
+
+Deploy `20260921100000_fault_appeal_overtime_persistence` only during a
+scheduled scoring freeze: no match may be `IN_PROGRESS` while the scoring-rule
+version changes. The migration deliberately leaves existing rows on
+`LEGACY_SCORE_PENALTY_V1` and makes newly created matches
+`FAULT_APPEAL_OVERTIME_V2`; it does not reinterpret a live or completed match.
+Drain or suspend active matches, verify there are no `IN_PROGRESS` rows, take a
+verified backup, then run `prisma migrate deploy` and `prisma migrate status`.
+
+The database rollout is forward-only. Do not restore application binaries that
+cannot read the V2 enum values, columns, or outcome rows. If application
+rollback is required, first prove the target build can safely read V2 rows;
+otherwise block that rollback and ship a forward repair after restoring a
+verified database backup to a separate recovery environment.
+
 ## Tournament-official migration cutover
 
 This release completes the application cutover: standalone and bracket-prepared

@@ -64,7 +64,7 @@ function AthletePanel({
         <p
           className={`text-lg font-black tracking-[0.28em] ${red ? 'text-red-100' : 'text-sky-100'}`}
         >
-          {red ? 'RED' : 'BLUE'}
+          {red ? 'ĐỎ · RED' : 'XANH · BLUE'}
         </p>
         <h2 className="mt-5 break-words text-4xl font-black leading-tight sm:text-6xl">
           {athlete.name}
@@ -86,6 +86,18 @@ function AthletePanel({
       </div>
     </section>
   );
+}
+
+function roundLabel(
+  round:
+    | { stage: 'REGULATION' | 'OVERTIME'; roundNumber: number; attemptNumber: number }
+    | null
+    | undefined,
+): string | null {
+  if (!round) return null;
+  return round.stage === 'OVERTIME'
+    ? `HIỆP PHỤ LẦN ${String(round.attemptNumber)}`
+    : `HIỆP ${String(round.roundNumber)}`;
 }
 
 function MatchSelector() {
@@ -153,6 +165,12 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
   );
   const red = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
   const blue = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
+  const winner = snapshot?.match.outcome?.winner;
+  const winnerAthlete = winner
+    ? snapshot.athletes.find((athlete) => athlete.color === winner)
+    : null;
+  const outcomeMethod = snapshot?.match.outcome?.method;
+  const committedScores = snapshot?.committedScores;
 
   return (
     <main className="arena-background min-h-dvh p-4 text-white sm:p-8">
@@ -174,6 +192,11 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
         <p className="text-2xl font-black tracking-[0.2em] text-sky-100 sm:text-4xl">
           {presentation?.label ?? 'ĐANG KẾT NỐI'}
         </p>
+        {roundLabel(activeRound) ? (
+          <p className="mt-2 text-base font-black tracking-[0.12em] text-amber-200 sm:text-xl">
+            {roundLabel(activeRound)}
+          </p>
+        ) : null}
         {presentation ? <p className="mt-2 text-sm text-sky-100/85">{presentation.help}</p> : null}
         <p className="mt-2 font-mono text-7xl font-black tabular-nums sm:text-9xl">
           {running && remaining !== null
@@ -182,6 +205,32 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
               ? formatRemaining(activeRound.remainingDurationMs)
               : '--:--'}
         </p>
+      </section>
+      <section
+        className={`mb-4 rounded-2xl border px-6 py-4 text-center font-bold backdrop-blur sm:mb-7 ${
+          winnerAthlete
+            ? 'border-emerald-300/50 bg-emerald-500/15 text-emerald-100'
+            : 'border-amber-200/30 bg-amber-100/10 text-amber-100'
+        }`}
+      >
+        {winnerAthlete ? (
+          <>
+            <p className="text-sm uppercase tracking-[0.18em]">Người chiến thắng</p>
+            <p className="mt-1 text-2xl font-black sm:text-4xl">{winnerAthlete.name}</p>
+            {outcomeMethod === 'MANUAL_AFTER_OVERTIME_TIE' ? (
+              <p className="mt-2 text-sm">Quyết định giám định sau hiệp phụ</p>
+            ) : null}
+          </>
+        ) : (
+          <p>Chưa công bố kết quả — chưa có người chiến thắng được xác nhận.</p>
+        )}
+        {committedScores?.RED != null && committedScores.BLUE != null ? (
+          <p className="mt-2 text-sm opacity-90">
+            {committedScores.source === 'OVERTIME'
+              ? `Điểm hiệp phụ lần ${String(committedScores.attemptNumber)}: Đỏ ${String(committedScores.RED)} · Xanh ${String(committedScores.BLUE)}`
+              : `Điểm chung cuộc sau 2 hiệp: Đỏ ${String(committedScores.RED)} · Xanh ${String(committedScores.BLUE)}`}
+          </p>
+        ) : null}
       </section>
       <section className="grid min-h-[58vh] gap-4 sm:gap-7 md:grid-cols-2">
         <AthletePanel

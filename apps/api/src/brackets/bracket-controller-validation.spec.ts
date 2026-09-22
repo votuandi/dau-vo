@@ -159,6 +159,23 @@ describe('bracket and match-filter controller validation', () => {
       .expect(400);
   });
 
+  it('accepts and forwards an explicit forced cancellation confirmation', async () => {
+    const cancellations = app.get(BracketCancellationService);
+    await request(app.getHttpServer())
+      .post(
+        `/api/admin/tournaments/${tournamentId}/weight-classes/${weightClassId}/bracket/cancel`,
+      )
+      .send({ force: true, reason: '  Confirm cancellation  ' })
+      .expect(201);
+    expect(cancellations.cancel).toHaveBeenLastCalledWith(
+      tournamentId,
+      weightClassId,
+      'admin-user',
+      'Confirm cancellation',
+      true,
+    );
+  });
+
   it.each([
     [{ idempotencyKey: 'key' }],
     [{ previewToken: 1, idempotencyKey: 'key' }],

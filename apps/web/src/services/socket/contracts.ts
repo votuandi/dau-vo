@@ -1,6 +1,13 @@
 import type {
   MatchFinishedPayload,
   MatchCompletionResponse,
+  ResultPublishPayload,
+  ResultPublishResponse,
+  ResultPublishedPayload,
+  AppealCompletePayload,
+  AppealCompleteResponse,
+  OvertimeActionResponse,
+  AthleteColor,
   MatchExitCommandPayload,
   MatchExitResponse,
   MatchStatePayload,
@@ -8,6 +15,9 @@ import type {
   PenaltyAddedPayload,
   PenaltyAddPayload,
   PenaltyAddResponse,
+  FaultRecordedPayload,
+  FaultRecordPayload,
+  FaultRecordResponse,
   PresenceUpdatedPayload,
   RoundEndedPayload,
   RoundStartedPayload,
@@ -40,9 +50,11 @@ export interface ServerToClientEvents {
   'match:officials-updated': (payload: MatchOfficialsUpdatedPayload) => void;
   'match:finished': (payload: MatchFinishedPayload) => void;
   'match:completed': (payload: MatchFinishedPayload) => void;
+  'result:published': (payload: ResultPublishedPayload) => void;
   'match:state': (payload: MatchStatePayload) => void;
   'scoreboard:state': (payload: PublicMatchStatePayload) => void;
   'penalty:added': (payload: PenaltyAddedPayload) => void;
+  'fault:recorded': (payload: FaultRecordedPayload) => void;
   'presence:updated': (payload: PresenceUpdatedPayload) => void;
   'round:ended': (payload: RoundEndedPayload) => void;
   'round:started': (payload: RoundStartedPayload) => void;
@@ -67,12 +79,32 @@ export interface ClientToServerEvents {
     payload: PenaltyAddPayload,
     acknowledge: (response: PenaltyAddResponse) => void,
   ) => void;
+  'fault:record': (
+    payload: FaultRecordPayload,
+    acknowledge: (response: FaultRecordResponse) => void,
+  ) => void;
   'round:start': (acknowledge: (response: RoundStartResponse) => void) => void;
   'round:pause': (acknowledge: (response: RoundControlResponse) => void) => void;
   'round:resume': (acknowledge: (response: RoundControlResponse) => void) => void;
   'round:cancel': (acknowledge: (response: ResultCancellationResponse) => void) => void;
   'match:reset': (acknowledge: (response: ResultCancellationResponse) => void) => void;
   'match:complete': (acknowledge: (response: MatchCompletionResponse) => void) => void;
+  'result:publish': (
+    payload: ResultPublishPayload,
+    acknowledge: (response: ResultPublishResponse) => void,
+  ) => void;
+  'appeal:complete': (
+    payload: AppealCompletePayload,
+    acknowledge: (response: AppealCompleteResponse) => void,
+  ) => void;
+  // Overtime start creates a round, so it deliberately uses the same
+  // acknowledgement contract as `round:start`.
+  'overtime:start': (acknowledge: (response: RoundStartResponse) => void) => void;
+  'overtime:restart': (acknowledge: (response: OvertimeActionResponse) => void) => void;
+  'overtime:manual-winner': (
+    winner: AthleteColor,
+    acknowledge: (response: OvertimeActionResponse) => void,
+  ) => void;
   'match:exit': (
     payload: MatchExitCommandPayload,
     acknowledge: (response: MatchExitResponse) => void,

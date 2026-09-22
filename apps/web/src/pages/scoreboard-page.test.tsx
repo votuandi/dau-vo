@@ -19,10 +19,11 @@ const snapshot: PublicMatchStatePayload = {
   activeRound: {
     endedAt: null,
     endsAt: '2030-01-01T00:02:00.000Z',
-    id: 'round-1',
     pausedAt: null,
     remainingDurationMs: null,
     roundNumber: 1,
+    attemptNumber: 0,
+    stage: 'REGULATION',
     startedAt: '2030-01-01T00:00:00.000Z',
   },
   athletes: [
@@ -35,7 +36,7 @@ const snapshot: PublicMatchStatePayload = {
       violations: 3,
     },
   ],
-  completion: { canComplete: false, blockedReasons: ['ROUND_1_NOT_ENDED', 'ROUND_2_NOT_ENDED'] },
+  committedScores: { source: null, attemptNumber: null, RED: null, BLUE: null },
   generatedAt: '2030-01-01T00:00:00.000Z',
   match: {
     currentRound: 1,
@@ -43,7 +44,9 @@ const snapshot: PublicMatchStatePayload = {
     lifecycle: MatchLifecycle.IN_PROGRESS,
     phase: MatchStatus.ROUND_1_RUNNING,
     publicId: 'A72K9P',
+    rulesVersion: 'FAULT_APPEAL_OVERTIME_V2',
     status: MatchStatus.ROUND_1_RUNNING,
+    outcome: null,
   },
 };
 
@@ -79,5 +82,38 @@ describe('ScoreboardPage', () => {
     expect(screen.getAllByText('2')).toHaveLength(1);
     expect(screen.getByText('Lỗi: 1')).toBeVisible();
     expect(screen.getByText('Lỗi: 3')).toBeVisible();
+    expect(screen.getByText(/Chưa công bố kết quả/u)).toBeVisible();
+  });
+
+  it('announces only a published outcome and labels an overtime inspector decision', () => {
+    realtimeMock.mockReturnValue({
+      connectionStatus: 'connected',
+      snapshot: {
+        ...snapshot,
+        activeRound: {
+          ...(() => {
+            if (snapshot.activeRound === null) throw new Error('Expected active round fixture.');
+            return snapshot.activeRound;
+          })(),
+          stage: 'OVERTIME',
+          attemptNumber: 2,
+        },
+        committedScores: { source: 'OVERTIME', attemptNumber: 2, RED: 7, BLUE: 7 },
+        match: {
+          ...snapshot.match,
+          outcome: { winner: AthleteColor.BLUE, method: 'MANUAL_AFTER_OVERTIME_TIE' },
+        },
+      },
+    });
+    render(
+      <MemoryRouter initialEntries={['/bang-diem?match=A72K9P']}>
+        <Routes>
+          <Route element={<ScoreboardPage />} path="/bang-diem" />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Người chiến thắng')).toBeVisible();
+    expect(screen.getByText('Quyết định giám định sau hiệp phụ')).toBeVisible();
+    expect(screen.getByText('HIỆP PHỤ LẦN 2')).toBeVisible();
   });
 });
