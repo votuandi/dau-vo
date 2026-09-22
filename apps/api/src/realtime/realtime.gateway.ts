@@ -41,6 +41,7 @@ import {
   type VoteSubmitError,
   type VoteSubmitPayload,
   type VoteSubmitResponse,
+  AthleteColor as SharedAthleteColor,
 } from '@martial-arts-scoring/shared-types';
 import {
   AthleteColor,
@@ -1302,7 +1303,10 @@ export class RealtimeGateway
         matchPublicId: transition.matchPublicId,
         fault: {
           ...transition.fault,
-          athlete: transition.fault.athlete,
+          athlete:
+            transition.fault.athlete === AthleteColor.RED
+              ? SharedAthleteColor.RED
+              : SharedAthleteColor.BLUE,
         },
       };
       this.server

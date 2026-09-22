@@ -14,6 +14,7 @@ import { auditActor, type InspectorCommandIdentity } from './command-identity';
 import { InspectorAuthorizationService } from './inspector-authorization.service';
 import {
   AppealIdentityError,
+  AppealIdempotencyError,
   AppealStateError,
   RegulationAppealService,
   type RegulationAppealInput,
@@ -61,6 +62,46 @@ export class OvertimeService {
             rulesVersion: true,
           },
         });
+        const existing = await tx.matchAppeal.findFirst({
+          where: { idempotencyKey: input.payload.idempotencyKey },
+          include: {
+            adjustments: { include: { athlete: { select: { color: true } } } },
+          },
+        });
+        if (existing) {
+          const adjustments = new Map(
+            existing.adjustments.map((adjustment) => [
+              adjustment.athlete.color,
+              adjustment,
+            ]),
+          );
+          const red = adjustments.get(AthleteColor.RED);
+          const blue = adjustments.get(AthleteColor.BLUE);
+          if (
+            existing.matchId !== input.matchId ||
+            existing.scope !== MatchAppealScope.OVERTIME ||
+            red === undefined ||
+            blue === undefined ||
+            red.bonusPoints !== input.payload.RED.bonusPoints ||
+            red.penaltyPoints !== input.payload.RED.penaltyPoints ||
+            blue.bonusPoints !== input.payload.BLUE.bonusPoints ||
+            blue.penaltyPoints !== input.payload.BLUE.penaltyPoints
+          )
+            throw new AppealIdempotencyError(
+              'Idempotency key was previously used with a different appeal payload',
+            );
+          const isTie = red.finalScore === blue.finalScore;
+          return {
+            appealId: existing.id,
+            matchId: input.matchId,
+            matchPublicId: match.publicId,
+            phase: isTie
+              ? MatchStatus.OVERTIME_TIEBREAK_DECISION
+              : MatchStatus.RESULT_PUBLICATION_READY,
+            attemptNumber: existing.attemptNumber,
+            isTie,
+          };
+        }
         if (match.rulesVersion !== MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2)
           throw new AppealStateError(
             'Overtime is unavailable for legacy matches',

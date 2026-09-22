@@ -4,9 +4,9 @@ import {
   MatchAppealStatus,
   MatchOutcomeMethod,
   RoundStage,
-  type Prisma,
 } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
+import type { Prisma } from '@prisma/client';
+import type { PrismaService } from '../prisma/prisma.service';
 import {
   assertRoundDescriptor,
   type RoundDescriptor,
@@ -27,15 +27,15 @@ export class MatchResultRepository {
       descriptor: RoundDescriptor;
     },
   ) {
-    const descriptor = assertRoundDescriptor(input.descriptor);
-    const { descriptor: _descriptor, ...data } = input;
+    const { descriptor, ...data } = input;
+    const validDescriptor = assertRoundDescriptor(descriptor);
     return tx.round.create({
       data: {
         ...data,
-        attemptNumber: descriptor.attemptNumber,
-        roundNumber: descriptor.roundNumber,
+        attemptNumber: validDescriptor.attemptNumber,
+        roundNumber: validDescriptor.roundNumber,
         stage:
-          descriptor.stage === 'REGULATION'
+          validDescriptor.stage === 'REGULATION'
             ? RoundStage.REGULATION
             : RoundStage.OVERTIME,
       },
