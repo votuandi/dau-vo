@@ -81,5 +81,29 @@ describe('ScoreboardPage', () => {
     expect(screen.getAllByText('2')).toHaveLength(1);
     expect(screen.getByText('Lỗi: 1')).toBeVisible();
     expect(screen.getByText('Lỗi: 3')).toBeVisible();
+    expect(screen.getByText(/Chưa công bố kết quả/u)).toBeVisible();
+  });
+
+  it('announces only a published outcome and labels an overtime inspector decision', () => {
+    realtimeMock.mockReturnValue({
+      connectionStatus: 'connected',
+      snapshot: {
+        ...snapshot,
+        activeRound: { ...snapshot.activeRound!, stage: 'OVERTIME', attemptNumber: 2 },
+        committedScores: { RED: 7, BLUE: 7 },
+        match: {
+          ...snapshot.match,
+          outcome: { winner: AthleteColor.BLUE, method: 'MANUAL_AFTER_OVERTIME_TIE' },
+        },
+      },
+    });
+    render(
+      <MemoryRouter initialEntries={['/bang-diem?match=A72K9P']}>
+        <Routes><Route element={<ScoreboardPage />} path="/bang-diem" /></Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Người chiến thắng')).toBeVisible();
+    expect(screen.getByText('Quyết định giám định sau hiệp phụ')).toBeVisible();
+    expect(screen.getByText('HIỆP PHỤ LẦN 2')).toBeVisible();
   });
 });

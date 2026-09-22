@@ -847,9 +847,32 @@ export class AdminManagementService {
   async getMatchMonitoring(id: string) {
     await this.requireMatch(id);
 
-    const [snapshot, scoringWindows, penalties, scoreEvents, auditLogs] =
+    const [snapshot, rounds, appeals, outcome, scoringWindows, penalties, scoreEvents, auditLogs] =
       await Promise.all([
         this.matchState.snapshot(id),
+        this.prisma.round.findMany({
+          where: { matchId: id },
+          orderBy: [{ startedAt: 'asc' }, { attemptNumber: 'asc' }],
+          select: {
+            id: true, stage: true, roundNumber: true, attemptNumber: true,
+            startedAt: true, endedAt: true, invalidatedAt: true,
+          },
+        }),
+        this.prisma.matchAppeal.findMany({
+          where: { matchId: id },
+          orderBy: { completedAt: 'asc' },
+          select: {
+            id: true, scope: true, attemptNumber: true, completedAt: true, invalidatedAt: true,
+            adjustments: { select: {
+              baseRefereeScore: true, bonusPoints: true, penaltyPoints: true, finalScore: true,
+              athlete: { select: { color: true } },
+            } },
+          },
+        }),
+        this.prisma.matchOutcome.findUnique({
+          where: { matchId: id },
+          select: { winnerColor: true, method: true, publishedAt: true },
+        }),
         this.prisma.scoringWindow.findMany({
           orderBy: { startedAt: 'desc' },
           select: {
@@ -902,9 +925,28 @@ export class AdminManagementService {
         }),
       ]);
 
+    const diagnostics: string[] = [];
+    if (outcome === null) diagnostics.push('Chưa có MatchOutcome đã công bố; kết quả chưa thể đẩy nhánh.');
+    if (snapshot.result.blockedReasons.includes('UNRESOLVED_SCORING_WINDOW'))
+      diagnostics.push('Cửa sổ chấm điểm chưa được giải quyết.');
+    if (snapshot.result.isTie === true)
+      diagnostics.push('Điểm hòa: cần hiệp phụ hoặc quyết định hợp lệ.');
+    if (appeals.some((appeal) => appeal.invalidatedAt !== null))
+      diagnostics.push('Có kháng nghị hoặc kết quả đã bị vô hiệu; kiểm tra lịch sử phát lại.');
+    if (rounds.some((round) => round.invalidatedAt !== null))
+      diagnostics.push('Có hiệp bị vô hiệu; không dùng dữ liệu hiệp đó làm kết quả mới.');
     return {
+      appeals: appeals.map(({ adjustments, ...appeal }) => ({
+        ...appeal,
+        adjustments: adjustments.map(({ athlete, ...adjustment }) => ({
+          ...adjustment, color: athlete.color,
+        })),
+      })),
       auditLogs,
+      diagnostics,
+      outcome,
       penalties,
+      rounds,
       scoreEvents: scoreEvents.map(({ scoringWindow, ...event }) =>
         monitoringScoreEvent(event, scoringWindow),
       ),

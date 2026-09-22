@@ -74,6 +74,31 @@ export interface AdminMatch {
 
 export interface AdminMatchMonitoring {
   readonly snapshot: MatchStatePayload;
+  readonly rounds: readonly {
+    id: string;
+    stage: 'REGULATION' | 'OVERTIME';
+    roundNumber: number;
+    attemptNumber: number;
+    startedAt: string;
+    endedAt: string | null;
+    invalidatedAt: string | null;
+  }[];
+  readonly appeals: readonly {
+    id: string;
+    scope: 'REGULATION' | 'OVERTIME';
+    attemptNumber: number;
+    completedAt: string;
+    invalidatedAt: string | null;
+    adjustments: readonly {
+      color: AthleteColor;
+      baseRefereeScore: number;
+      bonusPoints: number;
+      penaltyPoints: number;
+      finalScore: number;
+    }[];
+  }[];
+  readonly outcome: { winnerColor: AthleteColor; method: string; publishedAt: string } | null;
+  readonly diagnostics: readonly string[];
   readonly scoringWindows: readonly {
     id: string;
     roundNumber: number;
