@@ -19,10 +19,11 @@ const snapshot: PublicMatchStatePayload = {
   activeRound: {
     endedAt: null,
     endsAt: '2030-01-01T00:02:00.000Z',
-    id: 'round-1',
     pausedAt: null,
     remainingDurationMs: null,
     roundNumber: 1,
+    attemptNumber: 0,
+    stage: 'REGULATION',
     startedAt: '2030-01-01T00:00:00.000Z',
   },
   athletes: [
@@ -35,7 +36,7 @@ const snapshot: PublicMatchStatePayload = {
       violations: 3,
     },
   ],
-  completion: { canComplete: false, blockedReasons: ['ROUND_1_NOT_ENDED', 'ROUND_2_NOT_ENDED'] },
+  committedScores: { RED: null, BLUE: null },
   generatedAt: '2030-01-01T00:00:00.000Z',
   match: {
     currentRound: 1,
@@ -44,6 +45,7 @@ const snapshot: PublicMatchStatePayload = {
     phase: MatchStatus.ROUND_1_RUNNING,
     publicId: 'A72K9P',
     status: MatchStatus.ROUND_1_RUNNING,
+    outcome: null,
   },
 };
 

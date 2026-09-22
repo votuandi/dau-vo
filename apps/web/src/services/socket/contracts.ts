@@ -1,6 +1,10 @@
 import type {
   MatchFinishedPayload,
   MatchCompletionResponse,
+  AppealCompletePayload,
+  AppealCompleteResponse,
+  OvertimeActionResponse,
+  AthleteColor,
   MatchExitCommandPayload,
   MatchExitResponse,
   MatchStatePayload,
@@ -73,6 +77,16 @@ export interface ClientToServerEvents {
   'round:cancel': (acknowledge: (response: ResultCancellationResponse) => void) => void;
   'match:reset': (acknowledge: (response: ResultCancellationResponse) => void) => void;
   'match:complete': (acknowledge: (response: MatchCompletionResponse) => void) => void;
+  'appeal:complete': (
+    payload: AppealCompletePayload,
+    acknowledge: (response: AppealCompleteResponse) => void,
+  ) => void;
+  'overtime:start': (acknowledge: (response: OvertimeActionResponse) => void) => void;
+  'overtime:restart': (acknowledge: (response: OvertimeActionResponse) => void) => void;
+  'overtime:manual-winner': (
+    winner: AthleteColor,
+    acknowledge: (response: OvertimeActionResponse) => void,
+  ) => void;
   'match:exit': (
     payload: MatchExitCommandPayload,
     acknowledge: (response: MatchExitResponse) => void,

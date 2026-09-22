@@ -86,6 +86,36 @@ export function presentPhase(value: MatchPhase): MatchPresentation {
         help: 'Các hiệp đã kết thúc, chờ giám định xác nhận kết quả.',
         variant: 'warning',
       };
+    case MatchPhase.REGULATION_APPEAL:
+      return {
+        label: 'Phúc khảo sau hiệp 2',
+        help: 'Chờ điều chỉnh điểm chính thức.',
+        variant: 'warning',
+      };
+    case MatchPhase.OVERTIME_READY:
+      return { label: 'Sẵn sàng hiệp phụ', help: 'Chờ bắt đầu hiệp phụ.', variant: 'warning' };
+    case MatchPhase.OVERTIME_RUNNING:
+      return { label: 'Hiệp phụ', help: 'Hiệp phụ đang diễn ra.', variant: 'info' };
+    case MatchPhase.OVERTIME_PAUSED:
+      return { label: 'Hiệp phụ tạm dừng', help: 'Đồng hồ đang dừng.', variant: 'warning' };
+    case MatchPhase.OVERTIME_APPEAL:
+      return {
+        label: 'Phúc khảo hiệp phụ',
+        help: 'Chờ điều chỉnh điểm hiệp phụ.',
+        variant: 'warning',
+      };
+    case MatchPhase.OVERTIME_TIEBREAK_DECISION:
+      return {
+        label: 'Quyết định hòa hiệp phụ',
+        help: 'Chọn người thắng hoặc đấu lại hiệp phụ.',
+        variant: 'warning',
+      };
+    case MatchPhase.RESULT_PUBLICATION_READY:
+      return {
+        label: 'Sẵn sàng công bố',
+        help: 'Kết quả đã sẵn sàng để công bố.',
+        variant: 'success',
+      };
     case MatchPhase.FINISHED:
       return {
         label: 'Kết quả cuối cùng',

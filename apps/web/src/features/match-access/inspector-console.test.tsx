@@ -74,7 +74,7 @@ describe('InspectorConsole', () => {
     expect(screen.getByText('CHỜ BẮT ĐẦU')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'BẮT ĐẦU HIỆP 1' }));
     expect(startRound).toHaveBeenCalledOnce();
-    expect(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toBeDisabled();
 
     rerender(
       <InspectorConsole
@@ -91,11 +91,11 @@ describe('InspectorConsole', () => {
     expect(screen.getAllByText('Lỗi vi phạm:')).toHaveLength(2);
     expect(screen.getAllByText('5')).toHaveLength(1);
     expect(screen.getAllByText('3')).toHaveLength(1);
-    const redPenalty = screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' });
+    const redPenalty = screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' });
     await user.click(redPenalty);
     expect(submitPenalty).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' })).toHaveTextContent('XÁC NHẬN LỖI ĐỎ');
-    await user.click(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' }));
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toHaveTextContent('XÁC NHẬN LỖI ĐỎ');
+    await user.click(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' }));
     expect(submitPenalty).toHaveBeenCalledExactlyOnceWith(AthleteColor.RED);
 
     rerender(
@@ -123,7 +123,7 @@ describe('InspectorConsole', () => {
     );
 
     expect(screen.getByText('HIỆP 2')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Ghi lỗi XANH' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV XANH' })).toBeEnabled();
 
     rerender(
       <InspectorConsole
@@ -136,8 +136,8 @@ describe('InspectorConsole', () => {
     );
 
     expect(screen.getByText('KẾT QUẢ CUỐI CÙNG')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Ghi lỗi XANH' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV XANH' })).toBeDisabled();
   });
 
   it('disables controls when the session is revoked or realtime connection is lost', () => {
@@ -151,8 +151,8 @@ describe('InspectorConsole', () => {
     );
 
     expect(screen.getByText('Mất kết nối')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Ghi lỗi XANH' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV XANH' })).toBeDisabled();
   });
 
   it('shows match-scoped readiness and disables round start until every required display is connected', () => {
@@ -222,7 +222,7 @@ describe('InspectorConsole', () => {
     );
     expect(screen.getByText('HIỆP 1 TẠM DỪNG')).toBeVisible();
     expect(screen.getByRole('timer')).toHaveTextContent('01:00');
-    expect(screen.getByRole('button', { name: 'Ghi lỗi ĐỎ' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'TIẾP TỤC' }));
     expect(resumeRound).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Tiếp tục' }));

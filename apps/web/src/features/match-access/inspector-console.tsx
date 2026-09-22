@@ -80,6 +80,22 @@ const completionBlockedReasonLabels: Record<MatchCompletionBlockedReason, string
   UNRESOLVED_SCORING_WINDOW: 'Đang chờ hoàn tất chấm điểm.',
 };
 
+type AppealDraft = Record<'redBonus' | 'redPenalty' | 'blueBonus' | 'bluePenalty', string>;
+const emptyAppealDraft: AppealDraft = {
+  redBonus: '0',
+  redPenalty: '0',
+  blueBonus: '0',
+  bluePenalty: '0',
+};
+function appealNumber(value: string): number | null {
+  return /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) <= 99
+    ? Number(value)
+    : null;
+}
+function newIdempotencyKey(): string {
+  return globalThis.crypto.randomUUID();
+}
+
 function completionHelp(
   blockedReasons: readonly MatchCompletionBlockedReason[] | undefined,
 ): string {
@@ -200,7 +216,7 @@ function PenaltyButton({
 
   return (
     <button
-      aria-label={`Ghi lỗi ${colorLabel}`}
+      aria-label={`Ghi nhận lỗi VĐV ${colorLabel}`}
       aria-pressed={isArmed}
       className={`min-h-28 rounded-2xl border-4 px-4 py-5 text-center text-xl font-black text-white shadow-lg transition active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-32 sm:text-2xl ${baseClass} focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-4`}
       disabled={disabled}
@@ -218,17 +234,31 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
   const snapshot = realtime.snapshot;
   const status = snapshot?.match.phase;
   const roundIsRunning =
-    status === MatchStatus.ROUND_1_RUNNING || status === MatchStatus.ROUND_2_RUNNING;
+    status === MatchStatus.ROUND_1_RUNNING ||
+    status === MatchStatus.ROUND_2_RUNNING ||
+    status === MatchStatus.OVERTIME_RUNNING;
   const roundIsPaused =
-    status === MatchStatus.ROUND_1_PAUSED || status === MatchStatus.ROUND_2_PAUSED;
+    status === MatchStatus.ROUND_1_PAUSED ||
+    status === MatchStatus.ROUND_2_PAUSED ||
+    status === MatchStatus.OVERTIME_PAUSED;
   const remainingTime = useServerDisplayTimer(
     roundIsRunning ? snapshot?.activeRound?.endsAt : undefined,
     snapshot?.generatedAt,
   );
   const [armedPenalty, setArmedPenalty] = useState<AthleteColor | null>(null);
   const [confirmation, setConfirmation] = useState<
-    'pause' | 'resume' | 'cancel-round' | 'complete' | null
+    | 'pause'
+    | 'resume'
+    | 'cancel-round'
+    | 'complete'
+    | 'appeal'
+    | 'restart-overtime'
+    | 'manual-red'
+    | 'manual-blue'
+    | null
   >(null);
+  const [appealDraft, setAppealDraft] = useState<AppealDraft>(emptyAppealDraft);
+  const [appealKey, setAppealKey] = useState(newIdempotencyKey);
   const [exitMenuOpen, setExitMenuOpen] = useState(false);
   const [exitConfirmation, setExitConfirmation] = useState<MatchExitMode | null>(null);
   const [exitAttempted, setExitAttempted] = useState(false);
@@ -358,6 +388,17 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
     setArmedPenalty(null);
     void realtime.submitPenalty(athlete);
   }
+  const appealValues = {
+    redBonus: appealNumber(appealDraft.redBonus),
+    redPenalty: appealNumber(appealDraft.redPenalty),
+    blueBonus: appealNumber(appealDraft.blueBonus),
+    bluePenalty: appealNumber(appealDraft.bluePenalty),
+  };
+  const appealValid = Object.values(appealValues).every((value) => value !== null);
+  const appealTitle =
+    status === MatchStatus.REGULATION_APPEAL
+      ? 'Phúc khảo sau hiệp 2'
+      : `Phúc khảo hiệp phụ lần ${String(snapshot?.activeRound?.attemptNumber ?? snapshot?.match.currentRound ?? 1)}`;
 
   return (
     <div className="arena-background min-h-dvh text-white">
@@ -594,6 +635,167 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
           />
         </section>
 
+        {status === MatchStatus.REGULATION_APPEAL || status === MatchStatus.OVERTIME_APPEAL ? (
+          <section
+            aria-labelledby="appeal-title"
+            className="mt-3 rounded-3xl border border-amber-200/30 bg-amber-950/20 p-4 shadow-xl backdrop-blur-xl sm:mt-5 sm:p-6"
+          >
+            <h2 className="text-xl font-black" id="appeal-title">
+              {appealTitle}
+            </h2>
+            <p className="mt-1 text-sm text-amber-100/85">
+              Nhập số nguyên từ 0 đến 99. Bản xem trước chỉ để kiểm tra; máy chủ quyết định điểm
+              chính thức.
+            </p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              {(
+                [
+                  ['redBonus', 'Điểm cộng đỏ'],
+                  ['redPenalty', 'Điểm phạt đỏ'],
+                  ['blueBonus', 'Điểm cộng xanh'],
+                  ['bluePenalty', 'Điểm phạt xanh'],
+                ] as const
+              ).map(([field, label]) => (
+                <label className="grid gap-2 font-bold" key={field}>
+                  {label}
+                  <input
+                    aria-invalid={appealNumber(appealDraft[field]) === null}
+                    className="h-12 rounded-xl border border-white/25 bg-slate-950/40 px-3 text-lg text-white outline-none focus-visible:ring-4 focus-visible:ring-amber-300"
+                    inputMode="numeric"
+                    min="0"
+                    max="99"
+                    pattern="[0-9]*"
+                    value={appealDraft[field]}
+                    onChange={(event) => {
+                      setAppealDraft((draft) => ({ ...draft, [field]: event.target.value }));
+                    }}
+                  />
+                  {appealNumber(appealDraft[field]) === null ? (
+                    <span className="text-sm text-red-200" role="alert">
+                      Nhập một số nguyên từ 0 đến 99.
+                    </span>
+                  ) : null}
+                </label>
+              ))}
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2" aria-live="polite">
+              {[redAthlete, blueAthlete].map((athlete) => {
+                if (!athlete) return null;
+                const red = athlete.color === AthleteColor.RED;
+                const bonus = red ? appealValues.redBonus : appealValues.blueBonus;
+                const penalty = red ? appealValues.redPenalty : appealValues.bluePenalty;
+                return (
+                  <p className="rounded-xl bg-white/10 p-3 text-sm" key={athlete.id}>
+                    <strong>
+                      {red ? 'ĐỎ' : 'XANH'} — {athlete.name}:
+                    </strong>{' '}
+                    Điểm trọng tài {athlete.score} + Điểm cộng {bonus ?? '—'} − Điểm phạt{' '}
+                    {penalty ?? '—'} ={' '}
+                    <strong>
+                      Điểm chung cuộc{' '}
+                      {bonus === null || penalty === null ? '—' : athlete.score + bonus - penalty}
+                    </strong>
+                  </p>
+                );
+              })}
+            </div>
+            <Button
+              className="mt-5 min-h-14 w-full text-lg font-black"
+              disabled={
+                !appealValid ||
+                realtime.connectionStatus !== 'connected' ||
+                realtime.submittingResultAction ||
+                snapshot?.result.canCompleteAppeal !== true
+              }
+              onClick={() => {
+                setConfirmation('appeal');
+              }}
+              type="button"
+            >
+              {realtime.submittingResultAction ? 'ĐANG HOÀN THÀNH…' : 'HOÀN THÀNH PHÚC KHẢO'}
+            </Button>
+            {realtime.resultActionErrorMessage ? (
+              <p
+                className="mt-3 rounded-xl bg-red-400/15 p-3 text-sm font-semibold text-red-100"
+                role="alert"
+              >
+                {realtime.resultActionErrorMessage}
+              </p>
+            ) : null}
+          </section>
+        ) : null}
+
+        <section aria-label="Hành động kết quả" className="mt-3 grid gap-3 sm:grid-cols-2">
+          {snapshot?.result.canStartOvertime ? (
+            <Button
+              className="min-h-14 text-lg font-black"
+              disabled={
+                realtime.connectionStatus !== 'connected' || realtime.submittingResultAction
+              }
+              onClick={() => {
+                void realtime.startOvertime();
+              }}
+              type="button"
+            >
+              BẮT ĐẦU HIỆP PHỤ
+            </Button>
+          ) : null}
+          {snapshot?.result.canPublishResult ? (
+            <Button
+              className="min-h-14 text-lg font-black"
+              disabled={
+                realtime.connectionStatus !== 'connected' || realtime.submittingResultAction
+              }
+              onClick={() => {
+                void realtime.completeMatch();
+              }}
+              type="button"
+            >
+              CÔNG BỐ KẾT QUẢ
+            </Button>
+          ) : null}
+          {snapshot?.result.canRestartOvertime ? (
+            <Button
+              className="min-h-14 text-lg font-black"
+              onClick={() => {
+                setConfirmation('restart-overtime');
+              }}
+              type="button"
+              variant="outline"
+            >
+              ĐẤU LẠI HIỆP PHỤ
+            </Button>
+          ) : null}
+          {snapshot?.result.canSelectManualWinner ? (
+            <div className="rounded-2xl border border-amber-200/30 p-3 sm:col-span-2">
+              <p className="font-black">CHỌN NGƯỜI CHIẾN THẮNG</p>
+              <p className="mt-1 text-sm text-amber-100">
+                Điểm chung cuộc hiệp phụ đang hòa. Chọn kết quả chính thức.
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Button
+                  onClick={() => {
+                    setConfirmation('manual-red');
+                  }}
+                  type="button"
+                  variant="outline"
+                >
+                  ĐỎ — {redAthlete?.name ?? 'VĐV đỏ'}
+                </Button>
+                <Button
+                  onClick={() => {
+                    setConfirmation('manual-blue');
+                  }}
+                  type="button"
+                  variant="outline"
+                >
+                  XANH — {blueAthlete?.name ?? 'VĐV xanh'}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
         <section
           aria-labelledby="inspector-penalty-title"
           className="mt-3 rounded-3xl border border-white/15 bg-white/10 p-4 shadow-xl shadow-blue-950/15 backdrop-blur-xl sm:mt-5 sm:p-6"
@@ -660,9 +862,22 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                 ? 'Tiếp tục'
                 : confirmation === 'cancel-round'
                   ? 'Hủy kết quả hiệp'
-                  : 'Lưu kết quả'
+                  : confirmation === 'appeal'
+                    ? 'Xác nhận phúc khảo'
+                    : confirmation === 'restart-overtime'
+                      ? 'Đấu lại hiệp phụ'
+                      : confirmation === 'manual-red'
+                        ? `Chọn ĐỎ — ${redAthlete?.name ?? 'VĐV đỏ'}`
+                        : confirmation === 'manual-blue'
+                          ? `Chọn XANH — ${blueAthlete?.name ?? 'VĐV xanh'}`
+                          : 'Lưu kết quả'
           }
-          busy={realtime.controllingRound || realtime.cancellingResults || realtime.completingMatch}
+          busy={
+            realtime.controllingRound ||
+            realtime.cancellingResults ||
+            realtime.completingMatch ||
+            realtime.submittingResultAction
+          }
           description={
             confirmation === 'pause'
               ? 'Bạn có chắc muốn tạm dừng hiệp đấu hiện tại?'
@@ -670,7 +885,13 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                 ? 'Bạn có chắc muốn tiếp tục hiệp đấu?'
                 : confirmation === 'cancel-round'
                   ? `Hủy kết quả Hiệp ${status === MatchStatus.BREAK ? '1' : '2'}?`
-                  : 'Xác nhận lưu kết quả chính thức. Kết quả có thể làm nhánh đấu chuyển tiếp.'
+                  : confirmation === 'appeal'
+                    ? 'Phúc khảo này sẽ được khóa sau khi cam kết. Hãy kiểm tra kỹ các điều chỉnh trước khi xác nhận.'
+                    : confirmation === 'restart-overtime'
+                      ? 'Kết quả hiệp phụ hòa sẽ bị thay bằng một hiệp phụ mới.'
+                      : confirmation === 'manual-red' || confirmation === 'manual-blue'
+                        ? `Điểm chung cuộc hiệp phụ đang hòa. Chọn người chiến thắng chính thức: ${confirmation === 'manual-red' ? `ĐỎ — ${redAthlete?.name ?? 'VĐV đỏ'}` : `XANH — ${blueAthlete?.name ?? 'VĐV xanh'}`}.`
+                        : 'Xác nhận lưu kết quả chính thức. Kết quả có thể làm nhánh đấu chuyển tiếp.'
           }
           onCancel={() => {
             setConfirmation(null);
@@ -683,16 +904,45 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                   ? realtime.resumeRound()
                   : confirmation === 'cancel-round'
                     ? realtime.cancelRoundResult()
-                    : realtime.completeMatch();
+                    : confirmation === 'appeal'
+                      ? realtime.completeAppeal({
+                          RED: {
+                            bonusPoints: appealValues.redBonus ?? 0,
+                            penaltyPoints: appealValues.redPenalty ?? 0,
+                          },
+                          BLUE: {
+                            bonusPoints: appealValues.blueBonus ?? 0,
+                            penaltyPoints: appealValues.bluePenalty ?? 0,
+                          },
+                          idempotencyKey: appealKey,
+                        })
+                      : confirmation === 'restart-overtime'
+                        ? realtime.restartOvertime()
+                        : confirmation === 'manual-red'
+                          ? realtime.selectManualWinner(AthleteColor.RED)
+                          : confirmation === 'manual-blue'
+                            ? realtime.selectManualWinner(AthleteColor.BLUE)
+                            : realtime.completeMatch();
             void command.then((ok) => {
-              if (ok) setConfirmation(null);
+              if (ok) {
+                if (confirmation === 'appeal') {
+                  setAppealDraft(emptyAppealDraft);
+                  setAppealKey(newIdempotencyKey());
+                }
+                setConfirmation(null);
+              }
             });
           }}
           title="Xác nhận"
           warning={
             confirmation === 'cancel-round'
               ? `Tất cả điểm trọng tài và lỗi trong Hiệp ${status === MatchStatus.BREAK ? '1' : '2'} sẽ bị loại khỏi kết quả chính thức. Hành động này có thể được hoàn tác.`
-              : undefined
+              : confirmation === 'appeal' ||
+                  confirmation === 'restart-overtime' ||
+                  confirmation === 'manual-red' ||
+                  confirmation === 'manual-blue'
+                ? 'Thao tác này cần xác nhận và chỉ máy chủ mới xác lập kết quả chính thức.'
+                : undefined
           }
         />
       ) : null}

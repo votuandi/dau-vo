@@ -37,6 +37,13 @@ const matchStatusLabels: Record<MatchStatus, string> = {
   [MatchStatus.ROUND_2_RUNNING]: 'Hiệp 2 đang diễn ra',
   [MatchStatus.ROUND_2_PAUSED]: 'Hiệp 2 đang tạm dừng',
   [MatchStatus.AWAITING_RESULT_SAVE]: 'Chờ lưu kết quả',
+  [MatchStatus.REGULATION_APPEAL]: 'Phúc khảo sau hiệp 2',
+  [MatchStatus.OVERTIME_READY]: 'Sẵn sàng hiệp phụ',
+  [MatchStatus.OVERTIME_RUNNING]: 'Hiệp phụ đang diễn ra',
+  [MatchStatus.OVERTIME_PAUSED]: 'Hiệp phụ tạm dừng',
+  [MatchStatus.OVERTIME_APPEAL]: 'Phúc khảo hiệp phụ',
+  [MatchStatus.OVERTIME_TIEBREAK_DECISION]: 'Quyết định hòa hiệp phụ',
+  [MatchStatus.RESULT_PUBLICATION_READY]: 'Sẵn sàng công bố kết quả',
   [MatchStatus.FINISHED]: 'Đã kết thúc',
 };
 

@@ -88,9 +88,12 @@ export interface RegulationScoreBreakdown {
 export interface ResultCapability {
   canCompleteAppeal: boolean;
   canStartOvertime: boolean;
+  canRestartOvertime: boolean;
+  canSelectManualWinner: boolean;
   canPublishResult: boolean;
   blockedReasons: ResultCapabilityBlockedReason[];
   regulation: { RED: RegulationScoreBreakdown | null; BLUE: RegulationScoreBreakdown | null };
+  overtime: { RED: RegulationScoreBreakdown | null; BLUE: RegulationScoreBreakdown | null };
   isTie: boolean | null;
 }
 

@@ -3,6 +3,9 @@ import {
   RealtimeEvent,
   type AthleteColor,
   type MatchFinishedPayload,
+  type AppealCompletePayload,
+  type AppealCompleteResponse,
+  type OvertimeActionResponse,
   type MatchCompletionResponse,
   MatchExitMode,
   type MatchExitResponse,
@@ -92,9 +95,7 @@ function voteAcknowledgementMatchesReferee(
 }
 
 function createMatchExitTraceId(): string {
-  const generated = globalThis.crypto?.randomUUID?.();
-  if (generated) return generated;
-  return `match-exit-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+  return globalThis.crypto.randomUUID();
 }
 
 export interface MatchRealtimeState {
@@ -129,6 +130,12 @@ export interface MatchRealtimeState {
   readonly submittingVote: AthleteColor | null;
   readonly submittingPenalty: AthleteColor | null;
   readonly penaltyErrorMessage: string | null;
+  readonly completeAppeal: (payload: AppealCompletePayload) => Promise<boolean>;
+  readonly startOvertime: () => Promise<boolean>;
+  readonly restartOvertime: () => Promise<boolean>;
+  readonly selectManualWinner: (winner: AthleteColor) => Promise<boolean>;
+  readonly submittingResultAction: boolean;
+  readonly resultActionErrorMessage: string | null;
   readonly voteSubmitErrorMessage: string | null;
 }
 
@@ -317,6 +324,8 @@ export function useMatchRealtime({
   const [submittingPenalty, setSubmittingPenalty] = useState<AthleteColor | null>(null);
   const [penaltyErrorMessage, setPenaltyErrorMessage] = useState<string | null>(null);
   const [voteSubmitErrorMessage, setVoteSubmitErrorMessage] = useState<string | null>(null);
+  const [submittingResultAction, setSubmittingResultAction] = useState(false);
+  const [resultActionErrorMessage, setResultActionErrorMessage] = useState<string | null>(null);
   const acceptedVoteRef = useRef<VoteAcceptedPayload | null>(null);
   const refereeIdentityRef = useRef(refereeIdentity);
   const onAuthenticationRequiredRef = useRef(onAuthenticationRequired);
@@ -327,6 +336,7 @@ export function useMatchRealtime({
   const roundControlInFlightRef = useRef(false);
   const resultCancellationInFlightRef = useRef(false);
   const voteSubmissionInFlightRef = useRef(false);
+  const resultActionInFlightRef = useRef(false);
 
   useEffect(() => {
     onAuthenticationRequiredRef.current = onAuthenticationRequired;
@@ -873,6 +883,80 @@ export function useMatchRealtime({
     }
   }, []);
 
+  const resultAction = useCallback(
+    async (
+      event:
+        | typeof RealtimeEvent.APPEAL_COMPLETE
+        | typeof RealtimeEvent.OVERTIME_START
+        | typeof RealtimeEvent.OVERTIME_RESTART
+        | typeof RealtimeEvent.OVERTIME_MANUAL_WINNER,
+      payload?: AppealCompletePayload | AthleteColor,
+    ): Promise<boolean> => {
+      const socket = getSocketClient();
+      if (resultActionInFlightRef.current || !socket.connected) {
+        setResultActionErrorMessage(
+          'Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi thao tác.',
+        );
+        return false;
+      }
+      resultActionInFlightRef.current = true;
+      setSubmittingResultAction(true);
+      setResultActionErrorMessage(null);
+      try {
+        const response = await new Promise<AppealCompleteResponse | OvertimeActionResponse>(
+          (resolve, reject) => {
+            const acknowledge = (
+              error: Error | null,
+              result: AppealCompleteResponse | OvertimeActionResponse,
+            ) => {
+              if (error) reject(error);
+              else resolve(result);
+            };
+            if (event === RealtimeEvent.APPEAL_COMPLETE) {
+              socket.timeout(10_000).emit(event, payload as AppealCompletePayload, acknowledge);
+            } else if (event === RealtimeEvent.OVERTIME_MANUAL_WINNER) {
+              socket.timeout(10_000).emit(event, payload as AthleteColor, acknowledge);
+            } else {
+              socket.timeout(10_000).emit(event, acknowledge);
+            }
+          },
+        );
+        if (!response.ok) {
+          setResultActionErrorMessage(response.error.message);
+          socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+          return false;
+        }
+        socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+        return true;
+      } catch {
+        setResultActionErrorMessage(
+          'Máy chủ không phản hồi. Vui lòng kiểm tra trạng thái mới nhất và thử lại.',
+        );
+        return false;
+      } finally {
+        resultActionInFlightRef.current = false;
+        setSubmittingResultAction(false);
+      }
+    },
+    [],
+  );
+  const completeAppeal = useCallback(
+    (payload: AppealCompletePayload) => resultAction(RealtimeEvent.APPEAL_COMPLETE, payload),
+    [resultAction],
+  );
+  const startOvertime = useCallback(
+    () => resultAction(RealtimeEvent.OVERTIME_START),
+    [resultAction],
+  );
+  const restartOvertime = useCallback(
+    () => resultAction(RealtimeEvent.OVERTIME_RESTART),
+    [resultAction],
+  );
+  const selectManualWinner = useCallback(
+    (winner: AthleteColor) => resultAction(RealtimeEvent.OVERTIME_MANUAL_WINNER, winner),
+    [resultAction],
+  );
+
   useEffect(() => {
     const socket = getSocketClient();
 
@@ -1199,6 +1283,12 @@ export function useMatchRealtime({
     submittingVote,
     submittingPenalty,
     penaltyErrorMessage,
+    completeAppeal,
+    startOvertime,
+    restartOvertime,
+    selectManualWinner,
+    submittingResultAction,
+    resultActionErrorMessage,
     voteSubmitErrorMessage,
   };
 }

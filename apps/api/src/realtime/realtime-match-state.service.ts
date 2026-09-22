@@ -109,6 +109,7 @@ export class RealtimeMatchStateService {
       unresolvedWindow,
       validRounds,
       completedAppeal,
+      completedOvertimeAppeal,
       validRoundResults,
     ] = await Promise.all([
       this.prisma.scoreEvent.findMany({
@@ -154,6 +155,18 @@ export class RealtimeMatchStateService {
           status: 'COMPLETED',
           invalidatedAt: null,
         },
+        include: {
+          adjustments: { include: { athlete: { select: { color: true } } } },
+        },
+      }),
+      this.prisma.matchAppeal.findFirst({
+        where: {
+          matchId,
+          scope: 'OVERTIME',
+          status: 'COMPLETED',
+          invalidatedAt: null,
+        },
+        orderBy: { attemptNumber: 'desc' },
         include: {
           adjustments: { include: { athlete: { select: { color: true } } } },
         },
@@ -225,6 +238,7 @@ export class RealtimeMatchStateService {
         validRounds,
         unresolvedWindow,
         completedAppeal,
+        completedOvertimeAppeal,
         validRoundResults.length,
       ),
       exit: this.exitCapability(match, validRounds, unresolvedWindow),
@@ -252,6 +266,15 @@ export class RealtimeMatchStateService {
     rounds: Array<{ endedAt: Date | null; roundNumber: number }>,
     unresolved: { id: string } | null,
     appeal: {
+      adjustments: Array<{
+        baseRefereeScore: number;
+        bonusPoints: number;
+        penaltyPoints: number;
+        finalScore: number;
+        athlete: { color: AthleteColor };
+      }>;
+    } | null,
+    overtimeAppeal: {
       adjustments: Array<{
         baseRefereeScore: number;
         bonusPoints: number;
@@ -294,12 +317,39 @@ export class RealtimeMatchStateService {
     };
     const red = render(AthleteColor.RED);
     const blue = render(AthleteColor.BLUE);
+    const overtimeByColor = new Map(
+      overtimeAppeal?.adjustments.map((x) => [x.athlete.color, x]) ?? [],
+    );
+    const renderOvertime = (color: AthleteColor) => {
+      const x = overtimeByColor.get(color);
+      return x
+        ? {
+            base: x.baseRefereeScore,
+            bonusPoints: x.bonusPoints,
+            penaltyPoints: x.penaltyPoints,
+            final: x.finalScore,
+          }
+        : null;
+    };
+    const overtimeRed = renderOvertime(AthleteColor.RED);
+    const overtimeBlue = renderOvertime(AthleteColor.BLUE);
     return {
       canCompleteAppeal: reasons.length === 0,
       canStartOvertime: match.status === MatchStatus.OVERTIME_READY,
+      canRestartOvertime:
+        match.status === MatchStatus.OVERTIME_TIEBREAK_DECISION &&
+        overtimeRed !== null &&
+        overtimeBlue !== null &&
+        overtimeRed.final === overtimeBlue.final,
+      canSelectManualWinner:
+        match.status === MatchStatus.OVERTIME_TIEBREAK_DECISION &&
+        overtimeRed !== null &&
+        overtimeBlue !== null &&
+        overtimeRed.final === overtimeBlue.final,
       canPublishResult: match.status === MatchStatus.RESULT_PUBLICATION_READY,
       blockedReasons: reasons,
       regulation: { RED: red, BLUE: blue },
+      overtime: { RED: overtimeRed, BLUE: overtimeBlue },
       isTie: red && blue ? red.final === blue.final : null,
     };
   }
