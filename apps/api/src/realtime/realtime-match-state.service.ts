@@ -243,7 +243,8 @@ export class RealtimeMatchStateService {
         violations:
           match.rulesVersion === MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2
             ? (faultByAthlete.get(athlete.id) ?? 0)
-            : (violationsByAthlete.get(athlete.id) ?? 0),
+            : (violationsByAthlete.get(athlete.id) ?? 0) +
+              (faultByAthlete.get(athlete.id) ?? 0),
       })),
       completion: this.completionCapability(
         match,

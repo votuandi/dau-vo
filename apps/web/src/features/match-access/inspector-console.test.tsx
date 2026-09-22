@@ -157,6 +157,24 @@ describe('InspectorConsole', () => {
     expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV XANH' })).toBeDisabled();
   });
 
+  it('enables fault recording for a running legacy match', () => {
+    render(
+      <InspectorConsole
+        realtime={createRealtimeState({
+          snapshot: createMatchSnapshot({
+            match: {
+              ...snapshotFor(MatchStatus.ROUND_1_RUNNING).match,
+              rulesVersion: 'LEGACY_SCORE_PENALTY_V1',
+            },
+          }),
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV XANH' })).toBeEnabled();
+  });
+
   it('shows match-scoped readiness and disables round start until every required display is connected', () => {
     const presence = createMatchSnapshot().presence.map((entry) =>
       entry.accessRole === MatchAccessRole.REFEREE_2

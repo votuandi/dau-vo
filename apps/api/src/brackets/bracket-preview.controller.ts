@@ -125,6 +125,7 @@ export class BracketPreviewController {
       weightClassId,
       request.user.id,
       input.reason,
+      input.force,
     );
   }
 

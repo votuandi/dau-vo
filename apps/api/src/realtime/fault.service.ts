@@ -1,7 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   AuditEventType,
-  MatchRulesVersion,
   MatchStatus,
   RoundStage,
 } from '@prisma/client';
@@ -71,8 +70,6 @@ export class FaultService {
             },
           },
         });
-        if (match.rulesVersion !== MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2)
-          throw new InvalidFaultStateError();
         const running =
           match.status === MatchStatus.ROUND_1_RUNNING ||
           match.status === MatchStatus.ROUND_2_RUNNING ||

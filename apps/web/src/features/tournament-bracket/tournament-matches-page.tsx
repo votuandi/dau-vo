@@ -118,6 +118,9 @@ export function TournamentMatchesPage({
   const [cancelReason, setCancelReason] = useState('');
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [unsafeCancellationMatches, setUnsafeCancellationMatches] = useState<
+    readonly { readonly id: string; readonly publicId: string }[]
+  >([]);
   // Prevent a stale successful query from flashing a bracket after cancellation.
   const [confirmedCancelled, setConfirmedCancelled] = useState(false);
   const drawWeightClassRef = useRef(selectedId);
@@ -315,12 +318,18 @@ export function TournamentMatchesPage({
     },
   });
   const cancelBracket = useMutation({
-    mutationFn: () =>
-      adminManagementApi.cancelBracket(tournament.id, selectedId ?? '', cancelReason.trim()),
+    mutationFn: (force: boolean) =>
+      adminManagementApi.cancelBracket(
+        tournament.id,
+        selectedId ?? '',
+        cancelReason.trim(),
+        force,
+      ),
     onSuccess: () => {
       setCancelOpen(false);
       setCancelReason('');
       setCancelError(null);
+      setUnsafeCancellationMatches([]);
       setConfirmedCancelled(true);
       qc.removeQueries({
         queryKey: bracketQueryKeys.detail(tournament.id, selectedId ?? ''),
@@ -337,6 +346,28 @@ export function TournamentMatchesPage({
       ]);
     },
     onError: (error) => {
+      if (
+        error instanceof ApiClientError &&
+        error.body.code === 'BRACKET_CANCELLATION_UNSAFE'
+      ) {
+        const unsafeMatches = error.body.unsafeMatches;
+        setUnsafeCancellationMatches(
+          Array.isArray(unsafeMatches)
+            ? unsafeMatches.filter(
+                (match): match is { readonly id: string; readonly publicId: string } =>
+                  typeof match === 'object' &&
+                  match !== null &&
+                  'id' in match &&
+                  'publicId' in match &&
+                  typeof match.id === 'string' &&
+                  typeof match.publicId === 'string',
+              )
+            : [],
+        );
+        setCancelError('Đã có trận đấu đã hoặc đang diễn ra.');
+        return;
+      }
+      setUnsafeCancellationMatches([]);
       setCancelError(getApiErrorMessage(error, 'Không thể hủy nhánh đấu.'));
     },
   });
@@ -459,6 +490,7 @@ export function TournamentMatchesPage({
                   disabled={cancelBracket.isPending}
                   onClick={() => {
                     setCancelError(null);
+                    setUnsafeCancellationMatches([]);
                     setCancelOpen(true);
                   }}
                   type="button"
@@ -689,10 +721,15 @@ export function TournamentMatchesPage({
       ) : null}
       {cancelOpen ? (
         <Dialog
-          description="Thao tác này lưu nhánh cũ vào lịch sử và không xóa mã truy cập hay dữ liệu trận đấu."
+          description={
+            unsafeCancellationMatches.length
+              ? 'Xác nhận cưỡng bức sẽ xóa các trận được cảnh báo và nhánh đấu hiện tại.'
+              : 'Thao tác này lưu nhánh cũ vào lịch sử và không xóa mã truy cập hay dữ liệu trận đấu.'
+          }
           initialFocusRef={cancelReasonRef}
           onClose={() => {
             setCancelOpen(false);
+            setUnsafeCancellationMatches([]);
           }}
           pending={cancelBracket.isPending}
           title="Hủy nhánh đấu?"
@@ -708,20 +745,39 @@ export function TournamentMatchesPage({
             value={cancelReason}
           />
           {cancelError ? (
-            <p className="mt-3 text-sm text-destructive" role="alert">
-              {cancelError}
-            </p>
+            <div className="mt-3 text-sm text-destructive" role="alert">
+              {unsafeCancellationMatches.length ? (
+                <p>
+                  {cancelError} Nếu xóa các trận đấu sau đây sẽ bị xóa:{' '}
+                  {unsafeCancellationMatches.map((match) => match.publicId).join(', ')}
+                </p>
+              ) : (
+                <p>{cancelError}</p>
+              )}
+            </div>
           ) : null}
           <div className="mt-4 flex gap-2">
             <Button
               disabled={!cancelReason.trim() || cancelBracket.isPending}
               onClick={() => {
-                cancelBracket.mutate();
+                cancelBracket.mutate(false);
               }}
               type="button"
             >
               Xác nhận hủy
             </Button>
+            {unsafeCancellationMatches.length ? (
+              <Button
+                disabled={!cancelReason.trim() || cancelBracket.isPending}
+                onClick={() => {
+                  cancelBracket.mutate(true);
+                }}
+                type="button"
+                variant="destructive"
+              >
+                Vẫn xác nhận hủy trận
+              </Button>
+            ) : null}
             <Button
               disabled={cancelBracket.isPending}
               onClick={() => {

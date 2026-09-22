@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CancelBracketDto {
   @Transform(({ value }: { value: unknown }) =>
@@ -9,4 +9,9 @@ export class CancelBracketDto {
   @IsNotEmpty()
   @MaxLength(500)
   reason!: string;
+
+  /** A second, explicit confirmation after operational matches are identified. */
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
 }

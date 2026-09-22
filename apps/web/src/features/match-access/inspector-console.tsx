@@ -277,7 +277,6 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
   const faultControlsDisabled =
     realtime.connectionStatus !== 'connected' ||
     !roundIsRunning ||
-    snapshot?.match.rulesVersion !== 'FAULT_APPEAL_OVERTIME_V2' ||
     realtime.submittingFault !== null;
   const canStartRound = status === MatchStatus.WAITING || status === MatchStatus.BREAK;
   const refereeReadiness =

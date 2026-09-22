@@ -1,7 +1,12 @@
 import type { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { AdminEntitlementStatus, AuditEventType } from '@prisma/client';
+import {
+  AdminEntitlementStatus,
+  AuditEventType,
+  MatchLifecycle,
+  MatchStatus,
+} from '@prisma/client';
 import { hash } from 'bcryptjs';
 import Redis from 'ioredis';
 import request, { type Test as SupertestRequest } from 'supertest';
@@ -447,5 +452,62 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
     )
       .send({ birthYear: 2000, name: `${prefix}-allowed`, weightClassId })
       .expect(201);
+  });
+
+  it('lists operational matches before requiring an explicit forced cancellation', async () => {
+    const { tournamentId, weightClassId } = await setup(2);
+    const previewBody = (await preview(tournamentId, weightClassId))
+      .body as PreviewResponse;
+    const bracketPath = `/api/admin/tournaments/${tournamentId}/weight-classes/${weightClassId}/bracket`;
+    const confirmation = await authenticated(
+      request(app.getHttpServer()).post(`${bracketPath}/confirm`),
+    )
+      .send({
+        idempotencyKey: `${prefix}-cancel-operational`,
+        previewToken: previewBody.previewToken,
+      })
+      .expect(201);
+    const bracketId = (confirmation.body as { bracket: { id: string } }).bracket.id;
+    const fixture = await prisma.bracketFixture.findFirstOrThrow({
+      where: { bracketId },
+      select: { id: true },
+    });
+    const prepared = await authenticated(
+      request(app.getHttpServer()).post(
+        `/api/admin/tournaments/${tournamentId}/brackets/${bracketId}/fixtures/${fixture.id}/prepare-match`,
+      ),
+    ).expect(201);
+    const matchId = (prepared.body as { match: { id: string; publicId: string } }).match.id;
+    const publicId = (prepared.body as { match: { publicId: string } }).match.publicId;
+    await prisma.match.update({
+      where: { id: matchId },
+      data: {
+        lifecycle: MatchLifecycle.IN_PROGRESS,
+        startedAt: new Date(),
+        status: MatchStatus.ROUND_1_RUNNING,
+      },
+    });
+
+    await authenticated(
+      request(app.getHttpServer()).post(`${bracketPath}/cancel`),
+    )
+      .send({ reason: 'Redraw required' })
+      .expect(409)
+      .expect({
+        code: 'BRACKET_CANCELLATION_UNSAFE',
+        message: 'Linked operational matches require explicit cancellation confirmation',
+        unsafeMatches: [{ id: matchId, publicId }],
+      });
+    await authenticated(
+      request(app.getHttpServer()).post(`${bracketPath}/cancel`),
+    )
+      .send({ force: true, reason: 'Redraw required' })
+      .expect(201);
+    await expect(
+      prisma.match.findUnique({ where: { id: matchId } }),
+    ).resolves.toBeNull();
+    await expect(
+      prisma.tournamentBracket.findUnique({ where: { id: bracketId } }),
+    ).resolves.toBeNull();
   });
 });

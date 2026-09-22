@@ -1,7 +1,10 @@
 import { ScoreEventType } from '@prisma/client';
 import type { AthleteColor } from '@prisma/client';
 
-/** Pure canonical V2 result calculation.  Faults never become score events. */
+/**
+ * Pure canonical V2 result calculation. Faults are counted separately and
+ * never change an athlete's score; only referee point events do that.
+ */
 export function calculateMatchScoreProjection(input: {
   athletes: Array<{ id: string; color: AthleteColor }>;
   faults: Array<{
