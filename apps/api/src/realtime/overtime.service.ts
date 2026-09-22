@@ -4,7 +4,6 @@ import {
   AuditEventType,
   MatchAppealScope,
   MatchLifecycle,
-  MatchOutcomeMethod,
   MatchStatus,
   RoundStage,
   type Prisma,
@@ -249,6 +248,10 @@ export class OvertimeService {
               invalidatedByAuditId: audit.id,
             },
           }),
+          tx.matchResultDecision.updateMany({
+            where: { sourceAppealId: appeal.id, invalidatedAt: null },
+            data: { invalidatedAt: new Date(), invalidatedByAuditId: audit.id },
+          }),
           tx.match.update({
             where: { id: input.matchId },
             data: { status: MatchStatus.OVERTIME_READY },
@@ -298,21 +301,18 @@ export class OvertimeService {
           },
           select: { id: true },
         });
-        await tx.matchOutcome.create({
+        // This is a private, durable selection.  MatchOutcome is reserved for
+        // the subsequent explicit publication transaction.
+        await tx.matchResultDecision.create({
           data: {
             matchId: input.matchId,
             winnerAthleteId: athlete.id,
             winnerColor: input.winner,
-            method: MatchOutcomeMethod.MANUAL_AFTER_OVERTIME_TIE,
             sourceAppealId: appeal.id,
             sourceOvertimeRoundId: appeal.sourceRoundId,
-            snapshot: {
-              pendingPublication: true,
-              attemptNumber: appeal.attemptNumber,
-            },
             ...(input.identity.kind === 'official'
-              ? { publishedInspectorAssignmentId: input.identity.assignmentId }
-              : { publishedInspectorSessionId: input.identity.sessionId }),
+              ? { selectedInspectorAssignmentId: input.identity.assignmentId }
+              : { selectedInspectorSessionId: input.identity.sessionId }),
           },
         });
         await tx.match.update({

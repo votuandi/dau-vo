@@ -748,7 +748,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                 realtime.connectionStatus !== 'connected' || realtime.submittingResultAction
               }
               onClick={() => {
-                void realtime.completeMatch();
+                void realtime.publishResult();
               }}
               type="button"
             >
@@ -923,7 +923,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                           ? realtime.selectManualWinner(AthleteColor.RED)
                           : confirmation === 'manual-blue'
                             ? realtime.selectManualWinner(AthleteColor.BLUE)
-                            : realtime.completeMatch();
+                            : realtime.publishResult();
             void command.then((ok) => {
               if (ok) {
                 if (confirmation === 'appeal') {

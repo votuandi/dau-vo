@@ -534,6 +534,8 @@ model Match {
   roundAthleteResults  RoundAthleteResult[]
   appeals              MatchAppeal[]
   outcome              MatchOutcome?
+  resultDecisions      MatchResultDecision[]
+  resultPublications   MatchResultPublication[]
   auditLogs            AuditLog[]
   officialAssignments  MatchOfficialAssignment[]
   bracketFixture       BracketFixture?        @relation("BracketFixtureMatch", fields: [bracketFixtureId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "matches_bracket_fixture_id_fkey")
@@ -780,6 +782,7 @@ model MatchAthlete {
   roundResults      RoundAthleteResult[]
   appealAdjustments MatchAppealAdjustment[]
   wonOutcomes       MatchOutcome[]
+  wonResultDecisions MatchResultDecision[]
 
   @@unique([matchId, color], map: "match_athletes_match_id_color_key")
   @@index([tournamentId, athleteId], map: "match_athletes_tournament_id_athlete_id_idx")
@@ -856,6 +859,7 @@ model Round {
   sourceAppeals        MatchAppeal[]   @relation("MatchAppealSourceRound")
   appealSources        MatchAppealRound[]
   outcomeSource        MatchOutcome[]  @relation("MatchOutcomeSourceOvertimeRound")
+  resultDecisionSources MatchResultDecision[]
 
   // The database keeps this descriptor unique only for non-invalidated rounds,
   // so cancelled/reset history remains auditable.
@@ -1033,6 +1037,7 @@ model MatchAppeal {
   adjustments                   MatchAppealAdjustment[]
   sourceRounds                  MatchAppealRound[]
   outcome                       MatchOutcome?              @relation("MatchOutcomeSourceAppeal")
+  resultDecisions               MatchResultDecision[]
 
   @@index([matchId, scope, attemptNumber, invalidatedAt], map: "match_appeals_match_scope_attempt_invalidated_idx")
   @@index([idempotencyKey], map: "match_appeals_idempotency_key_key")
@@ -1087,6 +1092,41 @@ model MatchOutcome {
   publishedInspectorSession     MatchSession?             @relation("MatchOutcomePublishedInspectorSession", fields: [publishedInspectorSessionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@map("match_outcomes")
+}
+
+/// An inspector's manual resolution is intentionally private until publication.
+model MatchResultDecision {
+  id                            String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId                       String                    @map("match_id") @db.Uuid
+  winnerAthleteId               String                    @map("winner_athlete_id") @db.Uuid
+  winnerColor                   AthleteColor              @map("winner_color")
+  sourceAppealId                String                    @map("source_appeal_id") @db.Uuid
+  sourceOvertimeRoundId         String                    @map("source_overtime_round_id") @db.Uuid
+  selectedInspectorAssignmentId String?                   @map("selected_inspector_assignment_id") @db.Uuid
+  selectedInspectorSessionId    String?                   @map("selected_inspector_session_id") @db.Uuid
+  selectedAt                    DateTime                  @default(now()) @map("selected_at") @db.Timestamptz(3)
+  invalidatedAt                 DateTime?                 @map("invalidated_at") @db.Timestamptz(3)
+  invalidatedByAuditId          String?                   @map("invalidated_by_audit_id") @db.Uuid
+  match                         Match                     @relation(fields: [matchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  winnerAthlete                 MatchAthlete              @relation(fields: [winnerAthleteId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  sourceAppeal                  MatchAppeal               @relation(fields: [sourceAppealId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  sourceOvertimeRound           Round                     @relation(fields: [sourceOvertimeRoundId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  @@unique([matchId, sourceAppealId], map: "match_result_decisions_match_appeal_key")
+  @@index([matchId, invalidatedAt], map: "match_result_decisions_match_invalidated_idx")
+  @@map("match_result_decisions")
+}
+
+/// Durable request/response journal for idempotent publication commands.
+model MatchResultPublication {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId        String   @map("match_id") @db.Uuid
+  idempotencyKey String   @map("idempotency_key") @db.VarChar(255)
+  fingerprint    String   @db.VarChar(128)
+  response       Json     @db.JsonB
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  match          Match    @relation(fields: [matchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  @@unique([matchId, idempotencyKey], map: "match_result_publications_match_key_key")
+  @@map("match_result_publications")
 }
 
 model AuditLog {

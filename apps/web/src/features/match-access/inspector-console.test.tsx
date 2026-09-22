@@ -403,11 +403,11 @@ describe('InspectorConsole', () => {
 
   it('enables save only from the authoritative completion capability and completes after confirmation', async () => {
     const user = userEvent.setup();
-    const completeMatch = vi.fn(() => Promise.resolve(true));
+    const publishResult = vi.fn(() => Promise.resolve(true));
     render(
       <InspectorConsole
         realtime={createRealtimeState({
-          completeMatch,
+          publishResult,
           snapshot: createMatchSnapshot({
             ...snapshotFor(MatchStatus.AWAITING_RESULT_SAVE),
             completion: { canComplete: true, blockedReasons: [] },
@@ -417,9 +417,9 @@ describe('InspectorConsole', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'LƯU KẾT QUẢ' }));
-    expect(completeMatch).not.toHaveBeenCalled();
+    expect(publishResult).not.toHaveBeenCalled();
     expect(screen.getByText(/Xác nhận lưu kết quả chính thức/)).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Lưu kết quả' }));
-    expect(completeMatch).toHaveBeenCalledOnce();
+    expect(publishResult).toHaveBeenCalledOnce();
   });
 });

@@ -1,6 +1,9 @@
 import type {
   MatchFinishedPayload,
   MatchCompletionResponse,
+  ResultPublishPayload,
+  ResultPublishResponse,
+  ResultPublishedPayload,
   AppealCompletePayload,
   AppealCompleteResponse,
   OvertimeActionResponse,
@@ -47,6 +50,7 @@ export interface ServerToClientEvents {
   'match:officials-updated': (payload: MatchOfficialsUpdatedPayload) => void;
   'match:finished': (payload: MatchFinishedPayload) => void;
   'match:completed': (payload: MatchFinishedPayload) => void;
+  'result:published': (payload: ResultPublishedPayload) => void;
   'match:state': (payload: MatchStatePayload) => void;
   'scoreboard:state': (payload: PublicMatchStatePayload) => void;
   'penalty:added': (payload: PenaltyAddedPayload) => void;
@@ -85,6 +89,10 @@ export interface ClientToServerEvents {
   'round:cancel': (acknowledge: (response: ResultCancellationResponse) => void) => void;
   'match:reset': (acknowledge: (response: ResultCancellationResponse) => void) => void;
   'match:complete': (acknowledge: (response: MatchCompletionResponse) => void) => void;
+  'result:publish': (
+    payload: ResultPublishPayload,
+    acknowledge: (response: ResultPublishResponse) => void,
+  ) => void;
   'appeal:complete': (
     payload: AppealCompletePayload,
     acknowledge: (response: AppealCompleteResponse) => void,

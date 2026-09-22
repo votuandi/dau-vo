@@ -214,25 +214,38 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
           <summary className="cursor-pointer font-black">Diễn biến và kết quả đã lưu</summary>
           <div className="mt-4 space-y-3 text-sm">
             {monitoring.data?.diagnostics.map((diagnostic) => (
-              <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 font-semibold text-amber-900" key={diagnostic}>
+              <p
+                className="rounded-lg border border-amber-200 bg-amber-50 p-3 font-semibold text-amber-900"
+                key={diagnostic}
+              >
                 {diagnostic}
               </p>
             ))}
             {monitoring.data?.rounds.map((round) => (
               <article className="rounded-lg bg-muted/60 p-3" key={round.id}>
-                <strong>{historyRoundLabel(round)}</strong> · bắt đầu {formatDateTime(round.startedAt)}
-                {round.endedAt ? ` · kết thúc ${formatDateTime(round.endedAt)}` : ' · chưa kết thúc'}
+                <strong>{historyRoundLabel(round)}</strong> · bắt đầu{' '}
+                {formatDateTime(round.startedAt)}
+                {round.endedAt
+                  ? ` · kết thúc ${formatDateTime(round.endedAt)}`
+                  : ' · chưa kết thúc'}
                 {round.invalidatedAt ? ' · Đã vô hiệu / phát lại' : ''}
               </article>
             ))}
             {monitoring.data?.appeals.map((appeal) => (
               <article className="rounded-lg border p-3" key={appeal.id}>
-                <strong>{appeal.scope === 'OVERTIME' ? `Kháng nghị hiệp phụ lần ${String(appeal.attemptNumber)}` : 'Kháng nghị sau 2 hiệp'}</strong>
-                {' · '}đã chốt {formatDateTime(appeal.completedAt)}{appeal.invalidatedAt ? ' · Đã vô hiệu' : ''}
+                <strong>
+                  {appeal.scope === 'OVERTIME'
+                    ? `Kháng nghị hiệp phụ lần ${String(appeal.attemptNumber)}`
+                    : 'Kháng nghị sau 2 hiệp'}
+                </strong>
+                {' · '}đã chốt {formatDateTime(appeal.completedAt)}
+                {appeal.invalidatedAt ? ' · Đã vô hiệu' : ''}
                 <ul className="mt-2 space-y-1">
                   {appeal.adjustments.map((adjustment) => (
                     <li key={adjustment.color}>
-                      {colorLabel(adjustment.color)}: trọng tài {adjustment.baseRefereeScore}, thưởng {adjustment.bonusPoints}, phạt {adjustment.penaltyPoints}, <strong>chung kết {adjustment.finalScore}</strong>
+                      {colorLabel(adjustment.color)}: trọng tài {adjustment.baseRefereeScore},
+                      thưởng {adjustment.bonusPoints}, phạt {adjustment.penaltyPoints},{' '}
+                      <strong>chung kết {adjustment.finalScore}</strong>
                     </li>
                   ))}
                 </ul>
@@ -240,10 +253,14 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
             ))}
             {monitoring.data?.outcome ? (
               <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900">
-                <strong>Kết quả công bố:</strong> {colorLabel(monitoring.data.outcome.winnerColor)} · {monitoring.data.outcome.method} · {formatDateTime(monitoring.data.outcome.publishedAt)}
+                <strong>Kết quả công bố:</strong> {colorLabel(monitoring.data.outcome.winnerColor)}{' '}
+                · {monitoring.data.outcome.method} ·{' '}
+                {formatDateTime(monitoring.data.outcome.publishedAt)}
               </p>
             ) : null}
-            {!monitoring.data?.rounds.length && !monitoring.data?.appeals.length ? <p>Chưa có lịch sử trận đấu.</p> : null}
+            {!monitoring.data?.rounds.length && !monitoring.data?.appeals.length ? (
+              <p>Chưa có lịch sử trận đấu.</p>
+            ) : null}
           </div>
         </details>
         <details className="rounded-xl border p-4" open>

@@ -89,7 +89,10 @@ function AthletePanel({
 }
 
 function roundLabel(
-  round: { stage: 'REGULATION' | 'OVERTIME'; roundNumber: number; attemptNumber: number } | null | undefined,
+  round:
+    | { stage: 'REGULATION' | 'OVERTIME'; roundNumber: number; attemptNumber: number }
+    | null
+    | undefined,
 ): string | null {
   if (!round) return null;
   return round.stage === 'OVERTIME'
@@ -163,7 +166,9 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
   const red = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
   const blue = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
   const winner = snapshot?.match.outcome?.winner;
-  const winnerAthlete = winner ? snapshot?.athletes.find((athlete) => athlete.color === winner) : null;
+  const winnerAthlete = winner
+    ? snapshot?.athletes.find((athlete) => athlete.color === winner)
+    : null;
   const outcomeMethod = snapshot?.match.outcome?.method;
   const committedScores = snapshot?.committedScores;
 

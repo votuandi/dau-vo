@@ -7,6 +7,8 @@ import {
   type AppealCompleteResponse,
   type OvertimeActionResponse,
   type MatchCompletionResponse,
+  type ResultPublishPayload,
+  type ResultPublishResponse,
   MatchExitMode,
   type MatchExitResponse,
   type MatchParticipantsNotReadyDetails,
@@ -113,6 +115,7 @@ export interface MatchRealtimeState {
   readonly snapshot: MatchStatePayload | null;
   readonly startRound: () => Promise<void>;
   readonly completeMatch: () => Promise<boolean>;
+  readonly publishResult: () => Promise<boolean>;
   readonly completingMatch: boolean;
   readonly completionErrorMessage: string | null;
   readonly pauseRound: () => Promise<boolean>;
@@ -476,6 +479,47 @@ export function useMatchRealtime({
     } finally {
       completionInFlightRef.current = false;
       setCompletingMatch(false);
+    }
+  }, []);
+
+  const publishResult = useCallback(async (): Promise<boolean> => {
+    const socket = getSocketClient();
+    if (resultActionInFlightRef.current || !socket.connected) {
+      setResultActionErrorMessage(
+        'Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi công bố kết quả.',
+      );
+      return false;
+    }
+    resultActionInFlightRef.current = true;
+    setSubmittingResultAction(true);
+    setResultActionErrorMessage(null);
+    const payload: ResultPublishPayload = { idempotencyKey: globalThis.crypto.randomUUID() };
+    try {
+      const response = await new Promise<ResultPublishResponse>((resolve, reject) =>
+        socket
+          .timeout(10_000)
+          .emit(
+            RealtimeEvent.RESULT_PUBLISH,
+            payload,
+            (error: Error | null, acknowledgement: ResultPublishResponse) =>
+              error ? reject(error) : resolve(acknowledgement),
+          ),
+      );
+      if (!response.ok) {
+        setResultActionErrorMessage(response.error.message);
+        return false;
+      }
+      toast({ title: 'Đã công bố kết quả chính thức.', variant: 'success' });
+      socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
+      return true;
+    } catch {
+      setResultActionErrorMessage(
+        'Máy chủ không phản hồi lệnh công bố. Vui lòng kiểm tra trạng thái mới nhất.',
+      );
+      return false;
+    } finally {
+      resultActionInFlightRef.current = false;
+      setSubmittingResultAction(false);
     }
   }, []);
 
@@ -1271,6 +1315,7 @@ export function useMatchRealtime({
     undoResultCancellation,
     cancellingResults,
     completeMatch,
+    publishResult,
     completingMatch,
     completionErrorMessage,
     resultCancellationErrorMessage,

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import {
   AuditEventType,
   MatchAppealScope,
@@ -45,11 +46,30 @@ export class ResultPublicationService {
   async publish(input: {
     matchId: string;
     identity: InspectorCommandIdentity;
+    idempotencyKey: string;
     traceId?: string;
   }): Promise<ResultPublicationTransition> {
     return this.prisma.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT id FROM matches WHERE id=${input.matchId}::uuid FOR UPDATE`;
+        const fingerprint = createHash('sha256')
+          .update(JSON.stringify({ traceId: input.traceId ?? null }))
+          .digest('hex');
+        const replay = await tx.matchResultPublication.findUnique({
+          where: {
+            matchId_idempotencyKey: {
+              matchId: input.matchId,
+              idempotencyKey: input.idempotencyKey,
+            },
+          },
+        });
+        if (replay) {
+          if (replay.fingerprint !== fingerprint)
+            throw new ResultPublicationConflictError(
+              'Idempotency key has a different request',
+            );
+          return replay.response as unknown as ResultPublicationTransition;
+        }
         await this.assertInspector(tx, input.matchId, input.identity);
         const match = await tx.match.findUniqueOrThrow({
           where: { id: input.matchId },
@@ -63,27 +83,6 @@ export class ResultPublicationService {
             },
           },
         });
-        if (
-          match.outcome &&
-          match.status === MatchStatus.FINISHED &&
-          match.lifecycle === MatchLifecycle.COMPLETED
-        ) {
-          return {
-            matchId: input.matchId,
-            matchPublicId: match.publicId,
-            tournamentId: match.tournamentId,
-            releasedOfficialIds: [],
-            publication: {
-              matchPublicId: match.publicId,
-              outcome: {
-                winner: match.outcome.winnerColor,
-                method: match.outcome.method,
-              },
-              phase: 'FINISHED',
-              finishedAt: match.outcome.publishedAt.toISOString(),
-            },
-          };
-        }
         if (
           match.status !== MatchStatus.RESULT_PUBLICATION_READY ||
           match.lifecycle !== MatchLifecycle.IN_PROGRESS
@@ -106,20 +105,28 @@ export class ResultPublicationService {
         });
         if (!appeal || appeal.adjustments.length !== 2)
           throw new AppealStateError('A valid committed appeal is required');
-        const existing = await tx.matchOutcome.findUnique({
-          where: { matchId: input.matchId },
-        });
         let winner: AthleteColor;
         let method: MatchOutcomeMethod;
         let winnerAthleteId: string;
-        if (existing) {
-          winner = existing.winnerColor;
-          method = existing.method;
-          winnerAthleteId = existing.winnerAthleteId;
-          if (method !== MatchOutcomeMethod.MANUAL_AFTER_OVERTIME_TIE)
-            throw new ResultPublicationConflictError(
-              'A conflicting outcome already exists',
+        const decision = await tx.matchResultDecision.findFirst({
+          where: {
+            matchId: input.matchId,
+            sourceAppealId: appeal.id,
+            invalidatedAt: null,
+          },
+        });
+        if (decision) {
+          const scores = appeal.adjustments.map((x) => x.finalScore);
+          if (
+            appeal.scope !== MatchAppealScope.OVERTIME ||
+            scores[0] !== scores[1]
+          )
+            throw new AppealStateError(
+              'Manual decision source is no longer tied',
             );
+          winner = decision.winnerColor;
+          winnerAthleteId = decision.winnerAthleteId;
+          method = MatchOutcomeMethod.MANUAL_AFTER_OVERTIME_TIE;
         } else {
           const ordered = appeal.adjustments.map((x) => ({
             color: x.athlete.color,
@@ -138,33 +145,26 @@ export class ResultPublicationService {
             appeal.scope === MatchAppealScope.REGULATION
               ? MatchOutcomeMethod.REGULATION_SCORE
               : MatchOutcomeMethod.OVERTIME_SCORE;
-          await tx.matchOutcome.create({
-            data: {
-              matchId: input.matchId,
-              winnerAthleteId,
-              winnerColor: winner,
-              method,
-              sourceAppealId: appeal.id,
-              sourceOvertimeRoundId:
-                appeal.scope === MatchAppealScope.OVERTIME
-                  ? appeal.sourceRoundId
-                  : null,
-              ...(input.identity.kind === 'official'
-                ? {
-                    publishedInspectorAssignmentId: input.identity.assignmentId,
-                  }
-                : { publishedInspectorSessionId: input.identity.sessionId }),
-              snapshot: { committed: true },
-            },
-          });
         }
         const now = new Date();
-        if (existing) {
-          await tx.matchOutcome.update({
-            where: { matchId: input.matchId },
-            data: { publishedAt: now, snapshot: { committed: true } },
-          });
-        }
+        await tx.matchOutcome.create({
+          data: {
+            matchId: input.matchId,
+            winnerAthleteId,
+            winnerColor: winner,
+            method,
+            sourceAppealId: appeal.id,
+            sourceOvertimeRoundId:
+              appeal.scope === MatchAppealScope.OVERTIME
+                ? appeal.sourceRoundId
+                : null,
+            publishedAt: now,
+            ...(input.identity.kind === 'official'
+              ? { publishedInspectorAssignmentId: input.identity.assignmentId }
+              : { publishedInspectorSessionId: input.identity.sessionId }),
+            snapshot: { committed: true },
+          },
+        });
         await tx.match.update({
           where: { id: input.matchId },
           data: {
@@ -202,7 +202,7 @@ export class ResultPublicationService {
             },
           },
         });
-        return {
+        const transition = {
           matchId: input.matchId,
           matchPublicId: match.publicId,
           tournamentId: match.tournamentId,
@@ -214,6 +214,15 @@ export class ResultPublicationService {
             finishedAt: now.toISOString(),
           },
         };
+        await tx.matchResultPublication.create({
+          data: {
+            matchId: input.matchId,
+            idempotencyKey: input.idempotencyKey,
+            fingerprint,
+            response: transition as Prisma.InputJsonValue,
+          },
+        });
+        return transition;
       },
       { maxWait: 5000, timeout: 10000 },
     );

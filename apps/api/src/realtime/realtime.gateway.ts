@@ -462,6 +462,7 @@ export class RealtimeGateway
     try {
       const transition = await this.publication.publish({
         ...command,
+        idempotencyKey: payload.idempotencyKey,
         traceId: payload.traceId,
       });
       const published = {

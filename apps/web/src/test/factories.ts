@@ -131,6 +131,7 @@ export function createRealtimeState(
     lastAcceptedVote: null,
     faultErrorMessage: null,
     completeAppeal: vi.fn(() => Promise.resolve(true)),
+    publishResult: vi.fn(() => Promise.resolve(true)),
     startOvertime: vi.fn(() => Promise.resolve(true)),
     restartOvertime: vi.fn(() => Promise.resolve(true)),
     selectManualWinner: vi.fn(() => Promise.resolve(true)),
