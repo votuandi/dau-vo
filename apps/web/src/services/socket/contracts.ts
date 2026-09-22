@@ -97,7 +97,9 @@ export interface ClientToServerEvents {
     payload: AppealCompletePayload,
     acknowledge: (response: AppealCompleteResponse) => void,
   ) => void;
-  'overtime:start': (acknowledge: (response: OvertimeActionResponse) => void) => void;
+  // Overtime start creates a round, so it deliberately uses the same
+  // acknowledgement contract as `round:start`.
+  'overtime:start': (acknowledge: (response: RoundStartResponse) => void) => void;
   'overtime:restart': (acknowledge: (response: OvertimeActionResponse) => void) => void;
   'overtime:manual-winner': (
     winner: AthleteColor,

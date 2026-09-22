@@ -946,7 +946,17 @@ export function useMatchRealtime({
       payload?: AppealCompletePayload | AthleteColor,
     ): Promise<boolean> => {
       const socket = getSocketClient();
+      const isOvertimeStart = event === RealtimeEvent.OVERTIME_START;
+      const startedAt = isOvertimeStart ? performance.now() : null;
       if (resultActionInFlightRef.current || !socket.connected) {
+        if (isOvertimeStart) {
+          console.info('[match-realtime]', 'overtime-start-not-sent', {
+            inFlight: resultActionInFlightRef.current,
+            matchPublicId,
+            socketConnected: socket.connected,
+            socketId: socket.id,
+          });
+        }
         setResultActionErrorMessage(
           'Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi thao tác.',
         );
@@ -955,12 +965,23 @@ export function useMatchRealtime({
       resultActionInFlightRef.current = true;
       setSubmittingResultAction(true);
       setResultActionErrorMessage(null);
+      if (isOvertimeStart) {
+        console.info('[match-realtime]', 'overtime-start-requested', {
+          matchPublicId,
+          socketId: socket.id,
+        });
+      }
       try {
-        const response = await new Promise<AppealCompleteResponse | OvertimeActionResponse>(
+        const response = await new Promise<
+          AppealCompleteResponse | OvertimeActionResponse | RoundStartResponse
+        >(
           (resolve, reject) => {
             const acknowledge = (
               error: Error | null,
-              result: AppealCompleteResponse | OvertimeActionResponse,
+              result:
+                | AppealCompleteResponse
+                | OvertimeActionResponse
+                | RoundStartResponse,
             ) => {
               if (error) reject(error);
               else resolve(result);
@@ -975,13 +996,39 @@ export function useMatchRealtime({
           },
         );
         if (!response.ok) {
+          if (isOvertimeStart) {
+            console.info('[match-realtime]', 'overtime-start-rejected', {
+              durationMs: Math.round(performance.now() - startedAt!),
+              errorCode: response.error.code,
+              errorMessage: response.error.message,
+              matchPublicId,
+              socketId: socket.id,
+            });
+          }
           setResultActionErrorMessage(response.error.message);
           socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
           return false;
         }
+        if (isOvertimeStart && 'round' in response) {
+          console.info('[match-realtime]', 'overtime-start-acknowledged', {
+            attemptNumber: response.round.attemptNumber,
+            durationMs: Math.round(performance.now() - startedAt!),
+            matchPublicId,
+            roundId: response.round.id,
+            socketId: socket.id,
+          });
+        }
         socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
         return true;
-      } catch {
+      } catch (error: unknown) {
+        if (isOvertimeStart) {
+          console.info('[match-realtime]', 'overtime-start-transport-failed', {
+            durationMs: Math.round(performance.now() - startedAt!),
+            errorMessage: error instanceof Error ? error.message : String(error),
+            matchPublicId,
+            socketId: socket.id,
+          });
+        }
         setResultActionErrorMessage(
           'Máy chủ không phản hồi. Vui lòng kiểm tra trạng thái mới nhất và thử lại.',
         );
@@ -991,7 +1038,7 @@ export function useMatchRealtime({
         setSubmittingResultAction(false);
       }
     },
-    [],
+    [matchPublicId],
   );
   const completeAppeal = useCallback(
     (payload: AppealCompletePayload) => resultAction(RealtimeEvent.APPEAL_COMPLETE, payload),

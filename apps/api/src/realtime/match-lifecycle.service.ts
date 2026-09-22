@@ -238,14 +238,12 @@ export class MatchLifecycleService implements OnModuleDestroy {
           },
           where: { id: input.matchId },
         });
-        // First-round setup is verified only after the match lock and command
-        // identity lock. Presence is delivery state, but it is sampled here,
-        // not trusted from an earlier gateway snapshot.
-        if (
-          (match.status === MatchStatus.WAITING &&
-            match.currentRound === null) ||
-          match.status === MatchStatus.OVERTIME_READY
-        )
+        // Presence gates the initial start only. After regulation has ended,
+        // an inspector's confirmed overtime decision must be able to advance
+        // the durable match state even if a referee or scoreboard has briefly
+        // disconnected. Those clients reconcile from the round-start event
+        // when they reconnect.
+        if (match.status === MatchStatus.WAITING && match.currentRound === null)
           await this.assertStartReadiness(
             transaction,
             input.matchId,

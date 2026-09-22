@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { InspectorCommandIdentity } from './command-identity';
 import { auditActor } from './command-identity';
 import { InspectorAuthorizationService } from './inspector-authorization.service';
+import { finalScore } from './result-calculations';
 
 export const MAX_REGULATION_APPEAL_POINTS = 100;
 export class AppealStateError extends Error {}
@@ -173,7 +174,7 @@ export class RegulationAppealService {
           return {
             athlete,
             ...score,
-            final: score.base + score.bonusPoints - score.penaltyPoints,
+            final: finalScore(score.base, score),
           };
         });
         const clock = await tx.$queryRaw<

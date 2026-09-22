@@ -708,7 +708,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                       Điểm chung cuộc{' '}
                       {bonus === null || penalty === null || base === undefined
                         ? '—'
-                        : base + bonus - penalty}
+                        : Math.max(0, base + bonus - penalty)}
                     </strong>
                   </p>
                 );

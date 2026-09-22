@@ -19,6 +19,7 @@ import {
   RegulationAppealService,
   type RegulationAppealInput,
 } from './regulation-appeal.service';
+import { finalScore } from './result-calculations';
 
 export type OvertimeAppealTransition = {
   appealId: string;
@@ -171,7 +172,7 @@ export class OvertimeService {
             athlete,
             base,
             ...adjustment,
-            final: base + adjustment.bonusPoints - adjustment.penaltyPoints,
+            final: finalScore(base, adjustment),
           };
         };
         const red = score(AthleteColor.RED),

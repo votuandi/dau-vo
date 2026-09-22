@@ -415,7 +415,31 @@ export class RealtimeGateway
   async overtimeStart(
     @ConnectedSocket() client: RealtimeSocket,
   ): Promise<RoundStartResponse> {
-    return this.roundStart(client);
+    // Starting overtime is the same lifecycle transition as starting a round.
+    // Keep its round-start response intact, though: the client needs the
+    // readiness and invalid-state errors produced by that transition rather
+    // than treating an overtime start as one of the post-overtime actions.
+    this.logger.log(
+      { socketId: client.id },
+      'Overtime start command received',
+    );
+    const response = await this.roundStart(client);
+    if (response.ok) {
+      this.logger.log(
+        {
+          attemptNumber: response.round.attemptNumber,
+          roundId: response.round.id,
+          stage: response.round.stage,
+        },
+        'Overtime start command completed',
+      );
+    } else {
+      this.logger.warn(
+        { error: response.error, socketId: client.id },
+        'Overtime start command rejected',
+      );
+    }
+    return response;
   }
 
   @SubscribeMessage(RealtimeEvent.ROUND_PAUSE)

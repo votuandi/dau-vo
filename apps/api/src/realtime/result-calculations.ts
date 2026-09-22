@@ -6,7 +6,10 @@ export interface ResultAdjustment {
 }
 
 export function finalScore(base: number, adjustment: ResultAdjustment): number {
-  return base + adjustment.bonusPoints - adjustment.penaltyPoints;
+  // An appeal may record a penalty greater than the referee subtotal. Scores
+  // never go below zero; keeping that rule here makes the persisted snapshot,
+  // live preview, and result publication agree.
+  return Math.max(0, base + adjustment.bonusPoints - adjustment.penaltyPoints);
 }
 
 /** Valid V2 referee points for exactly the supplied rounds. */

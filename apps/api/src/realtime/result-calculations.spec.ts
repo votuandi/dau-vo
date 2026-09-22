@@ -35,6 +35,7 @@ describe('independent result calculations', () => {
     [3, 0, 10],
     [0, 2, 5],
     [3, 2, 8],
+    [0, 9, 0],
   ] as const)(
     'applies bonus %i and penalty %i to base independently',
     (bonus, penalty, expected) => {
