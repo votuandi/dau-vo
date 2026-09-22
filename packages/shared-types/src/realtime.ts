@@ -217,6 +217,7 @@ export interface MatchStateIdentity {
   startedAt: string | null;
   lifecycle: MatchLifecycle;
   phase: MatchPhase;
+  rulesVersion: 'LEGACY_SCORE_PENALTY_V1' | 'FAULT_APPEAL_OVERTIME_V2';
   /** @deprecated Use phase. */
   status: MatchPhase;
 }
@@ -663,6 +664,7 @@ export type PenaltyAddErrorCode =
   | 'PENALTY_FAILED'
   | 'PENALTY_FORBIDDEN'
   | 'PENALTY_INVALID_ATHLETE'
+  | 'PENALTY_LEGACY_ONLY'
   | 'PENALTY_MATCH_NOT_RUNNING'
   | 'PENALTY_ROUND_ENDED'
   | 'REALTIME_AUTHENTICATION_REQUIRED';

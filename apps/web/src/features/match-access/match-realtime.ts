@@ -12,9 +12,9 @@ import {
   type MatchParticipantsNotReadyDetails,
   type MatchPresenceEntry,
   type MatchStatePayload,
-  type PenaltyAddErrorCode,
-  type PenaltyAddResponse,
-  type PenaltyAddedPayload,
+  type FaultRecordErrorCode,
+  type FaultRecordResponse,
+  type FaultRecordedPayload,
   type PresenceUpdatedPayload,
   type RoundEndedPayload,
   type RoundStartedPayload,
@@ -107,7 +107,7 @@ export interface MatchRealtimeState {
   readonly presence: readonly MatchPresenceEntry[];
   readonly reconnect: () => void;
   readonly requestSnapshot: () => void;
-  readonly submitPenalty: (athlete: AthleteColor) => Promise<void>;
+  readonly submitFault: (athlete: AthleteColor) => Promise<void>;
   readonly roundStartErrorMessage: string | null;
   readonly scoringWindowMessage: string | null;
   readonly snapshot: MatchStatePayload | null;
@@ -128,8 +128,8 @@ export interface MatchRealtimeState {
   readonly startingRound: boolean;
   readonly submitVote: (athlete: AthleteColor) => Promise<void>;
   readonly submittingVote: AthleteColor | null;
-  readonly submittingPenalty: AthleteColor | null;
-  readonly penaltyErrorMessage: string | null;
+  readonly submittingFault: AthleteColor | null;
+  readonly faultErrorMessage: string | null;
   readonly completeAppeal: (payload: AppealCompletePayload) => Promise<boolean>;
   readonly startOvertime: () => Promise<boolean>;
   readonly restartOvertime: () => Promise<boolean>;
@@ -271,21 +271,24 @@ function getVoteSubmitErrorMessage(code: VoteSubmitErrorCode, fallback: string):
   }
 }
 
-function getPenaltyErrorMessage(code: PenaltyAddErrorCode, fallback: string): string {
+function getFaultErrorMessage(code: FaultRecordErrorCode, fallback: string): string {
   switch (code) {
-    case 'SPORT_GROUP_RULES_NOT_IMPLEMENTED':
-      return 'Luật thi đấu cho nhóm môn này chưa được triển khai.';
     case 'REALTIME_AUTHENTICATION_REQUIRED':
       return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
-    case 'PENALTY_FORBIDDEN':
+    case 'FAULT_FORBIDDEN':
       return 'Chỉ giám định viên được phép ghi lỗi.';
-    case 'PENALTY_INVALID_ATHLETE':
+    case 'FAULT_STALE_ASSIGNMENT':
+      return 'Phân công giám định không còn hiệu lực. Vui lòng đăng nhập lại.';
+    case 'FAULT_INVALID_ATHLETE':
       return 'Lựa chọn võ sĩ không hợp lệ.';
-    case 'PENALTY_MATCH_NOT_RUNNING':
+    case 'FAULT_MATCH_NOT_RUNNING':
       return 'Chỉ có thể ghi lỗi khi hiệp đấu đang diễn ra.';
-    case 'PENALTY_ROUND_ENDED':
+    case 'FAULT_ROUND_PAUSED':
+      return 'Không thể ghi lỗi khi hiệp đấu đang tạm dừng.';
+    case 'FAULT_ROUND_ENDED':
       return 'Hiệp đấu đã kết thúc trước khi lỗi được ghi nhận.';
-    case 'PENALTY_FAILED':
+    case 'FAULT_INVALID_STATE':
+    case 'FAULT_FAILED':
       return fallback;
   }
 }
@@ -321,8 +324,8 @@ export function useMatchRealtime({
     string | null
   >(null);
   const [submittingVote, setSubmittingVote] = useState<AthleteColor | null>(null);
-  const [submittingPenalty, setSubmittingPenalty] = useState<AthleteColor | null>(null);
-  const [penaltyErrorMessage, setPenaltyErrorMessage] = useState<string | null>(null);
+  const [submittingFault, setSubmittingFault] = useState<AthleteColor | null>(null);
+  const [faultErrorMessage, setFaultErrorMessage] = useState<string | null>(null);
   const [voteSubmitErrorMessage, setVoteSubmitErrorMessage] = useState<string | null>(null);
   const [submittingResultAction, setSubmittingResultAction] = useState(false);
   const [resultActionErrorMessage, setResultActionErrorMessage] = useState<string | null>(null);
@@ -330,7 +333,7 @@ export function useMatchRealtime({
   const refereeIdentityRef = useRef(refereeIdentity);
   const onAuthenticationRequiredRef = useRef(onAuthenticationRequired);
   const onSessionRevokedRef = useRef(onSessionRevoked);
-  const penaltySubmissionInFlightRef = useRef(false);
+  const faultSubmissionInFlightRef = useRef(false);
   const roundStartInFlightRef = useRef(false);
   const completionInFlightRef = useRef(false);
   const roundControlInFlightRef = useRef(false);
@@ -836,27 +839,27 @@ export function useMatchRealtime({
     }
   }, []);
 
-  const submitPenalty = useCallback(async (athlete: AthleteColor) => {
+  const submitFault = useCallback(async (athlete: AthleteColor) => {
     const socket = getSocketClient();
-    if (penaltySubmissionInFlightRef.current) {
+    if (faultSubmissionInFlightRef.current) {
       return;
     }
     if (!socket.connected) {
-      setPenaltyErrorMessage('Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi ghi lỗi.');
+      setFaultErrorMessage('Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi ghi lỗi.');
       return;
     }
 
-    penaltySubmissionInFlightRef.current = true;
-    setSubmittingPenalty(athlete);
-    setPenaltyErrorMessage(null);
+    faultSubmissionInFlightRef.current = true;
+    setSubmittingFault(athlete);
+    setFaultErrorMessage(null);
     try {
-      const response = await new Promise<PenaltyAddResponse>((resolve, reject) => {
+      const response = await new Promise<FaultRecordResponse>((resolve, reject) => {
         socket
           .timeout(10_000)
           .emit(
-            RealtimeEvent.PENALTY_ADD,
-            { athlete },
-            (error: Error | null, acknowledgement: PenaltyAddResponse) => {
+            RealtimeEvent.FAULT_RECORD,
+            { athlete, traceId: globalThis.crypto.randomUUID() },
+            (error: Error | null, acknowledgement: FaultRecordResponse) => {
               if (error) {
                 reject(error);
                 return;
@@ -866,7 +869,7 @@ export function useMatchRealtime({
           );
       });
       if (!response.ok) {
-        setPenaltyErrorMessage(getPenaltyErrorMessage(response.error.code, response.error.message));
+        setFaultErrorMessage(getFaultErrorMessage(response.error.code, response.error.message));
         if (response.error.code === 'REALTIME_AUTHENTICATION_REQUIRED') {
           socket.disconnect();
           setConnectionStatus('authentication-required');
@@ -874,12 +877,12 @@ export function useMatchRealtime({
         }
       }
     } catch {
-      setPenaltyErrorMessage(
+      setFaultErrorMessage(
         'Máy chủ không phản hồi lệnh ghi lỗi. Vui lòng kiểm tra trạng thái trước khi thử lại.',
       );
     } finally {
-      penaltySubmissionInFlightRef.current = false;
-      setSubmittingPenalty(null);
+      faultSubmissionInFlightRef.current = false;
+      setSubmittingFault(null);
     }
   }, []);
 
@@ -1053,7 +1056,7 @@ export function useMatchRealtime({
         setSubmittingVote(null);
         setScoringWindowMessage(null);
         setVoteSubmitErrorMessage(null);
-        setPenaltyErrorMessage(null);
+        setFaultErrorMessage(null);
         socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
       }
     }
@@ -1067,7 +1070,7 @@ export function useMatchRealtime({
         setSubmittingVote(null);
         setScoringWindowMessage(null);
         setVoteSubmitErrorMessage(null);
-        setPenaltyErrorMessage(null);
+        setFaultErrorMessage(null);
         socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
       }
     }
@@ -1099,7 +1102,7 @@ export function useMatchRealtime({
         setSubmittingVote(null);
         setScoringWindowMessage(null);
         setVoteSubmitErrorMessage(null);
-        setPenaltyErrorMessage(null);
+        setFaultErrorMessage(null);
         socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
       }
     }
@@ -1180,9 +1183,9 @@ export function useMatchRealtime({
       socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
     }
 
-    function handlePenaltyAdded(payload: PenaltyAddedPayload): void {
+    function handleFaultRecorded(payload: FaultRecordedPayload): void {
       if (payload.matchPublicId === matchPublicId) {
-        setPenaltyErrorMessage(null);
+        setFaultErrorMessage(null);
         socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
       }
     }
@@ -1191,7 +1194,7 @@ export function useMatchRealtime({
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectError);
     socket.on(RealtimeEvent.MATCH_STATE, handleMatchState);
-    socket.on(RealtimeEvent.PENALTY_ADDED, handlePenaltyAdded);
+    socket.on(RealtimeEvent.FAULT_RECORDED, handleFaultRecorded);
     socket.on(RealtimeEvent.MATCH_FINISHED, handleMatchFinished);
     socket.on(RealtimeEvent.PRESENCE_UPDATED, handlePresenceUpdated);
     socket.on(RealtimeEvent.ROUND_ENDED, handleRoundEnded);
@@ -1222,7 +1225,7 @@ export function useMatchRealtime({
       socket.off('disconnect', handleDisconnect);
       socket.off('connect_error', handleConnectError);
       socket.off(RealtimeEvent.MATCH_STATE, handleMatchState);
-      socket.off(RealtimeEvent.PENALTY_ADDED, handlePenaltyAdded);
+      socket.off(RealtimeEvent.FAULT_RECORDED, handleFaultRecorded);
       socket.off(RealtimeEvent.MATCH_FINISHED, handleMatchFinished);
       socket.off(RealtimeEvent.PRESENCE_UPDATED, handlePresenceUpdated);
       socket.off(RealtimeEvent.ROUND_ENDED, handleRoundEnded);
@@ -1273,7 +1276,7 @@ export function useMatchRealtime({
     resultCancellationErrorMessage,
     reconnect,
     requestSnapshot,
-    submitPenalty,
+    submitFault,
     roundStartErrorMessage,
     scoringWindowMessage,
     snapshot,
@@ -1281,8 +1284,8 @@ export function useMatchRealtime({
     startingRound,
     submitVote,
     submittingVote,
-    submittingPenalty,
-    penaltyErrorMessage,
+    submittingFault,
+    faultErrorMessage,
     completeAppeal,
     startOvertime,
     restartOvertime,

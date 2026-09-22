@@ -1,5 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { AuditEventType, MatchStatus, RoundStage } from '@prisma/client';
+import {
+  AuditEventType,
+  MatchRulesVersion,
+  MatchStatus,
+  RoundStage,
+} from '@prisma/client';
 import type { AthleteColor, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { auditActor, type InspectorCommandIdentity } from './command-identity';
@@ -43,6 +48,7 @@ export class FaultService {
             publicId: true,
             status: true,
             lifecycle: true,
+            rulesVersion: true,
             rounds: {
               where: { endedAt: null, invalidatedAt: null },
               select: {
@@ -55,6 +61,8 @@ export class FaultService {
             },
           },
         });
+        if (match.rulesVersion !== MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2)
+          throw new InvalidFaultStateError();
         const running =
           match.status === MatchStatus.ROUND_1_RUNNING ||
           match.status === MatchStatus.ROUND_2_RUNNING ||
@@ -98,7 +106,9 @@ export class FaultService {
         });
         const audit = await tx.auditLog.create({
           data: {
-            eventType: AuditEventType.PENALTY_ACTION,
+            // MATCH_ACTION is the established generic audit family; the action
+            // label keeps V2 faults distinct from legacy penalties.
+            eventType: AuditEventType.MATCH_ACTION,
             matchId: input.matchId,
             metadata: {
               action: 'FAULT_RECORDED',
@@ -143,15 +153,12 @@ export class FaultService {
         });
         this.logger.debug(
           JSON.stringify({
-            assignmentId:
-              input.identity.kind === 'official'
-                ? input.identity.assignmentId
-                : undefined,
+            actorKind: input.identity.kind,
             matchPublicId: match.publicId,
             phaseAfter: match.status,
             phaseBefore: match.status,
             resultCode: 'FAULT_RECORDED',
-            round: { number: round.roundNumber, stage: round.stage },
+            descriptor: { roundNumber: round.roundNumber, stage: round.stage },
             traceId: input.traceId,
           }),
         );

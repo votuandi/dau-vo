@@ -307,52 +307,52 @@ function RefereeVoteControls({ realtime }: { readonly realtime: MatchRealtimeSta
   );
 }
 
-function InspectorPenaltyControls({ realtime }: { readonly realtime: MatchRealtimeState }) {
+function InspectorFaultControls({ realtime }: { readonly realtime: MatchRealtimeState }) {
   const status = realtime.snapshot?.match.phase;
   const roundIsRunning =
     status === MatchStatus.ROUND_1_RUNNING || status === MatchStatus.ROUND_2_RUNNING;
   const controlsEnabled =
     realtime.connectionStatus === 'connected' &&
     roundIsRunning &&
-    realtime.submittingPenalty === null;
+    realtime.submittingFault === null;
 
   return (
     <section
-      aria-labelledby="inspector-penalty-title"
+      aria-labelledby="inspector-fault-title"
       className="rounded-xl border border-border p-4"
     >
-      <h2 className="text-sm font-black uppercase tracking-wider" id="inspector-penalty-title">
+      <h2 className="text-sm font-black uppercase tracking-wider" id="inspector-fault-title">
         Ghi nhận lỗi
       </h2>
       <p className="mt-1 text-xs leading-5 text-muted-foreground">
-        Mỗi lần ghi lỗi trừ một điểm và tăng số lỗi của võ sĩ. Máy chủ ghi nhận hành động này.
+        Mỗi lần ghi lỗi chỉ tăng số lỗi của võ sĩ. Máy chủ ghi nhận hành động này.
       </p>
       <div className="mt-4 grid grid-cols-2 gap-3">
         <Button
           className="bg-red-700 text-white hover:bg-red-800"
           disabled={!controlsEnabled}
-          onClick={() => void realtime.submitPenalty(AthleteColor.RED)}
+          onClick={() => void realtime.submitFault(AthleteColor.RED)}
           size="lg"
           type="button"
         >
-          {realtime.submittingPenalty === AthleteColor.RED ? 'Đang ghi…' : 'ĐỎ VI PHẠM'}
+          {realtime.submittingFault === AthleteColor.RED ? 'Đang ghi…' : 'ĐỎ VI PHẠM'}
         </Button>
         <Button
           className="bg-blue-700 text-white hover:bg-blue-800"
           disabled={!controlsEnabled}
-          onClick={() => void realtime.submitPenalty(AthleteColor.BLUE)}
+          onClick={() => void realtime.submitFault(AthleteColor.BLUE)}
           size="lg"
           type="button"
         >
-          {realtime.submittingPenalty === AthleteColor.BLUE ? 'Đang ghi…' : 'XANH VI PHẠM'}
+          {realtime.submittingFault === AthleteColor.BLUE ? 'Đang ghi…' : 'XANH VI PHẠM'}
         </Button>
       </div>
-      {realtime.penaltyErrorMessage ? (
+      {realtime.faultErrorMessage ? (
         <p
           className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
           role="alert"
         >
-          {realtime.penaltyErrorMessage}
+          {realtime.faultErrorMessage}
         </p>
       ) : null}
     </section>
@@ -373,7 +373,7 @@ export function MatchRealtimePanel({
       <MatchLifecycle canStartRound={canStartRound} realtime={realtime} />
 
       {canSubmitVote ? <RefereeVoteControls realtime={realtime} /> : null}
-      {canAddPenalty ? <InspectorPenaltyControls realtime={realtime} /> : null}
+      {canAddPenalty ? <InspectorFaultControls realtime={realtime} /> : null}
 
       <section className="rounded-xl border border-border bg-muted/30 p-4" aria-live="polite">
         <div className="flex flex-wrap items-center justify-between gap-3">

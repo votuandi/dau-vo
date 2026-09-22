@@ -44,6 +44,7 @@ const snapshot: PublicMatchStatePayload = {
     lifecycle: MatchLifecycle.IN_PROGRESS,
     phase: MatchStatus.ROUND_1_RUNNING,
     publicId: 'A72K9P',
+    rulesVersion: 'FAULT_APPEAL_OVERTIME_V2',
     status: MatchStatus.ROUND_1_RUNNING,
     outcome: null,
   },
@@ -99,7 +100,9 @@ describe('ScoreboardPage', () => {
     });
     render(
       <MemoryRouter initialEntries={['/bang-diem?match=A72K9P']}>
-        <Routes><Route element={<ScoreboardPage />} path="/bang-diem" /></Routes>
+        <Routes>
+          <Route element={<ScoreboardPage />} path="/bang-diem" />
+        </Routes>
       </MemoryRouter>,
     );
     expect(screen.getByText('Người chiến thắng')).toBeVisible();

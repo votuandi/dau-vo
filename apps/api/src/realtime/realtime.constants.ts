@@ -133,6 +133,11 @@ export const PENALTY_INVALID_ATHLETE_ERROR = {
   message: 'Athlete must be RED or BLUE',
 } as const;
 
+export const PENALTY_LEGACY_ONLY_ERROR = {
+  code: 'PENALTY_LEGACY_ONLY',
+  message: 'Penalty legacy chỉ áp dụng cho trận đấu V1',
+} as const;
+
 export const PENALTY_MATCH_NOT_RUNNING_ERROR = {
   code: 'PENALTY_MATCH_NOT_RUNNING',
   message: 'Penalties are only accepted while a round is running',

@@ -8,6 +8,7 @@ import {
   AthleteColor,
   AuditEventType,
   MatchStatus,
+  MatchRulesVersion,
   ScoreEventType,
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
@@ -19,6 +20,7 @@ import { auditActor, type InspectorCommandIdentity } from './command-identity';
 import {
   InactivePenaltySessionError,
   MatchNotRunningForPenaltyError,
+  PenaltyLegacyOnlyError,
   RoundEndedForPenaltyError,
 } from './penalty.errors';
 
@@ -96,6 +98,7 @@ export class PenaltyService {
           select: {
             currentRound: true,
             publicId: true,
+            rulesVersion: true,
             rounds: {
               select: {
                 durationMs: true,
@@ -109,6 +112,9 @@ export class PenaltyService {
           },
           where: { id: input.matchId },
         });
+        if (match.rulesVersion !== MatchRulesVersion.LEGACY_SCORE_PENALTY_V1) {
+          throw new PenaltyLegacyOnlyError();
+        }
         const activeRound = this.activeRound(match);
         if (activeRound === null) {
           throw new MatchNotRunningForPenaltyError();

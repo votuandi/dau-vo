@@ -195,7 +195,7 @@ function AthleteScoreCard({
   );
 }
 
-function PenaltyButton({
+function FaultButton({
   athlete,
   disabled,
   isArmed,
@@ -245,7 +245,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
     roundIsRunning ? snapshot?.activeRound?.endsAt : undefined,
     snapshot?.generatedAt,
   );
-  const [armedPenalty, setArmedPenalty] = useState<AthleteColor | null>(null);
+  const [armedFault, setArmedFault] = useState<AthleteColor | null>(null);
   const [confirmation, setConfirmation] = useState<
     | 'pause'
     | 'resume'
@@ -266,10 +266,11 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
   const displayedRemaining = roundIsPaused
     ? (snapshot?.activeRound?.remainingDurationMs ?? null)
     : remainingTime;
-  const penaltyControlsDisabled =
+  const faultControlsDisabled =
     realtime.connectionStatus !== 'connected' ||
     !roundIsRunning ||
-    realtime.submittingPenalty !== null;
+    snapshot?.match.rulesVersion !== 'FAULT_APPEAL_OVERTIME_V2' ||
+    realtime.submittingFault !== null;
   const canStartRound = status === MatchStatus.WAITING || status === MatchStatus.BREAK;
   const refereeReadiness =
     snapshot?.readiness.kind === 'TOURNAMENT_OFFICIALS'
@@ -345,21 +346,21 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
           : '';
 
   useEffect(() => {
-    if (armedPenalty === null) {
+    if (armedFault === null) {
       return;
     }
 
     const timer = window.setTimeout(() => {
-      setArmedPenalty(null);
+      setArmedFault(null);
     }, 1_800);
     return () => {
       window.clearTimeout(timer);
     };
-  }, [armedPenalty]);
+  }, [armedFault]);
 
   useEffect(() => {
     if (!roundIsRunning) {
-      setArmedPenalty(null);
+      setArmedFault(null);
     }
   }, [roundIsRunning]);
 
@@ -375,18 +376,18 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
     };
   }, [exitMenuOpen]);
 
-  function handlePenaltyPress(athlete: AthleteColor): void {
-    if (penaltyControlsDisabled) {
+  function handleFaultPress(athlete: AthleteColor): void {
+    if (faultControlsDisabled) {
       return;
     }
 
-    if (armedPenalty !== athlete) {
-      setArmedPenalty(athlete);
+    if (armedFault !== athlete) {
+      setArmedFault(athlete);
       return;
     }
 
-    setArmedPenalty(null);
-    void realtime.submitPenalty(athlete);
+    setArmedFault(null);
+    void realtime.submitFault(athlete);
   }
   const appealValues = {
     redBonus: appealNumber(appealDraft.redBonus),
@@ -797,12 +798,12 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
         </section>
 
         <section
-          aria-labelledby="inspector-penalty-title"
+          aria-labelledby="inspector-fault-title"
           className="mt-3 rounded-3xl border border-white/15 bg-white/10 p-4 shadow-xl shadow-blue-950/15 backdrop-blur-xl sm:mt-5 sm:p-6"
         >
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <div>
-              <h1 className="text-lg font-black" id="inspector-penalty-title">
+              <h1 className="text-lg font-black" id="inspector-fault-title">
                 Ghi nhận lỗi
               </h1>
               <p className="mt-1 text-sm text-sky-100/75">
@@ -815,33 +816,33 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-5">
-            <PenaltyButton
+            <FaultButton
               athlete={AthleteColor.RED}
-              disabled={penaltyControlsDisabled}
-              isArmed={armedPenalty === AthleteColor.RED}
-              isSubmitting={realtime.submittingPenalty === AthleteColor.RED}
-              onPress={handlePenaltyPress}
+              disabled={faultControlsDisabled}
+              isArmed={armedFault === AthleteColor.RED}
+              isSubmitting={realtime.submittingFault === AthleteColor.RED}
+              onPress={handleFaultPress}
             />
-            <PenaltyButton
+            <FaultButton
               athlete={AthleteColor.BLUE}
-              disabled={penaltyControlsDisabled}
-              isArmed={armedPenalty === AthleteColor.BLUE}
-              isSubmitting={realtime.submittingPenalty === AthleteColor.BLUE}
-              onPress={handlePenaltyPress}
+              disabled={faultControlsDisabled}
+              isArmed={armedFault === AthleteColor.BLUE}
+              isSubmitting={realtime.submittingFault === AthleteColor.BLUE}
+              onPress={handleFaultPress}
             />
           </div>
 
           <div aria-live="polite" className="mt-4 min-h-6 text-sm">
-            {armedPenalty ? (
+            {armedFault ? (
               <p className="font-semibold text-amber-200">
-                Nhấn LỖI {armedPenalty === AthleteColor.RED ? 'ĐỎ' : 'XANH'} lần nữa để xác nhận.
+                Nhấn LỖI {armedFault === AthleteColor.RED ? 'ĐỎ' : 'XANH'} lần nữa để xác nhận.
               </p>
-            ) : realtime.penaltyErrorMessage ? (
+            ) : realtime.faultErrorMessage ? (
               <p
                 className="rounded-xl bg-red-400/15 px-4 py-3 font-semibold text-red-100"
                 role="alert"
               >
-                {realtime.penaltyErrorMessage}
+                {realtime.faultErrorMessage}
               </p>
             ) : !roundIsRunning ? (
               <p className="text-sky-100/70">

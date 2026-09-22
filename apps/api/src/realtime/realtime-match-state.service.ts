@@ -251,6 +251,7 @@ export class RealtimeMatchStateService {
         publicId: match.publicId,
         lifecycle: this.sharedMatchLifecycle(match.lifecycle),
         phase: this.sharedMatchStatus(match.status),
+        rulesVersion: match.rulesVersion,
         startedAt: match.startedAt?.toISOString() ?? null,
         status: this.sharedMatchStatus(match.status),
       },

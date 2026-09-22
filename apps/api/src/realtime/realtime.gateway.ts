@@ -84,6 +84,7 @@ import {
 import {
   InactivePenaltySessionError,
   MatchNotRunningForPenaltyError,
+  PenaltyLegacyOnlyError,
   RoundEndedForPenaltyError,
 } from './penalty.errors';
 import { PenaltyService, type PenaltyTransition } from './penalty.service';
@@ -127,6 +128,7 @@ import {
   PENALTY_FAILED_ERROR,
   PENALTY_FORBIDDEN_ERROR,
   PENALTY_INVALID_ATHLETE_ERROR,
+  PENALTY_LEGACY_ONLY_ERROR,
   PENALTY_MATCH_NOT_RUNNING_ERROR,
   PENALTY_ROUND_ENDED_ERROR,
   REALTIME_AUTHENTICATION_ERROR,
@@ -1298,8 +1300,7 @@ export class RealtimeGateway
         matchPublicId: transition.matchPublicId,
         fault: {
           ...transition.fault,
-          athlete: transition.fault
-            .athlete as unknown as FaultRecordedPayload['fault']['athlete'],
+          athlete: transition.fault.athlete,
         },
       };
       this.server
@@ -1374,6 +1375,9 @@ export class RealtimeGateway
       }
       if (error instanceof MatchNotRunningForPenaltyError) {
         return { error: PENALTY_MATCH_NOT_RUNNING_ERROR, ok: false };
+      }
+      if (error instanceof PenaltyLegacyOnlyError) {
+        return { error: PENALTY_LEGACY_ONLY_ERROR, ok: false };
       }
       if (error instanceof RoundEndedForPenaltyError) {
         return { error: PENALTY_ROUND_ENDED_ERROR, ok: false };

@@ -60,13 +60,13 @@ describe('InspectorConsole', () => {
   it('renders the authoritative WAITING → Round 1 → BREAK → Round 2 → FINISHED workflow', async () => {
     const user = userEvent.setup();
     const startRound = vi.fn(() => Promise.resolve());
-    const submitPenalty = vi.fn(() => Promise.resolve());
+    const submitFault = vi.fn(() => Promise.resolve());
     const { rerender } = render(
       <InspectorConsole
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.WAITING),
           startRound,
-          submitPenalty,
+          submitFault,
         })}
       />,
     );
@@ -81,7 +81,7 @@ describe('InspectorConsole', () => {
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING),
           startRound,
-          submitPenalty,
+          submitFault,
         })}
       />,
     );
@@ -91,19 +91,21 @@ describe('InspectorConsole', () => {
     expect(screen.getAllByText('Lỗi vi phạm:')).toHaveLength(2);
     expect(screen.getAllByText('5')).toHaveLength(1);
     expect(screen.getAllByText('3')).toHaveLength(1);
-    const redPenalty = screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' });
-    await user.click(redPenalty);
-    expect(submitPenalty).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toHaveTextContent('XÁC NHẬN LỖI ĐỎ');
+    const redFault = screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' });
+    await user.click(redFault);
+    expect(submitFault).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toHaveTextContent(
+      'XÁC NHẬN LỖI ĐỎ',
+    );
     await user.click(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' }));
-    expect(submitPenalty).toHaveBeenCalledExactlyOnceWith(AthleteColor.RED);
+    expect(submitFault).toHaveBeenCalledExactlyOnceWith(AthleteColor.RED);
 
     rerender(
       <InspectorConsole
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.BREAK),
           startRound,
-          submitPenalty,
+          submitFault,
         })}
       />,
     );
@@ -117,7 +119,7 @@ describe('InspectorConsole', () => {
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.ROUND_2_RUNNING),
           startRound,
-          submitPenalty,
+          submitFault,
         })}
       />,
     );
@@ -130,7 +132,7 @@ describe('InspectorConsole', () => {
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.FINISHED),
           startRound,
-          submitPenalty,
+          submitFault,
         })}
       />,
     );
