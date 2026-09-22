@@ -26,7 +26,14 @@ ALTER TABLE "rounds" ADD CONSTRAINT "rounds_descriptor_check" CHECK (
   ("stage" = 'REGULATION' AND "attempt_number" = 0 AND "round_number" IN (1, 2)) OR
   ("stage" = 'OVERTIME' AND "attempt_number" >= 1 AND "round_number" = 1)
 );
-CREATE UNIQUE INDEX "rounds_match_id_stage_attempt_round_number_key" ON "rounds"("match_id", "stage", "attempt_number", "round_number");
+-- Historical cancellation/reset records can share a regulation round number.
+-- Retain them, while permitting only one current descriptor. The previous
+-- descriptor index cannot stay because regulation round 1 and overtime round
+-- 1 are both valid active descriptors for the same match history.
+DROP INDEX "rounds_one_effective_attempt_per_number_key";
+CREATE UNIQUE INDEX "rounds_match_id_stage_attempt_round_number_key"
+ON "rounds"("match_id", "stage", "attempt_number", "round_number")
+WHERE "invalidated_at" IS NULL;
 CREATE UNIQUE INDEX "rounds_id_match_id_key" ON "rounds"("id", "match_id");
 
 CREATE TABLE "faults" (

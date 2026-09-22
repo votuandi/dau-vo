@@ -48,6 +48,7 @@ import {
   MatchRole,
   RefereeSlot,
 } from '@prisma/client';
+import type { MatchStatus } from '@prisma/client';
 import type { Server } from 'socket.io';
 
 import { MATCH_SESSION_COOKIE } from '../match-access/match-access.constants';
@@ -70,7 +71,6 @@ import {
   InvalidRoundStartStateError,
   MatchParticipantsNotReadyError,
   ResultCancellationUndoNotAllowedError,
-  MatchCompletionNotReadyError,
 } from './match-lifecycle.errors';
 import {
   MatchLifecycleService,
@@ -79,7 +79,6 @@ import {
   type RoundControlTransition,
   type ResultCancellationTransition,
   type ResultCancellationUndoTransition,
-  type MatchCompletionTransition,
   type MatchExitTransition,
 } from './match-lifecycle.service';
 import {
@@ -124,9 +123,7 @@ import {
   MATCH_SOCKET_PATH,
   BRACKET_PROGRESSION_LOCKED_ERROR,
   MATCH_PARTICIPANTS_NOT_READY_ERROR,
-  MATCH_COMPLETION_FORBIDDEN_ERROR,
   MATCH_COMPLETION_NOT_READY_ERROR,
-  MATCH_COMPLETION_FAILED_ERROR,
   PENALTY_FAILED_ERROR,
   PENALTY_FORBIDDEN_ERROR,
   PENALTY_INVALID_ATHLETE_ERROR,
@@ -426,69 +423,11 @@ export class RealtimeGateway
 
   @SubscribeMessage(RealtimeEvent.MATCH_COMPLETE)
   async completeMatch(
-    @ConnectedSocket() client: RealtimeSocket,
+    @ConnectedSocket() _client: RealtimeSocket,
   ): Promise<MatchCompletionResponse> {
     // Kept as a protocol compatibility endpoint only.  FINISHED/COMPLETED is
     // now exclusively committed by result:publish after an appeal outcome.
     return { error: MATCH_COMPLETION_NOT_READY_ERROR, ok: false };
-    /*
-    if (this.isScoreboardSocket(client))
-      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
-    const command = await this.inspectorCommand(client);
-    if (!command) return { error: MATCH_COMPLETION_FORBIDDEN_ERROR, ok: false };
-    if (
-      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
-    )
-      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
-    let transition: MatchCompletionTransition;
-    try {
-      transition = await this.lifecycle.completeMatch({
-        matchId: command.matchId,
-        identity: command.identity,
-      });
-    } catch (error: unknown) {
-      if (error instanceof SportGroupRulesNotImplementedError)
-        return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
-      if (error instanceof InactiveRoundStartSessionError) {
-        this.revokeCommandSocket(client, command.identity);
-        return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
-      }
-      if (error instanceof MatchCompletionNotReadyError)
-        return { error: MATCH_COMPLETION_NOT_READY_ERROR, ok: false };
-      if (error instanceof BracketProgressionLockedError)
-        return { error: BRACKET_PROGRESSION_LOCKED_ERROR, ok: false };
-      this.logger.error(
-        { error, matchId: command.matchId },
-        'Unable to save match result',
-      );
-      return { error: MATCH_COMPLETION_FAILED_ERROR, ok: false };
-    }
-    try {
-      this.server
-        .to(matchRoom(transition.matchPublicId))
-        .emit(RealtimeEvent.MATCH_COMPLETED, transition.completed);
-      this.server
-        .to(matchRoom(transition.matchPublicId))
-        .emit(RealtimeEvent.MATCH_FINISHED, transition.completed);
-      if (transition.releasedOfficialIds.length > 0) {
-        this.officialRouting.publishReleased({
-          matchId: transition.matchId,
-          matchPublicId: transition.matchPublicId,
-          tournamentId: transition.tournamentId,
-          releasedOfficialIds: transition.releasedOfficialIds,
-        });
-      }
-      await this.broadcastMatchState(
-        transition.matchId,
-        transition.matchPublicId,
-      );
-    } catch (error: unknown) {
-      this.logger.error(
-        { error, matchId: transition.matchId },
-        'Match completion committed but realtime publication failed',
-      );
-    }
-    return { completed: transition.completed, ok: true }; */
   }
 
   @SubscribeMessage(RealtimeEvent.RESULT_PUBLISH)
@@ -741,7 +680,7 @@ export class RealtimeGateway
       matchId: string;
       matchPublicId: string;
       attemptNumber: number;
-      phase: import('@prisma/client').MatchStatus;
+      phase: MatchStatus;
       winner?: AthleteColor;
     }>,
   ): Promise<OvertimeActionResponse> {

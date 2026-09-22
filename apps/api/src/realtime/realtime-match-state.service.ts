@@ -29,6 +29,7 @@ import {
   MatchRulesVersion,
   RefereeSlot,
 } from '@prisma/client';
+import type { MatchOutcomeMethod, RoundStage } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
@@ -434,7 +435,7 @@ export class RealtimeMatchStateService {
     snapshot: MatchStatePayload,
     outcome?: {
       winnerColor: AthleteColor;
-      method: import('@prisma/client').MatchOutcomeMethod;
+      method: MatchOutcomeMethod;
     } | null,
   ): PublicMatchStatePayload {
     return {
@@ -547,7 +548,7 @@ export class RealtimeMatchStateService {
       pausedAt: Date | null;
       remainingDurationMs: number | null;
       roundNumber: number;
-      stage: import('@prisma/client').RoundStage;
+      stage: RoundStage;
       attemptNumber: number;
       startedAt: Date;
     }>,
@@ -610,7 +611,7 @@ export class RealtimeMatchStateService {
     id: string;
     roundNumber: number;
     round: {
-      stage: import('@prisma/client').RoundStage;
+      stage: RoundStage;
       attemptNumber: number;
     } | null;
     startedAt: Date;

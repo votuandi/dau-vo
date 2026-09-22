@@ -857,7 +857,9 @@ model Round {
   appealSources        MatchAppealRound[]
   outcomeSource        MatchOutcome[]  @relation("MatchOutcomeSourceOvertimeRound")
 
-  @@unique([matchId, stage, attemptNumber, roundNumber], map: "rounds_match_id_stage_attempt_round_number_key")
+  // The database keeps this descriptor unique only for non-invalidated rounds,
+  // so cancelled/reset history remains auditable.
+  @@index([matchId, stage, attemptNumber, roundNumber], map: "rounds_match_id_stage_attempt_round_number_key")
   @@unique([id, matchId], map: "rounds_id_match_id_key")
   @@index([matchId, roundNumber], map: "rounds_match_id_round_number_idx")
   @@index([matchId], map: "rounds_match_id_idx")

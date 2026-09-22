@@ -1,6 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
-  AthleteColor,
   AuditEventType,
   MatchAppealScope,
   MatchLifecycle,
@@ -8,6 +7,7 @@ import {
   MatchStatus,
   type Prisma,
 } from '@prisma/client';
+import type { AthleteColor } from '@prisma/client';
 import { BracketOutcomeService } from '../brackets/bracket-outcome.service';
 import { MatchOfficialAssignmentLifecycleService } from '../match-official-assignments/match-official-assignment-lifecycle.service';
 import { PrismaService } from '../prisma/prisma.service';

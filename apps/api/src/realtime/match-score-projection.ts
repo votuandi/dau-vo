@@ -1,4 +1,5 @@
-import { AthleteColor, ScoreEventType } from '@prisma/client';
+import { ScoreEventType } from '@prisma/client';
+import type { AthleteColor } from '@prisma/client';
 
 /** Pure canonical V2 result calculation.  Faults never become score events. */
 export function calculateMatchScoreProjection(input: {

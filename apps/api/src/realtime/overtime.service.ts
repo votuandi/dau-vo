@@ -7,7 +7,6 @@ import {
   MatchOutcomeMethod,
   MatchStatus,
   RoundStage,
-  ScoreEventType,
   type Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
