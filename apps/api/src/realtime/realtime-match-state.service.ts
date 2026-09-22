@@ -17,6 +17,7 @@ import {
   type MatchExitBlockedReason,
   type MatchExitCapability,
   type ResultCapability,
+  type ResultCapabilityBlockedReason,
   MatchExitMode,
   type PresenceUpdatedPayload,
   RefereeSlot as SharedRefereeSlot,
@@ -29,12 +30,21 @@ import {
   MatchRulesVersion,
   RefereeSlot,
 } from '@prisma/client';
-import type { MatchOutcomeMethod, RoundStage } from '@prisma/client';
+import {
+  RoundStage,
+  type MatchOutcomeMethod,
+  type ScoreEventType,
+} from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
 import { RealtimeSessionRegistryService } from './realtime-session-registry.service';
 import { calculateMatchScoreProjection } from './match-score-projection';
+import {
+  finalScore,
+  overtimeBase,
+  regulationBase,
+} from './result-calculations';
 
 const ACCESS_ROLES = [
   MatchAccessRole.REFEREE_1,
@@ -145,7 +155,14 @@ export class RealtimeMatchStateService {
         where: { invalidatedAt: null, matchId, resolvedAt: null },
       }),
       this.prisma.round.findMany({
-        select: { endedAt: true, id: true, roundNumber: true },
+        orderBy: [{ stage: 'asc' }, { attemptNumber: 'desc' }],
+        select: {
+          endedAt: true,
+          id: true,
+          roundNumber: true,
+          stage: true,
+          attemptNumber: true,
+        },
         where: { invalidatedAt: null, matchId },
       }),
       this.prisma.matchAppeal.findFirst({
@@ -160,14 +177,13 @@ export class RealtimeMatchStateService {
           adjustments: { include: { athlete: { select: { color: true } } } },
         },
       }),
-      this.prisma.matchAppeal.findFirst({
+      this.prisma.matchAppeal.findMany({
         where: {
           matchId,
           scope: 'OVERTIME',
           status: 'COMPLETED',
           invalidatedAt: null,
         },
-        orderBy: { attemptNumber: 'desc' },
         include: {
           adjustments: { include: { athlete: { select: { color: true } } } },
         },
@@ -240,7 +256,9 @@ export class RealtimeMatchStateService {
         unresolvedWindow,
         completedAppeal,
         completedOvertimeAppeal,
-        validRoundResults.length,
+        validRoundResults,
+        scoreEvents,
+        match.athletes,
       ),
       exit: this.exitCapability(match, validRounds, unresolvedWindow),
       generatedAt: new Date().toISOString(),
@@ -265,7 +283,13 @@ export class RealtimeMatchStateService {
 
   private resultCapability(
     match: { lifecycle: MatchLifecycle; status: MatchStatus },
-    rounds: Array<{ endedAt: Date | null; roundNumber: number }>,
+    rounds: Array<{
+      id: string;
+      endedAt: Date | null;
+      roundNumber: number;
+      stage: RoundStage;
+      attemptNumber: number;
+    }>,
     unresolved: { id: string } | null,
     appeal: {
       adjustments: Array<{
@@ -276,7 +300,9 @@ export class RealtimeMatchStateService {
         athlete: { color: AthleteColor };
       }>;
     } | null,
-    overtimeAppeal: {
+    overtimeAppeals: Array<{
+      sourceRoundId: string;
+      attemptNumber: number;
       adjustments: Array<{
         baseRefereeScore: number;
         bonusPoints: number;
@@ -284,25 +310,79 @@ export class RealtimeMatchStateService {
         finalScore: number;
         athlete: { color: AthleteColor };
       }>;
-    } | null,
-    validRoundResultCount: number,
+    }>,
+    validRoundResults: Array<{ athleteId: string; roundId: string }>,
+    scoreEvents: Array<{
+      athleteId: string;
+      revertedAt: Date | null;
+      roundId: string | null;
+      type: ScoreEventType;
+      value: number;
+    }>,
+    athletes: Array<{ id: string; color: AthleteColor }>,
   ): ResultCapability {
-    const reasons: ResultCapability['blockedReasons'] = [];
-    if (match.lifecycle === MatchLifecycle.SUSPENDED)
-      reasons.push('MATCH_SUSPENDED');
-    if (match.lifecycle === MatchLifecycle.COMPLETED)
-      reasons.push('MATCH_COMPLETED');
-    if (unresolved) reasons.push('UNRESOLVED_SCORING_WINDOW');
-    if (
-      rounds.filter(
-        (r) => r.endedAt && (r.roundNumber === 1 || r.roundNumber === 2),
-      ).length !== 2 ||
-      validRoundResultCount < 4
-    )
-      reasons.push('ROUND_SUMMARIES_MISSING');
-    if (appeal) reasons.push('APPEAL_ALREADY_COMPLETED');
+    const regulationRounds = rounds.filter(
+      (round) =>
+        round.stage === RoundStage.REGULATION && round.endedAt !== null,
+    );
+    const regulationRoundIds = regulationRounds.map((round) => round.id);
+    const currentOvertimeRound =
+      rounds.find((round) => round.stage === RoundStage.OVERTIME) ?? null;
+    const descriptor =
+      currentOvertimeRound === null
+        ? null
+        : {
+            stage: 'OVERTIME' as const,
+            roundNumber: currentOvertimeRound.roundNumber,
+            attemptNumber: currentOvertimeRound.attemptNumber,
+          };
+    const commonReasons = (): ResultCapabilityBlockedReason[] => {
+      const reasons: ResultCapabilityBlockedReason[] = [];
+      if (match.lifecycle === MatchLifecycle.SUSPENDED)
+        reasons.push('MATCH_SUSPENDED');
+      if (match.lifecycle === MatchLifecycle.COMPLETED)
+        reasons.push('MATCH_COMPLETED');
+      if (unresolved) reasons.push('UNRESOLVED_SCORING_WINDOW');
+      return reasons;
+    };
+    const regulationReasons = commonReasons();
+    const hasRegulationSummaries =
+      regulationRoundIds.length === 2 &&
+      athletes.every((athlete) =>
+        regulationRoundIds.every((roundId) =>
+          validRoundResults.some(
+            (result) =>
+              result.athleteId === athlete.id && result.roundId === roundId,
+          ),
+        ),
+      );
+    if (!hasRegulationSummaries)
+      regulationReasons.push('ROUND_SUMMARIES_MISSING');
+    if (appeal) regulationReasons.push('APPEAL_ALREADY_COMPLETED');
     if (match.status !== MatchStatus.REGULATION_APPEAL)
-      reasons.push('NOT_REGULATION_APPEAL');
+      regulationReasons.push('NOT_REGULATION_APPEAL');
+    const overtimeAppeal =
+      currentOvertimeRound === null
+        ? null
+        : (overtimeAppeals.find(
+            (candidate) =>
+              candidate.sourceRoundId === currentOvertimeRound.id &&
+              candidate.attemptNumber === currentOvertimeRound.attemptNumber,
+          ) ?? null);
+    const overtimeReasons = commonReasons();
+    const hasOvertimeSummary =
+      currentOvertimeRound !== null &&
+      athletes.every((athlete) =>
+        validRoundResults.some(
+          (result) =>
+            result.athleteId === athlete.id &&
+            result.roundId === currentOvertimeRound.id,
+        ),
+      );
+    if (!hasOvertimeSummary) overtimeReasons.push('ROUND_SUMMARIES_MISSING');
+    if (overtimeAppeal) overtimeReasons.push('APPEAL_ALREADY_COMPLETED');
+    if (match.status !== MatchStatus.OVERTIME_APPEAL)
+      overtimeReasons.push('NOT_OVERTIME_READY');
     const byColor = new Map(
       appeal?.adjustments.map((x) => [x.athlete.color, x]) ?? [],
     );
@@ -315,7 +395,30 @@ export class RealtimeMatchStateService {
             penaltyPoints: x.penaltyPoints,
             final: x.finalScore,
           }
-        : null;
+        : (() => {
+            const athlete = athletes.find(
+              (candidate) => candidate.color === color,
+            );
+            return athlete && hasRegulationSummaries
+              ? {
+                  base: regulationBase({
+                    athleteId: athlete.id,
+                    roundIds: regulationRoundIds,
+                    events: scoreEvents,
+                  }),
+                  bonusPoints: 0,
+                  penaltyPoints: 0,
+                  final: finalScore(
+                    regulationBase({
+                      athleteId: athlete.id,
+                      roundIds: regulationRoundIds,
+                      events: scoreEvents,
+                    }),
+                    { bonusPoints: 0, penaltyPoints: 0 },
+                  ),
+                }
+              : null;
+          })();
     };
     const red = render(AthleteColor.RED);
     const blue = render(AthleteColor.BLUE);
@@ -331,28 +434,78 @@ export class RealtimeMatchStateService {
             penaltyPoints: x.penaltyPoints,
             final: x.finalScore,
           }
-        : null;
+        : (() => {
+            const athlete = athletes.find(
+              (candidate) => candidate.color === color,
+            );
+            return athlete && currentOvertimeRound && hasOvertimeSummary
+              ? {
+                  base: overtimeBase({
+                    athleteId: athlete.id,
+                    roundIds: [currentOvertimeRound.id],
+                    events: scoreEvents,
+                  }),
+                  bonusPoints: 0,
+                  penaltyPoints: 0,
+                  final: finalScore(
+                    overtimeBase({
+                      athleteId: athlete.id,
+                      roundIds: [currentOvertimeRound.id],
+                      events: scoreEvents,
+                    }),
+                    { bonusPoints: 0, penaltyPoints: 0 },
+                  ),
+                }
+              : null;
+          })();
     };
     const overtimeRed = renderOvertime(AthleteColor.RED);
     const overtimeBlue = renderOvertime(AthleteColor.BLUE);
+    const scoreContext =
+      overtimeRed && overtimeBlue
+        ? { source: 'OVERTIME' as const, red: overtimeRed, blue: overtimeBlue }
+        : red && blue
+          ? { source: 'REGULATION' as const, red, blue }
+          : null;
+    const canRestartOvertime =
+      match.status === MatchStatus.OVERTIME_TIEBREAK_DECISION &&
+      overtimeRed !== null &&
+      overtimeBlue !== null &&
+      overtimeRed.final === overtimeBlue.final;
+    const publicationReasons = commonReasons();
+    if (match.status !== MatchStatus.RESULT_PUBLICATION_READY)
+      publicationReasons.push('NOT_AWAITING_PUBLICATION');
     return {
-      canCompleteAppeal: reasons.length === 0,
-      canStartOvertime: match.status === MatchStatus.OVERTIME_READY,
-      canRestartOvertime:
-        match.status === MatchStatus.OVERTIME_TIEBREAK_DECISION &&
-        overtimeRed !== null &&
-        overtimeBlue !== null &&
-        overtimeRed.final === overtimeBlue.final,
-      canSelectManualWinner:
-        match.status === MatchStatus.OVERTIME_TIEBREAK_DECISION &&
-        overtimeRed !== null &&
-        overtimeBlue !== null &&
-        overtimeRed.final === overtimeBlue.final,
-      canPublishResult: match.status === MatchStatus.RESULT_PUBLICATION_READY,
-      blockedReasons: reasons,
-      regulation: { RED: red, BLUE: blue },
-      overtime: { RED: overtimeRed, BLUE: overtimeBlue },
-      isTie: red && blue ? red.final === blue.final : null,
+      regulationAppeal: {
+        canComplete: regulationReasons.length === 0,
+        committed: appeal !== null,
+        blockedReasons: regulationReasons,
+        breakdown: { RED: red, BLUE: blue },
+      },
+      currentOvertimeAttempt: descriptor,
+      overtimeAppeal: {
+        canComplete: overtimeReasons.length === 0,
+        committed: overtimeAppeal !== null,
+        blockedReasons: overtimeReasons,
+        breakdown: { RED: overtimeRed, BLUE: overtimeBlue },
+      },
+      tieBreak: {
+        canStartOvertime: match.status === MatchStatus.OVERTIME_READY,
+        canRestartOvertime,
+        canSelectManualWinner:
+          match.status === MatchStatus.OVERTIME_TIEBREAK_DECISION &&
+          overtimeRed !== null &&
+          overtimeBlue !== null &&
+          overtimeRed.final === overtimeBlue.final,
+        isTie: scoreContext
+          ? scoreContext.red.final === scoreContext.blue.final
+          : null,
+      },
+      publication: {
+        canPublish: publicationReasons.length === 0,
+        blockedReasons: publicationReasons,
+        source: scoreContext?.source ?? null,
+      },
     };
   }
 
@@ -454,8 +607,30 @@ export class RealtimeMatchStateService {
       ),
       generatedAt: snapshot.generatedAt,
       committedScores: {
-        RED: snapshot.result.regulation.RED?.final ?? null,
-        BLUE: snapshot.result.regulation.BLUE?.final ?? null,
+        source:
+          snapshot.result.currentOvertimeAttempt &&
+          snapshot.result.overtimeAppeal.committed &&
+          snapshot.result.overtimeAppeal.breakdown.RED &&
+          snapshot.result.overtimeAppeal.breakdown.BLUE
+            ? 'OVERTIME'
+            : snapshot.result.regulationAppeal.committed &&
+                snapshot.result.regulationAppeal.breakdown.RED &&
+                snapshot.result.regulationAppeal.breakdown.BLUE
+              ? 'REGULATION'
+              : null,
+        attemptNumber: snapshot.result.overtimeAppeal.committed
+          ? (snapshot.result.currentOvertimeAttempt?.attemptNumber ?? null)
+          : null,
+        RED:
+          snapshot.result.currentOvertimeAttempt &&
+          snapshot.result.overtimeAppeal.committed
+            ? (snapshot.result.overtimeAppeal.breakdown.RED?.final ?? null)
+            : (snapshot.result.regulationAppeal.breakdown.RED?.final ?? null),
+        BLUE:
+          snapshot.result.currentOvertimeAttempt &&
+          snapshot.result.overtimeAppeal.committed
+            ? (snapshot.result.overtimeAppeal.breakdown.BLUE?.final ?? null)
+            : (snapshot.result.regulationAppeal.breakdown.BLUE?.final ?? null),
       },
       match: {
         currentRound: snapshot.match.currentRound,
@@ -463,6 +638,7 @@ export class RealtimeMatchStateService {
         publicId: snapshot.match.publicId,
         lifecycle: snapshot.match.lifecycle,
         phase: snapshot.match.phase,
+        rulesVersion: snapshot.match.rulesVersion,
         status: snapshot.match.status,
         outcome: outcome
           ? {

@@ -226,7 +226,9 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
         )}
         {committedScores && committedScores.RED !== null && committedScores.BLUE !== null ? (
           <p className="mt-2 text-sm opacity-90">
-            Điểm chung kết đã chốt: Đỏ {committedScores.RED} · Xanh {committedScores.BLUE}
+            {committedScores.source === 'OVERTIME'
+              ? `Điểm hiệp phụ lần ${String(committedScores.attemptNumber)}: Đỏ ${String(committedScores.RED)} · Xanh ${String(committedScores.BLUE)}`
+              : `Điểm chung cuộc sau 2 hiệp: Đỏ ${String(committedScores.RED)} · Xanh ${String(committedScores.BLUE)}`}
           </p>
         ) : null}
       </section>

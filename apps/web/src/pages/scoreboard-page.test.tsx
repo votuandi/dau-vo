@@ -36,7 +36,7 @@ const snapshot: PublicMatchStatePayload = {
       violations: 3,
     },
   ],
-  committedScores: { RED: null, BLUE: null },
+  committedScores: { source: null, attemptNumber: null, RED: null, BLUE: null },
   generatedAt: '2030-01-01T00:00:00.000Z',
   match: {
     currentRound: 1,
@@ -91,7 +91,7 @@ describe('ScoreboardPage', () => {
       snapshot: {
         ...snapshot,
         activeRound: { ...snapshot.activeRound!, stage: 'OVERTIME', attemptNumber: 2 },
-        committedScores: { RED: 7, BLUE: 7 },
+        committedScores: { source: 'OVERTIME', attemptNumber: 2, RED: 7, BLUE: 7 },
         match: {
           ...snapshot.match,
           outcome: { winner: AthleteColor.BLUE, method: 'MANUAL_AFTER_OVERTIME_TIE' },

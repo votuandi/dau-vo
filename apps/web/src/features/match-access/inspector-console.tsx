@@ -399,7 +399,11 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
   const appealTitle =
     status === MatchStatus.REGULATION_APPEAL
       ? 'Phúc khảo sau hiệp 2'
-      : `Phúc khảo hiệp phụ lần ${String(snapshot?.activeRound?.attemptNumber ?? snapshot?.match.currentRound ?? 1)}`;
+      : `Phúc khảo hiệp phụ lần ${String(snapshot?.result.currentOvertimeAttempt?.attemptNumber ?? 1)}`;
+  const appealContext =
+    status === MatchStatus.OVERTIME_APPEAL
+      ? snapshot?.result.overtimeAppeal
+      : snapshot?.result.regulationAppeal;
 
   return (
     <div className="arena-background min-h-dvh text-white">
@@ -685,16 +689,19 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                 const red = athlete.color === AthleteColor.RED;
                 const bonus = red ? appealValues.redBonus : appealValues.blueBonus;
                 const penalty = red ? appealValues.redPenalty : appealValues.bluePenalty;
+                const base = appealContext?.breakdown[athlete.color]?.base;
                 return (
                   <p className="rounded-xl bg-white/10 p-3 text-sm" key={athlete.id}>
                     <strong>
                       {red ? 'ĐỎ' : 'XANH'} — {athlete.name}:
                     </strong>{' '}
-                    Điểm trọng tài {athlete.score} + Điểm cộng {bonus ?? '—'} − Điểm phạt{' '}
+                    Điểm trọng tài {base ?? '—'} + Điểm cộng {bonus ?? '—'} − Điểm phạt{' '}
                     {penalty ?? '—'} ={' '}
                     <strong>
                       Điểm chung cuộc{' '}
-                      {bonus === null || penalty === null ? '—' : athlete.score + bonus - penalty}
+                      {bonus === null || penalty === null || base === undefined
+                        ? '—'
+                        : base + bonus - penalty}
                     </strong>
                   </p>
                 );
@@ -706,7 +713,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                 !appealValid ||
                 realtime.connectionStatus !== 'connected' ||
                 realtime.submittingResultAction ||
-                snapshot?.result.canCompleteAppeal !== true
+                appealContext?.canComplete !== true
               }
               onClick={() => {
                 setConfirmation('appeal');
@@ -727,7 +734,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
         ) : null}
 
         <section aria-label="Hành động kết quả" className="mt-3 grid gap-3 sm:grid-cols-2">
-          {snapshot?.result.canStartOvertime ? (
+          {snapshot?.result.tieBreak.canStartOvertime ? (
             <Button
               className="min-h-14 text-lg font-black"
               disabled={
@@ -741,7 +748,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
               BẮT ĐẦU HIỆP PHỤ
             </Button>
           ) : null}
-          {snapshot?.result.canPublishResult ? (
+          {snapshot?.result.publication.canPublish ? (
             <Button
               className="min-h-14 text-lg font-black"
               disabled={
@@ -755,7 +762,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
               CÔNG BỐ KẾT QUẢ
             </Button>
           ) : null}
-          {snapshot?.result.canRestartOvertime ? (
+          {snapshot?.result.tieBreak.canRestartOvertime ? (
             <Button
               className="min-h-14 text-lg font-black"
               onClick={() => {
@@ -767,7 +774,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
               ĐẤU LẠI HIỆP PHỤ
             </Button>
           ) : null}
-          {snapshot?.result.canSelectManualWinner ? (
+          {snapshot?.result.tieBreak.canSelectManualWinner ? (
             <div className="rounded-2xl border border-amber-200/30 p-3 sm:col-span-2">
               <p className="font-black">CHỌN NGƯỜI CHIẾN THẮNG</p>
               <p className="mt-1 text-sm text-amber-100">

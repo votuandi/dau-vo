@@ -952,9 +952,16 @@ export class AdminManagementService {
       diagnostics.push(
         'Chưa có MatchOutcome đã công bố; kết quả chưa thể đẩy nhánh.',
       );
-    if (snapshot.result.blockedReasons.includes('UNRESOLVED_SCORING_WINDOW'))
+    if (
+      snapshot.result.regulationAppeal.blockedReasons.includes(
+        'UNRESOLVED_SCORING_WINDOW',
+      ) ||
+      snapshot.result.overtimeAppeal.blockedReasons.includes(
+        'UNRESOLVED_SCORING_WINDOW',
+      )
+    )
       diagnostics.push('Cửa sổ chấm điểm chưa được giải quyết.');
-    if (snapshot.result.isTie === true)
+    if (snapshot.result.tieBreak.isTie === true)
       diagnostics.push('Điểm hòa: cần hiệp phụ hoặc quyết định hợp lệ.');
     if (appeals.some((appeal) => appeal.invalidatedAt !== null))
       diagnostics.push(

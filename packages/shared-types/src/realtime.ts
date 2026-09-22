@@ -85,16 +85,32 @@ export interface RegulationScoreBreakdown {
   penaltyPoints: number;
   final: number;
 }
-export interface ResultCapability {
-  canCompleteAppeal: boolean;
-  canStartOvertime: boolean;
-  canRestartOvertime: boolean;
-  canSelectManualWinner: boolean;
-  canPublishResult: boolean;
+export interface AppealResultContext {
+  canComplete: boolean;
+  /** True only when breakdown is the committed adjustment for this exact scope. */
+  committed: boolean;
   blockedReasons: ResultCapabilityBlockedReason[];
-  regulation: { RED: RegulationScoreBreakdown | null; BLUE: RegulationScoreBreakdown | null };
-  overtime: { RED: RegulationScoreBreakdown | null; BLUE: RegulationScoreBreakdown | null };
-  isTie: boolean | null;
+  breakdown: { RED: RegulationScoreBreakdown | null; BLUE: RegulationScoreBreakdown | null };
+}
+
+/** Result state is deliberately split by score scope. Overtime never borrows
+ * regulation's base score, even when the athlete display score is cumulative. */
+export interface ResultCapability {
+  regulationAppeal: AppealResultContext;
+  /** The active attempt while running, otherwise the most recently ended valid attempt. */
+  currentOvertimeAttempt: RoundDescriptor | null;
+  overtimeAppeal: AppealResultContext;
+  tieBreak: {
+    canStartOvertime: boolean;
+    canRestartOvertime: boolean;
+    canSelectManualWinner: boolean;
+    isTie: boolean | null;
+  };
+  publication: {
+    canPublish: boolean;
+    blockedReasons: ResultCapabilityBlockedReason[];
+    source: 'REGULATION' | 'OVERTIME' | null;
+  };
 }
 
 export type MatchExitBlockedReason =
@@ -319,8 +335,13 @@ export interface PublicMatchStatePayload {
     score: number;
     violations: number;
   }>;
-  /** Committed appeal scores only; no draft, capability, or referee votes. */
-  committedScores: { RED: number | null; BLUE: number | null };
+  /** Committed score for the currently relevant result scope only. */
+  committedScores: {
+    source: 'REGULATION' | 'OVERTIME' | null;
+    attemptNumber: number | null;
+    RED: number | null;
+    BLUE: number | null;
+  };
   generatedAt: string;
   match: Omit<MatchStateIdentity, 'id' | 'startedAt'> & {
     outcome: {

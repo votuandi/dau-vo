@@ -45,6 +45,7 @@ export type {
   MatchExitCapability,
   ResultCapabilityBlockedReason,
   RegulationScoreBreakdown,
+  AppealResultContext,
   ResultCapability,
   MatchExitCommandPayload,
   MatchExitPayload,
