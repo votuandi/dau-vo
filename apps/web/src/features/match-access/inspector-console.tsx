@@ -44,6 +44,12 @@ function exitOption(mode: MatchExitMode): ExitOption {
         description: 'Giữ cả hai hiệp, chưa chốt kết quả; trận chuyển sang Tạm hoãn.',
         destructive: false,
       };
+    case MatchExitMode.SUSPEND_KEEP_V2_PHASE:
+      return {
+        title: 'Thoát và lưu trạng thái hiện tại',
+        description: 'Giữ trạng thái V2 hiện tại để tiếp tục theo xác nhận của máy chủ.',
+        destructive: false,
+      };
     default:
       return mode satisfies never;
   }
@@ -252,9 +258,11 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
     | 'cancel-round'
     | 'complete'
     | 'appeal'
+    | 'start-overtime'
     | 'restart-overtime'
     | 'manual-red'
     | 'manual-blue'
+    | 'publish-result'
     | null
   >(null);
   const [appealDraft, setAppealDraft] = useState<AppealDraft>(emptyAppealDraft);
@@ -741,7 +749,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                 realtime.connectionStatus !== 'connected' || realtime.submittingResultAction
               }
               onClick={() => {
-                void realtime.startOvertime();
+                setConfirmation('start-overtime');
               }}
               type="button"
             >
@@ -755,7 +763,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                 realtime.connectionStatus !== 'connected' || realtime.submittingResultAction
               }
               onClick={() => {
-                void realtime.publishResult();
+                setConfirmation('publish-result');
               }}
               type="button"
             >
@@ -782,6 +790,9 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
               </p>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <Button
+                  disabled={
+                    realtime.connectionStatus !== 'connected' || realtime.submittingResultAction
+                  }
                   onClick={() => {
                     setConfirmation('manual-red');
                   }}
@@ -791,6 +802,9 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                   ĐỎ — {redAthlete?.name ?? 'VĐV đỏ'}
                 </Button>
                 <Button
+                  disabled={
+                    realtime.connectionStatus !== 'connected' || realtime.submittingResultAction
+                  }
                   onClick={() => {
                     setConfirmation('manual-blue');
                   }}
@@ -872,13 +886,17 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                   ? 'Hủy kết quả hiệp'
                   : confirmation === 'appeal'
                     ? 'Xác nhận phúc khảo'
-                    : confirmation === 'restart-overtime'
-                      ? 'Đấu lại hiệp phụ'
-                      : confirmation === 'manual-red'
-                        ? `Chọn ĐỎ — ${redAthlete?.name ?? 'VĐV đỏ'}`
-                        : confirmation === 'manual-blue'
-                          ? `Chọn XANH — ${blueAthlete?.name ?? 'VĐV xanh'}`
-                          : 'Lưu kết quả'
+                    : confirmation === 'start-overtime'
+                      ? 'Bắt đầu hiệp phụ'
+                      : confirmation === 'restart-overtime'
+                        ? 'Đấu lại hiệp phụ'
+                        : confirmation === 'manual-red'
+                          ? `Chọn ĐỎ — ${redAthlete?.name ?? 'VĐV đỏ'}`
+                          : confirmation === 'manual-blue'
+                            ? `Chọn XANH — ${blueAthlete?.name ?? 'VĐV xanh'}`
+                            : confirmation === 'publish-result'
+                              ? 'Công bố kết quả'
+                              : 'Lưu kết quả'
           }
           busy={
             realtime.controllingRound ||
@@ -895,11 +913,15 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                   ? `Hủy kết quả Hiệp ${status === MatchStatus.BREAK ? '1' : '2'}?`
                   : confirmation === 'appeal'
                     ? 'Phúc khảo này sẽ được khóa sau khi cam kết. Hãy kiểm tra kỹ các điều chỉnh trước khi xác nhận.'
-                    : confirmation === 'restart-overtime'
-                      ? 'Kết quả hiệp phụ hòa sẽ bị thay bằng một hiệp phụ mới.'
-                      : confirmation === 'manual-red' || confirmation === 'manual-blue'
-                        ? `Điểm chung cuộc hiệp phụ đang hòa. Chọn người chiến thắng chính thức: ${confirmation === 'manual-red' ? `ĐỎ — ${redAthlete?.name ?? 'VĐV đỏ'}` : `XANH — ${blueAthlete?.name ?? 'VĐV xanh'}`}.`
-                        : 'Xác nhận lưu kết quả chính thức. Kết quả có thể làm nhánh đấu chuyển tiếp.'
+                    : confirmation === 'start-overtime'
+                      ? 'Hiệp phụ sẽ bắt đầu theo trạng thái chính thức từ máy chủ. Không thể hoàn tác việc bắt đầu hiệp đang diễn ra.'
+                      : confirmation === 'restart-overtime'
+                        ? 'Kết quả hiệp phụ hòa sẽ bị thay bằng một hiệp phụ mới.'
+                        : confirmation === 'manual-red' || confirmation === 'manual-blue'
+                          ? `Điểm chung cuộc hiệp phụ đang hòa. Chọn người chiến thắng chính thức: ${confirmation === 'manual-red' ? `ĐỎ — ${redAthlete?.name ?? 'VĐV đỏ'}` : `XANH — ${blueAthlete?.name ?? 'VĐV xanh'}`}.`
+                          : confirmation === 'publish-result'
+                            ? 'Công bố kết quả sẽ phát hành người chiến thắng cho bảng điểm công khai và luồng nhánh đấu. Không thể hoàn tác tại đây.'
+                            : 'Xác nhận lưu kết quả chính thức. Kết quả có thể làm nhánh đấu chuyển tiếp.'
           }
           onCancel={() => {
             setConfirmation(null);
@@ -924,13 +946,17 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                           },
                           idempotencyKey: appealKey,
                         })
-                      : confirmation === 'restart-overtime'
-                        ? realtime.restartOvertime()
-                        : confirmation === 'manual-red'
-                          ? realtime.selectManualWinner(AthleteColor.RED)
-                          : confirmation === 'manual-blue'
-                            ? realtime.selectManualWinner(AthleteColor.BLUE)
-                            : realtime.publishResult();
+                      : confirmation === 'start-overtime'
+                        ? realtime.startOvertime()
+                        : confirmation === 'restart-overtime'
+                          ? realtime.restartOvertime()
+                          : confirmation === 'manual-red'
+                            ? realtime.selectManualWinner(AthleteColor.RED)
+                            : confirmation === 'manual-blue'
+                              ? realtime.selectManualWinner(AthleteColor.BLUE)
+                              : confirmation === 'publish-result'
+                                ? realtime.publishResult()
+                                : realtime.publishResult();
             void command.then((ok) => {
               if (ok) {
                 if (confirmation === 'appeal') {
@@ -946,9 +972,11 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
             confirmation === 'cancel-round'
               ? `Tất cả điểm trọng tài và lỗi trong Hiệp ${status === MatchStatus.BREAK ? '1' : '2'} sẽ bị loại khỏi kết quả chính thức. Hành động này có thể được hoàn tác.`
               : confirmation === 'appeal' ||
+                  confirmation === 'start-overtime' ||
                   confirmation === 'restart-overtime' ||
                   confirmation === 'manual-red' ||
-                  confirmation === 'manual-blue'
+                  confirmation === 'manual-blue' ||
+                  confirmation === 'publish-result'
                 ? 'Thao tác này cần xác nhận và chỉ máy chủ mới xác lập kết quả chính thức.'
                 : undefined
           }

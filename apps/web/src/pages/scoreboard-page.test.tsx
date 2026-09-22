@@ -90,7 +90,14 @@ describe('ScoreboardPage', () => {
       connectionStatus: 'connected',
       snapshot: {
         ...snapshot,
-        activeRound: { ...snapshot.activeRound!, stage: 'OVERTIME', attemptNumber: 2 },
+        activeRound: {
+          ...(() => {
+            if (snapshot.activeRound === null) throw new Error('Expected active round fixture.');
+            return snapshot.activeRound;
+          })(),
+          stage: 'OVERTIME',
+          attemptNumber: 2,
+        },
         committedScores: { source: 'OVERTIME', attemptNumber: 2, RED: 7, BLUE: 7 },
         match: {
           ...snapshot.match,

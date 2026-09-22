@@ -167,7 +167,7 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
   const blue = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
   const winner = snapshot?.match.outcome?.winner;
   const winnerAthlete = winner
-    ? snapshot?.athletes.find((athlete) => athlete.color === winner)
+    ? snapshot.athletes.find((athlete) => athlete.color === winner)
     : null;
   const outcomeMethod = snapshot?.match.outcome?.method;
   const committedScores = snapshot?.committedScores;
@@ -224,7 +224,7 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
         ) : (
           <p>Chưa công bố kết quả — chưa có người chiến thắng được xác nhận.</p>
         )}
-        {committedScores && committedScores.RED !== null && committedScores.BLUE !== null ? (
+        {committedScores?.RED != null && committedScores.BLUE != null ? (
           <p className="mt-2 text-sm opacity-90">
             {committedScores.source === 'OVERTIME'
               ? `Điểm hiệp phụ lần ${String(committedScores.attemptNumber)}: Đỏ ${String(committedScores.RED)} · Xanh ${String(committedScores.BLUE)}`

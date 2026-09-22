@@ -501,8 +501,10 @@ export function useMatchRealtime({
           .emit(
             RealtimeEvent.RESULT_PUBLISH,
             payload,
-            (error: Error | null, acknowledgement: ResultPublishResponse) =>
-              error ? reject(error) : resolve(acknowledgement),
+            (error: Error | null, acknowledgement: ResultPublishResponse) => {
+              if (error) reject(error);
+              else resolve(acknowledgement);
+            },
           ),
       );
       if (!response.ok) {
@@ -510,6 +512,10 @@ export function useMatchRealtime({
         return false;
       }
       toast({ title: 'Đã công bố kết quả chính thức.', variant: 'success' });
+      // The publication ACK is the authoritative release boundary. Retire this
+      // local assignment immediately so an older room snapshot cannot restore
+      // the official console while assignment reconciliation catches up.
+      onMatchExitAcknowledged?.();
       socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
       return true;
     } catch {
@@ -521,7 +527,7 @@ export function useMatchRealtime({
       resultActionInFlightRef.current = false;
       setSubmittingResultAction(false);
     }
-  }, []);
+  }, [onMatchExitAcknowledged]);
 
   const controlRound = useCallback(async (action: 'pause' | 'resume'): Promise<boolean> => {
     const socket = getSocketClient();
