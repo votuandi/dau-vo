@@ -176,7 +176,8 @@ function isExitPayload(value: unknown): value is MatchExitCommandPayload {
   return (
     (mode === MatchExitMode.CANCEL_RESULTS ||
       mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 ||
-      mode === MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2) &&
+      mode === MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2 ||
+      mode === MatchExitMode.SUSPEND_KEEP_V2_PHASE) &&
     (traceId === undefined ||
       (typeof traceId === 'string' &&
         traceId.length > 0 &&

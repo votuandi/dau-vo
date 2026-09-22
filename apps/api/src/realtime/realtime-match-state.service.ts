@@ -533,7 +533,7 @@ export class RealtimeMatchStateService {
   /** This projection is informational only; execute-time validation is repeated
    * under the locked Match row by MatchLifecycleService. */
   private exitCapability(
-    match: { lifecycle: MatchLifecycle },
+    match: { lifecycle: MatchLifecycle; status: MatchStatus },
     rounds: Array<{ endedAt: Date | null; roundNumber: number }>,
     unresolvedWindow: { id: string } | null,
   ): MatchExitCapability {
@@ -549,6 +549,20 @@ export class RealtimeMatchStateService {
       (round) => round.roundNumber === 2 && round.endedAt !== null,
     );
     const allowedModes: MatchExitMode[] = [MatchExitMode.CANCEL_RESULTS];
+    if (
+      ( [
+        MatchStatus.REGULATION_APPEAL,
+        MatchStatus.OVERTIME_READY,
+        MatchStatus.OVERTIME_RUNNING,
+        MatchStatus.OVERTIME_PAUSED,
+        MatchStatus.OVERTIME_APPEAL,
+        MatchStatus.OVERTIME_TIEBREAK_DECISION,
+        MatchStatus.RESULT_PUBLICATION_READY,
+      ] as MatchStatus[]).includes(match.status)
+    ) {
+      // These cannot be represented by the legacy retained-round modes.
+      allowedModes.push(MatchExitMode.SUSPEND_KEEP_V2_PHASE);
+    }
     if (roundOneEnded && unresolvedWindow === null)
       allowedModes.push(MatchExitMode.SUSPEND_KEEP_ROUND_1);
     else if (!roundOneEnded) blockedReasons.push('ROUND_1_NOT_ENDED');

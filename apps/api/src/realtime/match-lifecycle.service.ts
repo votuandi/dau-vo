@@ -625,7 +625,18 @@ export class MatchLifecycleService implements OnModuleDestroy {
           },
           select: { id: true },
         });
+        const retainsV2Phase = input.mode === MatchExitMode.SUSPEND_KEEP_V2_PHASE;
+        const retainableV2Phase = ( [
+          MatchStatus.REGULATION_APPEAL,
+          MatchStatus.OVERTIME_READY,
+          MatchStatus.OVERTIME_RUNNING,
+          MatchStatus.OVERTIME_PAUSED,
+          MatchStatus.OVERTIME_APPEAL,
+          MatchStatus.OVERTIME_TIEBREAK_DECISION,
+          MatchStatus.RESULT_PUBLICATION_READY,
+        ] as MatchStatus[]).includes(match.status);
         if (
+          (retainsV2Phase && !retainableV2Phase) ||
           (input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 &&
             (!hasRoundOne || unresolved !== null)) ||
           (input.mode === MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2 &&
@@ -641,6 +652,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
         const nextStatus =
           input.mode === MatchExitMode.CANCEL_RESULTS
             ? MatchStatus.WAITING
+            : retainsV2Phase
+              ? match.status
             : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1
               ? MatchStatus.BREAK
               : MatchStatus.AWAITING_RESULT_SAVE;
@@ -697,6 +710,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
             resultingCurrentRound:
               input.mode === MatchExitMode.CANCEL_RESULTS
                 ? null
+                : retainsV2Phase
+                  ? match.currentRound
                 : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1
                   ? 1
                   : 2,
@@ -770,6 +785,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
             currentRound:
               input.mode === MatchExitMode.CANCEL_RESULTS
                 ? null
+                : retainsV2Phase
+                  ? match.currentRound
                 : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1
                   ? 1
                   : 2,
@@ -977,19 +994,30 @@ export class MatchLifecycleService implements OnModuleDestroy {
           },
           where: { id: input.matchId },
         });
-        const roundNumbers: Array<1 | 2> = entireMatch
-          ? match.status === MatchStatus.FINISHED ||
-            match.status === MatchStatus.AWAITING_RESULT_SAVE
-            ? [1, 2]
-            : []
-          : match.status === MatchStatus.BREAK && match.currentRound === 1
-            ? [1]
-            : (match.status === MatchStatus.FINISHED ||
-                  match.status === MatchStatus.AWAITING_RESULT_SAVE) &&
-                match.currentRound === 2
-              ? [2]
-              : [];
-        if (roundNumbers.length === 0) {
+        const activeRounds = await transaction.round.findMany({
+          where: { invalidatedAt: null, matchId: input.matchId },
+          orderBy: [{ stage: 'asc' }, { attemptNumber: 'desc' }, { createdAt: 'desc' }],
+          select: { id: true, roundNumber: true, stage: true, attemptNumber: true },
+        });
+        const overtimePhase = ( [
+          MatchStatus.OVERTIME_READY, MatchStatus.OVERTIME_RUNNING,
+          MatchStatus.OVERTIME_PAUSED, MatchStatus.OVERTIME_APPEAL,
+          MatchStatus.OVERTIME_TIEBREAK_DECISION, MatchStatus.RESULT_PUBLICATION_READY,
+        ] as MatchStatus[]).includes(match.status);
+        const selectedRounds = entireMatch
+          ? activeRounds
+          : match.status === MatchStatus.REGULATION_APPEAL
+            ? activeRounds.filter((round) => round.stage === RoundStage.REGULATION && round.roundNumber === 2)
+            : overtimePhase
+              ? activeRounds.filter((round) => round.stage === RoundStage.OVERTIME).slice(0, 1)
+              : match.status === MatchStatus.BREAK && match.currentRound === 1
+                ? activeRounds.filter((round) => round.stage === RoundStage.REGULATION && round.roundNumber === 1)
+                : (match.status === MatchStatus.FINISHED || match.status === MatchStatus.AWAITING_RESULT_SAVE) && match.currentRound === 2
+                  ? activeRounds.filter((round) => round.stage === RoundStage.REGULATION && round.roundNumber === 2)
+                  : [];
+        const roundIds = selectedRounds.map((round) => round.id);
+        const roundNumbers = [...new Set(selectedRounds.map((round) => round.roundNumber))] as Array<1 | 2>;
+        if (roundIds.length === 0) {
           throw new InvalidResultCancellationStateError(match.status);
         }
         // The Match row is already locked.  Outcome retraction then acquires
@@ -1009,8 +1037,10 @@ export class MatchLifecycleService implements OnModuleDestroy {
             },
           );
         }
-        const nextStatus = roundNumbers.includes(1)
+        const nextStatus = entireMatch || selectedRounds.some((round) => round.stage === RoundStage.REGULATION && round.roundNumber === 1)
           ? MatchStatus.WAITING
+          : selectedRounds.some((round) => round.stage === RoundStage.OVERTIME)
+            ? MatchStatus.OVERTIME_READY
           : MatchStatus.BREAK;
         const audit = await transaction.auditLog.create({
           data: {
@@ -1082,7 +1112,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
           where: {
             invalidatedAt: null,
             matchId: input.matchId,
-            scoringWindow: { roundNumber },
+            scoringWindow: { roundId: { in: roundIds } },
           },
         });
         await transaction.scoreEvent.updateMany({
@@ -1090,7 +1120,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
           where: {
             matchId: input.matchId,
             revertedAt: null,
-            ...(entireMatch ? {} : { roundNumber }),
+            ...(entireMatch ? {} : { roundId: { in: roundIds } }),
           },
         });
         await transaction.penalty.updateMany({
@@ -1109,22 +1139,52 @@ export class MatchLifecycleService implements OnModuleDestroy {
           where: {
             invalidatedAt: null,
             matchId: input.matchId,
-            ...(entireMatch ? {} : { round: { roundNumber } }),
+            ...(entireMatch ? {} : { roundId: { in: roundIds } }),
           },
+        });
+        await transaction.roundAthleteResult.updateMany({
+          data: { invalidatedAt: clock.serverNow, invalidatedByAuditId: audit.id },
+          where: { invalidatedAt: null, matchId: input.matchId, roundId: { in: roundIds } },
+        });
+        const affectedAppeals = await transaction.matchAppeal.findMany({
+          where: {
+            invalidatedAt: null,
+            matchId: input.matchId,
+            OR: [
+              { sourceRoundId: { in: roundIds } },
+              { sourceRounds: { some: { roundId: { in: roundIds } } } },
+            ],
+          },
+          select: { id: true },
+        });
+        const appealIds = affectedAppeals.map((appeal) => appeal.id);
+        if (appealIds.length > 0) {
+          await transaction.matchResultDecision.updateMany({
+            data: { invalidatedAt: clock.serverNow, invalidatedByAuditId: audit.id },
+            where: { invalidatedAt: null, matchId: input.matchId, sourceAppealId: { in: appealIds } },
+          });
+          await transaction.matchAppeal.updateMany({
+            data: { status: 'INVALIDATED', invalidatedAt: clock.serverNow, invalidatedByAuditId: audit.id },
+            where: { id: { in: appealIds } },
+          });
+        }
+        await transaction.matchResultDecision.updateMany({
+          data: { invalidatedAt: clock.serverNow, invalidatedByAuditId: audit.id },
+          where: { invalidatedAt: null, matchId: input.matchId, sourceOvertimeRoundId: { in: roundIds } },
         });
         await transaction.scoringWindow.updateMany({
           data: {
             invalidatedAt: clock.serverNow,
             invalidatedByAuditId: audit.id,
           },
-          where: { invalidatedAt: null, matchId: input.matchId, roundNumber },
+          where: { invalidatedAt: null, matchId: input.matchId, roundId: { in: roundIds } },
         });
         await transaction.round.updateMany({
           data: {
             invalidatedAt: clock.serverNow,
             invalidatedByAuditId: audit.id,
           },
-          where: { invalidatedAt: null, matchId: input.matchId, roundNumber },
+          where: { id: { in: roundIds }, invalidatedAt: null, matchId: input.matchId },
         });
         await transaction.match.update({
           data: {
@@ -1244,6 +1304,18 @@ export class MatchLifecycleService implements OnModuleDestroy {
               matchId: input.matchId,
             },
           }),
+          transaction.matchAppeal.count({
+            where: { completedAt: { gt: operation.createdAt }, invalidatedAt: null, matchId: input.matchId },
+          }),
+          transaction.matchResultDecision.count({
+            where: { selectedAt: { gt: operation.createdAt }, invalidatedAt: null, matchId: input.matchId },
+          }),
+          transaction.matchOutcome.count({
+            where: { publishedAt: { gt: operation.createdAt }, matchId: input.matchId },
+          }),
+          transaction.matchResultPublication.count({
+            where: { createdAt: { gt: operation.createdAt }, matchId: input.matchId },
+          }),
         ]);
         if (
           match.status !== operation.resultingStatus ||
@@ -1267,6 +1339,18 @@ export class MatchLifecycleService implements OnModuleDestroy {
         });
         await transaction.fault.updateMany({
           data: { invalidatedAt: null, invalidatedByAuditId: null },
+          where: { invalidatedByAuditId: auditId, matchId: input.matchId },
+        });
+        await transaction.roundAthleteResult.updateMany({
+          data: { invalidatedAt: null, invalidatedByAuditId: null },
+          where: { invalidatedByAuditId: auditId, matchId: input.matchId },
+        });
+        await transaction.matchResultDecision.updateMany({
+          data: { invalidatedAt: null, invalidatedByAuditId: null },
+          where: { invalidatedByAuditId: auditId, matchId: input.matchId },
+        });
+        await transaction.matchAppeal.updateMany({
+          data: { status: 'COMPLETED', invalidatedAt: null, invalidatedByAuditId: null },
           where: { invalidatedByAuditId: auditId, matchId: input.matchId },
         });
         await transaction.scoringWindow.updateMany({
