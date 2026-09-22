@@ -4,12 +4,14 @@ import {
   AuditEventType,
   MatchAppealScope,
   MatchLifecycle,
+  MatchRulesVersion,
   MatchStatus,
   RoundStage,
   type Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { auditActor, type InspectorCommandIdentity } from './command-identity';
+import { InspectorAuthorizationService } from './inspector-authorization.service';
 import {
   AppealIdentityError,
   AppealStateError,
@@ -32,6 +34,8 @@ export class OvertimeService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RegulationAppealService)
     private readonly appeals: RegulationAppealService,
+    @Inject(InspectorAuthorizationService)
+    private readonly inspectorAuthorization: InspectorAuthorizationService,
   ) {}
 
   async complete(input: {
@@ -42,11 +46,25 @@ export class OvertimeService {
     return this.prisma.$transaction(
       async (tx) => {
         await this.lockMatch(tx, input.matchId);
-        await this.assertInspector(tx, input.matchId, input.identity);
+        await this.inspectorAuthorization.lockAndVerify(
+          tx,
+          input.matchId,
+          input.identity,
+          new AppealIdentityError('Inspector assignment or session is stale'),
+        );
         const match = await tx.match.findUniqueOrThrow({
           where: { id: input.matchId },
-          select: { publicId: true, status: true, lifecycle: true },
+          select: {
+            publicId: true,
+            status: true,
+            lifecycle: true,
+            rulesVersion: true,
+          },
         });
+        if (match.rulesVersion !== MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2)
+          throw new AppealStateError(
+            'Overtime is unavailable for legacy matches',
+          );
         if (
           match.status !== MatchStatus.OVERTIME_APPEAL ||
           match.lifecycle !== MatchLifecycle.IN_PROGRESS
@@ -188,11 +206,20 @@ export class OvertimeService {
     return this.prisma.$transaction(
       async (tx) => {
         await this.lockMatch(tx, input.matchId);
-        await this.assertInspector(tx, input.matchId, input.identity);
+        await this.inspectorAuthorization.lockAndVerify(
+          tx,
+          input.matchId,
+          input.identity,
+          new AppealIdentityError('Inspector assignment or session is stale'),
+        );
         const match = await tx.match.findUniqueOrThrow({
           where: { id: input.matchId },
-          select: { publicId: true, status: true },
+          select: { publicId: true, status: true, rulesVersion: true },
         });
+        if (match.rulesVersion !== MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2)
+          throw new AppealStateError(
+            'Overtime is unavailable for legacy matches',
+          );
         if (match.status !== MatchStatus.OVERTIME_TIEBREAK_DECISION)
           throw new AppealStateError(
             'Only a tied committed overtime appeal may be restarted',
@@ -276,11 +303,20 @@ export class OvertimeService {
     return this.prisma.$transaction(
       async (tx) => {
         await this.lockMatch(tx, input.matchId);
-        await this.assertInspector(tx, input.matchId, input.identity);
+        await this.inspectorAuthorization.lockAndVerify(
+          tx,
+          input.matchId,
+          input.identity,
+          new AppealIdentityError('Inspector assignment or session is stale'),
+        );
         const match = await tx.match.findUniqueOrThrow({
           where: { id: input.matchId },
-          select: { publicId: true, status: true },
+          select: { publicId: true, status: true, rulesVersion: true },
         });
+        if (match.rulesVersion !== MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2)
+          throw new AppealStateError(
+            'Overtime is unavailable for legacy matches',
+          );
         if (match.status !== MatchStatus.OVERTIME_TIEBREAK_DECISION)
           throw new AppealStateError(
             'Manual winner requires a tied overtime appeal',
@@ -346,21 +382,5 @@ export class OvertimeService {
   }
   private async lockMatch(tx: Prisma.TransactionClient, matchId: string) {
     await tx.$queryRaw`SELECT id FROM matches WHERE id=${matchId}::uuid FOR UPDATE`;
-  }
-  private async assertInspector(
-    tx: Prisma.TransactionClient,
-    matchId: string,
-    identity: InspectorCommandIdentity,
-  ) {
-    const rows =
-      identity.kind === 'official'
-        ? await tx.$queryRaw<
-            Array<{ id: string }>
-          >`SELECT a.id FROM match_official_assignments a JOIN tournament_official_sessions s ON s.official_id=a.official_id WHERE a.id=${identity.assignmentId}::uuid AND a.match_id=${matchId}::uuid AND a.released_at IS NULL AND a.role='INSPECTOR' AND s.id=${identity.officialSessionId}::uuid AND s.active=true AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp() FOR UPDATE OF a,s`
-        : await tx.$queryRaw<
-            Array<{ id: string }>
-          >`SELECT id FROM match_sessions WHERE id=${identity.sessionId}::uuid AND match_id=${matchId}::uuid AND active=true AND revoked_at IS NULL AND expires_at>clock_timestamp() AND role='INSPECTOR' FOR UPDATE`;
-    if (rows.length !== 1)
-      throw new AppealIdentityError('Inspector assignment or session is stale');
   }
 }

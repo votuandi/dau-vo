@@ -5,10 +5,11 @@ import {
   MatchStatus,
   RoundStage,
 } from '@prisma/client';
-import type { AthleteColor, Prisma } from '@prisma/client';
+import type { AthleteColor } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { auditActor, type InspectorCommandIdentity } from './command-identity';
 import { calculateMatchScoreProjection } from './match-score-projection';
+import { InspectorAuthorizationService } from './inspector-authorization.service';
 import {
   FaultMatchNotRunningError,
   FaultRoundEndedError,
@@ -20,7 +21,11 @@ import {
 @Injectable()
 export class FaultService {
   private readonly logger = new Logger(FaultService.name);
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(InspectorAuthorizationService)
+    private readonly inspectorAuthorization: InspectorAuthorizationService,
+  ) {}
 
   async record(input: {
     athlete: AthleteColor;
@@ -34,7 +39,12 @@ export class FaultService {
           Array<{ id: string }>
         >`SELECT "id" FROM "matches" WHERE "id"=${input.matchId}::uuid FOR UPDATE`;
         if (locks.length !== 1) throw new InvalidFaultStateError();
-        await this.assertInspector(tx, input.matchId, input.identity);
+        await this.inspectorAuthorization.lockAndVerify(
+          tx,
+          input.matchId,
+          input.identity,
+          new InactiveFaultInspectorError(),
+        );
         const clock = (
           await tx.$queryRaw<
             Array<{ serverNow: Date }>
@@ -178,20 +188,5 @@ export class FaultService {
       },
       { maxWait: 5000, timeout: 10000 },
     );
-  }
-  private async assertInspector(
-    tx: Prisma.TransactionClient,
-    matchId: string,
-    identity: InspectorCommandIdentity,
-  ) {
-    const rows =
-      identity.kind === 'official'
-        ? await tx.$queryRaw<
-            Array<{ id: string }>
-          >`SELECT a."id" FROM "match_official_assignments" a JOIN "tournament_official_sessions" s ON s."official_id"=a."official_id" WHERE a."id"=${identity.assignmentId}::uuid AND a."match_id"=${matchId}::uuid AND a."released_at" IS NULL AND a."role"='INSPECTOR' AND s."id"=${identity.officialSessionId}::uuid AND s."active"=true AND s."revoked_at" IS NULL AND s."expires_at">clock_timestamp() FOR UPDATE OF a,s`
-        : await tx.$queryRaw<
-            Array<{ id: string }>
-          >`SELECT "id" FROM "match_sessions" WHERE "id"=${identity.sessionId}::uuid AND "match_id"=${matchId}::uuid AND "active"=true AND "revoked_at" IS NULL AND "expires_at">clock_timestamp() AND "role"='INSPECTOR' FOR UPDATE`;
-    if (rows.length !== 1) throw new InactiveFaultInspectorError();
   }
 }

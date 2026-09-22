@@ -4,6 +4,7 @@ import {
   AuditEventType,
   MatchAppealScope,
   MatchLifecycle,
+  MatchRulesVersion,
   MatchOutcomeMethod,
   MatchStatus,
   type Prisma,
@@ -13,6 +14,7 @@ import { BracketOutcomeService } from '../brackets/bracket-outcome.service';
 import { MatchOfficialAssignmentLifecycleService } from '../match-official-assignments/match-official-assignment-lifecycle.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { auditActor, type InspectorCommandIdentity } from './command-identity';
+import { InspectorAuthorizationService } from './inspector-authorization.service';
 import {
   AppealIdentityError,
   AppealStateError,
@@ -41,6 +43,8 @@ export class ResultPublicationService {
     private readonly brackets: BracketOutcomeService,
     @Inject(MatchOfficialAssignmentLifecycleService)
     private readonly assignments: MatchOfficialAssignmentLifecycleService,
+    @Inject(InspectorAuthorizationService)
+    private readonly inspectorAuthorization: InspectorAuthorizationService,
   ) {}
 
   async publish(input: {
@@ -70,7 +74,12 @@ export class ResultPublicationService {
             );
           return replay.response as unknown as ResultPublicationTransition;
         }
-        await this.assertInspector(tx, input.matchId, input.identity);
+        await this.inspectorAuthorization.lockAndVerify(
+          tx,
+          input.matchId,
+          input.identity,
+          new AppealIdentityError('Inspector assignment or session is stale'),
+        );
         const match = await tx.match.findUniqueOrThrow({
           where: { id: input.matchId },
           select: {
@@ -78,11 +87,16 @@ export class ResultPublicationService {
             tournamentId: true,
             status: true,
             lifecycle: true,
+            rulesVersion: true,
             outcome: {
               select: { winnerColor: true, method: true, publishedAt: true },
             },
           },
         });
+        if (match.rulesVersion !== MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2)
+          throw new AppealStateError(
+            'Result publication is unavailable for legacy matches',
+          );
         if (
           match.status !== MatchStatus.RESULT_PUBLICATION_READY ||
           match.lifecycle !== MatchLifecycle.IN_PROGRESS
@@ -210,7 +224,7 @@ export class ResultPublicationService {
           publication: {
             matchPublicId: match.publicId,
             outcome: { winner, method },
-            phase: 'FINISHED',
+            phase: 'FINISHED' as const,
             finishedAt: now.toISOString(),
           },
         };
@@ -226,22 +240,5 @@ export class ResultPublicationService {
       },
       { maxWait: 5000, timeout: 10000 },
     );
-  }
-
-  private async assertInspector(
-    tx: Prisma.TransactionClient,
-    matchId: string,
-    identity: InspectorCommandIdentity,
-  ) {
-    const rows =
-      identity.kind === 'official'
-        ? await tx.$queryRaw<
-            Array<{ id: string }>
-          >`SELECT a.id FROM match_official_assignments a JOIN tournament_official_sessions s ON s.official_id=a.official_id WHERE a.id=${identity.assignmentId}::uuid AND a.match_id=${matchId}::uuid AND a.role='INSPECTOR' AND a.released_at IS NULL AND s.id=${identity.officialSessionId}::uuid AND s.active=true AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp() FOR UPDATE OF a,s`
-        : await tx.$queryRaw<
-            Array<{ id: string }>
-          >`SELECT id FROM match_sessions WHERE id=${identity.sessionId}::uuid AND match_id=${matchId}::uuid AND active=true AND revoked_at IS NULL AND expires_at>clock_timestamp() AND role='INSPECTOR' FOR UPDATE`;
-    if (rows.length !== 1)
-      throw new AppealIdentityError('Inspector assignment or session is stale');
   }
 }

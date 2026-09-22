@@ -550,15 +550,17 @@ export class RealtimeMatchStateService {
     );
     const allowedModes: MatchExitMode[] = [MatchExitMode.CANCEL_RESULTS];
     if (
-      ( [
-        MatchStatus.REGULATION_APPEAL,
-        MatchStatus.OVERTIME_READY,
-        MatchStatus.OVERTIME_RUNNING,
-        MatchStatus.OVERTIME_PAUSED,
-        MatchStatus.OVERTIME_APPEAL,
-        MatchStatus.OVERTIME_TIEBREAK_DECISION,
-        MatchStatus.RESULT_PUBLICATION_READY,
-      ] as MatchStatus[]).includes(match.status)
+      (
+        [
+          MatchStatus.REGULATION_APPEAL,
+          MatchStatus.OVERTIME_READY,
+          MatchStatus.OVERTIME_RUNNING,
+          MatchStatus.OVERTIME_PAUSED,
+          MatchStatus.OVERTIME_APPEAL,
+          MatchStatus.OVERTIME_TIEBREAK_DECISION,
+          MatchStatus.RESULT_PUBLICATION_READY,
+        ] as MatchStatus[]
+      ).includes(match.status)
     ) {
       // These cannot be represented by the legacy retained-round modes.
       allowedModes.push(MatchExitMode.SUSPEND_KEEP_V2_PHASE);
