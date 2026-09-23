@@ -46,6 +46,7 @@ services:
       INITIAL_SUPER_ADMIN_PASSWORD: ${INITIAL_SUPER_ADMIN_PASSWORD:?Set a non-default initial super-admin password}
       ROUND_DURATION_MS: ${ROUND_DURATION_MS:-120000}
       BREAK_DURATION_MS: ${BREAK_DURATION_MS:-60000}
+      IMAGE_STORAGE_DRIVER: local
       IMAGE_UPLOAD_ROOT: /workspace/apps/api/public/uploads
     depends_on:
       postgres: { condition: service_healthy }

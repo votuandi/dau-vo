@@ -1,4 +1,5 @@
 export type NodeEnvironment = 'development' | 'production' | 'test';
+export type ImageStorageDriver = 'local' | 's3';
 
 export interface EnvironmentVariables {
   ADMIN_LOGIN_RATE_LIMIT_MAX_ATTEMPTS: number;
@@ -9,6 +10,7 @@ export interface EnvironmentVariables {
   BREAK_DURATION_MS: number;
   BRACKET_PREVIEW_SECRET: string;
   DATABASE_URL: string;
+  IMAGE_STORAGE_DRIVER: ImageStorageDriver;
   IMAGE_UPLOAD_ROOT: string;
   MATCH_SESSION_SECRET: string;
   MATCH_SESSION_TTL_SECONDS: number;
@@ -26,6 +28,8 @@ export interface EnvironmentVariables {
   OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS: number;
   REDIS_URL: string;
   ROUND_DURATION_MS: number;
+  S3_BUCKET?: string;
+  AWS_REGION?: string;
   WEB_ORIGIN: readonly string[];
 }
 
@@ -101,6 +105,12 @@ function parseNodeEnvironment(value: unknown): NodeEnvironment {
   return environment;
 }
 
+function parseImageStorageDriver(value: unknown): ImageStorageDriver {
+  if (value === undefined) return 'local';
+  if (value === 'local' || value === 's3') return value;
+  throw new Error('IMAGE_STORAGE_DRIVER must be one of local or s3');
+}
+
 function booleanWithDefault(
   config: Record<string, unknown>,
   name: keyof EnvironmentVariables,
@@ -144,6 +154,9 @@ export function validateEnvironment(
 ): Record<string, unknown> {
   const apiPort = requirePositiveInteger(config, 'API_PORT');
   const nodeEnvironment = parseNodeEnvironment(config.NODE_ENV);
+  const imageStorageDriver = parseImageStorageDriver(
+    config.IMAGE_STORAGE_DRIVER,
+  );
   const adminSessionSecret = requireString(config, 'ADMIN_SESSION_SECRET');
   const bracketPreviewSecret =
     nodeEnvironment === 'test' &&
@@ -206,6 +219,15 @@ export function validateEnvironment(
     throw new Error('MATCH_PUBLIC_ID_INITIAL_LENGTH must be between 6 and 32');
   }
 
+  const s3Bucket =
+    imageStorageDriver === 's3'
+      ? requireString(config, 'S3_BUCKET')
+      : undefined;
+  const awsRegion =
+    imageStorageDriver === 's3'
+      ? requireString(config, 'AWS_REGION')
+      : undefined;
+
   return {
     ...config,
     ADMIN_LOGIN_RATE_LIMIT_MAX_ATTEMPTS: positiveIntegerWithDefault(
@@ -228,6 +250,7 @@ export function validateEnvironment(
     BREAK_DURATION_MS: requirePositiveInteger(config, 'BREAK_DURATION_MS'),
     BRACKET_PREVIEW_SECRET: bracketPreviewSecret,
     DATABASE_URL: requireString(config, 'DATABASE_URL'),
+    IMAGE_STORAGE_DRIVER: imageStorageDriver,
     IMAGE_UPLOAD_ROOT:
       typeof config.IMAGE_UPLOAD_ROOT === 'string' &&
       config.IMAGE_UPLOAD_ROOT.trim().length > 0
@@ -286,6 +309,8 @@ export function validateEnvironment(
     ),
     REDIS_URL: requireString(config, 'REDIS_URL'),
     ROUND_DURATION_MS: requirePositiveInteger(config, 'ROUND_DURATION_MS'),
+    S3_BUCKET: s3Bucket,
+    AWS_REGION: awsRegion,
     WEB_ORIGIN: requireWebOrigins(config),
   };
 }

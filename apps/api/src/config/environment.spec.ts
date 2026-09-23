@@ -34,7 +34,68 @@ describe('validateEnvironment', () => {
       OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS: 100,
       OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS: 60,
       ROUND_DURATION_MS: 120_000,
+      IMAGE_STORAGE_DRIVER: 'local',
     });
+  });
+
+  it('defaults image storage to local with the current upload-root default', () => {
+    expect(validateEnvironment(validEnvironment)).toMatchObject({
+      IMAGE_STORAGE_DRIVER: 'local',
+      IMAGE_UPLOAD_ROOT: 'public/uploads',
+    });
+  });
+
+  it('accepts explicit local image storage without S3 settings', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        IMAGE_STORAGE_DRIVER: 'local',
+      }),
+    ).toMatchObject({ IMAGE_STORAGE_DRIVER: 'local' });
+  });
+
+  it('accepts valid S3 image-storage settings', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        IMAGE_STORAGE_DRIVER: 's3',
+        S3_BUCKET: 'dau-vo-production-images',
+        AWS_REGION: 'ap-southeast-1',
+      }),
+    ).toMatchObject({
+      IMAGE_STORAGE_DRIVER: 's3',
+      S3_BUCKET: 'dau-vo-production-images',
+      AWS_REGION: 'ap-southeast-1',
+    });
+  });
+
+  it('rejects invalid, blank, and whitespace-only image-storage drivers', () => {
+    for (const IMAGE_STORAGE_DRIVER of ['S3', '', '   ', 'filesystem']) {
+      expect(() =>
+        validateEnvironment({ ...validEnvironment, IMAGE_STORAGE_DRIVER }),
+      ).toThrow('IMAGE_STORAGE_DRIVER must be one of local or s3');
+    }
+  });
+
+  it('requires S3 bucket and region only when S3 is selected', () => {
+    expect(() =>
+      validateEnvironment({ ...validEnvironment, IMAGE_STORAGE_DRIVER: 's3' }),
+    ).toThrow('S3_BUCKET must be a non-empty string');
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        IMAGE_STORAGE_DRIVER: 's3',
+        S3_BUCKET: 'dau-vo-images',
+      }),
+    ).toThrow('AWS_REGION must be a non-empty string');
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        IMAGE_STORAGE_DRIVER: 'local',
+        S3_BUCKET: ' ',
+        AWS_REGION: ' ',
+      }),
+    ).toMatchObject({ IMAGE_STORAGE_DRIVER: 'local' });
   });
 
   it('uses an isolated test-only preview secret when one is not configured', () => {

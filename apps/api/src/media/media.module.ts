@@ -5,7 +5,27 @@ import { MediaController } from './media.controller';
 import { IMAGE_STORAGE } from './image-storage';
 import { LocalImageStorage } from './local-image-storage';
 import { MediaDeletionService } from './media-deletion.service';
-import type { EnvironmentVariables } from '../config/environment';
+import type {
+  EnvironmentVariables,
+  ImageStorageDriver,
+} from '../config/environment';
+
+function createImageStorage(config: ConfigService<EnvironmentVariables, true>) {
+  const driver = config.getOrThrow('IMAGE_STORAGE_DRIVER', { infer: true });
+  if (driver === 'local') {
+    return new LocalImageStorage(
+      path.resolve(config.getOrThrow('IMAGE_UPLOAD_ROOT', { infer: true })),
+    );
+  }
+
+  assertS3AdapterIsAvailable(driver);
+}
+
+function assertS3AdapterIsAvailable(driver: ImageStorageDriver): never {
+  throw new Error(
+    `IMAGE_STORAGE_DRIVER=${driver} is configured, but the S3 image-storage adapter is not implemented`,
+  );
+}
 
 @Module({
   controllers: [MediaController],
@@ -15,10 +35,7 @@ import type { EnvironmentVariables } from '../config/environment';
     {
       provide: IMAGE_STORAGE,
       inject: [ConfigService],
-      useFactory: (config: ConfigService<EnvironmentVariables, true>) =>
-        new LocalImageStorage(
-          path.resolve(config.getOrThrow('IMAGE_UPLOAD_ROOT', { infer: true })),
-        ),
+      useFactory: createImageStorage,
     },
   ],
 })

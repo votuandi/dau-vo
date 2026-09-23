@@ -522,33 +522,37 @@ and the creation audit event in a single transaction.
 
 ## Environment variables
 
-| Variable                                           | Example/default                   | Purpose                                         |
-| -------------------------------------------------- | --------------------------------- | ----------------------------------------------- |
-| `DATABASE_URL`                                     | PostgreSQL URL in `.env.example`  | Prisma database connection                      |
-| `REDIS_URL`                                        | `redis://localhost:6379`          | Redis connection and admin-session storage      |
-| `API_PORT`                                         | `3000`                            | API listen port                                 |
-| `WEB_ORIGIN`                                       | `http://localhost:5173`           | Allowed credentialed browser origin             |
-| `VITE_SOCKET_PATH`                                 | `/api/socket.io`                  | Browser and server Socket.IO handshake path     |
-| `ADMIN_SESSION_SECRET`                             | Development placeholder           | HMAC secret for admin-session identifiers       |
-| `ADMIN_SESSION_TTL_SECONDS`                        | `28800`                           | Fixed Redis lifetime for admin sessions         |
-| `ADMIN_LOGIN_RATE_LIMIT_MAX_ATTEMPTS`              | `5`                               | Login attempts allowed per window               |
-| `ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS`            | `900`                             | Login throttle window in seconds                |
-| `MATCH_SESSION_SECRET`                             | Development placeholder           | Legacy match-session tokens/challenges only     |
-| `MATCH_SESSION_TTL_SECONDS`                        | `28800`                           | Persisted match-session lifetime                |
-| `MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS`    | `10`                              | Attempts per match credential/window            |
-| `MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS`          | `100`                             | Attempts per client address/window              |
-| `MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS`           | `60`                              | Participant-auth throttle window                |
-| `LEGACY_MATCH_ACCESS_ENABLED`                      | `false`                           | Temporary historical match-access compatibility |
-| `OFFICIAL_PASSCODE_SECRET`                         | Development placeholder           | HMAC key for official passcode lookup digests   |
-| `OFFICIAL_SESSION_SECRET`                          | Development placeholder           | Independent HMAC key for official sessions/CAS  |
-| `OFFICIAL_SESSION_TTL_SECONDS`                     | `28800`                           | Persisted tournament-official session lifetime  |
-| `OFFICIAL_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS` | `10`                              | Attempts per official credential/window         |
-| `OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS`       | `100`                             | Attempts per client address/window              |
-| `OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS`        | `60`                              | Official-auth throttle window                   |
-| `MATCH_PUBLIC_ID_INITIAL_LENGTH`                   | `6`                               | Initial human-friendly public match ID length   |
-| `INITIAL_SUPER_ADMIN_PASSWORD`                     | `dauvo@123` (non-production only) | Required non-default secret for production seed |
-| `ROUND_DURATION_MS`                                | `120000`                          | Round duration in milliseconds                  |
-| `BREAK_DURATION_MS`                                | `60000`                           | Break duration in milliseconds                  |
+| Variable                                           | Example/default                   | Purpose                                            |
+| -------------------------------------------------- | --------------------------------- | -------------------------------------------------- |
+| `DATABASE_URL`                                     | PostgreSQL URL in `.env.example`  | Prisma database connection                         |
+| `REDIS_URL`                                        | `redis://localhost:6379`          | Redis connection and admin-session storage         |
+| `API_PORT`                                         | `3000`                            | API listen port                                    |
+| `IMAGE_STORAGE_DRIVER`                             | `local`                           | Exact image-storage provider: `local` or `s3`      |
+| `IMAGE_UPLOAD_ROOT`                                | `public/uploads`                  | Local-mode root, relative to API working directory |
+| `S3_BUCKET`                                        | Required for `s3`                 | S3 image bucket; no credentials belong in config   |
+| `AWS_REGION`                                       | Required for `s3`                 | AWS region for the S3 image bucket                 |
+| `WEB_ORIGIN`                                       | `http://localhost:5173`           | Allowed credentialed browser origin                |
+| `VITE_SOCKET_PATH`                                 | `/api/socket.io`                  | Browser and server Socket.IO handshake path        |
+| `ADMIN_SESSION_SECRET`                             | Development placeholder           | HMAC secret for admin-session identifiers          |
+| `ADMIN_SESSION_TTL_SECONDS`                        | `28800`                           | Fixed Redis lifetime for admin sessions            |
+| `ADMIN_LOGIN_RATE_LIMIT_MAX_ATTEMPTS`              | `5`                               | Login attempts allowed per window                  |
+| `ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS`            | `900`                             | Login throttle window in seconds                   |
+| `MATCH_SESSION_SECRET`                             | Development placeholder           | Legacy match-session tokens/challenges only        |
+| `MATCH_SESSION_TTL_SECONDS`                        | `28800`                           | Persisted match-session lifetime                   |
+| `MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS`    | `10`                              | Attempts per match credential/window               |
+| `MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS`          | `100`                             | Attempts per client address/window                 |
+| `MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS`           | `60`                              | Participant-auth throttle window                   |
+| `LEGACY_MATCH_ACCESS_ENABLED`                      | `false`                           | Temporary historical match-access compatibility    |
+| `OFFICIAL_PASSCODE_SECRET`                         | Development placeholder           | HMAC key for official passcode lookup digests      |
+| `OFFICIAL_SESSION_SECRET`                          | Development placeholder           | Independent HMAC key for official sessions/CAS     |
+| `OFFICIAL_SESSION_TTL_SECONDS`                     | `28800`                           | Persisted tournament-official session lifetime     |
+| `OFFICIAL_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS` | `10`                              | Attempts per official credential/window            |
+| `OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS`       | `100`                             | Attempts per client address/window                 |
+| `OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS`        | `60`                              | Official-auth throttle window                      |
+| `MATCH_PUBLIC_ID_INITIAL_LENGTH`                   | `6`                               | Initial human-friendly public match ID length      |
+| `INITIAL_SUPER_ADMIN_PASSWORD`                     | `dauvo@123` (non-production only) | Required non-default secret for production seed    |
+| `ROUND_DURATION_MS`                                | `120000`                          | Round duration in milliseconds                     |
+| `BREAK_DURATION_MS`                                | `60000`                           | Break duration in milliseconds                     |
 
 Use independent, randomly generated session and passcode-digest secrets outside local development. `OFFICIAL_PASSCODE_SECRET` and `OFFICIAL_SESSION_SECRET` must be different from each other and from the legacy match/admin session keys; rotating either invalidates the corresponding lookup or sessions.
 Match timing has one configuration source: change `BREAK_DURATION_MS` rather than
@@ -668,12 +672,35 @@ provide history; and one persisted active session owns each credential.
 
 ### Image storage
 
-Tournament images are served through `/api/media/...` and stored as UUID object
-keys below `IMAGE_UPLOAD_ROOT` (default `apps/api/public/uploads` when the API
-is run from its package directory). Docker Compose mounts this directory as the
-named `api_uploads` volume. Free-platform ephemeral disks can lose uploads; a
-horizontally scaled production deployment must replace the local adapter with
-shared object storage such as S3.
+`IMAGE_STORAGE_DRIVER` is exact and case-sensitive: unset or `local` selects the
+local provider; only `s3` is the other accepted value. Values are not trimmed, so
+an empty, whitespace-only, or unsupported value fails startup. In local mode,
+images are stored as UUID object keys below `IMAGE_UPLOAD_ROOT` (default
+`apps/api/public/uploads` when the API is run from its package directory).
+Docker Compose mounts this directory as the named `api_uploads` volume.
+
+For a VM/VPS deployment, keep `IMAGE_STORAGE_DRIVER=local` and put
+`IMAGE_UPLOAD_ROOT` on persistent storage (the supplied Compose volume does
+this). Free-platform ephemeral disks can lose uploads and multiple replicas need
+shared storage.
+
+S3 configuration is validated now but its adapter is deliberately not yet
+implemented: `IMAGE_STORAGE_DRIVER=s3` requires nonempty `S3_BUCKET` and
+`AWS_REGION`, then the API stops at startup with an explicit adapter-not-implemented
+error rather than silently falling back to local storage. A future AWS setup will
+look like this (use an IAM role/workload identity or secret manager for credentials;
+never commit them):
+
+```dotenv
+IMAGE_STORAGE_DRIVER=s3
+S3_BUCKET=score-production-images
+AWS_REGION=ap-southeast-1
+```
+
+Changing an existing environment's driver does not move its existing images or
+rewrite stored keys. Migrate objects and verify access before switching once the
+S3 adapter is available. The browser URL format (`/api/media/<key>`) and database
+`imagePath` key contract remain unchanged.
 
 Images accept JPEG, PNG, or WebP only (2 MiB maximum input and canonical-output
 limit). `sharp` fully decodes each upload with a 16-megapixel limit, verifies its
@@ -695,5 +722,8 @@ alert on old rows or repeated attempts). If a transaction fails after a new obje
 is saved, the API attempts to delete that new object, logs a cleanup failure, and
 rethrows the original error. The `ImageStorage` port remains object-key based
 (`save`, `open`, `delete`), so an S3 implementation can replace the local adapter
-without changing controllers or domain DTOs; AWS concepts must stay in that
-adapter/configuration layer.
+without changing controllers or domain DTOs; AWS concepts stay in that
+adapter/configuration layer. Compose has no separate `media:reconcile` schedule:
+the API's hourly lifecycle run reconciles after a purge, but routine replacement
+and removal queues still require an external periodic
+`pnpm --filter @martial-arts-scoring/api media:reconcile` job and monitoring.
