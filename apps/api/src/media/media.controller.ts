@@ -23,8 +23,15 @@ export class MediaController {
     response.setHeader('Content-Type', image.contentType);
     response.setHeader('Content-Length', image.contentLength);
     image.stream.on('error', () => {
-      if (!response.headersSent) response.status(404).json(MEDIA_NOT_FOUND);
-      else response.destroy();
+      // An object read that fails is an infrastructure error, not evidence
+      // that a key is absent. In particular, mapping an S3 stream failure to
+      // 404 hides outages and prevents clients/monitors from retrying it.
+      if (!response.headersSent) {
+        response.removeHeader('Content-Type');
+        response.removeHeader('Content-Length');
+        response.removeHeader('Cache-Control');
+        response.status(500).end();
+      } else response.destroy();
     });
     image.stream.pipe(response);
   }

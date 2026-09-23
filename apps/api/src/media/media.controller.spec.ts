@@ -144,4 +144,31 @@ describe('MediaController HTTP responses', () => {
       await app.close();
     }
   });
+
+  it('returns an uncacheable server error when an opened object stream fails', async () => {
+    const storage: ImageStorage = {
+      delete: jest.fn(),
+      save: jest.fn(),
+      open: jest.fn().mockResolvedValue({
+        key: 'athletes/123e4567-e89b-12d3-a456-426614174001.webp',
+        contentType: 'image/webp',
+        contentLength: 1,
+        stream: new Readable({
+          read() {
+            this.destroy(new Error('S3 stream interrupted'));
+          },
+        }),
+      }),
+    };
+    const app = await createApp(storage);
+
+    try {
+      const response = await request(app.getHttpServer())
+        .get('/api/media/athletes/123e4567-e89b-12d3-a456-426614174001.webp')
+        .expect(500);
+      expect(response.headers['cache-control']).toBeUndefined();
+    } finally {
+      await app.close();
+    }
+  });
 });

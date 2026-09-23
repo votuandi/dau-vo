@@ -4,7 +4,7 @@ This is an operator-driven, dry-run-first procedure. It never changes `IMAGE_STO
 
 ## Preconditions and inventory
 
-1. Create a private bucket, block public access, enable versioning for the change window, and give the workload role only `s3:PutObject`, `s3:GetObject`, and `s3:DeleteObject` on its objects.
+1. Create a private bucket, block public access, and enable versioning for the change window. The running API's instance/workload role needs only `s3:PutObject`, `s3:GetObject`, and `s3:DeleteObject` on `arn:aws:s3:::<bucket>/*`. Use a separate, temporary migration role for the dry run/copy; in addition to those object actions it needs `s3:ListBucket` on `arn:aws:s3:::<bucket>` (restricted to the three media prefixes where supported). Without `ListBucket`, S3 intentionally returns `403` rather than `404` for a missing key, so a `HeadObject` dry run cannot reliably report missing objects.
 2. Keep `IMAGE_STORAGE_DRIVER=local`. Run and save this read-only inventory:
 
 ```sql
