@@ -1,9 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import {
-  AuditEventType,
-  MatchStatus,
-  RoundStage,
-} from '@prisma/client';
+import { AuditEventType, MatchStatus, RoundStage } from '@prisma/client';
 import type { AthleteColor } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { auditActor, type InspectorCommandIdentity } from './command-identity';

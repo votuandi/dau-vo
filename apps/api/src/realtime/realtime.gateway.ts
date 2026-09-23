@@ -419,10 +419,7 @@ export class RealtimeGateway
     // Keep its round-start response intact, though: the client needs the
     // readiness and invalid-state errors produced by that transition rather
     // than treating an overtime start as one of the post-overtime actions.
-    this.logger.log(
-      { socketId: client.id },
-      'Overtime start command received',
-    );
+    this.logger.log({ socketId: client.id }, 'Overtime start command received');
     const response = await this.roundStart(client);
     if (response.ok) {
       this.logger.log(

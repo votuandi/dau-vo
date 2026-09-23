@@ -5,25 +5,21 @@ import { MediaController } from './media.controller';
 import { IMAGE_STORAGE } from './image-storage';
 import { LocalImageStorage } from './local-image-storage';
 import { MediaDeletionService } from './media-deletion.service';
-import type {
-  EnvironmentVariables,
-  ImageStorageDriver,
-} from '../config/environment';
+import { S3ImageStorage } from './s3-image-storage';
+import type { EnvironmentVariables } from '../config/environment';
 
-function createImageStorage(config: ConfigService<EnvironmentVariables, true>) {
+export function createImageStorage(
+  config: ConfigService<EnvironmentVariables, true>,
+) {
   const driver = config.getOrThrow('IMAGE_STORAGE_DRIVER', { infer: true });
   if (driver === 'local') {
     return new LocalImageStorage(
       path.resolve(config.getOrThrow('IMAGE_UPLOAD_ROOT', { infer: true })),
     );
   }
-
-  assertS3AdapterIsAvailable(driver);
-}
-
-function assertS3AdapterIsAvailable(driver: ImageStorageDriver): never {
-  throw new Error(
-    `IMAGE_STORAGE_DRIVER=${driver} is configured, but the S3 image-storage adapter is not implemented`,
+  return new S3ImageStorage(
+    config.getOrThrow('S3_BUCKET', { infer: true }),
+    config.getOrThrow('AWS_REGION', { infer: true }),
   );
 }
 

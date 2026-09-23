@@ -68,26 +68,28 @@ export class BracketCancellationService {
         await tx.$queryRaw`SELECT id FROM bracket_fixtures WHERE bracket_id = ${bracket.id}::uuid ORDER BY id FOR UPDATE`;
         const bracketMatches = bracket.fixtures
           .map((fixture) => fixture.match)
-          .filter((match): match is NonNullable<typeof match> => match !== null);
-        const unsafeMatches = bracketMatches
           .filter(
-            (match) =>
-              match.status !== MatchStatus.WAITING ||
-                match.startedAt !== null ||
-                match.finishedAt !== null ||
-                match._count.scoreEvents > 0 ||
-                match._count.penalties > 0 ||
-                match._count.rounds > 0 ||
-                match._count.refereeVotes > 0 ||
-                match._count.resultOperations > 0,
+            (match): match is NonNullable<typeof match> => match !== null,
           );
+        const unsafeMatches = bracketMatches.filter(
+          (match) =>
+            match.status !== MatchStatus.WAITING ||
+            match.startedAt !== null ||
+            match.finishedAt !== null ||
+            match._count.scoreEvents > 0 ||
+            match._count.penalties > 0 ||
+            match._count.rounds > 0 ||
+            match._count.refereeVotes > 0 ||
+            match._count.resultOperations > 0,
+        );
         // Once a fixture has created a match, a normal reset must not leave it
         // orphaned. The second destructive confirmation removes every one of
         // these matches, including WAITING matches that have not started yet.
         if (bracketMatches.length && !force)
           throw new ConflictException({
             code: 'BRACKET_CANCELLATION_UNSAFE',
-            message: 'Linked bracket matches require explicit cancellation confirmation',
+            message:
+              'Linked bracket matches require explicit cancellation confirmation',
             unsafeMatches: bracketMatches.map((match) => ({
               id: match.id,
               publicId: match.publicId,
@@ -123,12 +125,16 @@ export class BracketCancellationService {
           await tx.bracketSlot.deleteMany({
             where: { fixture: { bracketId: bracket.id } },
           });
-          await tx.bracketFixture.deleteMany({ where: { bracketId: bracket.id } });
+          await tx.bracketFixture.deleteMany({
+            where: { bracketId: bracket.id },
+          });
           await tx.tournamentBracket.update({
             where: { id: bracket.id },
             data: { championEntrantId: null },
           });
-          await tx.bracketEntrant.deleteMany({ where: { bracketId: bracket.id } });
+          await tx.bracketEntrant.deleteMany({
+            where: { bracketId: bracket.id },
+          });
           await tx.tournamentBracket.delete({ where: { id: bracket.id } });
         } else {
           await tx.tournamentBracket.update({
@@ -148,7 +154,9 @@ export class BracketCancellationService {
               weightClassId,
               forced: force,
               unsafeMatchIds: unsafeMatches.map((match) => match.id),
-              deletedMatchIds: force ? bracketMatches.map((match) => match.id) : [],
+              deletedMatchIds: force
+                ? bracketMatches.map((match) => match.id)
+                : [],
             },
           },
         });
