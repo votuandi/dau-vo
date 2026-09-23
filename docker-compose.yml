@@ -59,6 +59,33 @@ services:
       redis: { condition: service_healthy }
     volumes: [api_uploads:/workspace/apps/api/public/uploads]
 
+  # Exactly one Compose service owns recurring media cleanup. Do not add this
+  # loop to the API entrypoint: API replicas may scale independently.
+  media-reconciler:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-martial_arts}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-martial_arts_scoring}?schema=public
+      REDIS_URL: redis://redis:6379
+      WEB_ORIGIN: ${WEB_ORIGIN:?Set the public HTTPS origin in the Compose environment}
+      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:?Set a 32+ character secret}
+      BRACKET_PREVIEW_SECRET: ${BRACKET_PREVIEW_SECRET:?Set a 32+ character secret}
+      MATCH_SESSION_SECRET: ${MATCH_SESSION_SECRET:?Set a 32+ character secret}
+      OFFICIAL_PASSCODE_SECRET: ${OFFICIAL_PASSCODE_SECRET:?Set a 32+ character secret}
+      OFFICIAL_SESSION_SECRET: ${OFFICIAL_SESSION_SECRET:?Set a 32+ character secret}
+      INITIAL_SUPER_ADMIN_PASSWORD: ${INITIAL_SUPER_ADMIN_PASSWORD:?Set a non-default initial super-admin password}
+      IMAGE_STORAGE_DRIVER: ${IMAGE_STORAGE_DRIVER:-local}
+      IMAGE_UPLOAD_ROOT: ${IMAGE_UPLOAD_ROOT:-/workspace/apps/api/public/uploads}
+      S3_BUCKET: ${S3_BUCKET:-}
+      AWS_REGION: ${AWS_REGION:-}
+    depends_on:
+      postgres: { condition: service_healthy }
+    volumes: [api_uploads:/workspace/apps/api/public/uploads]
+    command: ['sh', '-ec', 'while true; do pnpm --filter @martial-arts-scoring/api media:reconcile -- --limit=100; sleep 300; done']
+
   # Explicit one-shot production bootstrap. It is profile-gated so normal API
   # restarts never run the seed or change the Super Admin password.
   bootstrap:

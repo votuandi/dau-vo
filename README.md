@@ -770,7 +770,7 @@ only a tournament `imageUrl`, plus match snapshot name, nullable organization,
 optional athlete `imageUrl`, and optional weight-class name—never birth year,
 roster IDs, owner/access/session/monitoring, or audit data. Legacy values are
 null. Media cleanup is post-commit and retryable with
-`pnpm --filter @martial-arts-scoring/api media:reconcile`.
+`pnpm --filter @martial-arts-scoring/api media:reconcile -- --limit=100`.
 
 Replacing or removing an image updates the aggregate pointer, writes its audit
 record, and upserts the previous key into `media_deletions` in one database
@@ -782,7 +782,13 @@ is saved, the API attempts to delete that new object, logs a cleanup failure, an
 rethrows the original error. The `ImageStorage` port remains object-key based
 (`save`, `open`, `delete`), so an S3 implementation can replace the local adapter
 without changing controllers or domain DTOs; AWS concepts stay in that
-adapter/configuration layer. Compose has no separate `media:reconcile` schedule:
-the API's hourly lifecycle run reconciles after a purge, but routine replacement
-and removal queues still require an external periodic
-`pnpm --filter @martial-arts-scoring/api media:reconcile` job and monitoring.
+adapter/configuration layer. Compose has one dedicated `media-reconciler`
+service, separate from API replicas, which runs a bounded 100-row batch every
+five minutes. Rows are leased, so overlapping manual/host invocations remain
+safe. The exact one-shot command is
+`docker compose exec media-reconciler pnpm --filter @martial-arts-scoring/api media:reconcile -- --limit=100`.
+Failures retain their outbox rows and log `media_deletion_failed`; an already
+absent local or S3 object is a successful idempotent deletion. Cleanup checks
+live tournament, organization, athlete, and bracket-snapshot references plus
+`PENDING` migration records before deletion. See
+[the local-to-S3 cutover runbook](docs/image-storage-local-to-s3-runbook.md).

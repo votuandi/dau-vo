@@ -327,9 +327,24 @@ model MediaDeletion {
   attempts    Int       @default(0)
   lastError   String?   @map("last_error") @db.Text
   lastTriedAt DateTime? @map("last_tried_at") @db.Timestamptz(3)
+  leaseOwner  String?   @map("lease_owner") @db.VarChar(100)
+  leaseUntil  DateTime? @map("lease_until") @db.Timestamptz(3)
 
   @@index([createdAt], map: "media_deletions_created_at_idx")
+  @@index([leaseUntil], map: "media_deletions_lease_until_idx")
   @@map("media_deletions")
+}
+
+// A cutover tool registers keys here before copying them. Reconciliation treats
+// these keys as protected until the operator marks the migration complete.
+model MediaMigration {
+  storageKey String    @id @map("storage_key") @db.VarChar(1024)
+  state      String    @db.VarChar(30)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(3)
+
+  @@index([state], map: "media_migrations_state_idx")
+  @@map("media_migrations")
 }
 
 model SportGroup {
