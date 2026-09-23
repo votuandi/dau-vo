@@ -4,6 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
 import { IMAGE_MAX_BYTES } from './image-storage';
+import {
+  imageContentTypeForKey,
+  isValidImageStorageKey,
+} from './image-storage-validation';
 import { LocalImageStorage } from './local-image-storage';
 
 describe('LocalImageStorage', () => {
@@ -131,5 +135,23 @@ describe('LocalImageStorage', () => {
     });
     await storage.delete(stored.key);
     await expect(storage.delete(stored.key)).resolves.toBeUndefined();
+  });
+
+  it('uses the shared validator for legacy keys and rejects malformed keys', async () => {
+    const legacyJpegKey =
+      'organizations/123e4567-e89b-12d3-a456-426614174000.jpg';
+    const legacyPngKey = 'athletes/123e4567-e89b-12d3-a456-426614174000.png';
+    expect(isValidImageStorageKey(legacyJpegKey)).toBe(true);
+    expect(imageContentTypeForKey(legacyJpegKey)).toBe('image/jpeg');
+    expect(imageContentTypeForKey(legacyPngKey)).toBe('image/png');
+    for (const key of [
+      '../secret.jpg',
+      'tournaments/../secret.jpg',
+      'unknown/123e4567-e89b-12d3-a456-426614174000.webp',
+      'tournaments/not-a-uuid.webp',
+    ]) {
+      expect(isValidImageStorageKey(key)).toBe(false);
+      await expect(storage.open(key)).resolves.toBeNull();
+    }
   });
 });
