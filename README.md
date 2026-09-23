@@ -651,9 +651,14 @@ the browser session and role-aware navigation. Before production rollout, rehear
 steps 1–3 against a fresh staging database, then rerun step 2 unchanged against
 that already-seeded database; both bootstrap runs must succeed.
 
-Nginx proxies `/api` and `/api/socket.io` with HTTP upgrade headers, while the
-web container serves the immutable React build. Put an HTTPS-capable reverse
-proxy or load balancer in front of Nginx and forward `X-Forwarded-Proto: https`;
+Nginx proxies all `/api/*` requests, including `/api/media/{resource}/{filename}`
+to NestJS; it has no media-file alias. The API therefore remains the sole
+authoritative image reader in both local and S3 modes and preserves its
+`Content-Type`, `Content-Length`, immutable cache, and `X-Content-Type-Options`
+headers. `/api/socket.io/` remains the more-specific WebSocket location with
+HTTP upgrade headers. The web container serves the immutable React build. Put an
+HTTPS-capable reverse proxy or load balancer in front of Nginx and forward
+`X-Forwarded-Proto: https`;
 the browser will then use HTTPS/WSS on the single public origin. Do not expose
 PostgreSQL or Redis ports in production. Back up the database and review the
 checked-in Prisma migrations before the one-shot bootstrap. The API's restart-safe
@@ -679,17 +684,31 @@ images are stored as UUID object keys below `IMAGE_UPLOAD_ROOT` (default
 `apps/api/public/uploads` when the API is run from its package directory).
 Docker Compose mounts this directory as the named `api_uploads` volume.
 
-For a VM/VPS deployment, keep `IMAGE_STORAGE_DRIVER=local` and put
-`IMAGE_UPLOAD_ROOT` on persistent storage (the supplied Compose volume does
-this). Free-platform ephemeral disks can lose uploads and multiple replicas need
-shared storage.
+### Local VPS configuration
 
-S3 configuration is validated now but its adapter is deliberately not yet
-implemented: `IMAGE_STORAGE_DRIVER=s3` requires nonempty `S3_BUCKET` and
-`AWS_REGION`, then the API stops at startup with an explicit adapter-not-implemented
-error rather than silently falling back to local storage. A future AWS setup will
-look like this (use an IAM role/workload identity or secret manager for credentials;
-never commit them):
+For a VM/VPS, use the Compose defaults (or set them explicitly):
+
+```dotenv
+IMAGE_STORAGE_DRIVER=local
+IMAGE_UPLOAD_ROOT=/workspace/apps/api/public/uploads
+```
+
+`api_uploads` is a persistent Docker named volume mounted only by the API. It is
+not mounted in Nginx because media is always streamed by `MediaController` at
+`/api/media/{resource}/{filename}`. Docker volumes survive container recreation
+but not an intentional `docker volume rm` or loss of the host. Include it in the
+host backup plan, for example by archiving a stopped or read-only-mounted volume
+alongside a tested PostgreSQL dump; restore both database and matching image
+objects together. A bind mount on separately backed-up host storage can replace
+the API's `api_uploads:/workspace/apps/api/public/uploads` mount if that matches
+your operations policy. Free-platform ephemeral disks can lose uploads and
+multiple API replicas need shared object storage.
+
+### AWS S3 configuration
+
+S3 objects stay private. NestJS reads them with the AWS SDK and streams bytes on
+the same browser URL; it never redirects the browser to an S3 or presigned URL.
+Set these values in the uncommitted production environment file:
 
 ```dotenv
 IMAGE_STORAGE_DRIVER=s3
@@ -697,10 +716,50 @@ S3_BUCKET=score-production-images
 AWS_REGION=ap-southeast-1
 ```
 
-Changing an existing environment's driver does not move its existing images or
-rewrite stored keys. Migrate objects and verify access before switching once the
-S3 adapter is available. The browser URL format (`/api/media/<key>`) and database
-`imagePath` key contract remain unchanged.
+The bucket must exist in `AWS_REGION`, block public access, and have no public
+read bucket policy or ACL. Attach an EC2 instance role (or equivalent workload
+role) with only object operations for this bucket, substituting its name:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::score-production-images/*"
+    }
+  ]
+}
+```
+
+Do not put `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, or static credentials in
+Compose, CI, or an environment file. The SDK uses its default credential provider
+chain, including the attached instance role. On EC2, Docker containers need to
+reach IMDSv2. If instance metadata has a hop limit of 1, raise it to 2 (one hop
+for the container network):
+
+```powershell
+aws ec2 modify-instance-metadata-options --instance-id i-EXAMPLE --http-tokens required --http-put-response-hop-limit 2
+```
+
+Keep the `api_uploads` mount during an initial S3 rollout; it is unused by the
+S3 adapter but harmless, avoids a topology change, and preserves an easy rollback
+to local storage. The same API image and `docker-compose.yml` are used for both
+providers. Changing drivers does not migrate existing objects or rewrite database
+keys: copy and verify existing local objects before switching.
+
+Validate the resolved local and S3 Compose samples without printing their
+resolved secret values:
+
+```powershell
+docker compose --env-file .env.production.local config --quiet
+docker compose --env-file .env.production.s3 config --quiet
+```
+
+For the S3 file, provide `S3_BUCKET` and `AWS_REGION`; for the local file, omit
+them. Both still require the normal database, origin, and application-secret
+variables listed above.
 
 Images accept JPEG, PNG, or WebP only (2 MiB maximum input and canonical-output
 limit). `sharp` fully decodes each upload with a 16-megapixel limit, verifies its
