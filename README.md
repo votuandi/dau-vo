@@ -522,37 +522,37 @@ and the creation audit event in a single transaction.
 
 ## Environment variables
 
-| Variable                                           | Example/default                   | Purpose                                            |
-| -------------------------------------------------- | --------------------------------- | -------------------------------------------------- |
-| `DATABASE_URL`                                     | PostgreSQL URL in `.env.example`  | Prisma database connection                         |
-| `REDIS_URL`                                        | `redis://localhost:6379`          | Redis connection and admin-session storage         |
-| `API_PORT`                                         | `3000`                            | API listen port                                    |
-| `IMAGE_STORAGE_DRIVER`                             | `local`                           | Exact image-storage provider: `local` or `s3`      |
-| `IMAGE_UPLOAD_ROOT`                                | `public/uploads`                  | Local-mode root, relative to API working directory |
-| `S3_BUCKET`                                        | Required for `s3`                 | S3 image bucket; no credentials belong in config   |
-| `AWS_REGION`                                       | Required for `s3`                 | AWS region for the S3 image bucket                 |
-| `WEB_ORIGIN`                                       | `http://localhost:5173`           | Allowed credentialed browser origin                |
-| `VITE_SOCKET_PATH`                                 | `/api/socket.io`                  | Browser and server Socket.IO handshake path        |
-| `ADMIN_SESSION_SECRET`                             | Development placeholder           | HMAC secret for admin-session identifiers          |
-| `ADMIN_SESSION_TTL_SECONDS`                        | `28800`                           | Fixed Redis lifetime for admin sessions            |
-| `ADMIN_LOGIN_RATE_LIMIT_MAX_ATTEMPTS`              | `5`                               | Login attempts allowed per window                  |
-| `ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS`            | `900`                             | Login throttle window in seconds                   |
-| `MATCH_SESSION_SECRET`                             | Development placeholder           | Legacy match-session tokens/challenges only        |
-| `MATCH_SESSION_TTL_SECONDS`                        | `28800`                           | Persisted match-session lifetime                   |
-| `MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS`    | `10`                              | Attempts per match credential/window               |
-| `MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS`          | `100`                             | Attempts per client address/window                 |
-| `MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS`           | `60`                              | Participant-auth throttle window                   |
-| `LEGACY_MATCH_ACCESS_ENABLED`                      | `false`                           | Temporary historical match-access compatibility    |
-| `OFFICIAL_PASSCODE_SECRET`                         | Development placeholder           | HMAC key for official passcode lookup digests      |
-| `OFFICIAL_SESSION_SECRET`                          | Development placeholder           | Independent HMAC key for official sessions/CAS     |
-| `OFFICIAL_SESSION_TTL_SECONDS`                     | `28800`                           | Persisted tournament-official session lifetime     |
-| `OFFICIAL_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS` | `10`                              | Attempts per official credential/window            |
-| `OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS`       | `100`                             | Attempts per client address/window                 |
-| `OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS`        | `60`                              | Official-auth throttle window                      |
-| `MATCH_PUBLIC_ID_INITIAL_LENGTH`                   | `6`                               | Initial human-friendly public match ID length      |
-| `INITIAL_SUPER_ADMIN_PASSWORD`                     | `dauvo@123` (non-production only) | Required non-default secret for production seed    |
-| `ROUND_DURATION_MS`                                | `120000`                          | Round duration in milliseconds                     |
-| `BREAK_DURATION_MS`                                | `60000`                           | Break duration in milliseconds                     |
+| Variable                                           | Example/default                   | Purpose                                                         |
+| -------------------------------------------------- | --------------------------------- | --------------------------------------------------------------- |
+| `DATABASE_URL`                                     | PostgreSQL URL in `.env.example`  | Prisma database connection                                      |
+| `REDIS_URL`                                        | `redis://localhost:6379`          | Redis connection and admin-session storage                      |
+| `API_PORT`                                         | `3000`                            | API listen port                                                 |
+| `IMAGE_STORAGE_DRIVER`                             | `local`                           | Exact image-storage provider: `local` or `s3`                   |
+| `IMAGE_UPLOAD_ROOT`                                | `public/uploads`                  | Local-mode root outside Compose; Compose fixes its mounted root |
+| `S3_BUCKET`                                        | Required for `s3`                 | S3 image bucket; no credentials belong in config                |
+| `AWS_REGION`                                       | Required for `s3`                 | AWS region for the S3 image bucket                              |
+| `WEB_ORIGIN`                                       | `http://localhost:5173`           | Allowed credentialed browser origin                             |
+| `VITE_SOCKET_PATH`                                 | `/api/socket.io`                  | Browser and server Socket.IO handshake path                     |
+| `ADMIN_SESSION_SECRET`                             | Development placeholder           | HMAC secret for admin-session identifiers                       |
+| `ADMIN_SESSION_TTL_SECONDS`                        | `28800`                           | Fixed Redis lifetime for admin sessions                         |
+| `ADMIN_LOGIN_RATE_LIMIT_MAX_ATTEMPTS`              | `5`                               | Login attempts allowed per window                               |
+| `ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS`            | `900`                             | Login throttle window in seconds                                |
+| `MATCH_SESSION_SECRET`                             | Development placeholder           | Legacy match-session tokens/challenges only                     |
+| `MATCH_SESSION_TTL_SECONDS`                        | `28800`                           | Persisted match-session lifetime                                |
+| `MATCH_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS`    | `10`                              | Attempts per match credential/window                            |
+| `MATCH_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS`          | `100`                             | Attempts per client address/window                              |
+| `MATCH_ACCESS_RATE_LIMIT_WINDOW_SECONDS`           | `60`                              | Participant-auth throttle window                                |
+| `LEGACY_MATCH_ACCESS_ENABLED`                      | `false`                           | Temporary historical match-access compatibility                 |
+| `OFFICIAL_PASSCODE_SECRET`                         | Development placeholder           | HMAC key for official passcode lookup digests                   |
+| `OFFICIAL_SESSION_SECRET`                          | Development placeholder           | Independent HMAC key for official sessions/CAS                  |
+| `OFFICIAL_SESSION_TTL_SECONDS`                     | `28800`                           | Persisted tournament-official session lifetime                  |
+| `OFFICIAL_ACCESS_RATE_LIMIT_IDENTITY_MAX_ATTEMPTS` | `10`                              | Attempts per official credential/window                         |
+| `OFFICIAL_ACCESS_RATE_LIMIT_IP_MAX_ATTEMPTS`       | `100`                             | Attempts per client address/window                              |
+| `OFFICIAL_ACCESS_RATE_LIMIT_WINDOW_SECONDS`        | `60`                              | Official-auth throttle window                                   |
+| `MATCH_PUBLIC_ID_INITIAL_LENGTH`                   | `6`                               | Initial human-friendly public match ID length                   |
+| `INITIAL_SUPER_ADMIN_PASSWORD`                     | `dauvo@123` (non-production only) | Required non-default secret for production seed                 |
+| `ROUND_DURATION_MS`                                | `120000`                          | Round duration in milliseconds                                  |
+| `BREAK_DURATION_MS`                                | `60000`                           | Break duration in milliseconds                                  |
 
 Use independent, randomly generated session and passcode-digest secrets outside local development. `OFFICIAL_PASSCODE_SECRET` and `OFFICIAL_SESSION_SECRET` must be different from each other and from the legacy match/admin session keys; rotating either invalidates the corresponding lookup or sessions.
 Match timing has one configuration source: change `BREAK_DURATION_MS` rather than
@@ -679,30 +679,64 @@ provide history; and one persisted active session owns each credential.
 
 `IMAGE_STORAGE_DRIVER` is exact and case-sensitive: unset or `local` selects the
 local provider; only `s3` is the other accepted value. Values are not trimmed, so
-an empty, whitespace-only, or unsupported value fails startup. In local mode,
-images are stored as UUID object keys below `IMAGE_UPLOAD_ROOT` (default
+an empty, whitespace-only, or unsupported value fails startup. Outside Compose,
+local images are stored as UUID object keys below `IMAGE_UPLOAD_ROOT` (default
 `apps/api/public/uploads` when the API is run from its package directory).
-Docker Compose mounts this directory as the named `api_uploads` volume.
+
+Compose has a stricter policy: it always sets `IMAGE_UPLOAD_ROOT` to
+`/workspace/apps/api/public/uploads` and mounts the same destination for both
+`api` and `media-reconciler`. `IMAGE_UPLOAD_ROOT` in a shell or `.env` file is
+intentionally ignored by Compose, so it cannot select an unmounted ephemeral
+path. Compose interpolation uses shell values before `.env` values, but neither
+can override this literal. The default source is the existing persistent
+`api_uploads` named volume.
 
 ### Local VPS configuration
 
-For a VM/VPS, use the Compose defaults (or set them explicitly):
+For a VM/VPS, use the Compose defaults. Do not set `IMAGE_UPLOAD_ROOT` in the
+Compose environment:
 
 ```dotenv
 IMAGE_STORAGE_DRIVER=local
-IMAGE_UPLOAD_ROOT=/workspace/apps/api/public/uploads
 ```
 
-`api_uploads` is a persistent Docker named volume mounted only by the API. It is
-not mounted in Nginx because media is always streamed by `MediaController` at
+`api_uploads` is a persistent Docker named volume mounted by both the API and
+the reconciler at `/workspace/apps/api/public/uploads`. It is not mounted in
+Nginx because media is always streamed by `MediaController` at
 `/api/media/{resource}/{filename}`. Docker volumes survive container recreation
 but not an intentional `docker volume rm` or loss of the host. Include it in the
 host backup plan, for example by archiving a stopped or read-only-mounted volume
 alongside a tested PostgreSQL dump; restore both database and matching image
-objects together. A bind mount on separately backed-up host storage can replace
-the API's `api_uploads:/workspace/apps/api/public/uploads` mount if that matches
-your operations policy. Free-platform ephemeral disks can lose uploads and
+objects together. The API and reconciler start as root only long enough to create
+and `chown` the mounted directory, then run as the image's `node` user; the host
+directory therefore must permit Docker to change ownership (or already be
+writable by that user). Free-platform ephemeral disks can lose uploads and
 multiple API replicas need shared object storage.
+
+To use a separately backed-up absolute host directory on a VPS/VM, create it
+before deployment and apply the explicit override. The override uses long-form
+`type: bind`, so a missing source fails interpolation and a source is never
+silently treated as a different Docker named volume.
+
+```sh
+sudo install -d -m 0755 /srv/martial-arts-scoring/uploads
+sudo chown 1000:1000 /srv/martial-arts-scoring/uploads
+export IMAGE_UPLOAD_HOST_PATH=/srv/martial-arts-scoring/uploads
+docker compose -f docker-compose.yml -f docker-compose.host-uploads.yml config
+docker compose -f docker-compose.yml -f docker-compose.host-uploads.yml up -d
+```
+
+`IMAGE_UPLOAD_HOST_PATH` must be an absolute path; do not use `.` or a relative
+path. Back up that exact directory with PostgreSQL, and restore it at the same
+host path before starting the stack so database storage keys still resolve.
+Both services mount it at the fixed container path above. Nginx remains unchanged
+and never serves this directory directly.
+
+Upgrade note: deployments that previously set `IMAGE_UPLOAD_ROOT` in Compose
+must remove it; Compose now ignores it and uses the persistent fixed destination.
+If those deployments wrote data outside `api_uploads`, copy that data into the
+currently mounted source before recreating containers, preserving each storage
+key exactly.
 
 ### AWS S3 configuration
 
@@ -744,10 +778,12 @@ aws ec2 modify-instance-metadata-options --instance-id i-EXAMPLE --http-tokens r
 ```
 
 Keep the `api_uploads` mount during an initial S3 rollout; it is unused by the
-S3 adapter but harmless, avoids a topology change, and preserves an easy rollback
-to local storage. The same API image and `docker-compose.yml` are used for both
-providers. Changing drivers does not migrate existing objects or rewrite database
-keys: copy and verify existing local objects before switching.
+S3 adapter and exists solely for a controlled rollback to the retained local
+objects. A stale local volume cannot serve images uploaded after cutover: S3 is
+the authoritative driver in that mode. The same API image and
+`docker-compose.yml` are used for both providers. Changing drivers does not
+migrate existing objects or rewrite database keys: copy and verify existing local
+objects before switching.
 
 Validate the resolved local and S3 Compose samples without printing their
 resolved secret values:
@@ -755,11 +791,13 @@ resolved secret values:
 ```powershell
 docker compose --env-file .env.production.local config --quiet
 docker compose --env-file .env.production.s3 config --quiet
+IMAGE_UPLOAD_HOST_PATH=/srv/martial-arts-scoring/uploads docker compose -f docker-compose.yml -f docker-compose.host-uploads.yml --env-file .env.production.local config --quiet
 ```
 
 For the S3 file, provide `S3_BUCKET` and `AWS_REGION`; for the local file, omit
 them. Both still require the normal database, origin, and application-secret
-variables listed above.
+variables listed above. In all three outputs, both services have the same literal
+`IMAGE_UPLOAD_ROOT` and `/workspace/apps/api/public/uploads` mount target.
 
 Images accept JPEG, PNG, or WebP only (2 MiB maximum input and canonical-output
 limit). `sharp` fully decodes each upload with a 16-megapixel limit, verifies its

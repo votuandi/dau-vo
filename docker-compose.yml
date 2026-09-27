@@ -50,7 +50,10 @@ services:
       ROUND_DURATION_MS: ${ROUND_DURATION_MS:-120000}
       BREAK_DURATION_MS: ${BREAK_DURATION_MS:-60000}
       IMAGE_STORAGE_DRIVER: ${IMAGE_STORAGE_DRIVER:-local}
-      IMAGE_UPLOAD_ROOT: ${IMAGE_UPLOAD_ROOT:-/workspace/apps/api/public/uploads}
+      # Deliberately fixed: this is also the destination of api_uploads below.
+      # Do not interpolate IMAGE_UPLOAD_ROOT here; an unmounted root loses
+      # successful local uploads when this container is recreated.
+      IMAGE_UPLOAD_ROOT: /workspace/apps/api/public/uploads
       # Optional in local mode; validated as non-empty by the API only for s3.
       S3_BUCKET: ${S3_BUCKET:-}
       AWS_REGION: ${AWS_REGION:-}
@@ -83,7 +86,8 @@ services:
       ROUND_DURATION_MS: ${ROUND_DURATION_MS:-120000}
       BREAK_DURATION_MS: ${BREAK_DURATION_MS:-60000}
       IMAGE_STORAGE_DRIVER: ${IMAGE_STORAGE_DRIVER:-local}
-      IMAGE_UPLOAD_ROOT: ${IMAGE_UPLOAD_ROOT:-/workspace/apps/api/public/uploads}
+      # Must stay identical to api so reconciliation sees the same local keys.
+      IMAGE_UPLOAD_ROOT: /workspace/apps/api/public/uploads
       S3_BUCKET: ${S3_BUCKET:-}
       AWS_REGION: ${AWS_REGION:-}
     depends_on:
@@ -93,7 +97,7 @@ services:
       [
         'sh',
         '-ec',
-        'while true; do pnpm --filter @martial-arts-scoring/api media:reconcile -- --limit=100; sleep 300; done',
+        'mkdir -p /workspace/apps/api/public/uploads && chown -R node:node /workspace/apps/api/public/uploads && exec su-exec node sh -ec "while true; do pnpm --filter @martial-arts-scoring/api media:reconcile -- --limit=100; sleep 300; done"',
       ]
 
   # Explicit one-shot production bootstrap. It is profile-gated so normal API
