@@ -26,5 +26,5 @@ export interface OpenedImage extends StoredImage {
 export interface ImageStorage {
   save(input: ImageInput): Promise<StoredImage>;
   open(key: string): Promise<OpenedImage | null>;
-  delete(key: string): Promise<void>;
+  delete(key: string, options?: { abortSignal?: AbortSignal }): Promise<void>;
 }

@@ -58,7 +58,10 @@ export class LocalImageStorage implements ImageStorage {
     }
   }
 
-  async delete(key: string): Promise<void> {
+  async delete(
+    key: string,
+    _options?: { abortSignal?: AbortSignal },
+  ): Promise<void> {
     try {
       await unlink(this.resolve(key));
     } catch (error) {

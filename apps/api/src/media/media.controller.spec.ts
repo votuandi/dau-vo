@@ -75,7 +75,7 @@ describe('MediaController HTTP responses', () => {
     }
   });
 
-  it('streams legacy jpg and png S3 fixtures through the same API URL', async () => {
+  it('streams legacy jpg, png, and webp S3 fixtures through the same API URL', async () => {
     const objects = new Map([
       [
         'organizations/123e4567-e89b-12d3-a456-426614174000.jpg',
@@ -84,6 +84,10 @@ describe('MediaController HTTP responses', () => {
       [
         'athletes/123e4567-e89b-12d3-a456-426614174001.png',
         Buffer.from('legacy png'),
+      ],
+      [
+        'tournaments/123e4567-e89b-12d3-a456-426614174002.webp',
+        Buffer.from('webp bytes'),
       ],
     ]);
     const client = {
@@ -108,6 +112,7 @@ describe('MediaController HTTP responses', () => {
           'image/jpeg',
         ],
         ['athletes/123e4567-e89b-12d3-a456-426614174001.png', 'image/png'],
+        ['tournaments/123e4567-e89b-12d3-a456-426614174002.webp', 'image/webp'],
       ];
       for (const [key, contentType] of expectedResponses) {
         await request(app.getHttpServer())
@@ -120,32 +125,49 @@ describe('MediaController HTTP responses', () => {
       }
       await request(app.getHttpServer())
         .get('/api/media/tournaments/123e4567-e89b-12d3-a456-426614174002.jpg')
-        .expect(404);
+        .expect(404)
+        .expect((response) => {
+          expect(response.headers['cache-control']).toBeUndefined();
+        });
     } finally {
       await app.close();
     }
   });
 
-  it('returns a server error rather than a false 404 when S3 denies GetObject', async () => {
-    const storage = new S3ImageStorage('private-images', 'ap-southeast-1', {
-      send: jest.fn().mockRejectedValue({
-        name: 'AccessDenied',
-        $metadata: { httpStatusCode: 403 },
-      }),
-    });
-    const app = await createApp(storage);
+  it.each([
+    [
+      'NoSuchBucket with HTTP 404',
+      { name: 'NoSuchBucket', $metadata: { httpStatusCode: 404 } },
+    ],
+    [
+      'an unrecognized HTTP 404',
+      { name: 'UnexpectedS3Error', $metadata: { httpStatusCode: 404 } },
+    ],
+    [
+      'AccessDenied',
+      { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } },
+    ],
+  ])(
+    'returns an uncacheable server error for %s',
+    async (_description, error) => {
+      const storage = new S3ImageStorage('private-images', 'ap-southeast-1', {
+        send: jest.fn().mockRejectedValue(error),
+      });
+      const app = await createApp(storage);
 
-    try {
-      await request(app.getHttpServer())
-        .get('/api/media/athletes/123e4567-e89b-12d3-a456-426614174001.png')
-        .expect(500)
-        .expect('X-Content-Type-Options', 'nosniff');
-    } finally {
-      await app.close();
-    }
-  });
+      try {
+        const response = await request(app.getHttpServer())
+          .get('/api/media/athletes/123e4567-e89b-12d3-a456-426614174001.png')
+          .expect(500)
+          .expect('X-Content-Type-Options', 'nosniff');
+        expect(response.headers['cache-control']).toBeUndefined();
+      } finally {
+        await app.close();
+      }
+    },
+  );
 
-  it('returns an uncacheable server error when an opened object stream fails', async () => {
+  it('returns an uncacheable server error when an object stream fails before headers', async () => {
     const storage: ImageStorage = {
       delete: jest.fn(),
       save: jest.fn(),
@@ -167,6 +189,40 @@ describe('MediaController HTTP responses', () => {
         .get('/api/media/athletes/123e4567-e89b-12d3-a456-426614174001.webp')
         .expect(500);
       expect(response.headers['cache-control']).toBeUndefined();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('aborts rather than completing a successful image when a stream fails after headers', async () => {
+    let sentFirstChunk = false;
+    const storage: ImageStorage = {
+      delete: jest.fn(),
+      save: jest.fn(),
+      open: jest.fn().mockResolvedValue({
+        key: 'athletes/123e4567-e89b-12d3-a456-426614174001.webp',
+        contentType: 'image/webp',
+        contentLength: 2,
+        stream: new Readable({
+          read() {
+            if (sentFirstChunk) return;
+            sentFirstChunk = true;
+            this.push(Buffer.from('x'));
+            setImmediate(() =>
+              this.destroy(new Error('S3 stream interrupted')),
+            );
+          },
+        }),
+      }),
+    };
+    const app = await createApp(storage);
+
+    try {
+      await expect(
+        request(app.getHttpServer()).get(
+          '/api/media/athletes/123e4567-e89b-12d3-a456-426614174001.webp',
+        ),
+      ).rejects.toThrow(/aborted|socket hang up/i);
     } finally {
       await app.close();
     }

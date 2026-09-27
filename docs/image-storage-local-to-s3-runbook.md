@@ -33,6 +33,33 @@ Only after validation, set `IMAGE_STORAGE_DRIVER=s3`, `S3_BUCKET`, and `AWS_REGI
 
 Rollback: stop writes and reconciler, restore `IMAGE_STORAGE_DRIVER=local`, redeploy with the retained source volume, validate representative URLs, then resume. If an S3 key is missing, restore/copy that exact key from the retained local backup. A `PENDING` migration deliberately prevents deletion until verified or manually resolved.
 
+## Reconciler observability
+
+`media:reconcile` emits `deleted`, `failed`, `deferred`, and `contention` counts.
+Protected keys are rechecked after 15 minutes; provider failures use exponential
+backoff from 5 minutes through a one-hour cap. The following PostgreSQL queries
+are useful when operating the reconciler:
+
+```sql
+-- Ready work older than one hour.
+SELECT count(*) FROM media_deletions
+WHERE next_attempt_at <= now() AND (lease_until IS NULL OR lease_until < now())
+  AND created_at < now() - interval '1 hour';
+
+-- Deferred because a reference or migration was still live.
+SELECT count(*) FROM media_deletions
+WHERE next_attempt_at > now()
+  AND last_error = 'protected by a live media reference or PENDING migration';
+
+-- Rows repeatedly failing the storage provider.
+SELECT storage_key, attempts, last_error, last_tried_at, next_attempt_at
+FROM media_deletions WHERE attempts >= 3 ORDER BY attempts DESC, last_tried_at ASC;
+
+-- Leases recoverable after a worker crash.
+SELECT count(*) FROM media_deletions
+WHERE lease_until < now();
+```
+
 ## Empty state
 
 If the inventory has no references, outbox rows, or pending migrations, no copy is needed. Smoke-test private bucket IAM with a staging upload/read/delete, set the three S3 variables, deploy, and retain the empty volume through the rollback window.

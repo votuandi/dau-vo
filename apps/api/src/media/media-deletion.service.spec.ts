@@ -1,4 +1,7 @@
-import { MediaDeletionService } from './media-deletion.service';
+import {
+  failureBackoffMs,
+  MediaDeletionService,
+} from './media-deletion.service';
 
 describe('MediaDeletionService', () => {
   const key = 'athletes/123e4567-e89b-12d3-a456-426614174000.webp';
@@ -32,9 +35,13 @@ describe('MediaDeletionService', () => {
     await expect(service.reconcile()).resolves.toEqual({
       deleted: 1,
       failed: 0,
-      skipped: 0,
+      deferred: 0,
+      contention: 0,
     });
-    expect(storage.delete).toHaveBeenCalledWith(key);
+    expect(storage.delete).toHaveBeenCalledWith(
+      key,
+      expect.objectContaining({ abortSignal: expect.any(AbortSignal) }),
+    );
     expect(prisma.mediaDeletion.deleteMany).toHaveBeenCalled();
   });
 
@@ -44,12 +51,16 @@ describe('MediaDeletionService', () => {
     await expect(service.reconcile()).resolves.toEqual({
       deleted: 0,
       failed: 1,
-      skipped: 0,
+      deferred: 0,
+      contention: 0,
     });
     expect(prisma.mediaDeletion.deleteMany).not.toHaveBeenCalled();
     expect(prisma.mediaDeletion.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ attempts: { increment: 1 } }),
+        data: expect.objectContaining({
+          attempts: { increment: 1 },
+          nextAttemptAt: expect.any(Date),
+        }),
       }),
     );
   });
@@ -61,9 +72,34 @@ describe('MediaDeletionService', () => {
     await expect(service.reconcile()).resolves.toEqual({
       deleted: 0,
       failed: 0,
-      skipped: 1,
+      deferred: 1,
+      contention: 0,
     });
     expect(storage.delete).not.toHaveBeenCalled();
     expect(prisma.mediaDeletion.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('uses capped exponential provider-failure backoff', () => {
+    expect(failureBackoffMs(0)).toBe(5 * 60_000);
+    expect(failureBackoffMs(1)).toBe(10 * 60_000);
+    expect(failureBackoffMs(99)).toBe(60 * 60_000);
+  });
+
+  it('queries only currently eligible rows in deterministic scheduler order', async () => {
+    const { service, prisma } = subject();
+    await service.reconcile(1);
+    expect(prisma.mediaDeletion.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        take: 1,
+        where: expect.objectContaining({
+          nextAttemptAt: { lte: expect.any(Date) },
+        }),
+        orderBy: [
+          { nextAttemptAt: 'asc' },
+          { createdAt: 'asc' },
+          { id: 'asc' },
+        ],
+      }),
+    );
   });
 });

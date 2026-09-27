@@ -1,7 +1,4 @@
-import {
-  DeleteObjectCommand,
-  GetObjectCommand,
-} from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import type { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { InternalServerErrorException } from '@nestjs/common';
 import { Readable } from 'node:stream';
@@ -90,22 +87,58 @@ describe('S3ImageStorage', () => {
     });
   });
 
-  it('returns null only for a confirmed absent object, not AccessDenied', async () => {
+  it('returns null only for a confirmed NoSuchKey response', async () => {
     const key = 'athletes/123e4567-e89b-12d3-a456-426614174000.png';
     client.send.mockRejectedValueOnce({
       name: 'NoSuchKey',
       $metadata: { httpStatusCode: 404 },
     });
     await expect(storage.open(key)).resolves.toBeNull();
+  });
 
-    client.send.mockRejectedValueOnce({
-      name: 'AccessDenied',
-      $metadata: { httpStatusCode: 403 },
-    });
+  it.each([
+    [
+      'NoSuchBucket 404',
+      { name: 'NoSuchBucket', $metadata: { httpStatusCode: 404 } },
+    ],
+    [
+      'unrecognized 404',
+      { name: 'UnexpectedS3Error', $metadata: { httpStatusCode: 404 } },
+    ],
+    [
+      'AccessDenied 403',
+      { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } },
+    ],
+    ['malformed NoSuchKey response', { name: 'NoSuchKey' }],
+    ['transient network failure', new Error('connection reset')],
+  ])('treats %s as an infrastructure error', async (_description, error) => {
+    const key = 'athletes/123e4567-e89b-12d3-a456-426614174000.png';
+    client.send.mockRejectedValueOnce(error);
     await expect(storage.open(key)).rejects.toBeInstanceOf(
       InternalServerErrorException,
     );
   });
+
+  it.each([
+    ['a missing body', { ContentLength: 1 }],
+    [
+      'a non-stream body',
+      { Body: Buffer.from('not a stream'), ContentLength: 1 },
+    ],
+    ['a missing content length', { Body: Readable.from('x') }],
+    [
+      'an invalid content length',
+      { Body: Readable.from('x'), ContentLength: -1 },
+    ],
+  ])(
+    'rejects a successful-looking response with %s',
+    async (_description, object) => {
+      client.send.mockResolvedValueOnce(object);
+      await expect(
+        storage.open('athletes/123e4567-e89b-12d3-a456-426614174000.png'),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
+    },
+  );
 
   it('propagates failed puts as the project storage error', async () => {
     client.send.mockRejectedValue(new Error('network failure'));

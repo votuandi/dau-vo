@@ -327,11 +327,15 @@ model MediaDeletion {
   attempts    Int       @default(0)
   lastError   String?   @map("last_error") @db.Text
   lastTriedAt DateTime? @map("last_tried_at") @db.Timestamptz(3)
+  // A durable scheduler cursor.  Protected rows and provider failures move
+  // forward instead of repeatedly occupying the oldest page.
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
   leaseOwner  String?   @map("lease_owner") @db.VarChar(100)
   leaseUntil  DateTime? @map("lease_until") @db.Timestamptz(3)
 
   @@index([createdAt], map: "media_deletions_created_at_idx")
   @@index([leaseUntil], map: "media_deletions_lease_until_idx")
+  @@index([nextAttemptAt, createdAt, id], map: "media_deletions_eligibility_order_idx")
   @@map("media_deletions")
 }
 

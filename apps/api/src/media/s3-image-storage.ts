@@ -88,13 +88,17 @@ export class S3ImageStorage implements ImageStorage {
     }
   }
 
-  async delete(key: string): Promise<void> {
+  async delete(
+    key: string,
+    options?: { abortSignal?: AbortSignal },
+  ): Promise<void> {
     if (!isValidImageStorageKey(key))
       throw new InternalServerErrorException(IMAGE_STORAGE_FAILURE);
     try {
       // S3 DeleteObject is idempotent, including for an already absent key.
       await this.client.send(
         new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
+        options,
       );
     } catch {
       throw new InternalServerErrorException(IMAGE_STORAGE_FAILURE);
@@ -112,8 +116,11 @@ function isConfirmedMissingObject(error: unknown): boolean {
     name?: unknown;
     $metadata?: { httpStatusCode?: unknown };
   };
+  // S3 uses HTTP 404 for both a missing object (NoSuchKey) and a missing
+  // bucket (NoSuchBucket). Only the documented object-not-found service
+  // error is safe to translate into this API's normal missing-image result.
   return (
-    candidate.name === 'NoSuchKey' ||
+    candidate.name === 'NoSuchKey' &&
     candidate.$metadata?.httpStatusCode === 404
   );
 }
