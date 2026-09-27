@@ -605,8 +605,9 @@ docker compose --env-file .env.production ps
 # the failing migration, seed, or verification step.
 docker compose --env-file .env.production --profile bootstrap run --rm bootstrap
 
-# 3. Start the application only after bootstrap succeeds.
-docker compose --env-file .env.production up --build -d api web nginx
+# 3. Start the application only after bootstrap succeeds. Include the dedicated
+# reconciler; it owns durable post-commit media cleanup.
+docker compose --env-file .env.production up --build -d api media-reconciler web nginx
 docker compose --env-file .env.production ps
 ```
 
