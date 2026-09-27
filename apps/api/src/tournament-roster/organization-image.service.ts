@@ -11,7 +11,10 @@ import type { Express } from 'express';
 import { IMAGE_STORAGE, type ImageStorage } from '../media/image-storage';
 import { IMAGE_FILE_REQUIRED } from '../media/media.errors';
 import { PrismaService } from '../prisma/prisma.service';
-import { enqueueMediaDeletion } from '../media/media-deletion.outbox';
+import {
+  enqueueFailedMediaCompensation,
+  enqueueMediaDeletion,
+} from '../media/media-deletion.outbox';
 import { Logger } from '@nestjs/common';
 import { ORGANIZATION_NOT_FOUND } from './tournament-roster.errors';
 import { ROSTER_TOURNAMENT_ARCHIVED } from './tournament-roster.errors';
@@ -106,6 +109,15 @@ export class OrganizationImageService {
     try {
       await this.storage.delete(key);
     } catch (error) {
+      try {
+        await enqueueFailedMediaCompensation(this.prisma, key);
+      } catch (outboxError) {
+        this.logger.error({
+          event: 'media_compensation_outbox_failed',
+          storageKey: key,
+          error: outboxError,
+        });
+      }
       this.logger.warn({
         event: 'media_compensation_failed',
         storageKey: key,
