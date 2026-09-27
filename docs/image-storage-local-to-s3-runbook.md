@@ -1,65 +1,58 @@
 # Local-volume to private-S3 image cutover
 
-This is an operator-driven, dry-run-first procedure. It never changes `IMAGE_STORAGE_DRIVER`, deletes a local object, or deletes an S3 object. Database storage keys are copied unchanged, so browser URLs remain `/api/media/<key>`.
+This is an operator-only workflow. `media:migrate` is never run by API startup, Compose, or ordinary CI. It never changes drivers or deletes either provider.
 
-## Preconditions and inventory
+## Storage model and safety boundary
 
-1. Create a private bucket, block public access, and enable versioning for the change window. The running API's instance/workload role needs only `s3:PutObject`, `s3:GetObject`, and `s3:DeleteObject` on `arn:aws:s3:::<bucket>/*`. Use a separate, temporary migration role for the dry run/copy; in addition to those object actions it needs `s3:ListBucket` on `arn:aws:s3:::<bucket>` (restricted to the three media prefixes where supported). Without `ListBucket`, S3 intentionally returns `403` rather than `404` for a missing key, so a `HeadObject` dry run cannot reliably report missing objects.
-2. Keep `IMAGE_STORAGE_DRIVER=local`. Run and save this read-only inventory:
+A database value is a relative, provider-neutral key—not a provider selector. `IMAGE_STORAGE_DRIVER` changes only the provider that interprets keys; it does not move bytes. The complete live-key set is `tournaments.image_path`, `tournament_organizations.image_path`, `tournament_athletes.image_path`, and `bracket_entrants.snapshot_image_path`. Snapshots remain live after an athlete changes images. `media_deletions.storage_key` is only a deletion candidate; `media_migrations` PENDING protects a copy from reconciliation but is not automatically live. The reconciler deletes only from its selected driver. Never default to restoring a pre-cutover database: that can discard valid new references.
 
-```sql
-SELECT 'tournament' AS source, image_path AS storage_key FROM tournaments WHERE image_path IS NOT NULL
-UNION ALL SELECT 'organization', image_path FROM tournament_organizations WHERE image_path IS NOT NULL
-UNION ALL SELECT 'athlete', image_path FROM tournament_athletes WHERE image_path IS NOT NULL
-UNION ALL SELECT 'bracket_snapshot', snapshot_image_path FROM bracket_entrants WHERE snapshot_image_path IS NOT NULL
-UNION ALL SELECT 'deletion_outbox', storage_key FROM media_deletions
-UNION ALL SELECT 'pending_migration', storage_key FROM media_migrations WHERE state = 'PENDING'
-ORDER BY storage_key;
+The CLI validates the application’s strict key format before constructing local paths. It produces JSON (human and machine readable) listing duplicate/live/pending/outbox references, local/S3 presence, bytes, SHA-256 hashes, missing files, conflicting destinations, unsafe keys, planned copies and an overall `safe` decision. It never equates a multipart S3 ETag to MD5. S3 `HeadObject` 403 is unsafe/ambiguous without ListBucket, never “missing.”
+
+## IAM, backups, and freeze
+
+Use a private bucket with Block Public Access; enable versioning for the migration/rollback window and record a later lifecycle decision. Runtime role: `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` on the three media prefixes. A separate temporary migration identity additionally needs prefix-scoped `s3:ListBucket`, `HeadObject`/`GetObject`, and `PutObject`; remove its extra rights after sign-off. Never use public bucket URLs.
+
+```powershell
+$env:IMAGE_UPLOAD_ROOT = 'C:\staged\api_uploads'
+$env:S3_BUCKET = '<private-bucket-name>'
+$env:AWS_REGION = '<aws-region>'
+# DATABASE_URL is the current PostgreSQL database; do not put credentials in this runbook.
 ```
 
-3. Back up PostgreSQL and the entire `api_uploads` volume; test both restores. Compare distinct referenced keys with volume keys. Missing referenced files are a stop condition: restore, or explicitly accept their pre-existing 404; do not switch with unexplained loss.
+Before inventory, make and test restoration of a **current** PostgreSQL snapshot and the full `api_uploads` volume. Bulk copy, requests, storage, versioning, and retained rollback copies can incur AWS charges. Inventory while running, then enter maintenance: block API image writes, reference DB mutations, bracket confirmations, and lifecycle jobs; stop `media-reconciler`. Re-inventory under the freeze. Drift means reconcile and repeat; the freeze remains until verification and sign-off.
 
-## Dry run, copy, and validation
+## Exact commands and forward cutover
 
-1. Dry run only: for each inventory key, stat the local file and S3 `HeadObject`; report duplicates, local/S3 bytes, missing local files, and queued deletion keys. Never use `sync --delete`.
-2. Start a maintenance window. Stop API and `media-reconciler`, and block writes at the proxy.
-3. Insert every copy candidate in `media_migrations` as `PENDING` before its first copy; reconciliation will protect it. Copy `<IMAGE_UPLOAD_ROOT>/<storage_key>` to S3 using the identical key and `Content-Type: image/webp`. Do not delete local originals.
-4. Validate every referenced key's local and S3 content lengths, then fetch representative tournament, organization, athlete, and historical-match `/api/media/<key>` URLs through an S3-configured staging/API instance.
-5. Mark verified rows `COMPLETED` with `completed_at`; leave failed/missing rows `PENDING`. Copy queued outbox objects too if present. Old outbox rows and failed save compensations must remain: after cutover reconciliation safely removes them. Keep the report and backups.
+Run from repo root. `--include-outbox` deliberately copies deletion candidates for recovery; omit it only with an auditable decision that unreferenced outbox objects are excluded.
 
-## Switch and rollback
-
-Only after validation, set `IMAGE_STORAGE_DRIVER=s3`, `S3_BUCKET`, and `AWS_REGION`, then deploy. Compose runs exactly one bounded reconciliation schedule: the `media-reconciler` service in `docker-compose.yml` runs `pnpm --filter @martial-arts-scoring/api media:reconcile -- --limit=100` every five minutes. Alert on `media_deletion_failed`, repeated attempts, and old rows.
-
-Rollback: stop writes and reconciler, restore `IMAGE_STORAGE_DRIVER=local`, redeploy with the retained source volume, validate representative URLs, then resume. If an S3 key is missing, restore/copy that exact key from the retained local backup. A `PENDING` migration deliberately prevents deletion until verified or manually resolved.
-
-## Reconciler observability
-
-`media:reconcile` emits `deleted`, `failed`, `deferred`, and `contention` counts.
-Protected keys are rechecked after 15 minutes; provider failures use exponential
-backoff from 5 minutes through a one-hour cap. The following PostgreSQL queries
-are useful when operating the reconciler:
-
-```sql
--- Ready work older than one hour.
-SELECT count(*) FROM media_deletions
-WHERE next_attempt_at <= now() AND (lease_until IS NULL OR lease_until < now())
-  AND created_at < now() - interval '1 hour';
-
--- Deferred because a reference or migration was still live.
-SELECT count(*) FROM media_deletions
-WHERE next_attempt_at > now()
-  AND last_error = 'protected by a live media reference or PENDING migration';
-
--- Rows repeatedly failing the storage provider.
-SELECT storage_key, attempts, last_error, last_tried_at, next_attempt_at
-FROM media_deletions WHERE attempts >= 3 ORDER BY attempts DESC, last_tried_at ASC;
-
--- Leases recoverable after a worker crash.
-SELECT count(*) FROM media_deletions
-WHERE lease_until < now();
+```powershell
+pnpm --filter @martial-arts-scoring/api media:migrate -- inventory --include-outbox --report forward-running.json
+# after freeze
+pnpm --filter @martial-arts-scoring/api media:migrate -- inventory --include-outbox --report forward-frozen.json
+pnpm --filter @martial-arts-scoring/api media:migrate -- forward-copy --include-outbox --report forward-copy.json
+pnpm --filter @martial-arts-scoring/api media:migrate -- forward-verify --include-outbox --report forward-verify.json
 ```
 
-## Empty state
+`inventory` is read-only. `forward-copy` completes a no-write preflight first: unsafe/missing source, S3 ambiguity, or different existing bytes exits 2 before any copy. Each eligible key is idempotently inserted as `PENDING` before copying unchanged; originals stay local. Content type comes from validated suffix: `.jpg` → `image/jpeg`, `.png` → `image/png`, `.webp` → `image/webp`, never a blanket WebP override. Equal existing destinations are retained; conflicts are never overwritten. Interrupted runs safely resume.
 
-If the inventory has no references, outbox rows, or pending migrations, no copy is needed. Smoke-test private bucket IAM with a staging upload/read/delete, set the three S3 variables, deploy, and retain the empty volume through the rollback window.
+`forward-verify` re-reads full bytes and lengths for every selected key. It alone changes verified PENDING records to `COMPLETED` with CLI-observed `completed_at`; failures remain PENDING. Re-runs do not reset completed rows. Require `safe: true`, then smoke-test representative tournament, organization, athlete, and historical bracket URLs through S3 staging/API—URLs are additive, not a substitute for all-key verification. Only then deploy `IMAGE_STORAGE_DRIVER=s3`, `S3_BUCKET`, and `AWS_REGION`.
+
+Example report: `{"mode":"forward-verify","safe":true,"objects":[{"key":"athletes/<uuid>.jpg","references":["athlete","bracket_snapshot"],"action":"equal"}]}`.
+
+## Reverse rollback
+
+Before **any** post-cutover write, the verified local volume can be reused only after freezing work and confirming that current DB live references still match it. After S3 uploads/replacements, local may lack current keys: freeze writes/reference jobs, stop reconciler, snapshot the **current** DB plus relevant S3 and local volume, then run:
+
+```powershell
+pnpm --filter @martial-arts-scoring/api media:migrate -- reverse-dry-run --include-outbox --report reverse-dry-run.json
+pnpm --filter @martial-arts-scoring/api media:migrate -- reverse-copy --include-outbox --report reverse-copy.json
+pnpm --filter @martial-arts-scoring/api media:migrate -- reverse-verify --include-outbox --report reverse-verify.json
+```
+
+Reverse treats S3 as source and local as destination, copies only missing keys unchanged, rejects differing local bytes, and hashes every current live key. Any unreadable/missing/ambiguous S3 live key or mismatch aborts the local switch: keep S3 serving while recovering. Only `safe: true` plus local-staging URL tests permits deploying `IMAGE_STORAGE_DRIVER=local`. Do not delete S3 originals, the old volume, or restore a stale DB.
+
+Worked example: legacy `athletes/A.jpg` is copied to S3. After cutover an athlete replaces it with S3-only `athletes/B.webp`; current athlete references B, but bracket snapshot references A. Reverse sees both as live, reconstructs and hashes both locally, then switches. An outbox row for A is merely a candidate—snapshot protection means it must not cause A’s deletion.
+
+## Outbox closeout
+
+Keep reconciliation stopped during freeze. PENDING rows protect copy candidates; never force-delete queued rows. On forward success resume one reconciler using S3 only after recording report paths, current backups, smoke tests, time, and operator sign-off. On reverse, resume local reconciler only after reverse verification. It cannot clean the inactive provider; retention/cleanup after the rollback window is a separate approved operation. Hard stops: unsafe key, absent live source, 403 ambiguity, differing hash/size, conflict, unsafe report, or failed smoke test.
