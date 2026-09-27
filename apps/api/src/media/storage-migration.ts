@@ -1,8 +1,9 @@
-import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { access, mkdir, stat, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { link, mkdir, open, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 import {
   GetObjectCommand,
@@ -91,17 +92,77 @@ export class LocalStore implements ObjectStore {
   async copyFrom(key: string, source: ObjectStore): Promise<void> {
     if (!(source instanceof S3Store))
       throw new Error('local copy source must be S3');
-    const bytes = await source.read(key);
+    const expected = await source.inspect(key, true);
+    if (!expected.exists || expected.size === undefined || !expected.sha256)
+      throw new Error(`source cannot be verified: ${key}`);
     const destination = this.filename(key);
     await mkdir(path.dirname(destination), { recursive: true });
-    // A copy never silently overwrites a non-identical destination.
-    try {
-      await access(destination);
-      throw new Error(`destination already exists: ${key}`);
-    } catch (e) {
-      if (!(e as NodeJS.ErrnoException).code?.includes('ENOENT')) throw e;
+    const existing = await this.inspect(key, true);
+    if (existing.exists) {
+      if (parity(expected, existing) === 'equal') return;
+      throw new Error(`destination conflict: ${key}`);
     }
-    await writeFile(destination, bytes, { flag: 'wx', mode: 0o644 });
+    if (existing.error)
+      throw new Error(`destination cannot be inspected: ${key}`);
+
+    // A sibling staging name is not a valid media key, so it cannot be served
+    // by /api/media. A hard kill may leave one behind, but never a partial key.
+    const temporary = path.join(
+      path.dirname(destination),
+      `.storage-migration-tmp-${process.pid}-${randomUUID()}`,
+    );
+    let syncHandle: Awaited<ReturnType<typeof open>> | undefined;
+    let temporaryCreated = false;
+    try {
+      const hash = createHash('sha256');
+      let size = 0;
+      const verifier = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          const bytes = Buffer.from(chunk);
+          size += bytes.length;
+          hash.update(bytes);
+          callback(null, bytes);
+        },
+      });
+      const body = await source.openRead(key);
+      const staging = createWriteStream(temporary, {
+        flags: 'wx',
+        mode: 0o600,
+      });
+      await new Promise<void>((resolve, reject) => {
+        staging.once('open', () => resolve()).once('error', reject);
+      });
+      temporaryCreated = true;
+      await pipeline(body, verifier, staging);
+      syncHandle = await open(temporary, 'r+');
+      await syncHandle.sync();
+      await syncHandle.close();
+      syncHandle = undefined;
+
+      if (size !== expected.size || hash.digest('hex') !== expected.sha256)
+        throw new Error(`source changed or copy verification failed: ${key}`);
+
+      // link(2)/CreateHardLink is atomic and fails if destination already
+      // exists. Unlike rename it cannot replace a concurrently-created file.
+      try {
+        await link(temporary, destination);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+          const code = (error as NodeJS.ErrnoException).code ?? 'unknown';
+          throw new Error(
+            `atomic no-clobber publish failed for ${key} (${code}); refusing to overwrite`,
+          );
+        }
+        const winner = await this.inspect(key, true);
+        if (parity(expected, winner) === 'equal') return;
+        throw new Error(`destination conflict: ${key}`);
+      }
+    } finally {
+      if (syncHandle !== undefined)
+        await syncHandle.close().catch(() => undefined);
+      if (temporaryCreated)
+        await rm(temporary, { force: true }).catch(() => undefined);
+    }
   }
 }
 
@@ -184,12 +245,7 @@ export class S3Store implements ObjectStore {
     }
   }
   async read(key: string): Promise<Buffer> {
-    const result = await this.client.send(
-      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
-    );
-    const body = result.Body;
-    if (!(body instanceof Readable))
-      throw new Error(`S3 object is not readable: ${key}`);
+    const body = await this.openRead(key);
     return Buffer.concat(
       await (async () => {
         const out: Buffer[] = [];
@@ -197,6 +253,15 @@ export class S3Store implements ObjectStore {
         return out;
       })(),
     );
+  }
+  async openRead(key: string): Promise<Readable> {
+    const result = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    const body = result.Body;
+    if (!(body instanceof Readable))
+      throw new Error(`S3 object is not readable: ${key}`);
+    return body;
   }
   private async hash(key: string): Promise<string> {
     return createHash('sha256')

@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -13,6 +13,30 @@ import { LocalStore, localPath, parity, S3Store } from './storage-migration';
 
 describe('storage migration primitives', () => {
   const key = 'athletes/11111111-1111-1111-1111-111111111111.jpg';
+
+  function fakeS3(bytes: Buffer, copyBody?: () => Readable): S3Store {
+    let reads = 0;
+    return new S3Store('media', {
+      send: jest.fn(async (command: unknown) => {
+        if (command instanceof HeadObjectCommand)
+          return { ContentLength: bytes.length };
+        if (command instanceof GetObjectCommand) {
+          reads += 1;
+          return {
+            Body:
+              reads === 1
+                ? Readable.from(bytes)
+                : (copyBody?.() ?? Readable.from(bytes)),
+          };
+        }
+        throw new Error('unexpected command');
+      }),
+    });
+  }
+
+  async function destinationFiles(root: string): Promise<string[]> {
+    return readdir(path.dirname(localPath(root, key)));
+  }
 
   it('inspects legacy JPEG bytes without changing them', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'media-migration-'));
@@ -47,6 +71,86 @@ describe('storage migration primitives', () => {
     expect(parity(source, { exists: false, error: 'S3 HEAD 403' })).toBe(
       'unsafe',
     );
+  });
+
+  it('reverse-copies exact bytes through a staged file and atomically publishes the key', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'media-migration-'));
+    const bytes = Buffer.from([0xff, 0xd8, 0x00, 0xff, 0xd9]);
+    const source = fakeS3(bytes);
+
+    await new LocalStore(root).copyFrom(key, source);
+
+    expect(await readFile(localPath(root, key))).toEqual(bytes);
+    expect(await destinationFiles(root)).toEqual([
+      path.basename(localPath(root, key)),
+    ]);
+  });
+
+  it('does not publish a partial destination and cleans staging after a source stream fails', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'media-migration-'));
+    const bytes = Buffer.from('complete image bytes');
+    const source = fakeS3(bytes, () =>
+      Readable.from(
+        (async function* () {
+          yield bytes.subarray(0, 5);
+          throw new Error('simulated S3 stream failure');
+        })(),
+      ),
+    );
+    const local = new LocalStore(root);
+
+    await expect(local.copyFrom(key, source)).rejects.toThrow(
+      'simulated S3 stream failure',
+    );
+    expect(await local.inspect(key, true)).toEqual({ exists: false });
+    expect(await destinationFiles(root)).toEqual([]);
+
+    await local.copyFrom(key, fakeS3(bytes));
+    expect(await readFile(localPath(root, key))).toEqual(bytes);
+  });
+
+  it('accepts an equal completed key and preserves a different key as a conflict', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'media-migration-'));
+    const bytes = Buffer.from('source bytes');
+    const local = new LocalStore(root);
+    const filename = localPath(root, key);
+    await mkdir(path.dirname(filename), { recursive: true });
+    await writeFile(filename, bytes);
+    await expect(local.copyFrom(key, fakeS3(bytes))).resolves.toBeUndefined();
+
+    const different = Buffer.from('do not overwrite');
+    await writeFile(filename, different);
+    await expect(local.copyFrom(key, fakeS3(bytes))).rejects.toThrow(
+      'destination conflict',
+    );
+    expect(await readFile(filename)).toEqual(different);
+  });
+
+  it('handles no-clobber publication races by accepting an equal winner and rejecting a different winner', async () => {
+    const sameRoot = await mkdtemp(path.join(os.tmpdir(), 'media-migration-'));
+    const bytes = Buffer.from('same competing bytes');
+    const sameResults = await Promise.allSettled([
+      new LocalStore(sameRoot).copyFrom(key, fakeS3(bytes)),
+      new LocalStore(sameRoot).copyFrom(key, fakeS3(bytes)),
+    ]);
+    expect(sameResults.every((result) => result.status === 'fulfilled')).toBe(
+      true,
+    );
+    expect(await readFile(localPath(sameRoot, key))).toEqual(bytes);
+
+    const conflictRoot = await mkdtemp(
+      path.join(os.tmpdir(), 'media-migration-'),
+    );
+    const conflictResults = await Promise.allSettled([
+      new LocalStore(conflictRoot).copyFrom(key, fakeS3(Buffer.from('first'))),
+      new LocalStore(conflictRoot).copyFrom(key, fakeS3(Buffer.from('second'))),
+    ]);
+    expect(
+      conflictResults.filter((result) => result.status === 'rejected'),
+    ).toHaveLength(1);
+    expect(await destinationFiles(conflictRoot)).toEqual([
+      path.basename(localPath(conflictRoot, key)),
+    ]);
   });
 
   it('proves a missing S3 destination with an authorized empty exact-key listing', async () => {
