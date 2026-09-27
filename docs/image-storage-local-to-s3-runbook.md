@@ -10,7 +10,7 @@ The CLI validates the application’s strict key format before constructing loca
 
 ## IAM, backups, and freeze
 
-Use a private bucket with Block Public Access; enable versioning for the migration/rollback window and record a later lifecycle decision. Runtime role: `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` on the three media prefixes. A separate temporary migration identity additionally needs prefix-scoped `s3:ListBucket`, `HeadObject`/`GetObject`, and `PutObject`; remove its extra rights after sign-off. Never use public bucket URLs.
+Use a private bucket with Block Public Access; enable versioning for the migration/rollback window and record a later lifecycle decision. Runtime role: `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` on the three media prefixes. A separate temporary migration identity additionally needs prefix-scoped `s3:ListBucket`, `HeadObject`/`GetObject`, and `PutObject`; remove its extra rights after sign-off. The `ListBucket` statement must restrict `s3:prefix` to `tournaments/*`, `organizations/*`, and `athletes/*`: the CLI lists the exact key prefix after a 404-class `HeadObject` response and only a successful empty listing proves that key is absent. Do not grant `ListBucket` to the normal runtime role. Never use public bucket URLs.
 
 ```powershell
 $env:IMAGE_UPLOAD_ROOT = 'C:\staged\api_uploads'

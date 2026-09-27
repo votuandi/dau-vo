@@ -7,9 +7,10 @@ import { Readable } from 'node:stream';
 import {
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
-  S3Client,
 } from '@aws-sdk/client-s3';
+import type { S3Client } from '@aws-sdk/client-s3';
 
 import {
   imageContentTypeForKey,
@@ -22,6 +23,14 @@ export type ObjectInfo = {
   size?: number;
   sha256?: string;
   error?: string;
+  /** Stable, non-sensitive reason an inspection could not prove an outcome. */
+  errorCategory?:
+    | 'missing'
+    | 'access-denied'
+    | 'bucket-not-found'
+    | 'wrong-region'
+    | 'ambiguous'
+    | 'inspection-error';
 };
 export type ObjectStore = {
   inspect(key: string, withHash: boolean): Promise<ObjectInfo>;
@@ -53,7 +62,12 @@ export class LocalStore implements ObjectStore {
     try {
       const filename = this.filename(key);
       const info = await stat(filename);
-      if (!info.isFile()) return { exists: false, error: 'not a regular file' };
+      if (!info.isFile())
+        return {
+          exists: false,
+          error: 'not a regular file',
+          errorCategory: 'inspection-error',
+        };
       return {
         exists: true,
         size: info.size,
@@ -70,6 +84,7 @@ export class LocalStore implements ObjectStore {
               error instanceof Error
                 ? error.message
                 : 'local inspection failed',
+            errorCategory: 'inspection-error',
           };
     }
   }
@@ -97,31 +112,75 @@ export class S3Store implements ObjectStore {
   ) {}
   async inspect(key: string, withHash: boolean): Promise<ObjectInfo> {
     if (!isValidImageStorageKey(key))
-      return { exists: false, error: `unsafe storage key: ${key}` };
+      return {
+        exists: false,
+        error: 'unsafe storage key',
+        errorCategory: 'inspection-error',
+      };
+    let head;
     try {
-      const head = await this.client.send(
+      head = await this.client.send(
         new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
       );
-      if (typeof head.ContentLength !== 'number')
-        return { exists: false, error: 'S3 response has no ContentLength' };
+    } catch (error) {
+      // HeadObject alone cannot distinguish a missing key from a missing bucket
+      // (and may return 403 when ListBucket is absent). Only a successful,
+      // prefix-scoped list can prove absence after a 404-class HEAD response.
+      if (!isNotFound(error)) return s3InspectionError(error);
+      return this.inspectAfterNotFound(key, withHash);
+    }
+    if (typeof head.ContentLength !== 'number')
+      return {
+        exists: false,
+        error: 'S3 HEAD response has no ContentLength',
+        errorCategory: 'inspection-error',
+      };
+    return this.inspectKnownObject(key, head.ContentLength, withHash);
+  }
+
+  private async inspectAfterNotFound(
+    key: string,
+    withHash: boolean,
+  ): Promise<ObjectInfo> {
+    try {
+      const listed = await this.client.send(
+        new ListObjectsV2Command({ Bucket: this.bucket, Prefix: key }),
+      );
+      if (listed.Contents !== undefined && !Array.isArray(listed.Contents))
+        return {
+          exists: false,
+          error: 'malformed S3 listing response',
+          errorCategory: 'inspection-error',
+        };
+      const exact = listed.Contents?.find((object) => object.Key === key);
+      // A successful list for this exact key prefix validates both the bucket
+      // and the migration identity's prefix scope. Longer keys do not count.
+      if (exact === undefined) return { exists: false };
+      if (typeof exact.Size !== 'number')
+        return {
+          exists: false,
+          error: 'S3 listing response has no object size',
+          errorCategory: 'inspection-error',
+        };
+      return this.inspectKnownObject(key, exact.Size, withHash);
+    } catch (error) {
+      return s3InspectionError(error);
+    }
+  }
+
+  private async inspectKnownObject(
+    key: string,
+    size: number,
+    withHash: boolean,
+  ): Promise<ObjectInfo> {
+    try {
       return {
         exists: true,
-        size: head.ContentLength,
+        size,
         ...(withHash ? { sha256: await this.hash(key) } : {}),
       };
     } catch (error) {
-      const status = (error as { $metadata?: { httpStatusCode?: number } })
-        ?.$metadata?.httpStatusCode;
-      // A 403 can mean either denied or absent without ListBucket; never call it missing.
-      return {
-        exists: false,
-        error:
-          status === 403
-            ? 'S3 HEAD 403 (ambiguous: require ListBucket)'
-            : error instanceof Error
-              ? error.message
-              : 'S3 inspection failed',
-      };
+      return s3InspectionError(error);
     }
   }
   async read(key: string): Promise<Buffer> {
@@ -160,6 +219,44 @@ export class S3Store implements ObjectStore {
       }),
     );
   }
+}
+
+type S3Failure = {
+  name?: string;
+  Code?: string;
+  code?: string;
+  $metadata?: { httpStatusCode?: number };
+};
+
+function isNotFound(error: unknown): boolean {
+  const failure = error as S3Failure;
+  return (
+    failure?.$metadata?.httpStatusCode === 404 &&
+    failure.name !== 'NoSuchBucket' &&
+    failure.Code !== 'NoSuchBucket' &&
+    failure.code !== 'NoSuchBucket'
+  );
+}
+
+function s3InspectionError(error: unknown): ObjectInfo {
+  const failure = error as S3Failure;
+  const code = failure?.name ?? failure?.Code ?? failure?.code;
+  const status = failure?.$metadata?.httpStatusCode;
+  const errorCategory =
+    code === 'NoSuchBucket'
+      ? 'bucket-not-found'
+      : status === 301 || code === 'PermanentRedirect'
+        ? 'wrong-region'
+        : status === 403 || code === 'AccessDenied'
+          ? 'access-denied'
+          : status === 404
+            ? 'ambiguous'
+            : 'inspection-error';
+  return {
+    exists: false,
+    error: `S3 inspection ${errorCategory}`,
+    errorCategory,
+  };
 }
 
 export function parity(

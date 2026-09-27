@@ -84,10 +84,18 @@ async function main(): Promise<void> {
     const safeKey = isValidImageStorageKey(key);
     const from = safeKey
       ? await source.inspect(key, true)
-      : { exists: false, error: 'unsafe storage key' };
+      : {
+          exists: false,
+          error: 'unsafe storage key',
+          errorCategory: 'inspection-error' as const,
+        };
     const to = safeKey
       ? await destination.inspect(key, true)
-      : { exists: false, error: 'unsafe storage key' };
+      : {
+          exists: false,
+          error: 'unsafe storage key',
+          errorCategory: 'inspection-error' as const,
+        };
     const action = parity(from, to);
     report.objects.push({
       key,
