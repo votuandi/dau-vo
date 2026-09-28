@@ -319,12 +319,7 @@ export function TournamentMatchesPage({
   });
   const cancelBracket = useMutation({
     mutationFn: (force: boolean) =>
-      adminManagementApi.cancelBracket(
-        tournament.id,
-        selectedId ?? '',
-        cancelReason.trim(),
-        force,
-      ),
+      adminManagementApi.cancelBracket(tournament.id, selectedId ?? '', cancelReason.trim(), force),
     onSuccess: () => {
       setCancelOpen(false);
       setCancelReason('');
@@ -346,10 +341,7 @@ export function TournamentMatchesPage({
       ]);
     },
     onError: (error) => {
-      if (
-        error instanceof ApiClientError &&
-        error.body.code === 'BRACKET_CANCELLATION_UNSAFE'
-      ) {
+      if (error instanceof ApiClientError && error.body.code === 'BRACKET_CANCELLATION_UNSAFE') {
         const unsafeMatches = error.body.unsafeMatches;
         setUnsafeCancellationMatches(
           Array.isArray(unsafeMatches)
@@ -943,12 +935,16 @@ function FixtureList({
                       Chuẩn bị trận
                     </Button>
                   ) : null}
-                  {f.status === 'MATCH_PREPARED' && f.match ? (
+                  {f.match &&
+                  (f.status === 'MATCH_PREPARED' ||
+                    f.match.lifecycle === MatchLifecycle.COMPLETED) ? (
                     <Link
                       className="mt-2 inline-block text-sm font-bold underline"
                       to={`/admin/matches/${f.match.id}`}
                     >
-                      Mở trận {f.match.publicId}
+                      {f.match.lifecycle === MatchLifecycle.COMPLETED
+                        ? `Xem trận ${f.match.publicId}`
+                        : `Mở trận ${f.match.publicId}`}
                     </Link>
                   ) : null}
                   {f.status === 'AWAITING_WINNER' ? (
