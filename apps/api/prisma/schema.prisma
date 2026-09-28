@@ -95,15 +95,15 @@ enum MatchLifecycle {
 }
 
 enum MatchRole {
-  REFEREE
-  INSPECTOR
+  JUDGE
+  SUPERVISOR
 
   @@map("match_role")
 }
 
 enum TournamentOfficialRole {
-  REFEREE
-  INSPECTOR
+  JUDGE
+  SUPERVISOR
 
   @@map("tournament_official_role")
 }
@@ -115,32 +115,32 @@ enum MatchOfficialAssignmentReleaseReason {
   MATCH_EXIT_SUSPENDED_KEEP_ROUND_1
   MATCH_EXIT_SUSPENDED_KEEP_ROUNDS_1_AND_2
   RESET_REQUIRES_SETUP
-  INSPECTOR_RELEASED
+  SUPERVISOR_RELEASED
   REPLACED
   OFFICIAL_DEACTIVATED
 
   @@map("match_official_assignment_release_reason")
 }
 
-enum RefereeSlot {
-  REFEREE_1
-  REFEREE_2
-  REFEREE_3
+enum JudgeSlot {
+  JUDGE_1
+  JUDGE_2
+  JUDGE_3
 
-  @@map("referee_slot")
+  @@map("judge_slot")
 }
 
 enum MatchAccessRole {
-  REFEREE_1
-  REFEREE_2
-  REFEREE_3
-  INSPECTOR
+  JUDGE_1
+  JUDGE_2
+  JUDGE_3
+  SUPERVISOR
 
   @@map("match_access_role")
 }
 
 enum ScoreEventType {
-  REFEREE_POINT
+  JUDGE_POINT
   PENALTY
   ADMIN_ADJUSTMENT
 
@@ -198,7 +198,7 @@ enum AuditEventType {
   TOURNAMENT_OFFICIAL_UPDATED
   TOURNAMENT_OFFICIAL_DEACTIVATED
   TOURNAMENT_OFFICIAL_PASSCODE_REGENERATED
-  MATCH_INSPECTOR_CLAIMED
+  MATCH_SUPERVISOR_CLAIMED
   MATCH_OFFICIAL_ASSIGNMENT_CONFIRMED
   MATCH_OFFICIAL_ASSIGNMENT_REPLACED
   MATCH_OFFICIAL_ASSIGNMENT_RELEASED
@@ -320,18 +320,18 @@ model Tournament {
 // that makes an image unreachable, then deleted only after an idempotent storage
 // delete succeeds. This keeps object I/O outside database transactions.
 model MediaDeletion {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  storageKey  String    @unique(map: "media_deletions_storage_key_key") @map("storage_key") @db.VarChar(1024)
-  reason      String    @db.VarChar(100)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  attempts    Int       @default(0)
-  lastError   String?   @map("last_error") @db.Text
-  lastTriedAt DateTime? @map("last_tried_at") @db.Timestamptz(3)
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  storageKey    String    @unique(map: "media_deletions_storage_key_key") @map("storage_key") @db.VarChar(1024)
+  reason        String    @db.VarChar(100)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  attempts      Int       @default(0)
+  lastError     String?   @map("last_error") @db.Text
+  lastTriedAt   DateTime? @map("last_tried_at") @db.Timestamptz(3)
   // A durable scheduler cursor.  Protected rows and provider failures move
   // forward instead of repeatedly occupying the oldest page.
-  nextAttemptAt DateTime @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
-  leaseOwner  String?   @map("lease_owner") @db.VarChar(100)
-  leaseUntil  DateTime? @map("lease_until") @db.Timestamptz(3)
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  leaseOwner    String?   @map("lease_owner") @db.VarChar(100)
+  leaseUntil    DateTime? @map("lease_until") @db.Timestamptz(3)
 
   @@index([createdAt], map: "media_deletions_created_at_idx")
   @@index([leaseUntil], map: "media_deletions_lease_until_idx")
@@ -342,9 +342,9 @@ model MediaDeletion {
 // A cutover tool registers keys here before copying them. Reconciliation treats
 // these keys as protected until the operator marks the migration complete.
 model MediaMigration {
-  storageKey String    @id @map("storage_key") @db.VarChar(1024)
-  state      String    @db.VarChar(30)
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  storageKey  String    @id @map("storage_key") @db.VarChar(1024)
+  state       String    @db.VarChar(30)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   completedAt DateTime? @map("completed_at") @db.Timestamptz(3)
 
   @@index([state], map: "media_migrations_state_idx")
@@ -520,33 +520,33 @@ model TournamentAthlete {
 }
 
 model Match {
-  id                   String                 @id(map: "matches_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  publicId             String                 @unique(map: "matches_public_id_key") @map("public_id") @db.VarChar(32)
-  tournamentId         String                 @map("tournament_id") @db.Uuid
-  weightClassId        String?                @map("weight_class_id") @db.Uuid
-  bracketFixtureId     String?                @unique(map: "matches_bracket_fixture_id_key") @map("bracket_fixture_id") @db.Uuid
-  requiredRefereeCount Int                    @default(3) @map("required_referee_count") @db.SmallInt
-  status               MatchStatus            @default(WAITING)
-  lifecycle            MatchLifecycle         @default(NOT_STARTED)
-  rulesVersion         MatchRulesVersion      @default(FAULT_APPEAL_OVERTIME_V2) @map("rules_version")
-  suspendedAt          DateTime?               @map("suspended_at") @db.Timestamptz(3)
-  currentRound         Int?                   @map("current_round") @db.SmallInt
-  roundDurationMs      Int                    @map("round_duration_ms")
-  breakDurationMs      Int                    @map("break_duration_ms")
-  startedAt            DateTime?              @map("started_at") @db.Timestamptz(3)
-  finishedAt           DateTime?              @map("finished_at") @db.Timestamptz(3)
-  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt            DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  tournament           Tournament             @relation(fields: [tournamentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "matches_tournament_id_fkey")
-  weightClass          TournamentWeightClass? @relation(fields: [tournamentId, weightClassId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade, map: "matches_tournament_weight_class_id_fkey")
-  athletes             MatchAthlete[]         @relation("MatchAthletesByMatchId")
-  athletesByTournament MatchAthlete[]         @relation("MatchAthletesByTournament")
+  id                   String                    @id(map: "matches_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  publicId             String                    @unique(map: "matches_public_id_key") @map("public_id") @db.VarChar(32)
+  tournamentId         String                    @map("tournament_id") @db.Uuid
+  weightClassId        String?                   @map("weight_class_id") @db.Uuid
+  bracketFixtureId     String?                   @unique(map: "matches_bracket_fixture_id_key") @map("bracket_fixture_id") @db.Uuid
+  requiredJudgeCount   Int                       @default(3) @map("required_judge_count") @db.SmallInt
+  status               MatchStatus               @default(WAITING)
+  lifecycle            MatchLifecycle            @default(NOT_STARTED)
+  rulesVersion         MatchRulesVersion         @default(FAULT_APPEAL_OVERTIME_V2) @map("rules_version")
+  suspendedAt          DateTime?                 @map("suspended_at") @db.Timestamptz(3)
+  currentRound         Int?                      @map("current_round") @db.SmallInt
+  roundDurationMs      Int                       @map("round_duration_ms")
+  breakDurationMs      Int                       @map("break_duration_ms")
+  startedAt            DateTime?                 @map("started_at") @db.Timestamptz(3)
+  finishedAt           DateTime?                 @map("finished_at") @db.Timestamptz(3)
+  createdAt            DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tournament           Tournament                @relation(fields: [tournamentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "matches_tournament_id_fkey")
+  weightClass          TournamentWeightClass?    @relation(fields: [tournamentId, weightClassId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade, map: "matches_tournament_weight_class_id_fkey")
+  athletes             MatchAthlete[]            @relation("MatchAthletesByMatchId")
+  athletesByTournament MatchAthlete[]            @relation("MatchAthletesByTournament")
   accessCodes          MatchAccessCode[]
   sessions             MatchSession[]
   rounds               Round[]
   resultOperations     MatchResultOperation[]
   scoringWindows       ScoringWindow[]
-  refereeVotes         RefereeVote[]
+  judgeVotes           JudgeVote[]
   scoreEvents          ScoreEvent[]
   penalties            Penalty[]
   faults               Fault[]
@@ -557,7 +557,7 @@ model Match {
   resultPublications   MatchResultPublication[]
   auditLogs            AuditLog[]
   officialAssignments  MatchOfficialAssignment[]
-  bracketFixture       BracketFixture?        @relation("BracketFixtureMatch", fields: [bracketFixtureId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "matches_bracket_fixture_id_fkey")
+  bracketFixture       BracketFixture?           @relation("BracketFixtureMatch", fields: [bracketFixtureId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "matches_bracket_fixture_id_fkey")
 
   @@unique([id, tournamentId], map: "matches_id_tournament_id_key")
   @@index([tournamentId], map: "matches_tournament_id_idx")
@@ -569,29 +569,29 @@ model Match {
 
 // Confirmed bracket aggregate. Preview data is intentionally never represented here.
 model TournamentBracket {
-  id                      String                @id(map: "tournament_brackets_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tournamentId            String                @map("tournament_id") @db.Uuid
-  weightClassId           String                @map("weight_class_id") @db.Uuid
-  status                  BracketStatus         @default(ACTIVE)
-  athleteCount            Int                   @map("athlete_count")
-  bracketSize             Int                   @map("bracket_size")
-  roundCount              Int                   @map("round_count")
-  confirmationKey         String                @unique(map: "tournament_brackets_confirmation_key_key") @map("confirmation_key") @db.VarChar(255)
-  confirmationFingerprint String                @default("") @map("confirmation_fingerprint") @db.Char(64)
-  confirmedByUserId       String?               @map("confirmed_by_user_id") @db.Uuid
-  confirmedAt             DateTime              @default(now()) @map("confirmed_at") @db.Timestamptz(3)
-  completedAt             DateTime?             @map("completed_at") @db.Timestamptz(3)
-  cancelledAt             DateTime?             @map("cancelled_at") @db.Timestamptz(3)
-  championEntrantId       String?               @map("champion_entrant_id") @db.Uuid
-  createdAt               DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt               DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  tournament              Tournament            @relation(fields: [tournamentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "tournament_brackets_tournament_id_fkey")
-  weightClass             TournamentWeightClass @relation(fields: [tournamentId, weightClassId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade, map: "tournament_brackets_weight_class_id_fkey")
-  confirmedBy             User?                 @relation("TournamentBracketConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "tournament_brackets_confirmed_by_user_id_fkey")
+  id                      String                 @id(map: "tournament_brackets_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tournamentId            String                 @map("tournament_id") @db.Uuid
+  weightClassId           String                 @map("weight_class_id") @db.Uuid
+  status                  BracketStatus          @default(ACTIVE)
+  athleteCount            Int                    @map("athlete_count")
+  bracketSize             Int                    @map("bracket_size")
+  roundCount              Int                    @map("round_count")
+  confirmationKey         String                 @unique(map: "tournament_brackets_confirmation_key_key") @map("confirmation_key") @db.VarChar(255)
+  confirmationFingerprint String                 @default("") @map("confirmation_fingerprint") @db.Char(64)
+  confirmedByUserId       String?                @map("confirmed_by_user_id") @db.Uuid
+  confirmedAt             DateTime               @default(now()) @map("confirmed_at") @db.Timestamptz(3)
+  completedAt             DateTime?              @map("completed_at") @db.Timestamptz(3)
+  cancelledAt             DateTime?              @map("cancelled_at") @db.Timestamptz(3)
+  championEntrantId       String?                @map("champion_entrant_id") @db.Uuid
+  createdAt               DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tournament              Tournament             @relation(fields: [tournamentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "tournament_brackets_tournament_id_fkey")
+  weightClass             TournamentWeightClass  @relation(fields: [tournamentId, weightClassId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade, map: "tournament_brackets_weight_class_id_fkey")
+  confirmedBy             User?                  @relation("TournamentBracketConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "tournament_brackets_confirmed_by_user_id_fkey")
   entrants                BracketEntrant[]
   fixtures                BracketFixture[]
   roundStaffing           BracketRoundStaffing[]
-  championEntrant         BracketEntrant?       @relation("TournamentBracketChampion", fields: [championEntrantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  championEntrant         BracketEntrant?        @relation("TournamentBracketChampion", fields: [championEntrantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([id, tournamentId], map: "tournament_brackets_id_tournament_id_key")
   @@index([tournamentId, weightClassId], map: "tournament_brackets_tournament_id_weight_class_id_idx")
@@ -599,34 +599,34 @@ model TournamentBracket {
 }
 
 model BracketRoundStaffing {
-  id                   String            @id(map: "bracket_round_staffing_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  bracketId            String            @map("bracket_id") @db.Uuid
-  roundNumber          Int               @map("round_number") @db.SmallInt
-  requiredRefereeCount Int               @default(3) @map("required_referee_count") @db.SmallInt
-  createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt            DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  bracket              TournamentBracket @relation(fields: [bracketId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "bracket_round_staffing_bracket_id_fkey")
+  id                 String            @id(map: "bracket_round_staffing_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bracketId          String            @map("bracket_id") @db.Uuid
+  roundNumber        Int               @map("round_number") @db.SmallInt
+  requiredJudgeCount Int               @default(3) @map("required_judge_count") @db.SmallInt
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  bracket            TournamentBracket @relation(fields: [bracketId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "bracket_round_staffing_bracket_id_fkey")
 
   @@unique([bracketId, roundNumber], map: "bracket_round_staffing_bracket_id_round_number_key")
   @@map("bracket_round_staffing")
 }
 
 model TournamentOfficial {
-  id                   String                    @id(map: "tournament_officials_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tournamentId         String                    @map("tournament_id") @db.Uuid
-  role                 TournamentOfficialRole
-  name                 String                    @db.VarChar(255)
-  normalizedName       String                    @map("normalized_name") @db.VarChar(255)
-  passcodeHash         String                    @map("passcode_hash") @db.VarChar(255)
-  passcodeLookupDigest String                    @map("passcode_lookup_digest") @db.Char(64)
-  isActive             Boolean                   @default(true) @map("is_active")
-  deactivatedAt        DateTime?                 @map("deactivated_at") @db.Timestamptz(3)
-  createdAt            DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt            DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  tournament           Tournament                @relation(fields: [tournamentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "tournament_officials_tournament_id_fkey")
-  sessions             TournamentOfficialSession[]
-  assignments          MatchOfficialAssignment[]
-  assignmentsAuthorized MatchOfficialAssignment[] @relation("MatchOfficialAssignmentAssignedByInspector")
+  id                    String                      @id(map: "tournament_officials_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tournamentId          String                      @map("tournament_id") @db.Uuid
+  role                  TournamentOfficialRole
+  name                  String                      @db.VarChar(255)
+  normalizedName        String                      @map("normalized_name") @db.VarChar(255)
+  passcodeHash          String                      @map("passcode_hash") @db.VarChar(255)
+  passcodeLookupDigest  String                      @map("passcode_lookup_digest") @db.Char(64)
+  isActive              Boolean                     @default(true) @map("is_active")
+  deactivatedAt         DateTime?                   @map("deactivated_at") @db.Timestamptz(3)
+  createdAt             DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tournament            Tournament                  @relation(fields: [tournamentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "tournament_officials_tournament_id_fkey")
+  sessions              TournamentOfficialSession[]
+  assignments           MatchOfficialAssignment[]
+  assignmentsAuthorized MatchOfficialAssignment[]   @relation("MatchOfficialAssignmentAssignedBySupervisor")
 
   @@unique([id, tournamentId], map: "tournament_officials_id_tournament_id_key")
   @@unique([tournamentId, role, normalizedName], map: "tournament_officials_tournament_id_role_normalized_name_key")
@@ -636,42 +636,42 @@ model TournamentOfficial {
 }
 
 model TournamentOfficialSession {
-  id          String             @id(map: "tournament_official_sessions_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  officialId  String             @map("official_id") @db.Uuid
-  deviceId    String             @map("device_id") @db.VarChar(255)
-  tokenHash   String             @unique(map: "tournament_official_sessions_token_hash_key") @map("token_hash") @db.VarChar(255)
-  active      Boolean            @default(true)
-  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
-  lastSeenAt  DateTime?          @map("last_seen_at") @db.Timestamptz(3)
-  expiresAt   DateTime?          @map("expires_at") @db.Timestamptz(3)
-  revokedAt   DateTime?          @map("revoked_at") @db.Timestamptz(3)
-  official    TournamentOfficial @relation(fields: [officialId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "tournament_official_sessions_official_id_fkey")
+  id            String             @id(map: "tournament_official_sessions_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  officialId    String             @map("official_id") @db.Uuid
+  deviceId      String             @map("device_id") @db.VarChar(255)
+  tokenHash     String             @unique(map: "tournament_official_sessions_token_hash_key") @map("token_hash") @db.VarChar(255)
+  active        Boolean            @default(true)
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt    DateTime?          @map("last_seen_at") @db.Timestamptz(3)
+  expiresAt     DateTime?          @map("expires_at") @db.Timestamptz(3)
+  revokedAt     DateTime?          @map("revoked_at") @db.Timestamptz(3)
+  official      TournamentOfficial @relation(fields: [officialId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "tournament_official_sessions_official_id_fkey")
   matchSessions MatchSession[]
-  auditLogs   AuditLog[]
+  auditLogs     AuditLog[]
 
   @@index([officialId, active], map: "tournament_official_sessions_official_id_active_idx")
   @@map("tournament_official_sessions")
 }
 
 model MatchOfficialAssignment {
-  id                    String                                @id(map: "match_official_assignments_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId               String                                @map("match_id") @db.Uuid
-  tournamentId          String                                @map("tournament_id") @db.Uuid
-  officialId            String                                @map("official_id") @db.Uuid
-  role                  TournamentOfficialRole
-  refereePosition       Int?                                  @map("referee_position") @db.SmallInt
-  assignedByInspectorId String?                               @map("assigned_by_inspector_id") @db.Uuid
-  assignedAt            DateTime                              @default(now()) @map("assigned_at") @db.Timestamptz(3)
-  releasedAt            DateTime?                             @map("released_at") @db.Timestamptz(3)
-  releaseReason         MatchOfficialAssignmentReleaseReason? @map("release_reason")
-  match                 Match                                 @relation(fields: [matchId, tournamentId], references: [id, tournamentId], onDelete: Cascade, onUpdate: Cascade, map: "match_official_assignments_match_tournament_id_fkey")
-  official              TournamentOfficial                    @relation(fields: [officialId, tournamentId], references: [id, tournamentId], onDelete: Restrict, onUpdate: Cascade, map: "match_official_assignments_official_tournament_id_fkey")
-  assignedByInspector   TournamentOfficial?                   @relation("MatchOfficialAssignmentAssignedByInspector", fields: [assignedByInspectorId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "match_official_assignments_assigned_by_inspector_id_fkey")
-  matchSessions         MatchSession[]
-  refereeVotes          RefereeVote[]
-  recordedFaults        Fault[]                 @relation("FaultRecordingInspectorAssignment")
-  completedAppeals      MatchAppeal[]           @relation("MatchAppealCompletedInspectorAssignment")
-  publishedOutcomes     MatchOutcome[]          @relation("MatchOutcomePublishedInspectorAssignment")
+  id                     String                                @id(map: "match_official_assignments_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId                String                                @map("match_id") @db.Uuid
+  tournamentId           String                                @map("tournament_id") @db.Uuid
+  officialId             String                                @map("official_id") @db.Uuid
+  role                   TournamentOfficialRole
+  judgePosition          Int?                                  @map("judge_position") @db.SmallInt
+  assignedBySupervisorId String?                               @map("assigned_by_supervisor_id") @db.Uuid
+  assignedAt             DateTime                              @default(now()) @map("assigned_at") @db.Timestamptz(3)
+  releasedAt             DateTime?                             @map("released_at") @db.Timestamptz(3)
+  releaseReason          MatchOfficialAssignmentReleaseReason? @map("release_reason")
+  match                  Match                                 @relation(fields: [matchId, tournamentId], references: [id, tournamentId], onDelete: Cascade, onUpdate: Cascade, map: "match_official_assignments_match_tournament_id_fkey")
+  official               TournamentOfficial                    @relation(fields: [officialId, tournamentId], references: [id, tournamentId], onDelete: Restrict, onUpdate: Cascade, map: "match_official_assignments_official_tournament_id_fkey")
+  assignedBySupervisor   TournamentOfficial?                   @relation("MatchOfficialAssignmentAssignedBySupervisor", fields: [assignedBySupervisorId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "match_official_assignments_assigned_by_supervisor_id_fkey")
+  matchSessions          MatchSession[]
+  judgeVotes             JudgeVote[]
+  recordedFaults         Fault[]                               @relation("FaultRecordingSupervisorAssignment")
+  completedAppeals       MatchAppeal[]                         @relation("MatchAppealCompletedSupervisorAssignment")
+  publishedOutcomes      MatchOutcome[]                        @relation("MatchOutcomePublishedSupervisorAssignment")
 
   @@index([matchId, releasedAt], map: "match_official_assignments_match_id_released_at_idx")
   @@index([officialId, releasedAt], map: "match_official_assignments_official_id_released_at_idx")
@@ -765,12 +765,12 @@ model MatchResultOperation {
   type                  MatchResultOperationType
   roundNumbers          Int[]                      @map("round_numbers") @db.SmallInt
   previousStatus        MatchStatus                @map("previous_status")
-  previousLifecycle     MatchLifecycle             @map("previous_lifecycle") @default(IN_PROGRESS)
+  previousLifecycle     MatchLifecycle             @default(IN_PROGRESS) @map("previous_lifecycle")
   previousCurrentRound  Int?                       @map("previous_current_round") @db.SmallInt
   previousStartedAt     DateTime?                  @map("previous_started_at") @db.Timestamptz(3)
   previousFinishedAt    DateTime?                  @map("previous_finished_at") @db.Timestamptz(3)
   resultingStatus       MatchStatus                @map("resulting_status")
-  resultingLifecycle    MatchLifecycle             @map("resulting_lifecycle") @default(IN_PROGRESS)
+  resultingLifecycle    MatchLifecycle             @default(IN_PROGRESS) @map("resulting_lifecycle")
   resultingCurrentRound Int?                       @map("resulting_current_round") @db.SmallInt
   createdBySessionId    String?                    @map("created_by_session_id") @db.Uuid
   status                MatchResultOperationStatus @default(APPLIED)
@@ -783,24 +783,24 @@ model MatchResultOperation {
 }
 
 model MatchAthlete {
-  id                String             @id(map: "match_athletes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId           String             @map("match_id") @db.Uuid
-  tournamentId      String             @map("tournament_id") @db.Uuid
-  athleteId         String?            @map("athlete_id") @db.Uuid
-  name              String             @db.VarChar(255)
-  organization      String?            @db.VarChar(255)
-  color             AthleteColor
-  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  match             Match              @relation("MatchAthletesByMatchId", fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "match_athletes_match_id_fkey")
-  matchByTournament Match              @relation("MatchAthletesByTournament", fields: [matchId, tournamentId], references: [id, tournamentId], onDelete: Cascade, onUpdate: Cascade, map: "match_athletes_match_tournament_id_fkey")
-  athlete           TournamentAthlete? @relation(fields: [tournamentId, athleteId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade, map: "match_athletes_tournament_athlete_id_fkey")
-  scoreEvents       ScoreEvent[]
-  penalties         Penalty[]
-  faults            Fault[]
-  roundResults      RoundAthleteResult[]
-  appealAdjustments MatchAppealAdjustment[]
-  wonOutcomes       MatchOutcome[]
+  id                 String                  @id(map: "match_athletes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId            String                  @map("match_id") @db.Uuid
+  tournamentId       String                  @map("tournament_id") @db.Uuid
+  athleteId          String?                 @map("athlete_id") @db.Uuid
+  name               String                  @db.VarChar(255)
+  organization       String?                 @db.VarChar(255)
+  color              AthleteColor
+  createdAt          DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  match              Match                   @relation("MatchAthletesByMatchId", fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "match_athletes_match_id_fkey")
+  matchByTournament  Match                   @relation("MatchAthletesByTournament", fields: [matchId, tournamentId], references: [id, tournamentId], onDelete: Cascade, onUpdate: Cascade, map: "match_athletes_match_tournament_id_fkey")
+  athlete            TournamentAthlete?      @relation(fields: [tournamentId, athleteId], references: [tournamentId, id], onDelete: Restrict, onUpdate: Cascade, map: "match_athletes_tournament_athlete_id_fkey")
+  scoreEvents        ScoreEvent[]
+  penalties          Penalty[]
+  faults             Fault[]
+  roundResults       RoundAthleteResult[]
+  appealAdjustments  MatchAppealAdjustment[]
+  wonOutcomes        MatchOutcome[]
   wonResultDecisions MatchResultDecision[]
 
   @@unique([matchId, color], map: "match_athletes_match_id_color_key")
@@ -823,30 +823,30 @@ model MatchAccessCode {
 }
 
 model MatchSession {
-  id               String          @id(map: "match_sessions_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId          String          @map("match_id") @db.Uuid
-  accessCodeId     String          @map("access_code_id") @db.Uuid
-  role             MatchRole
-  refereeSlot      RefereeSlot?    @map("referee_slot")
-  deviceId         String          @map("device_id") @db.VarChar(255)
-  tokenHash        String          @unique(map: "match_sessions_token_hash_key") @map("token_hash") @db.VarChar(255)
-  active           Boolean         @default(true)
-  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  lastSeenAt       DateTime?       @map("last_seen_at") @db.Timestamptz(3)
-  expiresAt        DateTime?       @map("expires_at") @db.Timestamptz(3)
-  revokedAt        DateTime?       @map("revoked_at") @db.Timestamptz(3)
-  officialSessionId String?        @map("official_session_id") @db.Uuid
-  assignmentId     String?         @map("assignment_id") @db.Uuid
-  match            Match           @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "match_sessions_match_id_fkey")
-  accessCode       MatchAccessCode @relation(fields: [accessCodeId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "match_sessions_access_code_id_fkey")
-  refereeVotes     RefereeVote[]
-  createdPenalties Penalty[]       @relation("PenaltyCreatedBySession")
-  recordedFaults   Fault[]         @relation("FaultRecordingInspectorSession")
-  completedAppeals MatchAppeal[]   @relation("MatchAppealCompletedInspectorSession")
-  publishedOutcomes MatchOutcome[] @relation("MatchOutcomePublishedInspectorSession")
-  auditLogs        AuditLog[]
-  officialSession  TournamentOfficialSession? @relation(fields: [officialSessionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "match_sessions_official_session_id_fkey")
-  assignment       MatchOfficialAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "match_sessions_assignment_id_fkey")
+  id                String                     @id(map: "match_sessions_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId           String                     @map("match_id") @db.Uuid
+  accessCodeId      String                     @map("access_code_id") @db.Uuid
+  role              MatchRole
+  judgeSlot         JudgeSlot?                 @map("judge_slot")
+  deviceId          String                     @map("device_id") @db.VarChar(255)
+  tokenHash         String                     @unique(map: "match_sessions_token_hash_key") @map("token_hash") @db.VarChar(255)
+  active            Boolean                    @default(true)
+  createdAt         DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt        DateTime?                  @map("last_seen_at") @db.Timestamptz(3)
+  expiresAt         DateTime?                  @map("expires_at") @db.Timestamptz(3)
+  revokedAt         DateTime?                  @map("revoked_at") @db.Timestamptz(3)
+  officialSessionId String?                    @map("official_session_id") @db.Uuid
+  assignmentId      String?                    @map("assignment_id") @db.Uuid
+  match             Match                      @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "match_sessions_match_id_fkey")
+  accessCode        MatchAccessCode            @relation(fields: [accessCodeId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "match_sessions_access_code_id_fkey")
+  judgeVotes        JudgeVote[]
+  createdPenalties  Penalty[]                  @relation("PenaltyCreatedBySession")
+  recordedFaults    Fault[]                    @relation("FaultRecordingSupervisorSession")
+  completedAppeals  MatchAppeal[]              @relation("MatchAppealCompletedSupervisorSession")
+  publishedOutcomes MatchOutcome[]             @relation("MatchOutcomePublishedSupervisorSession")
+  auditLogs         AuditLog[]
+  officialSession   TournamentOfficialSession? @relation(fields: [officialSessionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "match_sessions_official_session_id_fkey")
+  assignment        MatchOfficialAssignment?   @relation(fields: [assignmentId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "match_sessions_assignment_id_fkey")
 
   @@index([matchId], map: "match_sessions_match_id_idx")
   @@index([accessCodeId], map: "match_sessions_access_code_id_idx")
@@ -856,34 +856,34 @@ model MatchSession {
 }
 
 model Round {
-  id                   String          @id(map: "rounds_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId              String          @map("match_id") @db.Uuid
-  roundNumber          Int             @map("round_number") @db.SmallInt
-  stage                RoundStage      @default(REGULATION)
-  attemptNumber        Int             @default(0) @map("attempt_number") @db.SmallInt
-  durationMs           Int?            @map("duration_ms")
-  startedAt            DateTime        @map("started_at") @db.Timestamptz(3)
-  endsAt               DateTime        @map("ends_at") @db.Timestamptz(3)
-  pausedAt             DateTime?       @map("paused_at") @db.Timestamptz(3)
-  remainingDurationMs  Int?            @map("remaining_duration_ms")
-  invalidatedAt        DateTime?       @map("invalidated_at") @db.Timestamptz(3)
-  invalidatedByAuditId String?         @map("invalidated_by_audit_id") @db.Uuid
-  endedAt              DateTime?       @map("ended_at") @db.Timestamptz(3)
-  createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  match                Match           @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "rounds_match_id_fkey")
-  scoringWindows       ScoringWindow[]
-  scoreEvents          ScoreEvent[]
-  faults               Fault[]
-  athleteResults       RoundAthleteResult[]
-  sourceAppeals        MatchAppeal[]   @relation("MatchAppealSourceRound")
-  appealSources        MatchAppealRound[]
-  outcomeSource        MatchOutcome[]  @relation("MatchOutcomeSourceOvertimeRound")
+  id                    String                @id(map: "rounds_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId               String                @map("match_id") @db.Uuid
+  roundNumber           Int                   @map("round_number") @db.SmallInt
+  stage                 RoundStage            @default(REGULATION)
+  attemptNumber         Int                   @default(0) @map("attempt_number") @db.SmallInt
+  durationMs            Int?                  @map("duration_ms")
+  startedAt             DateTime              @map("started_at") @db.Timestamptz(3)
+  endsAt                DateTime              @map("ends_at") @db.Timestamptz(3)
+  pausedAt              DateTime?             @map("paused_at") @db.Timestamptz(3)
+  remainingDurationMs   Int?                  @map("remaining_duration_ms")
+  invalidatedAt         DateTime?             @map("invalidated_at") @db.Timestamptz(3)
+  invalidatedByAuditId  String?               @map("invalidated_by_audit_id") @db.Uuid
+  endedAt               DateTime?             @map("ended_at") @db.Timestamptz(3)
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  match                 Match                 @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "rounds_match_id_fkey")
+  scoringWindows        ScoringWindow[]
+  scoreEvents           ScoreEvent[]
+  faults                Fault[]
+  athleteResults        RoundAthleteResult[]
+  sourceAppeals         MatchAppeal[]         @relation("MatchAppealSourceRound")
+  appealSources         MatchAppealRound[]
+  outcomeSource         MatchOutcome[]        @relation("MatchOutcomeSourceOvertimeRound")
   resultDecisionSources MatchResultDecision[]
 
+  @@unique([id, matchId], map: "rounds_id_match_id_key")
   // The database keeps this descriptor unique only for non-invalidated rounds,
   // so cancelled/reset history remains auditable.
   @@index([matchId, stage, attemptNumber, roundNumber], map: "rounds_match_id_stage_attempt_round_number_key")
-  @@unique([id, matchId], map: "rounds_id_match_id_key")
   @@index([matchId, roundNumber], map: "rounds_match_id_round_number_idx")
   @@index([matchId], map: "rounds_match_id_idx")
   @@index([endedAt, endsAt], map: "rounds_ended_at_ends_at_idx")
@@ -906,7 +906,7 @@ model ScoringWindow {
   createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   match                Match         @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "scoring_windows_match_id_fkey")
   round                Round?        @relation(fields: [roundId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "scoring_windows_round_id_fkey")
-  refereeVotes         RefereeVote[]
+  judgeVotes           JudgeVote[]
   scoreEvents          ScoreEvent[]
 
   @@index([matchId], map: "scoring_windows_match_id_idx")
@@ -916,31 +916,31 @@ model ScoringWindow {
   @@map("scoring_windows")
 }
 
-model RefereeVote {
-  id                   String        @id(map: "referee_votes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  scoringWindowId      String        @map("scoring_window_id") @db.Uuid
-  matchId              String        @map("match_id") @db.Uuid
+model JudgeVote {
+  id                   String                   @id(map: "judge_votes_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  scoringWindowId      String                   @map("scoring_window_id") @db.Uuid
+  matchId              String                   @map("match_id") @db.Uuid
   // Legacy votes retain their slot. Assignment-backed votes deliberately do
   // not manufacture one of the old three slots.
-  refereeSlot          RefereeSlot?  @map("referee_slot")
-  athleteColor         AthleteColor  @map("athlete_color")
-  sessionId            String?       @map("session_id") @db.Uuid
-  assignmentId         String?       @map("assignment_id") @db.Uuid
-  serverReceivedAt     DateTime      @default(now()) @map("server_received_at") @db.Timestamptz(3)
-  clientPressedAt      DateTime?     @map("client_pressed_at") @db.Timestamptz(3)
-  invalidatedAt        DateTime?     @map("invalidated_at") @db.Timestamptz(3)
-  invalidatedByAuditId String?       @map("invalidated_by_audit_id") @db.Uuid
-  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  scoringWindow        ScoringWindow @relation(fields: [scoringWindowId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "referee_votes_scoring_window_id_fkey")
-  match                Match         @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "referee_votes_match_id_fkey")
-  session              MatchSession? @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "referee_votes_session_id_fkey")
-  assignment           MatchOfficialAssignment? @relation(fields: [assignmentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "referee_votes_assignment_id_fkey")
+  judgeSlot            JudgeSlot?               @map("judge_slot")
+  athleteColor         AthleteColor             @map("athlete_color")
+  sessionId            String?                  @map("session_id") @db.Uuid
+  assignmentId         String?                  @map("assignment_id") @db.Uuid
+  serverReceivedAt     DateTime                 @default(now()) @map("server_received_at") @db.Timestamptz(3)
+  clientPressedAt      DateTime?                @map("client_pressed_at") @db.Timestamptz(3)
+  invalidatedAt        DateTime?                @map("invalidated_at") @db.Timestamptz(3)
+  invalidatedByAuditId String?                  @map("invalidated_by_audit_id") @db.Uuid
+  createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  scoringWindow        ScoringWindow            @relation(fields: [scoringWindowId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "judge_votes_scoring_window_id_fkey")
+  match                Match                    @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "judge_votes_match_id_fkey")
+  session              MatchSession?            @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "judge_votes_session_id_fkey")
+  assignment           MatchOfficialAssignment? @relation(fields: [assignmentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "judge_votes_assignment_id_fkey")
 
-  @@index([scoringWindowId], map: "referee_votes_scoring_window_id_idx")
-  @@index([matchId], map: "referee_votes_match_id_idx")
-  @@index([sessionId], map: "referee_votes_session_id_idx")
-  @@index([assignmentId], map: "referee_votes_assignment_id_idx")
-  @@map("referee_votes")
+  @@index([scoringWindowId], map: "judge_votes_scoring_window_id_idx")
+  @@index([matchId], map: "judge_votes_match_id_idx")
+  @@index([sessionId], map: "judge_votes_session_id_idx")
+  @@index([assignmentId], map: "judge_votes_assignment_id_idx")
+  @@map("judge_votes")
 }
 
 model ScoreEvent {
@@ -973,17 +973,17 @@ model ScoreEvent {
 }
 
 model Penalty {
-  id                 String       @id(map: "penalties_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId            String       @map("match_id") @db.Uuid
-  athleteId          String       @map("athlete_id") @db.Uuid
-  roundNumber        Int?         @map("round_number") @db.SmallInt
-  value              Int          @default(-1)
-  createdBySessionId String?      @map("created_by_session_id") @db.Uuid
-  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  revertedAt         DateTime?    @map("reverted_at") @db.Timestamptz(3)
-  revertedByAuditId  String?      @map("reverted_by_audit_id") @db.Uuid
-  match              Match        @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "penalties_match_id_fkey")
-  athlete            MatchAthlete @relation(fields: [athleteId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "penalties_athlete_id_fkey")
+  id                 String        @id(map: "penalties_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId            String        @map("match_id") @db.Uuid
+  athleteId          String        @map("athlete_id") @db.Uuid
+  roundNumber        Int?          @map("round_number") @db.SmallInt
+  value              Int           @default(-1)
+  createdBySessionId String?       @map("created_by_session_id") @db.Uuid
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  revertedAt         DateTime?     @map("reverted_at") @db.Timestamptz(3)
+  revertedByAuditId  String?       @map("reverted_by_audit_id") @db.Uuid
+  match              Match         @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "penalties_match_id_fkey")
+  athlete            MatchAthlete  @relation(fields: [athleteId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "penalties_athlete_id_fkey")
   createdBySession   MatchSession? @relation("PenaltyCreatedBySession", fields: [createdBySessionId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "penalties_created_by_session_id_fkey")
   scoreEvents        ScoreEvent[]
 
@@ -996,20 +996,20 @@ model Penalty {
 // Canonical V2 faults are deliberately independent from ScoreEvent and legacy
 // Penalty. A fault changes the Lỗi projection only; it cannot deduct points.
 model Fault {
-  id                            String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId                       String                    @map("match_id") @db.Uuid
-  athleteId                     String                    @map("athlete_id") @db.Uuid
-  roundId                       String                    @map("round_id") @db.Uuid
-  recordingInspectorAssignmentId String?                  @map("recording_inspector_assignment_id") @db.Uuid
-  recordingInspectorSessionId   String?                    @map("recording_inspector_session_id") @db.Uuid
-  createdAt                     DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
-  invalidatedAt                 DateTime?                  @map("invalidated_at") @db.Timestamptz(3)
-  invalidatedByAuditId          String?                    @map("invalidated_by_audit_id") @db.Uuid
-  match                         Match                      @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  athlete                       MatchAthlete               @relation(fields: [athleteId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  round                         Round                      @relation(fields: [roundId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  recordingInspectorAssignment  MatchOfficialAssignment?   @relation("FaultRecordingInspectorAssignment", fields: [recordingInspectorAssignmentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  recordingInspectorSession     MatchSession?              @relation("FaultRecordingInspectorSession", fields: [recordingInspectorSessionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  id                              String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId                         String                   @map("match_id") @db.Uuid
+  athleteId                       String                   @map("athlete_id") @db.Uuid
+  roundId                         String                   @map("round_id") @db.Uuid
+  recordingSupervisorAssignmentId String?                  @map("recording_supervisor_assignment_id") @db.Uuid
+  recordingSupervisorSessionId    String?                  @map("recording_supervisor_session_id") @db.Uuid
+  createdAt                       DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  invalidatedAt                   DateTime?                @map("invalidated_at") @db.Timestamptz(3)
+  invalidatedByAuditId            String?                  @map("invalidated_by_audit_id") @db.Uuid
+  match                           Match                    @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  athlete                         MatchAthlete             @relation(fields: [athleteId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  round                           Round                    @relation(fields: [roundId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  recordingSupervisorAssignment   MatchOfficialAssignment? @relation("FaultRecordingSupervisorAssignment", fields: [recordingSupervisorAssignmentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  recordingSupervisorSession      MatchSession?            @relation("FaultRecordingSupervisorSession", fields: [recordingSupervisorSessionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([matchId, invalidatedAt], map: "faults_match_id_invalidated_at_idx")
   @@index([roundId, invalidatedAt], map: "faults_round_id_invalidated_at_idx")
@@ -1018,18 +1018,18 @@ model Fault {
 }
 
 model RoundAthleteResult {
-  id                 String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId            String       @map("match_id") @db.Uuid
-  roundId            String       @map("round_id") @db.Uuid
-  athleteId          String       @map("athlete_id") @db.Uuid
-  refereePoints      Int          @map("referee_points")
-  faultCount         Int          @map("fault_count")
-  capturedAt         DateTime     @default(now()) @map("captured_at") @db.Timestamptz(3)
-  invalidatedAt      DateTime?    @map("invalidated_at") @db.Timestamptz(3)
-  invalidatedByAuditId String?    @map("invalidated_by_audit_id") @db.Uuid
-  match              Match        @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  round              Round        @relation(fields: [roundId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  athlete            MatchAthlete @relation(fields: [athleteId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  id                   String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId              String       @map("match_id") @db.Uuid
+  roundId              String       @map("round_id") @db.Uuid
+  athleteId            String       @map("athlete_id") @db.Uuid
+  judgePoints          Int          @map("judge_points")
+  faultCount           Int          @map("fault_count")
+  capturedAt           DateTime     @default(now()) @map("captured_at") @db.Timestamptz(3)
+  invalidatedAt        DateTime?    @map("invalidated_at") @db.Timestamptz(3)
+  invalidatedByAuditId String?      @map("invalidated_by_audit_id") @db.Uuid
+  match                Match        @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  round                Round        @relation(fields: [roundId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  athlete              MatchAthlete @relation(fields: [athleteId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([roundId, athleteId], map: "round_athlete_results_round_id_athlete_id_key")
   @@index([matchId, invalidatedAt], map: "round_athlete_results_match_id_invalidated_at_idx")
@@ -1037,26 +1037,26 @@ model RoundAthleteResult {
 }
 
 model MatchAppeal {
-  id                            String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId                       String                    @map("match_id") @db.Uuid
-  scope                         MatchAppealScope
-  attemptNumber                 Int                       @default(0) @map("attempt_number") @db.SmallInt
-  status                        MatchAppealStatus         @default(COMPLETED)
-  sourceRoundId                 String                    @map("source_round_id") @db.Uuid
-  completedInspectorAssignmentId String?                  @map("completed_inspector_assignment_id") @db.Uuid
-  completedInspectorSessionId   String?                    @map("completed_inspector_session_id") @db.Uuid
-  completedAt                   DateTime                   @default(now()) @map("completed_at") @db.Timestamptz(3)
-  idempotencyKey                String?                    @map("idempotency_key") @db.VarChar(255)
-  invalidatedAt                 DateTime?                  @map("invalidated_at") @db.Timestamptz(3)
-  invalidatedByAuditId          String?                    @map("invalidated_by_audit_id") @db.Uuid
-  match                         Match                      @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  sourceRound                   Round                      @relation("MatchAppealSourceRound", fields: [sourceRoundId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  completedInspectorAssignment  MatchOfficialAssignment?   @relation("MatchAppealCompletedInspectorAssignment", fields: [completedInspectorAssignmentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  completedInspectorSession     MatchSession?              @relation("MatchAppealCompletedInspectorSession", fields: [completedInspectorSessionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  adjustments                   MatchAppealAdjustment[]
-  sourceRounds                  MatchAppealRound[]
-  outcome                       MatchOutcome?              @relation("MatchOutcomeSourceAppeal")
-  resultDecisions               MatchResultDecision[]
+  id                              String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId                         String                   @map("match_id") @db.Uuid
+  scope                           MatchAppealScope
+  attemptNumber                   Int                      @default(0) @map("attempt_number") @db.SmallInt
+  status                          MatchAppealStatus        @default(COMPLETED)
+  sourceRoundId                   String                   @map("source_round_id") @db.Uuid
+  completedSupervisorAssignmentId String?                  @map("completed_supervisor_assignment_id") @db.Uuid
+  completedSupervisorSessionId    String?                  @map("completed_supervisor_session_id") @db.Uuid
+  completedAt                     DateTime                 @default(now()) @map("completed_at") @db.Timestamptz(3)
+  idempotencyKey                  String?                  @map("idempotency_key") @db.VarChar(255)
+  invalidatedAt                   DateTime?                @map("invalidated_at") @db.Timestamptz(3)
+  invalidatedByAuditId            String?                  @map("invalidated_by_audit_id") @db.Uuid
+  match                           Match                    @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  sourceRound                     Round                    @relation("MatchAppealSourceRound", fields: [sourceRoundId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  completedSupervisorAssignment   MatchOfficialAssignment? @relation("MatchAppealCompletedSupervisorAssignment", fields: [completedSupervisorAssignmentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  completedSupervisorSession      MatchSession?            @relation("MatchAppealCompletedSupervisorSession", fields: [completedSupervisorSessionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  adjustments                     MatchAppealAdjustment[]
+  sourceRounds                    MatchAppealRound[]
+  outcome                         MatchOutcome?            @relation("MatchOutcomeSourceAppeal")
+  resultDecisions                 MatchResultDecision[]
 
   @@index([matchId, scope, attemptNumber, invalidatedAt], map: "match_appeals_match_scope_attempt_invalidated_idx")
   @@index([idempotencyKey], map: "match_appeals_idempotency_key_key")
@@ -1077,59 +1077,60 @@ model MatchAppealRound {
 }
 
 model MatchAppealAdjustment {
-  id               String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  appealId         String       @map("appeal_id") @db.Uuid
-  athleteId        String       @map("athlete_id") @db.Uuid
-  baseRefereeScore Int          @map("base_referee_score")
-  bonusPoints      Int          @default(0) @map("bonus_points")
-  penaltyPoints    Int          @default(0) @map("penalty_points")
-  finalScore       Int          @map("final_score")
-  appeal           MatchAppeal  @relation(fields: [appealId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  athlete          MatchAthlete @relation(fields: [athleteId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  appealId       String       @map("appeal_id") @db.Uuid
+  athleteId      String       @map("athlete_id") @db.Uuid
+  baseJudgeScore Int          @map("base_judge_score")
+  bonusPoints    Int          @default(0) @map("bonus_points")
+  penaltyPoints  Int          @default(0) @map("penalty_points")
+  finalScore     Int          @map("final_score")
+  appeal         MatchAppeal  @relation(fields: [appealId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  athlete        MatchAthlete @relation(fields: [athleteId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([appealId, athleteId], map: "match_appeal_adjustments_appeal_id_athlete_id_key")
   @@map("match_appeal_adjustments")
 }
 
 model MatchOutcome {
-  id                            String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId                       String                    @unique(map: "match_outcomes_match_id_key") @map("match_id") @db.Uuid
-  winnerAthleteId               String                    @map("winner_athlete_id") @db.Uuid
-  winnerColor                   AthleteColor              @map("winner_color")
-  method                        MatchOutcomeMethod
-  sourceAppealId                String?                   @unique(map: "match_outcomes_source_appeal_id_key") @map("source_appeal_id") @db.Uuid
-  sourceOvertimeRoundId         String?                   @map("source_overtime_round_id") @db.Uuid
-  publishedInspectorAssignmentId String?                  @map("published_inspector_assignment_id") @db.Uuid
-  publishedInspectorSessionId   String?                   @map("published_inspector_session_id") @db.Uuid
-  publishedAt                   DateTime                  @default(now()) @map("published_at") @db.Timestamptz(3)
-  snapshot                      Json                      @db.JsonB
-  match                         Match                     @relation(fields: [matchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  winnerAthlete                 MatchAthlete              @relation(fields: [winnerAthleteId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  sourceAppeal                  MatchAppeal?              @relation("MatchOutcomeSourceAppeal", fields: [sourceAppealId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  sourceOvertimeRound           Round?                    @relation("MatchOutcomeSourceOvertimeRound", fields: [sourceOvertimeRoundId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  publishedInspectorAssignment  MatchOfficialAssignment?  @relation("MatchOutcomePublishedInspectorAssignment", fields: [publishedInspectorAssignmentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  publishedInspectorSession     MatchSession?             @relation("MatchOutcomePublishedInspectorSession", fields: [publishedInspectorSessionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  id                              String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId                         String                   @unique(map: "match_outcomes_match_id_key") @map("match_id") @db.Uuid
+  winnerAthleteId                 String                   @map("winner_athlete_id") @db.Uuid
+  winnerColor                     AthleteColor             @map("winner_color")
+  method                          MatchOutcomeMethod
+  sourceAppealId                  String?                  @unique(map: "match_outcomes_source_appeal_id_key") @map("source_appeal_id") @db.Uuid
+  sourceOvertimeRoundId           String?                  @map("source_overtime_round_id") @db.Uuid
+  publishedSupervisorAssignmentId String?                  @map("published_supervisor_assignment_id") @db.Uuid
+  publishedSupervisorSessionId    String?                  @map("published_supervisor_session_id") @db.Uuid
+  publishedAt                     DateTime                 @default(now()) @map("published_at") @db.Timestamptz(3)
+  snapshot                        Json                     @db.JsonB
+  match                           Match                    @relation(fields: [matchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  winnerAthlete                   MatchAthlete             @relation(fields: [winnerAthleteId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  sourceAppeal                    MatchAppeal?             @relation("MatchOutcomeSourceAppeal", fields: [sourceAppealId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  sourceOvertimeRound             Round?                   @relation("MatchOutcomeSourceOvertimeRound", fields: [sourceOvertimeRoundId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  publishedSupervisorAssignment   MatchOfficialAssignment? @relation("MatchOutcomePublishedSupervisorAssignment", fields: [publishedSupervisorAssignmentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  publishedSupervisorSession      MatchSession?            @relation("MatchOutcomePublishedSupervisorSession", fields: [publishedSupervisorSessionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@map("match_outcomes")
 }
 
-/// An inspector's manual resolution is intentionally private until publication.
+/// A supervisor's manual resolution is intentionally private until publication.
 model MatchResultDecision {
-  id                            String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId                       String                    @map("match_id") @db.Uuid
-  winnerAthleteId               String                    @map("winner_athlete_id") @db.Uuid
-  winnerColor                   AthleteColor              @map("winner_color")
-  sourceAppealId                String                    @map("source_appeal_id") @db.Uuid
-  sourceOvertimeRoundId         String                    @map("source_overtime_round_id") @db.Uuid
-  selectedInspectorAssignmentId String?                   @map("selected_inspector_assignment_id") @db.Uuid
-  selectedInspectorSessionId    String?                   @map("selected_inspector_session_id") @db.Uuid
-  selectedAt                    DateTime                  @default(now()) @map("selected_at") @db.Timestamptz(3)
-  invalidatedAt                 DateTime?                 @map("invalidated_at") @db.Timestamptz(3)
-  invalidatedByAuditId          String?                   @map("invalidated_by_audit_id") @db.Uuid
-  match                         Match                     @relation(fields: [matchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  winnerAthlete                 MatchAthlete              @relation(fields: [winnerAthleteId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  sourceAppeal                  MatchAppeal               @relation(fields: [sourceAppealId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  sourceOvertimeRound           Round                     @relation(fields: [sourceOvertimeRoundId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  id                             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId                        String       @map("match_id") @db.Uuid
+  winnerAthleteId                String       @map("winner_athlete_id") @db.Uuid
+  winnerColor                    AthleteColor @map("winner_color")
+  sourceAppealId                 String       @map("source_appeal_id") @db.Uuid
+  sourceOvertimeRoundId          String       @map("source_overtime_round_id") @db.Uuid
+  selectedSupervisorAssignmentId String?      @map("selected_supervisor_assignment_id") @db.Uuid
+  selectedSupervisorSessionId    String?      @map("selected_supervisor_session_id") @db.Uuid
+  selectedAt                     DateTime     @default(now()) @map("selected_at") @db.Timestamptz(3)
+  invalidatedAt                  DateTime?    @map("invalidated_at") @db.Timestamptz(3)
+  invalidatedByAuditId           String?      @map("invalidated_by_audit_id") @db.Uuid
+  match                          Match        @relation(fields: [matchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  winnerAthlete                  MatchAthlete @relation(fields: [winnerAthleteId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  sourceAppeal                   MatchAppeal  @relation(fields: [sourceAppealId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  sourceOvertimeRound            Round        @relation(fields: [sourceOvertimeRoundId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
   @@unique([matchId, sourceAppealId], map: "match_result_decisions_match_appeal_key")
   @@index([matchId, invalidatedAt], map: "match_result_decisions_match_invalidated_idx")
   @@map("match_result_decisions")
@@ -1144,24 +1145,25 @@ model MatchResultPublication {
   response       Json     @db.JsonB
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   match          Match    @relation(fields: [matchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
   @@unique([matchId, idempotencyKey], map: "match_result_publications_match_key_key")
   @@map("match_result_publications")
 }
 
 model AuditLog {
-  id          String         @id(map: "audit_logs_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId     String?        @map("match_id") @db.Uuid
+  id                String                     @id(map: "audit_logs_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId           String?                    @map("match_id") @db.Uuid
   // Compatibility name for existing scoring services; maps to the unified user FK.
-  adminUserId String?        @map("user_id") @db.Uuid
-  sessionId   String?        @map("session_id") @db.Uuid
-  officialSessionId String?  @map("official_session_id") @db.Uuid
-  eventType   AuditEventType @map("event_type")
-  metadata    Json?          @db.JsonB
-  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  match       Match?         @relation(fields: [matchId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "audit_logs_match_id_fkey")
-  user        User?          @relation(fields: [adminUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "audit_logs_user_id_fkey")
-  session     MatchSession?  @relation(fields: [sessionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "audit_logs_session_id_fkey")
-  officialSession TournamentOfficialSession? @relation(fields: [officialSessionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "audit_logs_official_session_id_fkey")
+  adminUserId       String?                    @map("user_id") @db.Uuid
+  sessionId         String?                    @map("session_id") @db.Uuid
+  officialSessionId String?                    @map("official_session_id") @db.Uuid
+  eventType         AuditEventType             @map("event_type")
+  metadata          Json?                      @db.JsonB
+  createdAt         DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  match             Match?                     @relation(fields: [matchId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "audit_logs_match_id_fkey")
+  user              User?                      @relation(fields: [adminUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "audit_logs_user_id_fkey")
+  session           MatchSession?              @relation(fields: [sessionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "audit_logs_session_id_fkey")
+  officialSession   TournamentOfficialSession? @relation(fields: [officialSessionId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "audit_logs_official_session_id_fkey")
 
   @@index([matchId, createdAt], map: "audit_logs_match_id_created_at_idx")
   @@index([adminUserId], map: "audit_logs_user_id_idx")
