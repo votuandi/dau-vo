@@ -33,8 +33,8 @@ describe('TournamentOfficialsPage credentials', () => {
 
   it('separates the shared tournament code from the one-time private passcode', async () => {
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Thêm trọng tài' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'Thêm trọng tài' }), {
+    fireEvent.click(await screen.findByRole('button', { name: 'Thêm giám định' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Thêm giám định' }), {
       target: { value: 'Nguyễn A' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));

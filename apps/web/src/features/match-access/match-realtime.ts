@@ -164,13 +164,13 @@ export function getParticipantsNotReadyMessage(
   details: MatchParticipantsNotReadyDetails | undefined,
 ): string {
   if (!details) {
-    return 'Chưa thể bắt đầu hiệp đấu. Chưa đáp ứng đủ trọng tài hoặc bảng điểm cần thiết.';
+    return 'Chưa thể bắt đầu hiệp đấu. Chưa đáp ứng đủ giám định hoặc bảng điểm cần thiết.';
   }
   const scoreboard =
     details.scoreboardConnectedCount > 0
       ? `${String(details.scoreboardConnectedCount)} bảng điểm`
       : 'chưa có bảng điểm nào được kết nối';
-  return `Chưa thể bắt đầu hiệp đấu. Đã phân công ${String(details.assignedRefereeCount)}/${String(details.requiredJudgeCount)} trọng tài, kết nối ${String(details.connectedRefereeCount)}/${String(details.requiredJudgeCount)} trọng tài và ${scoreboard}.`;
+  return `Chưa thể bắt đầu hiệp đấu. Đã phân công ${String(details.assignedRefereeCount)}/${String(details.requiredJudgeCount)} giám định, kết nối ${String(details.connectedRefereeCount)}/${String(details.requiredJudgeCount)} giám định và ${scoreboard}.`;
 }
 
 function getRoundStartErrorMessage(
@@ -184,7 +184,7 @@ function getRoundStartErrorMessage(
     case 'REALTIME_AUTHENTICATION_REQUIRED':
       return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
     case 'ROUND_START_FORBIDDEN':
-      return 'Chỉ giám định viên được phép bắt đầu hiệp đấu.';
+      return 'Chỉ giám sát viên được phép bắt đầu hiệp đấu.';
     case 'MATCH_PARTICIPANTS_NOT_READY':
       return getParticipantsNotReadyMessage(details);
     case 'ROUND_START_INVALID_STATE':
@@ -201,7 +201,7 @@ function getRoundControlErrorMessage(code: RoundControlErrorCode, fallback: stri
     case 'REALTIME_AUTHENTICATION_REQUIRED':
       return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
     case 'ROUND_CONTROL_FORBIDDEN':
-      return 'Chỉ giám định viên được phép tạm dừng hoặc tiếp tục hiệp đấu.';
+      return 'Chỉ giám sát viên được phép tạm dừng hoặc tiếp tục hiệp đấu.';
     case 'ROUND_CONTROL_INVALID_STATE':
       return 'Trạng thái hiệp đấu đã thay đổi. Dữ liệu mới nhất đang được tải lại.';
     case 'ROUND_CONTROL_FAILED':
@@ -219,7 +219,7 @@ function getResultCancellationErrorMessage(
     case 'REALTIME_AUTHENTICATION_REQUIRED':
       return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
     case 'RESULT_CANCELLATION_FORBIDDEN':
-      return 'Chỉ giám định viên được phép hủy kết quả.';
+      return 'Chỉ giám sát viên được phép hủy kết quả.';
     case 'RESULT_CANCELLATION_INVALID_STATE':
       return 'Không thể hủy kết quả từ trạng thái hiện tại. Dữ liệu mới nhất đang được tải lại.';
     case 'BRACKET_PROGRESSION_LOCKED':
@@ -239,7 +239,7 @@ function getResultCancellationUndoErrorMessage(
     case 'REALTIME_AUTHENTICATION_REQUIRED':
       return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
     case 'RESET_UNDO_FORBIDDEN':
-      return 'Chỉ giám định viên được phép hoàn tác kết quả.';
+      return 'Chỉ giám sát viên được phép hoàn tác kết quả.';
     case 'RESET_UNDO_NOT_ALLOWED':
       return 'Không thể hoàn tác vì trận đấu đã có hoạt động mới hoặc thao tác này đã được hoàn tác.';
     case 'BRACKET_PROGRESSION_LOCKED':
@@ -256,7 +256,7 @@ function getVoteSubmitErrorMessage(code: VoteSubmitErrorCode, fallback: string):
     case 'REALTIME_AUTHENTICATION_REQUIRED':
       return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
     case 'VOTE_FORBIDDEN':
-      return 'Chỉ trọng tài được phép gửi lựa chọn chấm điểm.';
+      return 'Chỉ giám định viên được phép gửi lựa chọn chấm điểm.';
     case 'VOTE_INVALID_ATHLETE':
       return 'Lựa chọn võ sĩ không hợp lệ.';
     case 'VOTE_MATCH_NOT_RUNNING':
@@ -266,7 +266,7 @@ function getVoteSubmitErrorMessage(code: VoteSubmitErrorCode, fallback: string):
     case 'VOTE_ROUND_ENDED':
       return 'Hiệp đấu đã kết thúc trước khi lựa chọn được ghi nhận.';
     case 'VOTE_ALREADY_SUBMITTED':
-      return 'Lựa chọn của trọng tài cho cửa sổ chấm điểm này đã được ghi nhận.';
+      return 'Lựa chọn của giám định cho cửa sổ chấm điểm này đã được ghi nhận.';
     case 'VOTE_SCORING_WINDOW_PENDING':
       return 'Cửa sổ chấm điểm trước đang được xử lý. Vui lòng thử lại sau giây lát.';
     case 'VOTE_FAILED':
@@ -279,9 +279,9 @@ function getFaultErrorMessage(code: FaultRecordErrorCode, fallback: string): str
     case 'REALTIME_AUTHENTICATION_REQUIRED':
       return 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.';
     case 'FAULT_FORBIDDEN':
-      return 'Chỉ giám định viên được phép ghi lỗi.';
+      return 'Chỉ giám sát viên được phép ghi lỗi.';
     case 'FAULT_STALE_ASSIGNMENT':
-      return 'Phân công giám định không còn hiệu lực. Vui lòng đăng nhập lại.';
+      return 'Phân công giám sát không còn hiệu lực. Vui lòng đăng nhập lại.';
     case 'FAULT_INVALID_ATHLETE':
       return 'Lựa chọn võ sĩ không hợp lệ.';
     case 'FAULT_MATCH_NOT_RUNNING':
@@ -1236,7 +1236,7 @@ export function useMatchRealtime({
           setLastAcceptedVote(null);
         }
         setVoteSubmitErrorMessage(null);
-        setScoringWindowMessage('Cửa sổ chấm điểm đang thu thập lựa chọn của các trọng tài.');
+        setScoringWindowMessage('Cửa sổ chấm điểm đang thu thập lựa chọn của các giám định.');
       }
     }
 

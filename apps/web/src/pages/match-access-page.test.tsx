@@ -76,12 +76,12 @@ vi.mock('@/features/match-access/match-realtime', () => ({
   useMatchRealtime: matchRealtimeMock,
 }));
 
-vi.mock('@/features/match-access/referee-console', () => ({
-  RefereeConsole: () => <div>Referee console ready</div>,
+vi.mock('@/features/match-access/judge-console', () => ({
+  JudgeConsole: () => <div>Referee console ready</div>,
 }));
 
-vi.mock('@/features/match-access/inspector-console', () => ({
-  InspectorConsole: () => <div>Inspector console ready</div>,
+vi.mock('@/features/match-access/supervisor-console', () => ({
+  SupervisorConsole: () => <div>Inspector console ready</div>,
 }));
 
 function LocationProbe() {
@@ -131,7 +131,7 @@ function renderPage(expectedRole = TournamentOfficialRole.JUDGE) {
       <QueryClientProvider client={queryClient}>
         <MemoryRouter
           initialEntries={[
-            expectedRole === TournamentOfficialRole.JUDGE ? '/trong-tai' : '/giam-dinh',
+            expectedRole === TournamentOfficialRole.JUDGE ? '/giam-dinh' : '/giam-sat',
           ]}
         >
           <MatchAccessPage expectedRole={expectedRole} />
@@ -192,7 +192,7 @@ describe('MatchAccessPage official login', () => {
       });
     });
     expect(await screen.findByText('Đang chờ phân công')).toBeVisible();
-    expect(screen.getByTestId('location')).toHaveTextContent('/trong-tai');
+    expect(screen.getByTestId('location')).toHaveTextContent('/giam-dinh');
     expect(
       window.localStorage.getItem('martial-arts-scoring.match-access.last-match-public-id'),
     ).toBeNull();
@@ -229,7 +229,7 @@ describe('MatchAccessPage official login', () => {
         tournamentCode: 'GIAI72',
       });
     });
-    expect(await screen.findByRole('heading', { name: 'Khu vực giám định' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Khu vực giám sát' })).toBeVisible();
   });
 
   it('uses the same login and session recovery flow for the inspector console', async () => {
@@ -241,16 +241,16 @@ describe('MatchAccessPage official login', () => {
     await fillLoginForm(user);
     await user.click(screen.getByRole('button', { name: 'Đăng nhập' }));
 
-    expect(await screen.findByRole('heading', { name: 'Khu vực giám định' })).toBeVisible();
-    expect(screen.getByTestId('location')).toHaveTextContent('/giam-dinh');
+    expect(await screen.findByRole('heading', { name: 'Khu vực giám sát' })).toBeVisible();
+    expect(screen.getByTestId('location')).toHaveTextContent('/giam-sat');
   });
 
   it('restores a valid inspector session after a browser refresh', async () => {
     officialAccessApiMock.session.mockResolvedValue({ session: inspectorSession });
     renderPage(TournamentOfficialRole.SUPERVISOR);
 
-    expect(await screen.findByRole('heading', { name: 'Khu vực giám định' })).toBeVisible();
-    expect(screen.getByTestId('location')).toHaveTextContent('/giam-dinh');
+    expect(await screen.findByRole('heading', { name: 'Khu vực giám sát' })).toBeVisible();
+    expect(screen.getByTestId('location')).toHaveTextContent('/giam-sat');
   });
 
   it('opens the referee console immediately when its correlated assignment update arrives', async () => {
@@ -618,7 +618,7 @@ describe('MatchAccessPage official login', () => {
       throw new Error('The assigned inspector did not receive the exit acknowledgement callback.');
     (options as { onMatchExitAcknowledged: () => void }).onMatchExitAcknowledged();
 
-    expect(await screen.findByRole('heading', { name: 'Khu vực giám định' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Khu vực giám sát' })).toBeVisible();
     expect(screen.queryByText('Inspector console ready')).not.toBeInTheDocument();
     expect(queryClient.getQueryData(['official-access', 'session'])).toMatchObject({
       session: { activeAssignment: null, status: 'READY' },
@@ -726,9 +726,9 @@ describe('MatchAccessPage official login', () => {
 
     await user.click(await screen.findByRole('button', { name: /M-001/ }));
     expect(screen.getByRole('button', { name: 'Nhận trận' })).toBeDisabled();
-    expect(screen.getByLabelText('Chọn trọng tài Trọng tài 3')).toBeDisabled();
-    await user.click(screen.getByLabelText('Chọn trọng tài Trọng tài 1'));
-    await user.click(screen.getByLabelText('Chọn trọng tài Trọng tài 2'));
+    expect(screen.getByLabelText('Chọn giám định Trọng tài 3')).toBeDisabled();
+    await user.click(screen.getByLabelText('Chọn giám định Trọng tài 1'));
+    await user.click(screen.getByLabelText('Chọn giám định Trọng tài 2'));
     await user.click(screen.getByRole('button', { name: 'Nhận trận' }));
 
     await waitFor(() => {

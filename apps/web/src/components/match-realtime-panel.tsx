@@ -186,7 +186,7 @@ function MatchLifecycle({
               <p className="mt-1 text-xs text-slate-400">Thời gian kết thúc do máy chủ xác định</p>
             ) : status === MatchStatus.BREAK ? (
               <p className="mt-1 text-xs text-slate-400">
-                Giám định viên bắt đầu Hiệp 2 khi sẵn sàng
+                Giám sát viên bắt đầu Hiệp 2 khi sẵn sàng
               </p>
             ) : null}
           </div>

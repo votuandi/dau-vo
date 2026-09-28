@@ -22,10 +22,10 @@ export function BracketStaffingEditor({
   }, [rows]);
   const active = data.activeRefereeCount ?? 0;
   return (
-    <section className="mt-5 rounded-xl border p-4" aria-label="Cấu hình trọng tài theo vòng">
-      <h3 className="font-bold">Trọng tài theo vòng</h3>
+    <section className="mt-5 rounded-xl border p-4" aria-label="Cấu hình giám định theo vòng">
+      <h3 className="font-bold">Giám định theo vòng</h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        Hiện có {active} trọng tài hoạt động. Mỗi trận cần ít nhất 3 trọng tài, số lẻ, và không vượt
+        Hiện có {active} giám định hoạt động. Mỗi trận cần ít nhất 3 giám định, số lẻ, và không vượt
         quá số đang hoạt động. Giám biên luôn là 1.
       </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">

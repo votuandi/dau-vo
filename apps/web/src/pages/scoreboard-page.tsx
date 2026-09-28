@@ -218,7 +218,7 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
             <p className="text-sm uppercase tracking-[0.18em]">Người chiến thắng</p>
             <p className="mt-1 text-2xl font-black sm:text-4xl">{winnerAthlete.name}</p>
             {outcomeMethod === 'MANUAL_AFTER_OVERTIME_TIE' ? (
-              <p className="mt-2 text-sm">Quyết định giám định sau hiệp phụ</p>
+              <p className="mt-2 text-sm">Quyết định giám sát sau hiệp phụ</p>
             ) : null}
           </>
         ) : (

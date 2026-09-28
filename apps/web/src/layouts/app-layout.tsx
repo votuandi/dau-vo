@@ -16,6 +16,7 @@ export function AppLayout() {
   if (
     location.pathname === '/trong-tai' ||
     location.pathname === '/giam-dinh' ||
+    location.pathname === '/giam-sat' ||
     location.pathname.startsWith('/bang-diem')
   ) {
     return <Outlet />;

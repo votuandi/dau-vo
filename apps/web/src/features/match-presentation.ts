@@ -83,7 +83,7 @@ export function presentPhase(value: MatchPhase): MatchPresentation {
     case MatchPhase.AWAITING_RESULT_SAVE:
       return {
         label: 'Chờ xác nhận kết quả',
-        help: 'Các hiệp đã kết thúc, chờ giám định xác nhận kết quả.',
+        help: 'Các hiệp đã kết thúc, chờ giám sát xác nhận kết quả.',
         variant: 'warning',
       };
     case MatchPhase.REGULATION_APPEAL:

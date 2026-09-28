@@ -146,7 +146,7 @@ function MatchEditor({
               {presentPhase(match.phase).label}
             </div>
             <p className="mt-1.5 text-xs text-muted-foreground">
-              Trạng thái được điều khiển bởi giám định viên trong trận đấu.
+              Trạng thái được điều khiển bởi giám sát viên trong trận đấu.
             </p>
           </div>
           <div>

@@ -23,7 +23,7 @@ function errorText(error: unknown) {
   if (message.includes('OFFICIAL_IN_ACTIVE_MATCH'))
     return 'Không thể thay đổi vì cán bộ đang được phân công trận đấu.';
   if (message.includes('OFFICIAL_COUNT_BELOW_STAFFING_REQUIREMENT'))
-    return 'Không thể ngừng dùng vì không đủ trọng tài cho nhánh đấu.';
+    return 'Không thể ngừng dùng vì không đủ giám định cho nhánh đấu.';
   return message;
 }
 function Status({ official }: { readonly official: TournamentOfficial }) {

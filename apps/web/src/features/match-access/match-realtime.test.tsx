@@ -118,10 +118,10 @@ describe('useMatchRealtime', () => {
         scoreboardConnectedCount: 1,
       }),
     ).toBe(
-      'Chưa thể bắt đầu hiệp đấu. Đã phân công 5/5 trọng tài, kết nối 3/5 trọng tài và 1 bảng điểm.',
+      'Chưa thể bắt đầu hiệp đấu. Đã phân công 5/5 giám định, kết nối 3/5 giám định và 1 bảng điểm.',
     );
     expect(getParticipantsNotReadyMessage(undefined)).toBe(
-      'Chưa thể bắt đầu hiệp đấu. Chưa đáp ứng đủ trọng tài hoặc bảng điểm cần thiết.',
+      'Chưa thể bắt đầu hiệp đấu. Chưa đáp ứng đủ giám định hoặc bảng điểm cần thiết.',
     );
   });
   function renderRealtime(onSessionRevoked = vi.fn()) {
