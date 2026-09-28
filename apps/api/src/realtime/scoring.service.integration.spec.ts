@@ -5,7 +5,7 @@ import {
   MatchLifecycle,
   MatchRole,
   MatchStatus,
-  RefereeSlot,
+  JudgeSlot,
   TournamentOfficialRole,
 } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
@@ -29,7 +29,7 @@ const WINDOW_WAIT_MS = 4_000;
 
 interface Fixture {
   matchId: string;
-  sessions: Record<RefereeSlot, string>;
+  sessions: Record<JudgeSlot, string>;
   tournamentId: string;
 }
 
@@ -105,12 +105,12 @@ describe('ScoringService (PostgreSQL integration)', () => {
       },
       select: { id: true },
     });
-    const accessRoles: Array<[MatchAccessRole, RefereeSlot]> = [
-      [MatchAccessRole.REFEREE_1, RefereeSlot.REFEREE_1],
-      [MatchAccessRole.REFEREE_2, RefereeSlot.REFEREE_2],
-      [MatchAccessRole.REFEREE_3, RefereeSlot.REFEREE_3],
+    const accessRoles: Array<[MatchAccessRole, JudgeSlot]> = [
+      [MatchAccessRole.JUDGE_1, JudgeSlot.JUDGE_1],
+      [MatchAccessRole.JUDGE_2, JudgeSlot.JUDGE_2],
+      [MatchAccessRole.JUDGE_3, JudgeSlot.JUDGE_3],
     ];
-    const sessions = {} as Record<RefereeSlot, string>;
+    const sessions = {} as Record<JudgeSlot, string>;
     for (const [role, slot] of accessRoles) {
       const accessCode = await prisma.matchAccessCode.create({
         data: { codeHash: `test-${role}`, matchId: match.id, role },
@@ -123,8 +123,8 @@ describe('ScoringService (PostgreSQL integration)', () => {
           deviceId: `${TEST_PREFIX}-${slot}`,
           expiresAt: new Date(now.getTime() + 60_000),
           matchId: match.id,
-          refereeSlot: slot,
-          role: MatchRole.REFEREE,
+          judgeSlot: slot,
+          role: MatchRole.JUDGE,
           tokenHash: `${randomBytes(18).toString('hex')}-${slot}`,
         },
         select: { id: true },
@@ -136,13 +136,13 @@ describe('ScoringService (PostgreSQL integration)', () => {
 
   async function vote(
     current: Fixture,
-    slot: RefereeSlot,
+    slot: JudgeSlot,
     athlete: AthleteColor,
   ) {
     return scoring.submitVote({
       athlete,
       matchId: current.matchId,
-      refereeSlot: slot,
+      judgeSlot: slot,
       sessionId: current.sessions[slot],
     });
   }
@@ -264,9 +264,9 @@ describe('ScoringService (PostgreSQL integration)', () => {
   ])('applies the >=2 majority rule for votes %p', async (votes, winner) => {
     const current = await fixture();
     const slots = [
-      RefereeSlot.REFEREE_1,
-      RefereeSlot.REFEREE_2,
-      RefereeSlot.REFEREE_3,
+      JudgeSlot.JUDGE_1,
+      JudgeSlot.JUDGE_2,
+      JudgeSlot.JUDGE_3,
     ];
     for (const [index, athlete] of votes.entries()) {
       await vote(current, slots[index]!, athlete);
@@ -279,19 +279,19 @@ describe('ScoringService (PostgreSQL integration)', () => {
 
   it('persists legacy provenance and resolves a five-referee official majority at three votes', async () => {
     const current = await fixture();
-    const legacy = await vote(current, RefereeSlot.REFEREE_1, AthleteColor.RED);
-    const legacyVote = await prisma.refereeVote.findFirstOrThrow({
+    const legacy = await vote(current, JudgeSlot.JUDGE_1, AthleteColor.RED);
+    const legacyVote = await prisma.judgeVote.findFirstOrThrow({
       where: { scoringWindowId: legacy.accepted.scoringWindowId },
     });
     expect(legacyVote).toMatchObject({
       assignmentId: null,
-      refereeSlot: RefereeSlot.REFEREE_1,
-      sessionId: current.sessions[RefereeSlot.REFEREE_1],
+      judgeSlot: JudgeSlot.JUDGE_1,
+      sessionId: current.sessions[JudgeSlot.JUDGE_1],
     });
 
     const dynamic = await fixture();
     await prisma.match.update({
-      data: { requiredRefereeCount: 5 },
+      data: { requiredJudgeCount: 5 },
       where: { id: dynamic.matchId },
     });
     const inspector = await prisma.tournamentOfficial.create({
@@ -300,7 +300,7 @@ describe('ScoringService (PostgreSQL integration)', () => {
         normalizedName: `inspector-${randomBytes(4).toString('hex')}`,
         passcodeHash: 'test-hash',
         passcodeLookupDigest: randomBytes(32).toString('hex'),
-        role: TournamentOfficialRole.INSPECTOR,
+        role: TournamentOfficialRole.SUPERVISOR,
         tournamentId: dynamic.tournamentId,
       },
     });
@@ -308,35 +308,35 @@ describe('ScoringService (PostgreSQL integration)', () => {
       data: {
         matchId: dynamic.matchId,
         officialId: inspector.id,
-        role: TournamentOfficialRole.INSPECTOR,
+        role: TournamentOfficialRole.SUPERVISOR,
         tournamentId: dynamic.tournamentId,
       },
     });
     const officialSessions: string[] = [];
-    for (const refereePosition of [1, 2, 3, 4, 5]) {
+    for (const judgePosition of [1, 2, 3, 4, 5]) {
       const official = await prisma.tournamentOfficial.create({
         data: {
-          name: `Referee ${refereePosition}`,
-          normalizedName: `referee-${refereePosition}-${randomBytes(4).toString('hex')}`,
+          name: `Referee ${judgePosition}`,
+          normalizedName: `referee-${judgePosition}-${randomBytes(4).toString('hex')}`,
           passcodeHash: 'test-hash',
           passcodeLookupDigest: randomBytes(32).toString('hex'),
-          role: TournamentOfficialRole.REFEREE,
+          role: TournamentOfficialRole.JUDGE,
           tournamentId: dynamic.tournamentId,
         },
       });
       await prisma.matchOfficialAssignment.create({
         data: {
-          assignedByInspectorId: inspector.id,
+          assignedBySupervisorId: inspector.id,
           matchId: dynamic.matchId,
           officialId: official.id,
-          refereePosition,
-          role: TournamentOfficialRole.REFEREE,
+          judgePosition,
+          role: TournamentOfficialRole.JUDGE,
           tournamentId: dynamic.tournamentId,
         },
       });
       const session = await prisma.tournamentOfficialSession.create({
         data: {
-          deviceId: `${TEST_PREFIX}-official-${refereePosition}`,
+          deviceId: `${TEST_PREFIX}-official-${judgePosition}`,
           expiresAt: new Date(Date.now() + 60_000),
           officialId: official.id,
           tokenHash: randomBytes(18).toString('hex'),
@@ -356,7 +356,7 @@ describe('ScoringService (PostgreSQL integration)', () => {
     const resolved = await waitForResolution(dynamic.matchId);
     expect(resolved.winningColor).toBe(AthleteColor.BLUE);
     expect(resolved.scoreEvents).toHaveLength(1);
-    const dynamicVotes = await prisma.refereeVote.findMany({
+    const dynamicVotes = await prisma.judgeVote.findMany({
       where: { scoringWindowId: resolved.id },
     });
     expect(dynamicVotes).toHaveLength(3);
@@ -372,18 +372,18 @@ describe('ScoringService (PostgreSQL integration)', () => {
 
   it('proves the acceptance demonstration and immediately resolves a consecutive window', async () => {
     const current = await fixture();
-    const first = await vote(current, RefereeSlot.REFEREE_1, AthleteColor.RED);
+    const first = await vote(current, JudgeSlot.JUDGE_1, AthleteColor.RED);
     await sleep(250);
-    await vote(current, RefereeSlot.REFEREE_2, AthleteColor.RED);
+    await vote(current, JudgeSlot.JUDGE_2, AthleteColor.RED);
     await sleep(400);
-    await vote(current, RefereeSlot.REFEREE_3, AthleteColor.BLUE);
+    await vote(current, JudgeSlot.JUDGE_3, AthleteColor.BLUE);
     const firstWindow = await waitForResolution(current.matchId);
     expect(first.accepted.scoringWindowId).toBe(firstWindow.id);
     expect(firstWindow.winningColor).toBe(AthleteColor.RED);
     expect(firstWindow.scoreEvents).toHaveLength(1);
 
-    const next = await vote(current, RefereeSlot.REFEREE_1, AthleteColor.BLUE);
-    await vote(current, RefereeSlot.REFEREE_2, AthleteColor.BLUE);
+    const next = await vote(current, JudgeSlot.JUDGE_1, AthleteColor.BLUE);
+    await vote(current, JudgeSlot.JUDGE_2, AthleteColor.BLUE);
     const secondWindow = await waitForResolution(current.matchId);
     expect(next.accepted.scoringWindowId).toBe(secondWindow.id);
     expect(secondWindow.id).not.toBe(firstWindow.id);
@@ -396,8 +396,8 @@ describe('ScoringService (PostgreSQL integration)', () => {
   it('enforces duplicate, concurrent first-vote, state, expiry, and session validity rules', async () => {
     const current = await fixture();
     const duplicate = await Promise.allSettled([
-      vote(current, RefereeSlot.REFEREE_1, AthleteColor.RED),
-      vote(current, RefereeSlot.REFEREE_1, AthleteColor.RED),
+      vote(current, JudgeSlot.JUDGE_1, AthleteColor.RED),
+      vote(current, JudgeSlot.JUDGE_1, AthleteColor.RED),
     ]);
     expect(
       duplicate.filter((result) => result.status === 'fulfilled'),
@@ -411,7 +411,7 @@ describe('ScoringService (PostgreSQL integration)', () => {
       prisma.scoringWindow.count({ where: { matchId: current.matchId } }),
     ).resolves.toBe(1);
     await expect(
-      prisma.refereeVote.count({ where: { matchId: current.matchId } }),
+      prisma.judgeVote.count({ where: { matchId: current.matchId } }),
     ).resolves.toBe(1);
 
     await prisma.match.update({
@@ -422,7 +422,7 @@ describe('ScoringService (PostgreSQL integration)', () => {
       where: { id: current.matchId },
     });
     await expect(
-      vote(current, RefereeSlot.REFEREE_2, AthleteColor.RED),
+      vote(current, JudgeSlot.JUDGE_2, AthleteColor.RED),
     ).rejects.toBeInstanceOf(MatchNotRunningForVoteError);
     await prisma.match.update({
       data: {
@@ -433,26 +433,26 @@ describe('ScoringService (PostgreSQL integration)', () => {
       where: { id: current.matchId },
     });
     await expect(
-      vote(current, RefereeSlot.REFEREE_3, AthleteColor.RED),
+      vote(current, JudgeSlot.JUDGE_3, AthleteColor.RED),
     ).rejects.toBeInstanceOf(MatchNotRunningForVoteError);
     await prisma.matchSession.update({
       data: { active: false, revokedAt: new Date() },
-      where: { id: current.sessions[RefereeSlot.REFEREE_2] },
+      where: { id: current.sessions[JudgeSlot.JUDGE_2] },
     });
     await expect(
-      vote(current, RefereeSlot.REFEREE_2, AthleteColor.RED),
+      vote(current, JudgeSlot.JUDGE_2, AthleteColor.RED),
     ).rejects.toBeInstanceOf(InactiveVoteSessionError);
 
     const ended = await fixture({ roundEndsAt: new Date(Date.now() - 1) });
     await expect(
-      vote(ended, RefereeSlot.REFEREE_1, AthleteColor.RED),
+      vote(ended, JudgeSlot.JUDGE_1, AthleteColor.RED),
     ).rejects.toBeInstanceOf(RoundEndedForVoteError);
   });
 
   it('rejects votes after pause while resolving the already-open window from pre-pause votes', async () => {
     const current = await fixture();
-    await vote(current, RefereeSlot.REFEREE_1, AthleteColor.RED);
-    await vote(current, RefereeSlot.REFEREE_2, AthleteColor.RED);
+    await vote(current, JudgeSlot.JUDGE_1, AthleteColor.RED);
+    await vote(current, JudgeSlot.JUDGE_2, AthleteColor.RED);
     await prisma.match.update({
       data: {
         lifecycle: MatchLifecycle.IN_PROGRESS,
@@ -462,12 +462,12 @@ describe('ScoringService (PostgreSQL integration)', () => {
     });
 
     await expect(
-      vote(current, RefereeSlot.REFEREE_3, AthleteColor.BLUE),
+      vote(current, JudgeSlot.JUDGE_3, AthleteColor.BLUE),
     ).rejects.toBeInstanceOf(RoundPausedForVoteError);
     const resolved = await waitForResolution(current.matchId);
     expect(resolved.winningColor).toBe(AthleteColor.RED);
     await expect(
-      prisma.refereeVote.count({ where: { scoringWindowId: resolved.id } }),
+      prisma.judgeVote.count({ where: { scoringWindowId: resolved.id } }),
     ).resolves.toBe(2);
     await expect(
       prisma.scoreEvent.count({ where: { scoringWindowId: resolved.id } }),
@@ -485,31 +485,31 @@ describe('ScoringService (PostgreSQL integration)', () => {
         startedAt: new Date(now.getTime() - 1_001),
       },
     });
-    await prisma.refereeVote.createMany({
+    await prisma.judgeVote.createMany({
       data: [
         {
           athleteColor: AthleteColor.RED,
           matchId: current.matchId,
-          refereeSlot: RefereeSlot.REFEREE_1,
+          judgeSlot: JudgeSlot.JUDGE_1,
           scoringWindowId: window.id,
           serverReceivedAt: new Date(now.getTime() - 900),
-          sessionId: current.sessions[RefereeSlot.REFEREE_1],
+          sessionId: current.sessions[JudgeSlot.JUDGE_1],
         },
         {
           athleteColor: AthleteColor.RED,
           matchId: current.matchId,
-          refereeSlot: RefereeSlot.REFEREE_2,
+          judgeSlot: JudgeSlot.JUDGE_2,
           scoringWindowId: window.id,
           serverReceivedAt: new Date(now.getTime() - 700),
-          sessionId: current.sessions[RefereeSlot.REFEREE_2],
+          sessionId: current.sessions[JudgeSlot.JUDGE_2],
         },
         {
           athleteColor: AthleteColor.BLUE,
           matchId: current.matchId,
-          refereeSlot: RefereeSlot.REFEREE_3,
+          judgeSlot: JudgeSlot.JUDGE_3,
           scoringWindowId: window.id,
           serverReceivedAt: new Date(now.getTime() - 350),
-          sessionId: current.sessions[RefereeSlot.REFEREE_3],
+          sessionId: current.sessions[JudgeSlot.JUDGE_3],
         },
       ],
     });

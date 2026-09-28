@@ -14,7 +14,7 @@ function renderPage(): void {
     >
       <TournamentOfficialsPage
         readOnly={false}
-        role={TournamentOfficialRole.REFEREE}
+        role={TournamentOfficialRole.JUDGE}
         tournamentId="tournament-1"
         tournamentPublicCode="GIAI-ABC9"
       />

@@ -93,7 +93,7 @@ const refereeSession: OfficialSession = {
   activeAssignment: null,
   deviceId: 'f3b90c56-b6a9-43c7-9eb0-7cbcd251acb7',
   expiresAt: '2030-01-01T00:00:00.000Z',
-  official: { id: 'official-referee', name: 'Nguyễn Văn A', role: TournamentOfficialRole.REFEREE },
+  official: { id: 'official-referee', name: 'Nguyễn Văn A', role: TournamentOfficialRole.JUDGE },
   sessionId: 'official-session-referee',
   status: 'READY',
   tournament: { id: 'tournament-1', name: 'Giải thử nghiệm', publicCode: 'GIAI72' },
@@ -105,18 +105,18 @@ const inspectorSession: OfficialSession = {
   official: {
     id: 'official-inspector',
     name: 'Trần Văn B',
-    role: TournamentOfficialRole.INSPECTOR,
+    role: TournamentOfficialRole.SUPERVISOR,
   },
   sessionId: 'official-session-inspector',
 };
 
 const secondRefereeSession: OfficialSession = {
   ...refereeSession,
-  official: { id: 'official-referee-b', name: 'Lê Văn B', role: TournamentOfficialRole.REFEREE },
+  official: { id: 'official-referee-b', name: 'Lê Văn B', role: TournamentOfficialRole.JUDGE },
   sessionId: 'official-session-referee-b',
 };
 
-function renderPage(expectedRole = TournamentOfficialRole.REFEREE) {
+function renderPage(expectedRole = TournamentOfficialRole.JUDGE) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -131,7 +131,7 @@ function renderPage(expectedRole = TournamentOfficialRole.REFEREE) {
       <QueryClientProvider client={queryClient}>
         <MemoryRouter
           initialEntries={[
-            expectedRole === TournamentOfficialRole.REFEREE ? '/trong-tai' : '/giam-dinh',
+            expectedRole === TournamentOfficialRole.JUDGE ? '/trong-tai' : '/giam-dinh',
           ]}
         >
           <MatchAccessPage expectedRole={expectedRole} />
@@ -144,7 +144,7 @@ function renderPage(expectedRole = TournamentOfficialRole.REFEREE) {
 
 async function fillLoginForm(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   await user.type(await screen.findByLabelText('Mã giải đấu'), 'giai72');
-  await user.type(await screen.findByLabelText('Mã bảo mật riêng'), 'REFEREE-PASSCODE');
+  await user.type(await screen.findByLabelText('Mã bảo mật riêng'), 'JUDGE-PASSCODE');
 }
 
 function storedDeviceId(): string {
@@ -186,8 +186,8 @@ describe('MatchAccessPage official login', () => {
     await waitFor(() => {
       expect(officialAccessApiMock.login).toHaveBeenCalledWith({
         deviceId,
-        expectedRole: TournamentOfficialRole.REFEREE,
-        privatePasscode: 'REFEREE-PASSCODE',
+        expectedRole: TournamentOfficialRole.JUDGE,
+        privatePasscode: 'JUDGE-PASSCODE',
         tournamentCode: 'GIAI72',
       });
     });
@@ -208,7 +208,7 @@ describe('MatchAccessPage official login', () => {
       }),
     );
     officialAccessApiMock.takeover.mockResolvedValue({ session: inspectorSession });
-    renderPage(TournamentOfficialRole.INSPECTOR);
+    renderPage(TournamentOfficialRole.SUPERVISOR);
     officialAccessApiMock.session.mockResolvedValue({ session: inspectorSession });
 
     await fillLoginForm(user);
@@ -223,8 +223,8 @@ describe('MatchAccessPage official login', () => {
     await waitFor(() => {
       expect(officialAccessApiMock.takeover).toHaveBeenCalledWith({
         deviceId,
-        expectedRole: TournamentOfficialRole.INSPECTOR,
-        privatePasscode: 'REFEREE-PASSCODE',
+        expectedRole: TournamentOfficialRole.SUPERVISOR,
+        privatePasscode: 'JUDGE-PASSCODE',
         takeoverToken: 'takeover-token',
         tournamentCode: 'GIAI72',
       });
@@ -235,7 +235,7 @@ describe('MatchAccessPage official login', () => {
   it('uses the same login and session recovery flow for the inspector console', async () => {
     const user = userEvent.setup();
     officialAccessApiMock.login.mockResolvedValue({ session: inspectorSession });
-    renderPage(TournamentOfficialRole.INSPECTOR);
+    renderPage(TournamentOfficialRole.SUPERVISOR);
     officialAccessApiMock.session.mockResolvedValue({ session: inspectorSession });
 
     await fillLoginForm(user);
@@ -247,7 +247,7 @@ describe('MatchAccessPage official login', () => {
 
   it('restores a valid inspector session after a browser refresh', async () => {
     officialAccessApiMock.session.mockResolvedValue({ session: inspectorSession });
-    renderPage(TournamentOfficialRole.INSPECTOR);
+    renderPage(TournamentOfficialRole.SUPERVISOR);
 
     expect(await screen.findByRole('heading', { name: 'Khu vực giám định' })).toBeVisible();
     expect(screen.getByTestId('location')).toHaveTextContent('/giam-dinh');
@@ -262,8 +262,8 @@ describe('MatchAccessPage official login', () => {
       assignment: {
         id: 'assignment-1',
         match: { id: 'match-1', publicId: 'M-001', status: 'WAITING' },
-        refereePosition: 1,
-        role: 'REFEREE',
+        judgePosition: 1,
+        role: 'JUDGE',
       },
       officialId: refereeSession.official.id,
       tournamentId: refereeSession.tournament.id,
@@ -282,8 +282,8 @@ describe('MatchAccessPage official login', () => {
       activeAssignment: {
         id: 'assignment-race',
         match: { id: 'match-race', publicId: 'M-RACE', status: MatchStatus.WAITING },
-        refereePosition: 1,
-        role: TournamentOfficialRole.REFEREE,
+        judgePosition: 1,
+        role: TournamentOfficialRole.JUDGE,
       },
       status: 'IN_MATCH',
     };
@@ -315,8 +315,8 @@ describe('MatchAccessPage official login', () => {
       assignment: {
         id: 'assignment-1',
         match: { id: 'match-1', publicId: 'M-001', status: 'WAITING' },
-        refereePosition: 1,
-        role: 'REFEREE',
+        judgePosition: 1,
+        role: 'JUDGE',
       },
       official: refereeSession.official,
       sessionId: refereeSession.sessionId,
@@ -335,8 +335,8 @@ describe('MatchAccessPage official login', () => {
       assignment: {
         id: 'assignment-2',
         match: { id: 'match-2', publicId: 'M-002', status: 'WAITING' },
-        refereePosition: 1,
-        role: 'REFEREE',
+        judgePosition: 1,
+        role: 'JUDGE',
       },
       officialId: refereeSession.official.id,
       tournamentId: refereeSession.tournament.id,
@@ -359,8 +359,8 @@ describe('MatchAccessPage official login', () => {
         activeAssignment: {
           id: 'assignment-1',
           match: { id: 'match-1', publicId: 'M-001', status: 'WAITING' },
-          refereePosition: 1,
-          role: TournamentOfficialRole.REFEREE,
+          judgePosition: 1,
+          role: TournamentOfficialRole.JUDGE,
         },
         status: 'IN_MATCH',
       },
@@ -393,8 +393,8 @@ describe('MatchAccessPage official login', () => {
           publicId: 'M-MISSED-FOCUS',
           status: MatchStatus.WAITING,
         },
-        refereePosition: 1,
-        role: TournamentOfficialRole.REFEREE,
+        judgePosition: 1,
+        role: TournamentOfficialRole.JUDGE,
       },
       status: 'IN_MATCH',
     };
@@ -423,8 +423,8 @@ describe('MatchAccessPage official login', () => {
           publicId: 'M-MISSED-INTERVAL',
           status: MatchStatus.WAITING,
         },
-        refereePosition: 1,
-        role: TournamentOfficialRole.REFEREE,
+        judgePosition: 1,
+        role: TournamentOfficialRole.JUDGE,
       },
       status: 'IN_MATCH',
     };
@@ -451,8 +451,8 @@ describe('MatchAccessPage official login', () => {
       activeAssignment: {
         id: 'assignment-http-old',
         match: { id: 'match-http-old', publicId: 'M-HTTP-OLD', status: MatchStatus.WAITING },
-        refereePosition: 1,
-        role: TournamentOfficialRole.REFEREE,
+        judgePosition: 1,
+        role: TournamentOfficialRole.JUDGE,
       },
       status: 'IN_MATCH',
     };
@@ -478,8 +478,8 @@ describe('MatchAccessPage official login', () => {
       assignment: {
         id: 'assignment-socket-new',
         match: { id: 'match-socket-new', publicId: 'M-SOCKET-NEW', status: 'WAITING' },
-        refereePosition: 1,
-        role: 'REFEREE',
+        judgePosition: 1,
+        role: 'JUDGE',
       },
       officialId: refereeSession.official.id,
       tournamentId: refereeSession.tournament.id,
@@ -502,8 +502,8 @@ describe('MatchAccessPage official login', () => {
           publicId: 'M-TRANSIENT',
           status: MatchStatus.WAITING,
         },
-        refereePosition: 1,
-        role: TournamentOfficialRole.REFEREE,
+        judgePosition: 1,
+        role: TournamentOfficialRole.JUDGE,
       },
       status: 'IN_MATCH',
     };
@@ -529,8 +529,8 @@ describe('MatchAccessPage official login', () => {
       activeAssignment: {
         id: 'assignment-revoked-session',
         match: { id: 'match-revoked-session', publicId: 'M-REVOKED', status: MatchStatus.WAITING },
-        refereePosition: 1,
-        role: TournamentOfficialRole.REFEREE,
+        judgePosition: 1,
+        role: TournamentOfficialRole.JUDGE,
       },
       status: 'IN_MATCH',
     };
@@ -598,14 +598,14 @@ describe('MatchAccessPage official login', () => {
       activeAssignment: {
         id: 'assignment-inspector-exit',
         match: { id: 'match-exit', publicId: 'M-EXIT', status: MatchStatus.BREAK },
-        refereePosition: null,
-        role: TournamentOfficialRole.INSPECTOR,
+        judgePosition: null,
+        role: TournamentOfficialRole.SUPERVISOR,
       },
       status: 'IN_MATCH',
     };
     officialAccessApiMock.session.mockResolvedValue({ session: assignedInspectorSession });
     officialAccessApiMock.matches.mockResolvedValue({ matches: [] });
-    const { queryClient } = renderPage(TournamentOfficialRole.INSPECTOR);
+    const { queryClient } = renderPage(TournamentOfficialRole.SUPERVISOR);
 
     expect(await screen.findByText('Inspector console ready')).toBeVisible();
     const options = matchRealtimeMock.mock.calls.at(-1)?.[0];
@@ -655,8 +655,8 @@ describe('MatchAccessPage official login', () => {
       assignment: {
         id: 'assignment-a',
         match: { id: 'match-a', publicId: 'M-A', status: 'WAITING' },
-        refereePosition: 1,
-        role: 'REFEREE',
+        judgePosition: 1,
+        role: 'JUDGE',
       },
       official: refereeSession.official,
       sessionId: refereeSession.sessionId,
@@ -669,8 +669,8 @@ describe('MatchAccessPage official login', () => {
       assignment: {
         id: 'assignment-b',
         match: { id: 'match-b', publicId: 'M-B', status: 'WAITING' },
-        refereePosition: 1,
-        role: 'REFEREE',
+        judgePosition: 1,
+        role: 'JUDGE',
       },
       officialId: secondRefereeSession.official.id,
       tournamentId: secondRefereeSession.tournament.id,
@@ -689,7 +689,7 @@ describe('MatchAccessPage official login', () => {
       id: 'match-1',
       lifecycle: 'NOT_STARTED' as const,
       publicId: 'M-001',
-      requiredRefereeCount: 2,
+      requiredJudgeCount: 2,
       status: 'WAITING',
     };
     officialAccessApiMock.session
@@ -701,8 +701,8 @@ describe('MatchAccessPage official login', () => {
           activeAssignment: {
             id: 'assignment-inspector',
             match: { id: match.id, publicId: match.publicId, status: 'WAITING' },
-            refereePosition: null,
-            role: TournamentOfficialRole.INSPECTOR,
+            judgePosition: null,
+            role: TournamentOfficialRole.SUPERVISOR,
           },
           status: 'IN_MATCH',
         },
@@ -713,7 +713,7 @@ describe('MatchAccessPage official login', () => {
         id: match.id,
         lifecycle: match.lifecycle,
         officialAssignments: [],
-        requiredRefereeCount: 2,
+        requiredJudgeCount: 2,
       },
       referees: [
         { assignedMatchId: null, id: 'referee-1', name: 'Trọng tài 1', status: 'READY' },
@@ -722,7 +722,7 @@ describe('MatchAccessPage official login', () => {
       ],
     });
     officialAccessApiMock.take.mockResolvedValue({ match: { id: match.id } });
-    renderPage(TournamentOfficialRole.INSPECTOR);
+    renderPage(TournamentOfficialRole.SUPERVISOR);
 
     await user.click(await screen.findByRole('button', { name: /M-001/ }));
     expect(screen.getByRole('button', { name: 'Nhận trận' })).toBeDisabled();

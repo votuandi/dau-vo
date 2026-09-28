@@ -50,7 +50,7 @@ export class BracketCancellationService {
                         scoreEvents: true,
                         penalties: true,
                         rounds: true,
-                        refereeVotes: true,
+                        judgeVotes: true,
                         resultOperations: true,
                       },
                     },
@@ -79,7 +79,7 @@ export class BracketCancellationService {
             match._count.scoreEvents > 0 ||
             match._count.penalties > 0 ||
             match._count.rounds > 0 ||
-            match._count.refereeVotes > 0 ||
+            match._count.judgeVotes > 0 ||
             match._count.resultOperations > 0,
         );
         // Once a fixture has created a match, a normal reset must not leave it

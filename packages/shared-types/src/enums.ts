@@ -57,24 +57,24 @@ export enum MatchDisplayState {
 }
 
 export enum MatchRole {
-  REFEREE = 'REFEREE',
-  INSPECTOR = 'INSPECTOR',
+  JUDGE = 'JUDGE',
+  SUPERVISOR = 'SUPERVISOR',
 }
 
 export enum TournamentOfficialRole {
-  REFEREE = 'REFEREE',
-  INSPECTOR = 'INSPECTOR',
+  JUDGE = 'JUDGE',
+  SUPERVISOR = 'SUPERVISOR',
 }
 
-export enum RefereeSlot {
-  REFEREE_1 = 'REFEREE_1',
-  REFEREE_2 = 'REFEREE_2',
-  REFEREE_3 = 'REFEREE_3',
+export enum JudgeSlot {
+  JUDGE_1 = 'JUDGE_1',
+  JUDGE_2 = 'JUDGE_2',
+  JUDGE_3 = 'JUDGE_3',
 }
 
 export enum MatchAccessRole {
-  REFEREE_1 = 'REFEREE_1',
-  REFEREE_2 = 'REFEREE_2',
-  REFEREE_3 = 'REFEREE_3',
-  INSPECTOR = 'INSPECTOR',
+  JUDGE_1 = 'JUDGE_1',
+  JUDGE_2 = 'JUDGE_2',
+  JUDGE_3 = 'JUDGE_3',
+  SUPERVISOR = 'SUPERVISOR',
 }

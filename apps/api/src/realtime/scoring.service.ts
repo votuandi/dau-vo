@@ -10,14 +10,14 @@ import {
   type ScoringWindowOpenedPayload,
   type ScoringWindowResolvedPayload,
   type VoteAcceptedPayload,
-  RefereeSlot as SharedRefereeSlot,
+  JudgeSlot as SharedRefereeSlot,
 } from '@martial-arts-scoring/shared-types';
 import {
   AthleteColor,
   AuditEventType,
   MatchStatus,
   RoundStage,
-  type RefereeSlot,
+  type JudgeSlot,
   ScoreEventType,
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
@@ -47,13 +47,13 @@ type VoteAuthorization =
       assignmentId: string;
       kind: 'official';
       officialSessionId: string;
-      refereePosition: number;
+      judgePosition: number;
     }
-  | { kind: 'legacy'; refereeSlot: RefereeSlot; sessionId: string };
+  | { kind: 'legacy'; judgeSlot: JudgeSlot; sessionId: string };
 
 interface LockedRow {
   id: string;
-  refereePosition?: number;
+  judgePosition?: number;
 }
 
 interface ServerClock {
@@ -201,7 +201,7 @@ export class ScoringService implements OnModuleDestroy {
     athlete: AthleteColor;
     matchId: string;
     officialSessionId?: string;
-    refereeSlot?: RefereeSlot;
+    judgeSlot?: JudgeSlot;
     sessionId?: string;
   }): Promise<VoteSubmissionTransition> {
     const result = await this.prisma.$transaction(
@@ -218,7 +218,7 @@ export class ScoringService implements OnModuleDestroy {
               transaction,
               input.matchId,
               input.sessionId,
-              input.refereeSlot,
+              input.judgeSlot,
             );
         // Sample time after the distributed Match lock. This produces one
         // ordered PostgreSQL clock for simultaneous requests across instances.
@@ -307,7 +307,7 @@ export class ScoringService implements OnModuleDestroy {
           ) {
             throw new RoundEndedForVoteError();
           }
-          const existing = await transaction.refereeVote.findFirst({
+          const existing = await transaction.judgeVote.findFirst({
             select: { id: true },
             where: {
               scoringWindowId: unresolved.id,
@@ -315,7 +315,7 @@ export class ScoringService implements OnModuleDestroy {
                 ? { assignmentId: authorization.assignmentId }
                 : {
                     assignmentId: null,
-                    refereeSlot: authorization.refereeSlot,
+                    judgeSlot: authorization.judgeSlot,
                   }),
             },
           });
@@ -324,7 +324,7 @@ export class ScoringService implements OnModuleDestroy {
             throw new DuplicateRefereeVoteError();
           }
 
-          const vote = await transaction.refereeVote.create({
+          const vote = await transaction.judgeVote.create({
             data: {
               athleteColor: input.athlete,
               matchId: input.matchId,
@@ -332,9 +332,9 @@ export class ScoringService implements OnModuleDestroy {
                 authorization.kind === 'official'
                   ? authorization.assignmentId
                   : null,
-              refereeSlot:
+              judgeSlot:
                 authorization.kind === 'legacy'
-                  ? authorization.refereeSlot
+                  ? authorization.judgeSlot
                   : null,
               scoringWindowId: unresolved.id,
               serverReceivedAt: clock.serverNow,
@@ -383,7 +383,7 @@ export class ScoringService implements OnModuleDestroy {
             startedAt: true,
           },
         });
-        const vote = await transaction.refereeVote.create({
+        const vote = await transaction.judgeVote.create({
           data: {
             athleteColor: input.athlete,
             matchId: input.matchId,
@@ -391,9 +391,9 @@ export class ScoringService implements OnModuleDestroy {
               authorization.kind === 'official'
                 ? authorization.assignmentId
                 : null,
-            refereeSlot:
+            judgeSlot:
               authorization.kind === 'legacy'
-                ? authorization.refereeSlot
+                ? authorization.judgeSlot
                 : null,
             scoringWindowId: window.id,
             serverReceivedAt: clock.serverNow,
@@ -532,16 +532,16 @@ export class ScoringService implements OnModuleDestroy {
     const rules = await this.rulesForMatch(transaction, window.matchId);
     const match = await transaction.match.findUniqueOrThrow({
       where: { id: window.matchId },
-      select: { requiredRefereeCount: true },
+      select: { requiredJudgeCount: true },
     });
-    const votes = await transaction.refereeVote.findMany({
+    const votes = await transaction.judgeVote.findMany({
       orderBy: { serverReceivedAt: 'asc' },
       select: {
         assignmentId: true,
         athleteColor: true,
-        refereeSlot: true,
+        judgeSlot: true,
         serverReceivedAt: true,
-        assignment: { select: { refereePosition: true } },
+        assignment: { select: { judgePosition: true } },
       },
       where: { scoringWindowId: window.id },
     });
@@ -552,9 +552,9 @@ export class ScoringService implements OnModuleDestroy {
       (vote) => vote.athleteColor === AthleteColor.BLUE,
     ).length;
     const winningColor =
-      redVotes >= rules.refereeMajority(match.requiredRefereeCount)
+      redVotes >= rules.refereeMajority(match.requiredJudgeCount)
         ? AthleteColor.RED
-        : blueVotes >= rules.refereeMajority(match.requiredRefereeCount)
+        : blueVotes >= rules.refereeMajority(match.requiredJudgeCount)
           ? AthleteColor.BLUE
           : null;
 
@@ -589,7 +589,7 @@ export class ScoringService implements OnModuleDestroy {
           roundId: window.roundId,
           roundNumber: window.roundNumber,
           scoringWindowId: window.id,
-          type: ScoreEventType.REFEREE_POINT,
+          type: ScoreEventType.JUDGE_POINT,
           value: rules.refereePointValue,
         },
         select: { id: true },
@@ -614,11 +614,11 @@ export class ScoringService implements OnModuleDestroy {
           votes: votes.map((vote) => ({
             athlete: vote.athleteColor,
             assignmentId: vote.assignmentId,
-            refereePosition: vote.assignment?.refereePosition ?? null,
-            refereeSlot:
-              vote.refereeSlot === null
+            judgePosition: vote.assignment?.judgePosition ?? null,
+            judgeSlot:
+              vote.judgeSlot === null
                 ? null
-                : this.sharedRefereeSlot(vote.refereeSlot),
+                : this.sharedRefereeSlot(vote.judgeSlot),
             serverReceivedAt: vote.serverReceivedAt.toISOString(),
           })),
           winningColor,
@@ -634,11 +634,11 @@ export class ScoringService implements OnModuleDestroy {
         votes: votes.map((vote) => ({
           athlete: this.sharedAthleteColor(vote.athleteColor),
           assignmentId: vote.assignmentId,
-          refereePosition: vote.assignment?.refereePosition ?? null,
-          refereeSlot:
-            vote.refereeSlot === null
+          judgePosition: vote.assignment?.judgePosition ?? null,
+          judgeSlot:
+            vote.judgeSlot === null
               ? null
-              : this.sharedRefereeSlot(vote.refereeSlot),
+              : this.sharedRefereeSlot(vote.judgeSlot),
           serverReceivedAt: vote.serverReceivedAt.toISOString(),
         })),
         window: {
@@ -738,7 +738,7 @@ export class ScoringService implements OnModuleDestroy {
         identity: {
           assignmentId: authorization.assignmentId,
           kind: 'official',
-          refereePosition: authorization.refereePosition,
+          judgePosition: authorization.judgePosition,
         },
         matchPublicId,
         scoringWindowId,
@@ -749,7 +749,7 @@ export class ScoringService implements OnModuleDestroy {
       athlete: this.sharedAthleteColor(athlete),
       identity: {
         kind: 'legacy',
-        refereeSlot: this.sharedRefereeSlot(authorization.refereeSlot),
+        judgeSlot: this.sharedRefereeSlot(authorization.judgeSlot),
       },
       matchPublicId,
       scoringWindowId,
@@ -792,7 +792,7 @@ export class ScoringService implements OnModuleDestroy {
     officialSessionId: string,
   ): Promise<VoteAuthorization> {
     const rows = await transaction.$queryRaw<LockedRow[]>`
-      SELECT assignment."id", assignment."referee_position" AS "refereePosition"
+      SELECT assignment."id", assignment."judge_position" AS "judgePosition"
       FROM "tournament_official_sessions" AS official_session
       INNER JOIN "match_official_assignments" AS assignment
         ON assignment."official_id" = official_session."official_id"
@@ -803,21 +803,21 @@ export class ScoringService implements OnModuleDestroy {
       WHERE official_session."id" = ${officialSessionId}::uuid
         AND official_session."active" = true AND official_session."revoked_at" IS NULL
         AND official_session."expires_at" > clock_timestamp()
-        AND assignment."match_id" = ${matchId}::uuid AND assignment."role" = 'REFEREE'
+        AND assignment."match_id" = ${matchId}::uuid AND assignment."role" = 'JUDGE'
         AND assignment."released_at" IS NULL
         AND assignment."tournament_id" = match."tournament_id"
         AND official."tournament_id" = match."tournament_id"
       FOR UPDATE OF official_session, assignment
     `;
     const row = rows[0];
-    if (rows.length !== 1 || row?.refereePosition === undefined) {
+    if (rows.length !== 1 || row?.judgePosition === undefined) {
       throw new InactiveVoteSessionError();
     }
     return {
       assignmentId: row.id,
       kind: 'official',
       officialSessionId,
-      refereePosition: row.refereePosition,
+      judgePosition: row.judgePosition,
     };
   }
 
@@ -825,18 +825,18 @@ export class ScoringService implements OnModuleDestroy {
     transaction: Prisma.TransactionClient,
     matchId: string,
     sessionId: string | undefined,
-    refereeSlot: RefereeSlot | undefined,
+    judgeSlot: JudgeSlot | undefined,
   ): Promise<VoteAuthorization> {
-    if (!sessionId || !refereeSlot) throw new InactiveVoteSessionError();
+    if (!sessionId || !judgeSlot) throw new InactiveVoteSessionError();
     const lockedSessionId = await this.lockActiveRefereeSession(
       transaction,
       matchId,
       sessionId,
-      refereeSlot,
+      judgeSlot,
     );
     return {
       kind: 'legacy',
-      refereeSlot,
+      judgeSlot,
       sessionId: lockedSessionId,
     };
   }
@@ -845,14 +845,14 @@ export class ScoringService implements OnModuleDestroy {
     transaction: Prisma.TransactionClient,
     matchId: string,
     sessionId: string,
-    refereeSlot: RefereeSlot,
+    judgeSlot: JudgeSlot,
   ): Promise<string> {
     const rows = await transaction.$queryRaw<LockedRow[]>`
       SELECT match_session."id" FROM "match_sessions" AS match_session
       WHERE match_session."id" = ${sessionId}::uuid AND match_session."match_id" = ${matchId}::uuid
       AND match_session."active" = true AND match_session."revoked_at" IS NULL
-      AND match_session."expires_at" > clock_timestamp() AND match_session."role" = 'REFEREE'
-      AND match_session."referee_slot" = ${refereeSlot}::"referee_slot" FOR UPDATE`;
+      AND match_session."expires_at" > clock_timestamp() AND match_session."role" = 'JUDGE'
+      AND match_session."judge_slot" = ${judgeSlot}::"judge_slot" FOR UPDATE`;
     if (rows.length !== 1) throw new InactiveVoteSessionError();
     return rows[0]!.id;
   }
@@ -939,14 +939,14 @@ export class ScoringService implements OnModuleDestroy {
       : SharedAthleteColor.BLUE;
   }
 
-  private sharedRefereeSlot(slot: RefereeSlot): SharedRefereeSlot {
+  private sharedRefereeSlot(slot: JudgeSlot): SharedRefereeSlot {
     switch (slot) {
-      case 'REFEREE_1':
-        return SharedRefereeSlot.REFEREE_1;
-      case 'REFEREE_2':
-        return SharedRefereeSlot.REFEREE_2;
-      case 'REFEREE_3':
-        return SharedRefereeSlot.REFEREE_3;
+      case 'JUDGE_1':
+        return SharedRefereeSlot.JUDGE_1;
+      case 'JUDGE_2':
+        return SharedRefereeSlot.JUDGE_2;
+      case 'JUDGE_3':
+        return SharedRefereeSlot.JUDGE_3;
     }
   }
 }

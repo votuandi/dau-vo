@@ -1,11 +1,11 @@
-import type { MatchRole, RefereeSlot } from '@prisma/client';
+import type { MatchRole, JudgeSlot } from '@prisma/client';
 import type { Request } from 'express';
 
 export interface MatchSessionIdentity {
   sessionId: string;
   matchPublicId: string;
   role: MatchRole;
-  refereeSlot: RefereeSlot | null;
+  judgeSlot: JudgeSlot | null;
   deviceId: string;
   expiresAt: string;
 }

@@ -10,7 +10,7 @@ export interface OfficialSessionIdentity {
   activeAssignment: {
     id: string;
     role: TournamentOfficialRole;
-    refereePosition: number | null;
+    judgePosition: number | null;
     match: { id: string; publicId: string; status: string };
   } | null;
   status: 'READY' | 'IN_MATCH';

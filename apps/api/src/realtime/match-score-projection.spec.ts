@@ -20,7 +20,7 @@ describe('calculateMatchScoreProjection', () => {
           athleteId: 'red-athlete',
           revertedAt: null,
           roundId: 'round-1',
-          type: ScoreEventType.REFEREE_POINT,
+          type: ScoreEventType.JUDGE_POINT,
           value: 3,
         },
       ],

@@ -28,7 +28,7 @@ export function refereeBaseForRounds(input: {
   return input.events.reduce(
     (total, event) =>
       event.athleteId === input.athleteId &&
-      event.type === ScoreEventType.REFEREE_POINT &&
+      event.type === ScoreEventType.JUDGE_POINT &&
       event.revertedAt === null &&
       event.roundId !== null &&
       ids.has(event.roundId)

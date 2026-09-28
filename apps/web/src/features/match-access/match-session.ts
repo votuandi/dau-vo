@@ -26,5 +26,5 @@ export const matchAccessSessionQueryOptions = queryOptions({
 });
 
 export function getMatchAccessPath(role: MatchRole): '/trong-tai' | '/giam-dinh' {
-  return role === MatchRole.REFEREE ? '/trong-tai' : '/giam-dinh';
+  return role === MatchRole.JUDGE ? '/trong-tai' : '/giam-dinh';
 }

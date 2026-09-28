@@ -39,7 +39,7 @@ export class MatchOfficialAssignmentsController {
   ) {
     return this.assignments.take(
       matchId,
-      body.refereeIds,
+      body.judgeIds,
       request.officialSession,
     );
   }

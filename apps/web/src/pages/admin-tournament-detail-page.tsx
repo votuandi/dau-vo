@@ -444,7 +444,7 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
       {active === 'referees' ? (
         <TournamentOfficialsPage
           readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED}
-          role={TournamentOfficialRole.REFEREE}
+          role={TournamentOfficialRole.JUDGE}
           tournamentId={tournamentId}
           tournamentPublicCode={tournament.publicCode}
         />
@@ -452,7 +452,7 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
       {active === 'inspectors' ? (
         <TournamentOfficialsPage
           readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED}
-          role={TournamentOfficialRole.INSPECTOR}
+          role={TournamentOfficialRole.SUPERVISOR}
           tournamentId={tournamentId}
           tournamentPublicCode={tournament.publicCode}
         />

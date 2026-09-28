@@ -22,10 +22,10 @@ export interface SportRulesDefinition {
 /** The executable rules for SportGroup.code ONE_ON_ONE_COMBAT. */
 export const oneOnOneCombatRules: SportRulesDefinition = Object.freeze({
   accessRoles: Object.freeze([
-    MatchAccessRole.REFEREE_1,
-    MatchAccessRole.REFEREE_2,
-    MatchAccessRole.REFEREE_3,
-    MatchAccessRole.INSPECTOR,
+    MatchAccessRole.JUDGE_1,
+    MatchAccessRole.JUDGE_2,
+    MatchAccessRole.JUDGE_3,
+    MatchAccessRole.SUPERVISOR,
   ]),
   athleteColors: Object.freeze([AthleteColor.RED, AthleteColor.BLUE]),
   code: 'ONE_ON_ONE_COMBAT',

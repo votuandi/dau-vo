@@ -20,7 +20,7 @@ import {
   type ResultCapabilityBlockedReason,
   MatchExitMode,
   type PresenceUpdatedPayload,
-  RefereeSlot as SharedRefereeSlot,
+  JudgeSlot as SharedRefereeSlot,
 } from '@martial-arts-scoring/shared-types';
 import {
   AthleteColor,
@@ -28,7 +28,7 @@ import {
   MatchLifecycle,
   MatchStatus,
   MatchRulesVersion,
-  RefereeSlot,
+  JudgeSlot,
 } from '@prisma/client';
 import {
   RoundStage,
@@ -47,10 +47,10 @@ import {
 } from './result-calculations';
 
 const ACCESS_ROLES = [
-  MatchAccessRole.REFEREE_1,
-  MatchAccessRole.REFEREE_2,
-  MatchAccessRole.REFEREE_3,
-  MatchAccessRole.INSPECTOR,
+  MatchAccessRole.JUDGE_1,
+  MatchAccessRole.JUDGE_2,
+  MatchAccessRole.JUDGE_3,
+  MatchAccessRole.SUPERVISOR,
 ] as const satisfies readonly MatchAccessRole[];
 
 @Injectable()
@@ -67,8 +67,8 @@ export class RealtimeMatchStateService {
   async snapshot(
     matchId: string,
     viewer?:
-      | { kind: 'legacy'; refereeSlot: RefereeSlot | null }
-      | { assignmentId: string; kind: 'official'; refereePosition: number },
+      | { kind: 'legacy'; judgeSlot: JudgeSlot | null }
+      | { assignmentId: string; kind: 'official'; judgePosition: number },
   ): Promise<MatchStatePayload> {
     const match = await this.prisma.match.findUnique({
       select: {
@@ -294,7 +294,7 @@ export class RealtimeMatchStateService {
     unresolved: { id: string } | null,
     appeal: {
       adjustments: Array<{
-        baseRefereeScore: number;
+        baseJudgeScore: number;
         bonusPoints: number;
         penaltyPoints: number;
         finalScore: number;
@@ -305,7 +305,7 @@ export class RealtimeMatchStateService {
       sourceRoundId: string;
       attemptNumber: number;
       adjustments: Array<{
-        baseRefereeScore: number;
+        baseJudgeScore: number;
         bonusPoints: number;
         penaltyPoints: number;
         finalScore: number;
@@ -391,7 +391,7 @@ export class RealtimeMatchStateService {
       const x = byColor.get(color);
       return x
         ? {
-            base: x.baseRefereeScore,
+            base: x.baseJudgeScore,
             bonusPoints: x.bonusPoints,
             penaltyPoints: x.penaltyPoints,
             final: x.finalScore,
@@ -430,7 +430,7 @@ export class RealtimeMatchStateService {
       const x = overtimeByColor.get(color);
       return x
         ? {
-            base: x.baseRefereeScore,
+            base: x.baseJudgeScore,
             bonusPoints: x.bonusPoints,
             penaltyPoints: x.penaltyPoints,
             final: x.finalScore,
@@ -669,8 +669,8 @@ export class RealtimeMatchStateService {
 
   private async viewerState(
     viewer:
-      | { kind: 'legacy'; refereeSlot: RefereeSlot | null }
-      | { assignmentId: string; kind: 'official'; refereePosition: number }
+      | { kind: 'legacy'; judgeSlot: JudgeSlot | null }
+      | { assignmentId: string; kind: 'official'; judgePosition: number }
       | undefined,
     unresolvedWindow: {
       endsAt: Date;
@@ -686,18 +686,18 @@ export class RealtimeMatchStateService {
 
     if (
       unresolvedWindow === null ||
-      (viewer.kind === 'legacy' && viewer.refereeSlot === null)
+      (viewer.kind === 'legacy' && viewer.judgeSlot === null)
     ) {
       return { acceptedVote: null };
     }
 
-    const vote = await this.prisma.refereeVote.findFirst({
+    const vote = await this.prisma.judgeVote.findFirst({
       select: { athleteColor: true, serverReceivedAt: true },
       where: {
         scoringWindowId: unresolvedWindow.id,
         ...(viewer.kind === 'official'
           ? { assignmentId: viewer.assignmentId }
-          : { refereeSlot: viewer.refereeSlot }),
+          : { judgeSlot: viewer.judgeSlot }),
       },
     });
 
@@ -709,7 +709,7 @@ export class RealtimeMatchStateService {
           identity: {
             assignmentId: viewer.assignmentId,
             kind: 'official',
-            refereePosition: viewer.refereePosition,
+            judgePosition: viewer.judgePosition,
           },
           matchPublicId,
           scoringWindowId: unresolvedWindow.id,
@@ -717,13 +717,13 @@ export class RealtimeMatchStateService {
         },
       };
     }
-    if (viewer.refereeSlot === null) return { acceptedVote: null };
+    if (viewer.judgeSlot === null) return { acceptedVote: null };
     return {
       acceptedVote: {
         athlete: this.sharedAthleteColor(vote.athleteColor),
         identity: {
           kind: 'legacy',
-          refereeSlot: this.sharedRefereeSlot(viewer.refereeSlot),
+          judgeSlot: this.sharedRefereeSlot(viewer.judgeSlot),
         },
         matchPublicId,
         scoringWindowId: unresolvedWindow.id,
@@ -874,12 +874,12 @@ export class RealtimeMatchStateService {
     matchId: string,
     matchPublicId: string,
   ): Promise<MatchStartReadinessDetails> {
-    const { officials, scoreboardConnectedCount, requiredRefereeCount } =
+    const { officials, scoreboardConnectedCount, requiredJudgeCount } =
       await this.presence(matchId, matchPublicId);
     return this.officialReadinessFromPresence({
       officials,
       scoreboardConnectedCount,
-      requiredRefereeCount,
+      requiredJudgeCount,
     });
   }
 
@@ -887,7 +887,7 @@ export class RealtimeMatchStateService {
     officials: MatchOfficialPresenceEntry[];
     presence: MatchPresenceEntry[];
     scoreboardConnectedCount: number;
-    requiredRefereeCount: number;
+    requiredJudgeCount: number;
   }): MatchReadiness {
     if (presenceState.officials.length === 0) {
       const connectedRoles = new Set(
@@ -896,16 +896,16 @@ export class RealtimeMatchStateService {
           .map((entry) => entry.accessRole),
       );
       const referees = {
-        REFEREE_1: connectedRoles.has(SharedMatchAccessRole.REFEREE_1),
-        REFEREE_2: connectedRoles.has(SharedMatchAccessRole.REFEREE_2),
-        REFEREE_3: connectedRoles.has(SharedMatchAccessRole.REFEREE_3),
+        JUDGE_1: connectedRoles.has(SharedMatchAccessRole.JUDGE_1),
+        JUDGE_2: connectedRoles.has(SharedMatchAccessRole.JUDGE_2),
+        JUDGE_3: connectedRoles.has(SharedMatchAccessRole.JUDGE_3),
       };
       const missingRequirements: string[] = [];
-      if (!connectedRoles.has(SharedMatchAccessRole.INSPECTOR)) {
-        missingRequirements.push('INSPECTOR');
+      if (!connectedRoles.has(SharedMatchAccessRole.SUPERVISOR)) {
+        missingRequirements.push('SUPERVISOR');
       }
-      if (presenceState.requiredRefereeCount !== 3) {
-        missingRequirements.push('REFEREE_ASSIGNMENTS');
+      if (presenceState.requiredJudgeCount !== 3) {
+        missingRequirements.push('JUDGE_ASSIGNMENTS');
       }
       if (Object.values(referees).some((connected) => !connected)) {
         missingRequirements.push('REFEREES');
@@ -917,7 +917,7 @@ export class RealtimeMatchStateService {
         canStartRound: missingRequirements.length === 0,
         kind: 'LEGACY_MATCH_ACCESS',
         missingRequirements,
-        requiredRefereeCount: presenceState.requiredRefereeCount,
+        requiredJudgeCount: presenceState.requiredJudgeCount,
         referees,
         scoreboardConnectedCount: presenceState.scoreboardConnectedCount,
       };
@@ -929,22 +929,22 @@ export class RealtimeMatchStateService {
   private officialReadinessFromPresence(presenceState: {
     officials: MatchOfficialPresenceEntry[];
     scoreboardConnectedCount: number;
-    requiredRefereeCount: number;
+    requiredJudgeCount: number;
   }): MatchStartReadinessDetails & {
     canStartRound: boolean;
     kind: 'TOURNAMENT_OFFICIALS';
   } {
     const referees = presenceState.officials
-      .filter((x) => x.role === 'REFEREE')
+      .filter((x) => x.role === 'JUDGE')
       .map((x) => ({
         officialId: x.officialId,
         name: x.name,
-        position: x.refereePosition ?? 0,
+        position: x.judgePosition ?? 0,
         assigned: true,
         connected: x.connected,
       }));
     const inspectorEntry = presenceState.officials.filter(
-      (x) => x.role === 'INSPECTOR',
+      (x) => x.role === 'SUPERVISOR',
     );
     const inspectorRecord = inspectorEntry[0];
     const inspector =
@@ -956,13 +956,13 @@ export class RealtimeMatchStateService {
           }
         : { officialId: null, assigned: false, connected: false };
     const missingRequirements: string[] = [];
-    if (!inspector.assigned) missingRequirements.push('INSPECTOR_ASSIGNMENT');
+    if (!inspector.assigned) missingRequirements.push('SUPERVISOR_ASSIGNMENT');
     if (!inspector.connected)
-      missingRequirements.push('INSPECTOR_DISCONNECTED');
-    if (referees.length !== presenceState.requiredRefereeCount)
-      missingRequirements.push('REFEREE_ASSIGNMENTS');
+      missingRequirements.push('SUPERVISOR_DISCONNECTED');
+    if (referees.length !== presenceState.requiredJudgeCount)
+      missingRequirements.push('JUDGE_ASSIGNMENTS');
     if (referees.some((x) => !x.connected))
-      missingRequirements.push('REFEREE_DISCONNECTED');
+      missingRequirements.push('JUDGE_DISCONNECTED');
     if (presenceState.scoreboardConnectedCount < 1) {
       missingRequirements.push('SCOREBOARD');
     }
@@ -973,7 +973,7 @@ export class RealtimeMatchStateService {
       inspector,
       kind: 'TOURNAMENT_OFFICIALS',
       missingRequirements,
-      requiredRefereeCount: presenceState.requiredRefereeCount,
+      requiredJudgeCount: presenceState.requiredJudgeCount,
       referees,
       scoreboardConnectedCount: presenceState.scoreboardConnectedCount,
     };
@@ -1000,7 +1000,7 @@ export class RealtimeMatchStateService {
     officials: MatchOfficialPresenceEntry[];
     presence: MatchPresenceEntry[];
     scoreboardConnectedCount: number;
-    requiredRefereeCount: number;
+    requiredJudgeCount: number;
   }> {
     const [activeOwners, scoreboardConnectedCount, officialAssignments, match] =
       await Promise.all([
@@ -1016,11 +1016,11 @@ export class RealtimeMatchStateService {
         this.sessionRegistry.scoreboardConnectedCount(matchPublicId),
         this.prisma.matchOfficialAssignment.findMany({
           where: { matchId, releasedAt: null },
-          orderBy: [{ role: 'asc' }, { refereePosition: 'asc' }],
+          orderBy: [{ role: 'asc' }, { judgePosition: 'asc' }],
           select: {
             officialId: true,
             role: true,
-            refereePosition: true,
+            judgePosition: true,
             official: {
               select: {
                 name: true,
@@ -1038,7 +1038,7 @@ export class RealtimeMatchStateService {
         }),
         this.prisma.match.findUniqueOrThrow({
           where: { id: matchId },
-          select: { requiredRefereeCount: true },
+          select: { requiredJudgeCount: true },
         }),
       ]);
     const activeRoles = new Set<string>(
@@ -1075,7 +1075,7 @@ export class RealtimeMatchStateService {
           connectedSocketCount,
           name: assignment.official.name,
           officialId: assignment.officialId,
-          refereePosition: assignment.refereePosition,
+          judgePosition: assignment.judgePosition,
           role: assignment.role,
         };
       }),
@@ -1084,20 +1084,20 @@ export class RealtimeMatchStateService {
       officials,
       presence,
       scoreboardConnectedCount,
-      requiredRefereeCount: match.requiredRefereeCount,
+      requiredJudgeCount: match.requiredJudgeCount,
     };
   }
 
   private sharedAccessRole(role: MatchAccessRole): SharedMatchAccessRole {
     switch (role) {
-      case MatchAccessRole.REFEREE_1:
-        return SharedMatchAccessRole.REFEREE_1;
-      case MatchAccessRole.REFEREE_2:
-        return SharedMatchAccessRole.REFEREE_2;
-      case MatchAccessRole.REFEREE_3:
-        return SharedMatchAccessRole.REFEREE_3;
-      case MatchAccessRole.INSPECTOR:
-        return SharedMatchAccessRole.INSPECTOR;
+      case MatchAccessRole.JUDGE_1:
+        return SharedMatchAccessRole.JUDGE_1;
+      case MatchAccessRole.JUDGE_2:
+        return SharedMatchAccessRole.JUDGE_2;
+      case MatchAccessRole.JUDGE_3:
+        return SharedMatchAccessRole.JUDGE_3;
+      case MatchAccessRole.SUPERVISOR:
+        return SharedMatchAccessRole.SUPERVISOR;
       default: {
         const exhaustiveRole: never = role;
         throw new Error(`Unsupported match access role: ${exhaustiveRole}`);
@@ -1105,14 +1105,14 @@ export class RealtimeMatchStateService {
     }
   }
 
-  private sharedRefereeSlot(slot: RefereeSlot): SharedRefereeSlot {
+  private sharedRefereeSlot(slot: JudgeSlot): SharedRefereeSlot {
     switch (slot) {
-      case RefereeSlot.REFEREE_1:
-        return SharedRefereeSlot.REFEREE_1;
-      case RefereeSlot.REFEREE_2:
-        return SharedRefereeSlot.REFEREE_2;
-      case RefereeSlot.REFEREE_3:
-        return SharedRefereeSlot.REFEREE_3;
+      case JudgeSlot.JUDGE_1:
+        return SharedRefereeSlot.JUDGE_1;
+      case JudgeSlot.JUDGE_2:
+        return SharedRefereeSlot.JUDGE_2;
+      case JudgeSlot.JUDGE_3:
+        return SharedRefereeSlot.JUDGE_3;
       default: {
         const exhaustiveSlot: never = slot;
         throw new Error(`Unsupported referee slot: ${exhaustiveSlot}`);

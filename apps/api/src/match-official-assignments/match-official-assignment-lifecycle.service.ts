@@ -22,7 +22,7 @@ export function assignmentReleaseReasonForTransition(
 }
 
 export const inspectorReleaseReason =
-  MatchOfficialAssignmentReleaseReason.INSPECTOR_RELEASED;
+  MatchOfficialAssignmentReleaseReason.SUPERVISOR_RELEASED;
 
 @Injectable()
 export class MatchOfficialAssignmentLifecycleService {
@@ -50,7 +50,7 @@ export class MatchOfficialAssignmentLifecycleService {
 
     const assignments = await tx.matchOfficialAssignment.findMany({
       where: { matchId: input.matchId, releasedAt: null },
-      select: { officialId: true, refereePosition: true, role: true },
+      select: { officialId: true, judgePosition: true, role: true },
     });
     if (assignments.length === 0) return [];
 
@@ -63,7 +63,7 @@ export class MatchOfficialAssignmentLifecycleService {
       where: {
         matchId: input.matchId,
         releasedAt: null,
-        role: TournamentOfficialRole.REFEREE,
+        role: TournamentOfficialRole.JUDGE,
       },
       data: { releaseReason: reason, releasedAt: input.occurredAt },
     });
@@ -71,7 +71,7 @@ export class MatchOfficialAssignmentLifecycleService {
       where: {
         matchId: input.matchId,
         releasedAt: null,
-        role: TournamentOfficialRole.INSPECTOR,
+        role: TournamentOfficialRole.SUPERVISOR,
       },
       data: { releaseReason: reason, releasedAt: input.occurredAt },
     });

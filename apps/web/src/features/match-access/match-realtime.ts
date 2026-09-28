@@ -35,7 +35,7 @@ import {
   type ScoringWindowOpenedPayload,
   type ScoringWindowResolvedPayload,
   type SessionRevokedPayload,
-  type RefereeSlot,
+  type JudgeSlot,
   type VoteAcceptedPayload,
   type VoteRejectedPayload,
   type VoteSubmitErrorCode,
@@ -59,8 +59,8 @@ export type RealtimeConnectionStatus =
   | 'revoked';
 
 export type RealtimeRefereeIdentity =
-  | { kind: 'legacy'; refereeSlot: RefereeSlot }
-  | { assignmentId: string; kind: 'official'; refereePosition: number }
+  | { kind: 'legacy'; judgeSlot: JudgeSlot }
+  | { assignmentId: string; kind: 'official'; judgePosition: number }
   | null;
 
 interface UseMatchRealtimeOptions {
@@ -85,14 +85,14 @@ function voteAcknowledgementMatchesReferee(
   if (refereeIdentity.kind === 'legacy') {
     return (
       (identity as { kind?: unknown }).kind === 'legacy' &&
-      (identity as { refereeSlot?: unknown }).refereeSlot === refereeIdentity.refereeSlot
+      (identity as { judgeSlot?: unknown }).judgeSlot === refereeIdentity.judgeSlot
     );
   }
 
   return (
     (identity as { kind?: unknown }).kind === 'official' &&
     (identity as { assignmentId?: unknown }).assignmentId === refereeIdentity.assignmentId &&
-    (identity as { refereePosition?: unknown }).refereePosition === refereeIdentity.refereePosition
+    (identity as { judgePosition?: unknown }).judgePosition === refereeIdentity.judgePosition
   );
 }
 
@@ -170,7 +170,7 @@ export function getParticipantsNotReadyMessage(
     details.scoreboardConnectedCount > 0
       ? `${String(details.scoreboardConnectedCount)} bảng điểm`
       : 'chưa có bảng điểm nào được kết nối';
-  return `Chưa thể bắt đầu hiệp đấu. Đã phân công ${String(details.assignedRefereeCount)}/${String(details.requiredRefereeCount)} trọng tài, kết nối ${String(details.connectedRefereeCount)}/${String(details.requiredRefereeCount)} trọng tài và ${scoreboard}.`;
+  return `Chưa thể bắt đầu hiệp đấu. Đã phân công ${String(details.assignedRefereeCount)}/${String(details.requiredJudgeCount)} trọng tài, kết nối ${String(details.connectedRefereeCount)}/${String(details.requiredJudgeCount)} trọng tài và ${scoreboard}.`;
 }
 
 function getRoundStartErrorMessage(
@@ -305,11 +305,11 @@ export function useMatchRealtime({
   refereeIdentity,
 }: UseMatchRealtimeOptions): MatchRealtimeState {
   const refereeIdentityKind = refereeIdentity?.kind ?? null;
-  const legacyRefereeSlot = refereeIdentity?.kind === 'legacy' ? refereeIdentity.refereeSlot : null;
+  const legacyRefereeSlot = refereeIdentity?.kind === 'legacy' ? refereeIdentity.judgeSlot : null;
   const officialAssignmentId =
     refereeIdentity?.kind === 'official' ? refereeIdentity.assignmentId : null;
   const officialRefereePosition =
-    refereeIdentity?.kind === 'official' ? refereeIdentity.refereePosition : null;
+    refereeIdentity?.kind === 'official' ? refereeIdentity.judgePosition : null;
   const [connectionStatus, setConnectionStatus] = useState<RealtimeConnectionStatus>('connecting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [presence, setPresence] = useState<readonly MatchPresenceEntry[]>([]);

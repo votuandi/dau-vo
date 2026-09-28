@@ -156,7 +156,7 @@ export class RegulationAppealService {
             roundId: { in: rounds.map((r) => r.id) },
             invalidatedAt: null,
           },
-          select: { athleteId: true, refereePoints: true, roundId: true },
+          select: { athleteId: true, judgePoints: true, roundId: true },
         });
         if (summaries.length !== 4)
           throw new AppealStateError(
@@ -166,7 +166,7 @@ export class RegulationAppealService {
         for (const summary of summaries)
           base.set(
             summary.athleteId,
-            (base.get(summary.athleteId) ?? 0) + summary.refereePoints,
+            (base.get(summary.athleteId) ?? 0) + summary.judgePoints,
           );
         const values = athletes.map((athlete) => {
           const supplied = input.payload[athlete.color];
@@ -204,7 +204,7 @@ export class RegulationAppealService {
           data: values.map((x) => ({
             appealId: appeal.id,
             athleteId: x.athlete.id,
-            baseRefereeScore: x.base,
+            baseJudgeScore: x.base,
             bonusPoints: x.bonusPoints,
             penaltyPoints: x.penaltyPoints,
             finalScore: x.final,
@@ -268,7 +268,7 @@ export class RegulationAppealService {
       matchId: string;
       scope: MatchAppealScope;
       adjustments: Array<{
-        baseRefereeScore: number;
+        baseJudgeScore: number;
         bonusPoints: number;
         penaltyPoints: number;
         finalScore: number;
@@ -309,13 +309,13 @@ export class RegulationAppealService {
       isTie,
       regulation: {
         RED: {
-          base: red.baseRefereeScore,
+          base: red.baseJudgeScore,
           bonusPoints: red.bonusPoints,
           penaltyPoints: red.penaltyPoints,
           final: red.finalScore,
         },
         BLUE: {
-          base: blue.baseRefereeScore,
+          base: blue.baseJudgeScore,
           bonusPoints: blue.bonusPoints,
           penaltyPoints: blue.penaltyPoints,
           final: blue.finalScore,

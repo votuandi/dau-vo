@@ -231,7 +231,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
             currentRound: true,
             finishedAt: true,
             publicId: true,
-            requiredRefereeCount: true,
+            requiredJudgeCount: true,
             roundDurationMs: true,
             startedAt: true,
             status: true,
@@ -248,7 +248,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
             transaction,
             input.matchId,
             match.publicId,
-            match.requiredRefereeCount,
+            match.requiredJudgeCount,
           );
         const descriptor = this.nextRoundDescriptor(
           match.status,
@@ -735,7 +735,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
         });
         if (roundNumbers.length > 0) {
           const roundNumber = { in: roundNumbers };
-          await transaction.refereeVote.updateMany({
+          await transaction.judgeVote.updateMany({
             data: {
               invalidatedAt: clock.serverNow,
               invalidatedByAuditId: audit.id,
@@ -1144,7 +1144,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
           where: { id: audit.id },
         });
         const roundNumber = { in: roundNumbers };
-        await transaction.refereeVote.updateMany({
+        await transaction.judgeVote.updateMany({
           data: {
             invalidatedAt: clock.serverNow,
             invalidatedByAuditId: audit.id,
@@ -1412,7 +1412,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
           throw new ResultCancellationUndoNotAllowedError();
         }
         const auditId = operation.auditLogId;
-        await transaction.refereeVote.updateMany({
+        await transaction.judgeVote.updateMany({
           data: { invalidatedAt: null, invalidatedByAuditId: null },
           where: { invalidatedByAuditId: auditId, matchId: input.matchId },
         });
@@ -1699,7 +1699,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
               where: {
                 matchId,
                 roundId: round.id,
-                type: ScoreEventType.REFEREE_POINT,
+                type: ScoreEventType.JUDGE_POINT,
                 revertedAt: null,
               },
             }),
@@ -1720,7 +1720,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
               matchId,
               roundId: round.id,
               athleteId: athlete.id,
-              refereePoints: points.get(athlete.id) ?? 0,
+              judgePoints: points.get(athlete.id) ?? 0,
               faultCount: faults.get(athlete.id) ?? 0,
               capturedAt: endedAt,
             })),
@@ -1812,15 +1812,15 @@ export class MatchLifecycleService implements OnModuleDestroy {
     transaction: Prisma.TransactionClient,
     matchId: string,
     publicMatchId: string,
-    requiredRefereeCount: number,
+    requiredJudgeCount: number,
   ): Promise<void> {
     const assignments = await transaction.matchOfficialAssignment.findMany({
       where: { matchId, releasedAt: null },
       select: { officialId: true, role: true },
     });
     if (assignments.length > 0) {
-      const inspectors = assignments.filter((x) => x.role === 'INSPECTOR');
-      const referees = assignments.filter((x) => x.role === 'REFEREE');
+      const inspectors = assignments.filter((x) => x.role === 'SUPERVISOR');
+      const referees = assignments.filter((x) => x.role === 'JUDGE');
       const connectedAssignments = await Promise.all(
         assignments.map(async (assignment) => ({
           assignment,
@@ -1835,17 +1835,17 @@ export class MatchLifecycleService implements OnModuleDestroy {
         await this.sessions.scoreboardConnectedCount(publicMatchId);
       const inspectorConnected = connectedAssignments.some(
         ({ assignment, connectedSocketCount }) =>
-          assignment.role === 'INSPECTOR' && connectedSocketCount > 0,
+          assignment.role === 'SUPERVISOR' && connectedSocketCount > 0,
       );
       const connectedRefereeCount = connectedAssignments.filter(
         ({ assignment, connectedSocketCount }) =>
-          assignment.role === 'REFEREE' && connectedSocketCount > 0,
+          assignment.role === 'JUDGE' && connectedSocketCount > 0,
       ).length;
       if (
         inspectors.length !== 1 ||
-        referees.length !== requiredRefereeCount ||
+        referees.length !== requiredJudgeCount ||
         new Set(referees.map((x) => x.officialId)).size !==
-          requiredRefereeCount ||
+          requiredJudgeCount ||
         connectedAssignments.some(
           ({ connectedSocketCount }) => connectedSocketCount < 1,
         ) ||
@@ -1855,16 +1855,16 @@ export class MatchLifecycleService implements OnModuleDestroy {
           assignedRefereeCount: referees.length,
           connectedRefereeCount,
           inspectorConnected,
-          requiredRefereeCount,
+          requiredJudgeCount,
           scoreboardConnectedCount,
         });
       return;
     }
     const legacyRoles = [
-      MatchAccessRole.INSPECTOR,
-      MatchAccessRole.REFEREE_1,
-      MatchAccessRole.REFEREE_2,
-      MatchAccessRole.REFEREE_3,
+      MatchAccessRole.SUPERVISOR,
+      MatchAccessRole.JUDGE_1,
+      MatchAccessRole.JUDGE_2,
+      MatchAccessRole.JUDGE_3,
     ] as const;
     const connected = await Promise.all(
       legacyRoles.map((role) =>
@@ -1874,7 +1874,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
     const scoreboardConnectedCount =
       await this.sessions.scoreboardConnectedCount(publicMatchId);
     if (
-      requiredRefereeCount !== 3 ||
+      requiredJudgeCount !== 3 ||
       connected.some((count) => count < 1) ||
       scoreboardConnectedCount < 1
     )
@@ -1883,7 +1883,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
         connectedRefereeCount: connected.slice(1).filter((count) => count > 0)
           .length,
         inspectorConnected: connected[0]! > 0,
-        requiredRefereeCount,
+        requiredJudgeCount,
         scoreboardConnectedCount,
       });
   }
@@ -1908,11 +1908,11 @@ export class MatchLifecycleService implements OnModuleDestroy {
           AND official_session."revoked_at" IS NULL
           AND official_session."expires_at" > clock_timestamp()
           AND official."is_active" = true
-          AND official."role" = 'INSPECTOR'
+          AND official."role" = 'SUPERVISOR'
           AND official."tournament_id" = match."tournament_id"
           AND assignment."match_id" = match."id"
           AND assignment."official_id" = official."id"
-          AND assignment."role" = 'INSPECTOR'
+          AND assignment."role" = 'SUPERVISOR'
           AND assignment."released_at" IS NULL
         FOR UPDATE OF official_session, assignment
       `;
@@ -1930,8 +1930,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
         AND match_session."revoked_at" IS NULL
         AND match_session."expires_at" > clock_timestamp()
         AND match_session."token_hash" = ${identity.sessionTokenHash}
-        AND match_session."role" = 'INSPECTOR'
-        AND access_code."access_role" = 'INSPECTOR'
+        AND match_session."role" = 'SUPERVISOR'
+        AND access_code."access_role" = 'SUPERVISOR'
         -- A legacy per-match session is never permitted to control a match
         -- once the modern official-assignment workflow has claimed it.  The
         -- session may pre-date the claim, so checking login alone is not a

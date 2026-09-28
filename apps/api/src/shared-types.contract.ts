@@ -3,7 +3,7 @@ import {
   MatchAccessRole,
   MatchRole,
   MatchStatus,
-  RefereeSlot,
+  JudgeSlot,
   TournamentStatus,
 } from '@martial-arts-scoring/shared-types';
 
@@ -14,12 +14,12 @@ import {
 export const SHARED_ENUM_VALUES = {
   athleteColors: [AthleteColor.RED, AthleteColor.BLUE],
   matchAccessRoles: [
-    MatchAccessRole.REFEREE_1,
-    MatchAccessRole.REFEREE_2,
-    MatchAccessRole.REFEREE_3,
-    MatchAccessRole.INSPECTOR,
+    MatchAccessRole.JUDGE_1,
+    MatchAccessRole.JUDGE_2,
+    MatchAccessRole.JUDGE_3,
+    MatchAccessRole.SUPERVISOR,
   ],
-  matchRoles: [MatchRole.REFEREE, MatchRole.INSPECTOR],
+  matchRoles: [MatchRole.JUDGE, MatchRole.SUPERVISOR],
   matchStatuses: [
     MatchStatus.WAITING,
     MatchStatus.ROUND_1_RUNNING,
@@ -28,9 +28,9 @@ export const SHARED_ENUM_VALUES = {
     MatchStatus.FINISHED,
   ],
   refereeSlots: [
-    RefereeSlot.REFEREE_1,
-    RefereeSlot.REFEREE_2,
-    RefereeSlot.REFEREE_3,
+    JudgeSlot.JUDGE_1,
+    JudgeSlot.JUDGE_2,
+    JudgeSlot.JUDGE_3,
   ],
   tournamentStatuses: [
     TournamentStatus.DRAFT,

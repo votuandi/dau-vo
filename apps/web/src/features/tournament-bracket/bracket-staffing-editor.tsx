@@ -18,7 +18,7 @@ export function BracketStaffingEditor({
   const [values, setValues] = useState<Record<number, string>>({});
   const rows = data.staffing ?? EMPTY_STAFFING;
   useEffect(() => {
-    setValues(Object.fromEntries(rows.map((x) => [x.roundNumber, String(x.requiredRefereeCount)])));
+    setValues(Object.fromEntries(rows.map((x) => [x.roundNumber, String(x.requiredJudgeCount)])));
   }, [rows]);
   const active = data.activeRefereeCount ?? 0;
   return (

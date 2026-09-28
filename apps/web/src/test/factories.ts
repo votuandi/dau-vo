@@ -5,7 +5,7 @@ import {
   MatchLifecycle,
   MatchRole,
   MatchStatus,
-  RefereeSlot,
+  JudgeSlot,
   type MatchStatePayload,
   type VoteAcceptedPayload,
 } from '@martial-arts-scoring/shared-types';
@@ -16,8 +16,8 @@ export const refereeSession: MatchAccessSession = {
   deviceId: 'f3b90c56-b6a9-43c7-9eb0-7cbcd251acb7',
   expiresAt: '2030-01-01T00:00:00.000Z',
   matchPublicId: 'A72K9P',
-  refereeSlot: RefereeSlot.REFEREE_1,
-  role: MatchRole.REFEREE,
+  judgeSlot: JudgeSlot.JUDGE_1,
+  role: MatchRole.JUDGE,
   sessionId: 'session-referee-1',
 };
 
@@ -25,14 +25,14 @@ export const inspectorSession: MatchAccessSession = {
   deviceId: 'b2afd440-9705-48cc-a95f-4c17efaf0a2c',
   expiresAt: '2030-01-01T00:00:00.000Z',
   matchPublicId: 'A72K9P',
-  refereeSlot: null,
-  role: MatchRole.INSPECTOR,
+  judgeSlot: null,
+  role: MatchRole.SUPERVISOR,
   sessionId: 'session-inspector',
 };
 
 export const acceptedRedVote: VoteAcceptedPayload = {
   athlete: AthleteColor.RED,
-  identity: { kind: 'legacy', refereeSlot: RefereeSlot.REFEREE_1 },
+  identity: { kind: 'legacy', judgeSlot: JudgeSlot.JUDGE_1 },
   matchPublicId: refereeSession.matchPublicId,
   scoringWindowId: 'window-1',
   serverReceivedAt: '2026-09-01T12:00:00.250Z',
@@ -111,10 +111,10 @@ export function createMatchSnapshot(overrides: Partial<MatchStatePayload> = {}):
       status: MatchStatus.ROUND_1_RUNNING,
     },
     presence: [
-      MatchAccessRole.REFEREE_1,
-      MatchAccessRole.REFEREE_2,
-      MatchAccessRole.REFEREE_3,
-      MatchAccessRole.INSPECTOR,
+      MatchAccessRole.JUDGE_1,
+      MatchAccessRole.JUDGE_2,
+      MatchAccessRole.JUDGE_3,
+      MatchAccessRole.SUPERVISOR,
     ].map((accessRole) => ({
       accessRole,
       activeSession: true,
@@ -126,8 +126,8 @@ export function createMatchSnapshot(overrides: Partial<MatchStatePayload> = {}):
       canStartRound: true,
       kind: 'LEGACY_MATCH_ACCESS',
       missingRequirements: [],
-      requiredRefereeCount: 3,
-      referees: { REFEREE_1: true, REFEREE_2: true, REFEREE_3: true },
+      requiredJudgeCount: 3,
+      referees: { JUDGE_1: true, JUDGE_2: true, JUDGE_3: true },
       scoreboardConnectedCount: 1,
     },
     scoreboardConnectedCount: 1,

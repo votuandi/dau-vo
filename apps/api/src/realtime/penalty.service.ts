@@ -276,10 +276,10 @@ export class PenaltyService {
           AND official_session."official_id" = ${identity.officialId}::uuid
           AND official_session."active" = true AND official_session."revoked_at" IS NULL
           AND official_session."expires_at" > clock_timestamp()
-          AND official."is_active" = true AND official."role" = 'INSPECTOR'
+          AND official."is_active" = true AND official."role" = 'SUPERVISOR'
           AND official."tournament_id" = match."tournament_id"
           AND assignment."match_id" = match."id" AND assignment."official_id" = official."id"
-          AND assignment."role" = 'INSPECTOR' AND assignment."released_at" IS NULL
+          AND assignment."role" = 'SUPERVISOR' AND assignment."released_at" IS NULL
         FOR UPDATE OF official_session, assignment
       `;
       if (rows.length !== 1) throw new InactivePenaltySessionError();
@@ -295,9 +295,9 @@ export class PenaltyService {
         AND match_session."active" = true
         AND match_session."revoked_at" IS NULL
         AND match_session."expires_at" > clock_timestamp()
-        AND match_session."role" = 'INSPECTOR'
-        AND match_session."referee_slot" IS NULL
-        AND access_code."access_role" = 'INSPECTOR'::"match_access_role"
+        AND match_session."role" = 'SUPERVISOR'
+        AND match_session."judge_slot" IS NULL
+        AND access_code."access_role" = 'SUPERVISOR'::"match_access_role"
       FOR UPDATE OF match_session
     `;
     if (rows.length !== 1) {

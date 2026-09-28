@@ -157,7 +157,7 @@ export class OvertimeService {
               roundId: round.id,
               invalidatedAt: null,
             },
-            select: { athleteId: true, refereePoints: true },
+            select: { athleteId: true, judgePoints: true },
           }),
         ]);
         if (athletes.length !== 2 || summaries.length !== 2)
@@ -165,7 +165,7 @@ export class OvertimeService {
         const score = (color: AthleteColor) => {
           const athlete = athletes.find((x) => x.color === color)!;
           const base =
-            summaries.find((x) => x.athleteId === athlete.id)?.refereePoints ??
+            summaries.find((x) => x.athleteId === athlete.id)?.judgePoints ??
             0;
           const adjustment = input.payload[color];
           return {
@@ -198,7 +198,7 @@ export class OvertimeService {
             adjustments: {
               create: [red, blue].map((x) => ({
                 athleteId: x.athlete.id,
-                baseRefereeScore: x.base,
+                baseJudgeScore: x.base,
                 bonusPoints: x.bonusPoints,
                 penaltyPoints: x.penaltyPoints,
                 finalScore: x.final,

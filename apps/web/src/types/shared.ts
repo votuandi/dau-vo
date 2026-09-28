@@ -6,7 +6,7 @@ export {
   MatchLifecycle,
   MatchPhase,
   MatchStatus,
-  RefereeSlot,
+  JudgeSlot,
   TournamentStatus,
   TournamentOfficialRole,
 } from '@martial-arts-scoring/shared-types';

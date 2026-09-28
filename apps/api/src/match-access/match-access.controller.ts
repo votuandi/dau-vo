@@ -131,7 +131,7 @@ export class MatchAccessController {
         deviceId: matchSession.deviceId,
         expiresAt: matchSession.expiresAt,
         matchPublicId: matchSession.matchPublicId,
-        refereeSlot: matchSession.refereeSlot,
+        judgeSlot: matchSession.judgeSlot,
         role: matchSession.role,
         sessionId: matchSession.sessionId,
       },

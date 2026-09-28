@@ -289,21 +289,21 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
           {
             connected:
               snapshot?.readiness.kind === 'LEGACY_MATCH_ACCESS'
-                ? snapshot.readiness.referees.REFEREE_1
+                ? snapshot.readiness.referees.JUDGE_1
                 : false,
             label: 'Trọng tài 1',
           },
           {
             connected:
               snapshot?.readiness.kind === 'LEGACY_MATCH_ACCESS'
-                ? snapshot.readiness.referees.REFEREE_2
+                ? snapshot.readiness.referees.JUDGE_2
                 : false,
             label: 'Trọng tài 2',
           },
           {
             connected:
               snapshot?.readiness.kind === 'LEGACY_MATCH_ACCESS'
-                ? snapshot.readiness.referees.REFEREE_3
+                ? snapshot.readiness.referees.JUDGE_3
                 : false,
             label: 'Trọng tài 3',
           },
@@ -316,16 +316,16 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
           assignedRefereeCount: snapshot.readiness.assignedRefereeCount,
           connectedRefereeCount: snapshot.readiness.connectedRefereeCount,
           inspectorConnected: snapshot.readiness.inspector.connected,
-          requiredRefereeCount: snapshot.readiness.requiredRefereeCount,
+          requiredJudgeCount: snapshot.readiness.requiredJudgeCount,
           scoreboardConnectedCount: snapshot.readiness.scoreboardConnectedCount,
         })
       : snapshot?.readiness.kind === 'LEGACY_MATCH_ACCESS'
         ? getParticipantsNotReadyMessage({
-            assignedRefereeCount: snapshot.readiness.requiredRefereeCount,
+            assignedRefereeCount: snapshot.readiness.requiredJudgeCount,
             connectedRefereeCount: Object.values(snapshot.readiness.referees).filter(Boolean)
               .length,
             inspectorConnected: true,
-            requiredRefereeCount: snapshot.readiness.requiredRefereeCount,
+            requiredJudgeCount: snapshot.readiness.requiredJudgeCount,
             scoreboardConnectedCount: snapshot.readiness.scoreboardConnectedCount,
           })
         : getParticipantsNotReadyMessage(undefined);

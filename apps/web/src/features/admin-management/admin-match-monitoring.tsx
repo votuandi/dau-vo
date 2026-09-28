@@ -11,10 +11,10 @@ import {
 import { matchMonitoringQueryOptions } from './queries';
 
 const roleLabels: Record<MatchAccessRole, string> = {
-  [MatchAccessRole.REFEREE_1]: 'Trọng tài 1',
-  [MatchAccessRole.REFEREE_2]: 'Trọng tài 2',
-  [MatchAccessRole.REFEREE_3]: 'Trọng tài 3',
-  [MatchAccessRole.INSPECTOR]: 'Giám định',
+  [MatchAccessRole.JUDGE_1]: 'Giám định 1',
+  [MatchAccessRole.JUDGE_2]: 'Giám định 2',
+  [MatchAccessRole.JUDGE_3]: 'Giám định 3',
+  [MatchAccessRole.SUPERVISOR]: 'Giám sát',
 };
 
 function formatRemaining(milliseconds: number): string {
@@ -291,8 +291,8 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                 </div>
                 <ul className="mt-2 text-sm">
                   {window.refereeVotes.map((vote) => (
-                    <li key={vote.refereeSlot}>
-                      {roleLabels[vote.refereeSlot as MatchAccessRole]} →{' '}
+                    <li key={vote.judgeSlot}>
+                      {roleLabels[vote.judgeSlot as MatchAccessRole]} →{' '}
                       <strong>{colorLabel(vote.athleteColor)}</strong>{' '}
                       <span className="opacity-80">
                         {formatDateTimeWithSeconds(vote.serverReceivedAt)}

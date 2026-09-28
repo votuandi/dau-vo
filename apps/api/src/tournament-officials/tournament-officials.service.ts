@@ -313,7 +313,7 @@ export class TournamentOfficialsService {
   ) {
     if (official.assignments.length > 0)
       throw new ConflictException(OFFICIAL_IN_ACTIVE_MATCH);
-    if (official.role !== TournamentOfficialRole.REFEREE) return;
+    if (official.role !== TournamentOfficialRole.JUDGE) return;
     const requirements = await tx.bracketRoundStaffing.findMany({
       where: {
         bracket: {
@@ -327,26 +327,26 @@ export class TournamentOfficialsService {
       select: {
         bracketId: true,
         roundNumber: true,
-        requiredRefereeCount: true,
+        requiredJudgeCount: true,
       },
     });
     if (requirements.length === 0) return;
     const active = await tx.tournamentOfficial.count({
       where: {
         tournamentId,
-        role: TournamentOfficialRole.REFEREE,
+        role: TournamentOfficialRole.JUDGE,
         isActive: true,
       },
     });
     const maximum = Math.max(
-      ...requirements.map(({ requiredRefereeCount }) => requiredRefereeCount),
+      ...requirements.map(({ requiredJudgeCount }) => requiredJudgeCount),
     );
     if (active - 1 < maximum)
       throw new ConflictException({
         ...OFFICIAL_COUNT_BELOW_STAFFING_REQUIREMENT,
         details: {
           activeRefereeCount: active,
-          requiredRefereeCount: maximum,
+          requiredJudgeCount: maximum,
           affectedRounds: requirements.map(({ bracketId, roundNumber }) => ({
             bracketId,
             roundNumber,

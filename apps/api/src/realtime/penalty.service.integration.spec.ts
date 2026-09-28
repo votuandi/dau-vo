@@ -105,7 +105,7 @@ describe('PenaltyService (PostgreSQL integration)', () => {
       data: {
         codeHash: `${TEST_PREFIX}-inspector`,
         matchId: match.id,
-        role: MatchAccessRole.INSPECTOR,
+        role: MatchAccessRole.SUPERVISOR,
       },
       select: { id: true },
     });
@@ -113,7 +113,7 @@ describe('PenaltyService (PostgreSQL integration)', () => {
       data: {
         codeHash: `${TEST_PREFIX}-referee`,
         matchId: match.id,
-        role: MatchAccessRole.REFEREE_1,
+        role: MatchAccessRole.JUDGE_1,
       },
       select: { id: true },
     });
@@ -125,7 +125,7 @@ describe('PenaltyService (PostgreSQL integration)', () => {
           deviceId: `${TEST_PREFIX}-inspector-device`,
           expiresAt: new Date(now.getTime() + 60_000),
           matchId: match.id,
-          role: MatchRole.INSPECTOR,
+          role: MatchRole.SUPERVISOR,
           tokenHash: randomBytes(18).toString('hex'),
         },
         select: { id: true },
@@ -137,8 +137,8 @@ describe('PenaltyService (PostgreSQL integration)', () => {
           deviceId: `${TEST_PREFIX}-referee-device`,
           expiresAt: new Date(now.getTime() + 60_000),
           matchId: match.id,
-          refereeSlot: 'REFEREE_1',
-          role: MatchRole.REFEREE,
+          judgeSlot: 'JUDGE_1',
+          role: MatchRole.JUDGE,
           tokenHash: randomBytes(18).toString('hex'),
         },
         select: { id: true },
@@ -211,7 +211,7 @@ describe('PenaltyService (PostgreSQL integration)', () => {
       data: Array.from({ length: 5 }, () => ({
         athleteId: current.athleteIds[AthleteColor.RED],
         matchId: current.matchId,
-        type: ScoreEventType.REFEREE_POINT,
+        type: ScoreEventType.JUDGE_POINT,
         value: 1,
       })),
     });

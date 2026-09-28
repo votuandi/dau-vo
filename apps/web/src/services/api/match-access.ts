@@ -1,11 +1,11 @@
 import { apiClient, request } from '@/services/api/client';
-import type { MatchRole, RefereeSlot } from '@/types/shared';
+import type { MatchRole, JudgeSlot } from '@/types/shared';
 
 export interface MatchAccessSession {
   readonly sessionId: string;
   readonly matchPublicId: string;
   readonly role: MatchRole;
-  readonly refereeSlot: RefereeSlot | null;
+  readonly judgeSlot: JudgeSlot | null;
   readonly deviceId: string;
   readonly expiresAt: string;
 }

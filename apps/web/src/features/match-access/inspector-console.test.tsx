@@ -177,7 +177,7 @@ describe('InspectorConsole', () => {
 
   it('shows match-scoped readiness and disables round start until every required display is connected', () => {
     const presence = createMatchSnapshot().presence.map((entry) =>
-      entry.accessRole === MatchAccessRole.REFEREE_2
+      entry.accessRole === MatchAccessRole.JUDGE_2
         ? { ...entry, connected: false, connectedSocketCount: 0 }
         : entry,
     );
@@ -191,9 +191,9 @@ describe('InspectorConsole', () => {
             readiness: {
               canStartRound: false,
               kind: 'LEGACY_MATCH_ACCESS',
-              missingRequirements: ['REFEREE_2'],
-              requiredRefereeCount: 3,
-              referees: { REFEREE_1: true, REFEREE_2: false, REFEREE_3: true },
+              missingRequirements: ['JUDGE_2'],
+              requiredJudgeCount: 3,
+              referees: { JUDGE_1: true, JUDGE_2: false, JUDGE_3: true },
               scoreboardConnectedCount: 1,
             },
           }),

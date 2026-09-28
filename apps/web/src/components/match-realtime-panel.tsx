@@ -16,17 +16,17 @@ interface MatchRealtimePanelProps {
 }
 
 const accessRoles = [
-  MatchAccessRole.REFEREE_1,
-  MatchAccessRole.REFEREE_2,
-  MatchAccessRole.REFEREE_3,
-  MatchAccessRole.INSPECTOR,
+  MatchAccessRole.JUDGE_1,
+  MatchAccessRole.JUDGE_2,
+  MatchAccessRole.JUDGE_3,
+  MatchAccessRole.SUPERVISOR,
 ] as const;
 
 const accessRoleLabels: Record<MatchAccessRole, string> = {
-  [MatchAccessRole.REFEREE_1]: 'Trọng tài 1',
-  [MatchAccessRole.REFEREE_2]: 'Trọng tài 2',
-  [MatchAccessRole.REFEREE_3]: 'Trọng tài 3',
-  [MatchAccessRole.INSPECTOR]: 'Giám định',
+  [MatchAccessRole.JUDGE_1]: 'Giám định 1',
+  [MatchAccessRole.JUDGE_2]: 'Giám định 2',
+  [MatchAccessRole.JUDGE_3]: 'Giám định 3',
+  [MatchAccessRole.SUPERVISOR]: 'Giám sát',
 };
 
 const matchStatusLabels: Record<MatchStatus, string> = {

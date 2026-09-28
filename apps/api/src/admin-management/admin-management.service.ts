@@ -113,7 +113,7 @@ const matchSelect = {
   id: true,
   lifecycle: true,
   publicId: true,
-  requiredRefereeCount: true,
+  requiredJudgeCount: true,
   roundDurationMs: true,
   startedAt: true,
   status: true,
@@ -627,7 +627,7 @@ export class AdminManagementService {
               breakDurationMs: input.breakDurationMs ?? this.breakDurationMs,
               publicId,
               roundDurationMs: input.roundDurationMs ?? this.roundDurationMs,
-              requiredRefereeCount: rules.defaultRequiredRefereeCount,
+              requiredJudgeCount: rules.defaultRequiredRefereeCount,
               tournamentId,
               weightClassId: athletes[0]!.weightClassId,
             },
@@ -760,7 +760,7 @@ export class AdminManagementService {
                 roundNumber: fixture.roundNumber,
               },
             },
-            select: { requiredRefereeCount: true },
+            select: { requiredJudgeCount: true },
           });
           if (!staffing)
             throw new ConflictException({
@@ -775,7 +775,7 @@ export class AdminManagementService {
               bracketFixtureId: fixture.id,
               roundDurationMs: this.roundDurationMs,
               breakDurationMs: this.breakDurationMs,
-              requiredRefereeCount: staffing.requiredRefereeCount,
+              requiredJudgeCount: staffing.requiredJudgeCount,
             },
             select: { id: true },
           });
@@ -882,7 +882,7 @@ export class AdminManagementService {
           invalidatedAt: true,
           adjustments: {
             select: {
-              baseRefereeScore: true,
+              baseJudgeScore: true,
               bonusPoints: true,
               penaltyPoints: true,
               finalScore: true,
@@ -902,12 +902,12 @@ export class AdminManagementService {
           id: true,
           invalidatedAt: true,
           invalidatedByAuditId: true,
-          refereeVotes: {
+          judgeVotes: {
             orderBy: { serverReceivedAt: 'asc' },
             select: {
               athleteColor: true,
               invalidatedAt: true,
-              refereeSlot: true,
+              judgeSlot: true,
               serverReceivedAt: true,
             },
           },
@@ -1206,7 +1206,7 @@ export class AdminManagementService {
       await Promise.all([
         transaction.round.count({ where: { matchId } }),
         transaction.scoringWindow.count({ where: { matchId } }),
-        transaction.refereeVote.count({ where: { matchId } }),
+        transaction.judgeVote.count({ where: { matchId } }),
         transaction.scoreEvent.count({ where: { matchId } }),
         transaction.penalty.count({ where: { matchId } }),
         transaction.matchResultOperation.count({ where: { matchId } }),

@@ -17,7 +17,7 @@ import {
 import { adminManagementApi, type TournamentOfficial } from '@/services/api/admin-management';
 import { TournamentOfficialRole } from '@/types/shared';
 
-const labels = { REFEREE: 'Trọng tài', INSPECTOR: 'Giám định' } as const;
+const labels = { JUDGE: 'Giám định', SUPERVISOR: 'Giám sát' } as const;
 function errorText(error: unknown) {
   const message = getApiErrorMessage(error, 'Không thể thực hiện yêu cầu.');
   if (message.includes('OFFICIAL_IN_ACTIVE_MATCH'))

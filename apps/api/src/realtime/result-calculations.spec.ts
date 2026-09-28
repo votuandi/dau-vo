@@ -9,7 +9,7 @@ const valid = (athleteId: string, roundId: string, value: number) => ({
   athleteId,
   roundId,
   value,
-  type: ScoreEventType.REFEREE_POINT,
+  type: ScoreEventType.JUDGE_POINT,
   revertedAt: null,
 });
 

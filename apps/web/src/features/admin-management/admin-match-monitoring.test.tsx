@@ -63,7 +63,7 @@ function monitoringFixture(
           {
             athleteColor: AthleteColor.RED,
             invalidatedAt: null,
-            refereeSlot: 'REFEREE_1',
+            judgeSlot: 'JUDGE_1',
             serverReceivedAt: occurredAt,
           },
         ],

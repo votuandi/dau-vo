@@ -5,7 +5,7 @@ import {
   AthleteColor,
   MatchAccessRole,
   MatchRole,
-  RefereeSlot,
+  JudgeSlot,
   ScoreEventType,
 } from '@prisma/client';
 import {
@@ -41,10 +41,10 @@ const EVENT_TIMEOUT_MS = 7_500;
 const TEST_RUN_ID = `${process.pid}-${Date.now().toString(36)}`;
 const TEST_PREFIX = `realtime-e2e-${TEST_RUN_ID}`;
 const ACCESS_ROLES = [
-  MatchAccessRole.REFEREE_1,
-  MatchAccessRole.REFEREE_2,
-  MatchAccessRole.REFEREE_3,
-  MatchAccessRole.INSPECTOR,
+  MatchAccessRole.JUDGE_1,
+  MatchAccessRole.JUDGE_2,
+  MatchAccessRole.JUDGE_3,
+  MatchAccessRole.SUPERVISOR,
 ] as const;
 
 interface TestMatch {
@@ -336,9 +336,9 @@ describe('Realtime match infrastructure (integration)', () => {
           .map((entry) => entry.accessRole),
       );
       if (
-        connectedRoles.has(MatchAccessRole.REFEREE_1) &&
-        connectedRoles.has(MatchAccessRole.REFEREE_2) &&
-        connectedRoles.has(MatchAccessRole.REFEREE_3) &&
+        connectedRoles.has(MatchAccessRole.JUDGE_1) &&
+        connectedRoles.has(MatchAccessRole.JUDGE_2) &&
+        connectedRoles.has(MatchAccessRole.JUDGE_3) &&
         snapshot.scoreboardConnectedCount >= 1
       ) {
         return snapshot;
@@ -359,9 +359,9 @@ describe('Realtime match infrastructure (integration)', () => {
           .map((entry) => entry.accessRole),
       );
       if (
-        connectedRoles.has(MatchAccessRole.REFEREE_1) &&
-        connectedRoles.has(MatchAccessRole.REFEREE_2) &&
-        connectedRoles.has(MatchAccessRole.REFEREE_3)
+        connectedRoles.has(MatchAccessRole.JUDGE_1) &&
+        connectedRoles.has(MatchAccessRole.JUDGE_2) &&
+        connectedRoles.has(MatchAccessRole.JUDGE_3)
       ) {
         return snapshot;
       }
@@ -507,11 +507,11 @@ describe('Realtime match infrastructure (integration)', () => {
       where: {
         matchId: { in: [...createdMatchIds] },
         type: {
-          in: [ScoreEventType.PENALTY, ScoreEventType.REFEREE_POINT],
+          in: [ScoreEventType.PENALTY, ScoreEventType.JUDGE_POINT],
         },
       },
     });
-    await prisma.refereeVote.deleteMany({
+    await prisma.judgeVote.deleteMany({
       where: { matchId: { in: [...createdMatchIds] } },
     });
     await prisma.scoringWindow.deleteMany({
@@ -618,15 +618,15 @@ describe('Realtime match infrastructure (integration)', () => {
 
     const inspector = await login(
       primaryMatch,
-      MatchAccessRole.INSPECTOR,
+      MatchAccessRole.SUPERVISOR,
       `${TEST_PREFIX}-public-scoreboard-inspector`,
     );
     const inspectorSocket = await connect(inspector.cookie);
     const refereeLogins = await Promise.all(
       [
-        MatchAccessRole.REFEREE_1,
-        MatchAccessRole.REFEREE_2,
-        MatchAccessRole.REFEREE_3,
+        MatchAccessRole.JUDGE_1,
+        MatchAccessRole.JUDGE_2,
+        MatchAccessRole.JUDGE_3,
       ].map((role) =>
         login(primaryMatch, role, `${TEST_PREFIX}-public-scoreboard-${role}`),
       ),
@@ -670,12 +670,12 @@ describe('Realtime match infrastructure (integration)', () => {
       [
         login(
           match,
-          MatchAccessRole.INSPECTOR,
+          MatchAccessRole.SUPERVISOR,
           `${TEST_PREFIX}-readiness-inspector`,
         ),
-        login(match, MatchAccessRole.REFEREE_1, `${TEST_PREFIX}-readiness-r1`),
-        login(match, MatchAccessRole.REFEREE_2, `${TEST_PREFIX}-readiness-r2`),
-        login(match, MatchAccessRole.REFEREE_3, `${TEST_PREFIX}-readiness-r3`),
+        login(match, MatchAccessRole.JUDGE_1, `${TEST_PREFIX}-readiness-r1`),
+        login(match, MatchAccessRole.JUDGE_2, `${TEST_PREFIX}-readiness-r2`),
+        login(match, MatchAccessRole.JUDGE_3, `${TEST_PREFIX}-readiness-r3`),
       ],
     );
     const [inspectorSocket, , refereeTwoSocket] = await Promise.all([
@@ -694,7 +694,7 @@ describe('Realtime match infrastructure (integration)', () => {
           assignedRefereeCount: 3,
           connectedRefereeCount: 3,
           inspectorConnected: true,
-          requiredRefereeCount: 3,
+          requiredJudgeCount: 3,
           scoreboardConnectedCount: 0,
         },
         message: 'Required match participants are not connected',
@@ -712,7 +712,7 @@ describe('Realtime match infrastructure (integration)', () => {
 
     const secondaryRefereeTwo = await login(
       secondaryMatch,
-      MatchAccessRole.REFEREE_2,
+      MatchAccessRole.JUDGE_2,
       `${TEST_PREFIX}-secondary-readiness-r2`,
     );
     await connect(secondaryRefereeTwo.cookie);
@@ -721,7 +721,7 @@ describe('Realtime match infrastructure (integration)', () => {
       RealtimeEvent.PRESENCE_UPDATED,
       (payload) =>
         payload.scoreboardConnectedCount === 1 &&
-        !presenceFor(payload, MatchAccessRole.REFEREE_2).connected,
+        !presenceFor(payload, MatchAccessRole.JUDGE_2).connected,
     );
     firstScoreboard.disconnect();
     refereeTwoSocket.disconnect();
@@ -736,7 +736,7 @@ describe('Realtime match infrastructure (integration)', () => {
           assignedRefereeCount: 3,
           connectedRefereeCount: 2,
           inspectorConnected: true,
-          requiredRefereeCount: 3,
+          requiredJudgeCount: 3,
           scoreboardConnectedCount: 1,
         },
       },
@@ -753,7 +753,7 @@ describe('Realtime match infrastructure (integration)', () => {
   it('rejects an authenticated WebSocket from an unexpected browser origin', async () => {
     const owner = await login(
       primaryMatch,
-      MatchAccessRole.REFEREE_1,
+      MatchAccessRole.JUDGE_1,
       `${TEST_PREFIX}-hostile-origin-r1`,
     );
     const socket = socketClient(
@@ -785,7 +785,7 @@ describe('Realtime match infrastructure (integration)', () => {
   it('authenticates a match socket and returns a fresh database-backed snapshot', async () => {
     const owner = await login(
       primaryMatch,
-      MatchAccessRole.REFEREE_1,
+      MatchAccessRole.JUDGE_1,
       `${TEST_PREFIX}-authenticated-r1`,
     );
     const socket = await connect(owner.cookie);
@@ -812,7 +812,7 @@ describe('Realtime match infrastructure (integration)', () => {
         }),
       ]),
     );
-    expect(presenceFor(state, MatchAccessRole.REFEREE_1)).toMatchObject({
+    expect(presenceFor(state, MatchAccessRole.JUDGE_1)).toMatchObject({
       activeSession: true,
       connected: true,
       connectedSocketCount: 1,
@@ -823,12 +823,12 @@ describe('Realtime match infrastructure (integration)', () => {
     const [primaryOwner, secondaryOwner] = await Promise.all([
       login(
         primaryMatch,
-        MatchAccessRole.REFEREE_1,
+        MatchAccessRole.JUDGE_1,
         `${TEST_PREFIX}-primary-room-r1`,
       ),
       login(
         secondaryMatch,
-        MatchAccessRole.REFEREE_1,
+        MatchAccessRole.JUDGE_1,
         `${TEST_PREFIX}-secondary-room-r1`,
       ),
     ]);
@@ -857,7 +857,7 @@ describe('Realtime match infrastructure (integration)', () => {
 
     const secondPrimaryOwner = await login(
       primaryMatch,
-      MatchAccessRole.REFEREE_2,
+      MatchAccessRole.JUDGE_2,
       `${TEST_PREFIX}-primary-room-r2`,
     );
     await connect(secondPrimaryOwner.cookie);
@@ -882,7 +882,7 @@ describe('Realtime match infrastructure (integration)', () => {
     }
 
     const refereeOne = await connect(
-      logins.get(MatchAccessRole.REFEREE_1)?.cookie ?? '',
+      logins.get(MatchAccessRole.JUDGE_1)?.cookie ?? '',
     );
     const allConnectedUpdate = waitForEvent<PresenceUpdatedPayload>(
       refereeOne,
@@ -892,10 +892,10 @@ describe('Realtime match infrastructure (integration)', () => {
           (role) => presenceFor(payload, role).connectedSocketCount === 1,
         ),
     );
-    await connect(logins.get(MatchAccessRole.REFEREE_2)?.cookie ?? '');
-    await connect(logins.get(MatchAccessRole.REFEREE_3)?.cookie ?? '');
+    await connect(logins.get(MatchAccessRole.JUDGE_2)?.cookie ?? '');
+    await connect(logins.get(MatchAccessRole.JUDGE_3)?.cookie ?? '');
     const inspector = await connect(
-      logins.get(MatchAccessRole.INSPECTOR)?.cookie ?? '',
+      logins.get(MatchAccessRole.SUPERVISOR)?.cookie ?? '',
     );
     const connectedPresence = await allConnectedUpdate;
 
@@ -912,13 +912,13 @@ describe('Realtime match infrastructure (integration)', () => {
     const disconnectedUpdate = waitForEvent<PresenceUpdatedPayload>(
       refereeOne,
       RealtimeEvent.PRESENCE_UPDATED,
-      (payload) => !presenceFor(payload, MatchAccessRole.INSPECTOR).connected,
+      (payload) => !presenceFor(payload, MatchAccessRole.SUPERVISOR).connected,
     );
     inspector.disconnect();
     const disconnectedPresence = await disconnectedUpdate;
 
     expect(
-      presenceFor(disconnectedPresence, MatchAccessRole.INSPECTOR),
+      presenceFor(disconnectedPresence, MatchAccessRole.SUPERVISOR),
     ).toMatchObject({
       activeSession: true,
       connected: false,
@@ -929,7 +929,7 @@ describe('Realtime match infrastructure (integration)', () => {
       where: {
         active: true,
         matchId: primaryMatch.id,
-        role: MatchRole.INSPECTOR,
+        role: MatchRole.SUPERVISOR,
       },
     });
     expect(persistedInspector.revokedAt).toBeNull();
@@ -938,7 +938,7 @@ describe('Realtime match infrastructure (integration)', () => {
   it('reauthenticates, rejoins, and can request a fresh snapshot after reconnect', async () => {
     const owner = await login(
       primaryMatch,
-      MatchAccessRole.REFEREE_2,
+      MatchAccessRole.JUDGE_2,
       `${TEST_PREFIX}-reconnect-r2`,
     );
     const socket = await connect(owner.cookie, true);
@@ -954,7 +954,7 @@ describe('Realtime match infrastructure (integration)', () => {
 
     const state = await requestSnapshot(socket);
     expect(state.match.publicId).toBe(primaryMatch.publicId);
-    expect(presenceFor(state, MatchAccessRole.REFEREE_2)).toMatchObject({
+    expect(presenceFor(state, MatchAccessRole.JUDGE_2)).toMatchObject({
       activeSession: true,
       connected: true,
       connectedSocketCount: 1,
@@ -964,7 +964,7 @@ describe('Realtime match infrastructure (integration)', () => {
   it('revalidates the persisted owner before every sensitive socket command', async () => {
     const owner = await login(
       primaryMatch,
-      MatchAccessRole.REFEREE_1,
+      MatchAccessRole.JUDGE_1,
       `${TEST_PREFIX}-command-revalidation-r1`,
     );
     const sessionId = (owner.response.body as LoginResponseBody).session
@@ -1003,7 +1003,7 @@ describe('Realtime match infrastructure (integration)', () => {
   });
 
   it('revokes and disconnects the old socket on takeover and denies its old credential', async () => {
-    const role = MatchAccessRole.REFEREE_3;
+    const role = MatchAccessRole.JUDGE_3;
     const owner = await login(
       primaryMatch,
       role,
@@ -1091,12 +1091,12 @@ describe('Realtime match infrastructure (integration)', () => {
       [
         login(
           match,
-          MatchAccessRole.INSPECTOR,
+          MatchAccessRole.SUPERVISOR,
           `${TEST_PREFIX}-score-inspector`,
         ),
-        login(match, MatchAccessRole.REFEREE_1, `${TEST_PREFIX}-score-r1`),
-        login(match, MatchAccessRole.REFEREE_2, `${TEST_PREFIX}-score-r2`),
-        login(match, MatchAccessRole.REFEREE_3, `${TEST_PREFIX}-score-r3`),
+        login(match, MatchAccessRole.JUDGE_1, `${TEST_PREFIX}-score-r1`),
+        login(match, MatchAccessRole.JUDGE_2, `${TEST_PREFIX}-score-r2`),
+        login(match, MatchAccessRole.JUDGE_3, `${TEST_PREFIX}-score-r3`),
       ],
     );
     const [inspectorSocket, r1Socket, r2Socket, r3Socket] = await Promise.all([
@@ -1139,7 +1139,7 @@ describe('Realtime match infrastructure (integration)', () => {
     });
     await expect(
       prisma.scoreEvent.count({
-        where: { matchId: match.id, type: ScoreEventType.REFEREE_POINT },
+        where: { matchId: match.id, type: ScoreEventType.JUDGE_POINT },
       }),
     ).resolves.toBe(1);
   });
@@ -1150,12 +1150,12 @@ describe('Realtime match infrastructure (integration)', () => {
       [
         login(
           match,
-          MatchAccessRole.INSPECTOR,
+          MatchAccessRole.SUPERVISOR,
           `${TEST_PREFIX}-viewer-inspector`,
         ),
-        login(match, MatchAccessRole.REFEREE_1, `${TEST_PREFIX}-viewer-r1`),
-        login(match, MatchAccessRole.REFEREE_2, `${TEST_PREFIX}-viewer-r2`),
-        login(match, MatchAccessRole.REFEREE_3, `${TEST_PREFIX}-viewer-r3`),
+        login(match, MatchAccessRole.JUDGE_1, `${TEST_PREFIX}-viewer-r1`),
+        login(match, MatchAccessRole.JUDGE_2, `${TEST_PREFIX}-viewer-r2`),
+        login(match, MatchAccessRole.JUDGE_3, `${TEST_PREFIX}-viewer-r3`),
       ],
     );
     const [inspectorSocket, refereeOneSocket, refereeTwoSocket] =
@@ -1193,11 +1193,11 @@ describe('Realtime match infrastructure (integration)', () => {
     });
     const refereeOneSessionId = (refereeOne.response.body as LoginResponseBody)
       .session.sessionId;
-    await prisma.refereeVote.create({
+    await prisma.judgeVote.create({
       data: {
         athleteColor: AthleteColor.RED,
         matchId: match.id,
-        refereeSlot: RefereeSlot.REFEREE_1,
+        judgeSlot: JudgeSlot.JUDGE_1,
         scoringWindowId: window.id,
         serverReceivedAt: new Date(),
         sessionId: refereeOneSessionId,
@@ -1213,7 +1213,7 @@ describe('Realtime match infrastructure (integration)', () => {
     expect(refereeOneState.viewer).toEqual({
       acceptedVote: expect.objectContaining({
         athlete: AthleteColor.RED,
-        identity: { kind: 'legacy', refereeSlot: RefereeSlot.REFEREE_1 },
+        identity: { kind: 'legacy', judgeSlot: JudgeSlot.JUDGE_1 },
         scoringWindowId: window.id,
       }),
     });
@@ -1228,12 +1228,12 @@ describe('Realtime match infrastructure (integration)', () => {
     const [inspector, referee, refereeTwo, refereeThree] = await Promise.all([
       login(
         match,
-        MatchAccessRole.INSPECTOR,
+        MatchAccessRole.SUPERVISOR,
         `${TEST_PREFIX}-penalty-inspector`,
       ),
-      login(match, MatchAccessRole.REFEREE_1, `${TEST_PREFIX}-penalty-r1`),
-      login(match, MatchAccessRole.REFEREE_2, `${TEST_PREFIX}-penalty-r2`),
-      login(match, MatchAccessRole.REFEREE_3, `${TEST_PREFIX}-penalty-r3`),
+      login(match, MatchAccessRole.JUDGE_1, `${TEST_PREFIX}-penalty-r1`),
+      login(match, MatchAccessRole.JUDGE_2, `${TEST_PREFIX}-penalty-r2`),
+      login(match, MatchAccessRole.JUDGE_3, `${TEST_PREFIX}-penalty-r3`),
     ]);
     const [inspectorSocket, refereeSocket] = await Promise.all([
       connect(inspector.cookie),

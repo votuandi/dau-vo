@@ -4,7 +4,7 @@ import {
   AthleteColor,
   MatchExitMode,
   RealtimeEvent,
-  RefereeSlot,
+  JudgeSlot,
   type MatchExitResponse,
 } from '@martial-arts-scoring/shared-types';
 import { getParticipantsNotReadyMessage, useMatchRealtime } from './match-realtime';
@@ -114,7 +114,7 @@ describe('useMatchRealtime', () => {
         assignedRefereeCount: 5,
         connectedRefereeCount: 3,
         inspectorConnected: true,
-        requiredRefereeCount: 5,
+        requiredJudgeCount: 5,
         scoreboardConnectedCount: 1,
       }),
     ).toBe(
@@ -130,7 +130,7 @@ describe('useMatchRealtime', () => {
         matchPublicId: refereeSession.matchPublicId,
         onAuthenticationRequired: vi.fn(),
         onSessionRevoked,
-        refereeIdentity: { kind: 'legacy', refereeSlot: RefereeSlot.REFEREE_1 },
+        refereeIdentity: { kind: 'legacy', judgeSlot: JudgeSlot.JUDGE_1 },
       }),
     );
   }
@@ -185,12 +185,12 @@ describe('useMatchRealtime', () => {
         matchPublicId: refereeSession.matchPublicId,
         onAuthenticationRequired: vi.fn(),
         onSessionRevoked: vi.fn(),
-        refereeIdentity: { assignmentId: 'assignment-4', kind: 'official', refereePosition: 4 },
+        refereeIdentity: { assignmentId: 'assignment-4', kind: 'official', judgePosition: 4 },
       }),
     );
     const accepted = {
       ...acceptedRedVote,
-      identity: { assignmentId: 'assignment-4', kind: 'official' as const, refereePosition: 4 },
+      identity: { assignmentId: 'assignment-4', kind: 'official' as const, judgePosition: 4 },
     };
     act(() => {
       socketHarness.triggerSocketEvent(RealtimeEvent.VOTE_ACCEPTED, {

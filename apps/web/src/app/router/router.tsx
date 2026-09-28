@@ -112,13 +112,13 @@ export const router = createBrowserRouter([
       {
         path: 'trong-tai',
         element: (
-          <MatchAccessPage expectedRole={TournamentOfficialRole.REFEREE} key="referee-access" />
+          <MatchAccessPage expectedRole={TournamentOfficialRole.JUDGE} key="referee-access" />
         ),
       },
       {
         path: 'giam-dinh',
         element: (
-          <MatchAccessPage expectedRole={TournamentOfficialRole.INSPECTOR} key="inspector-access" />
+          <MatchAccessPage expectedRole={TournamentOfficialRole.SUPERVISOR} key="inspector-access" />
         ),
       },
       {
