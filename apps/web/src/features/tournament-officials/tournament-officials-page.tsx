@@ -162,7 +162,7 @@ export function TournamentOfficialsPage({
       </label>
       {!readOnly ? (
         <form
-          className="grid gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-[1fr_auto_auto]"
+          className="grid gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-[1fr_auto_auto] items-end"
           onSubmit={submit}
         >
           <label className="text-sm font-semibold">

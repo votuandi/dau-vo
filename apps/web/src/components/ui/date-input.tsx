@@ -69,7 +69,7 @@ export function DateInput({
     setDisplayValue(formatDateOnly(parsed));
   }
   return (
-    <div className="relative mt-2">
+    <div className="relative mt-2 items-end">
       <div className="flex gap-2">
         <input
           aria-describedby={error ? errorId : undefined}
