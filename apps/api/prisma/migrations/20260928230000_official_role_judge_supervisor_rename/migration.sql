@@ -174,16 +174,15 @@ END; $$ LANGUAGE plpgsql;
 -- `role`, nested `before.role`, and nested `after.role`. Transform only those
 -- keys and the enum values, leaving prose and all other user JSON untouched.
 CREATE OR REPLACE FUNCTION "rename_official_role_metadata"(value JSONB) RETURNS JSONB AS $$
-DECLARE pair RECORD;
 BEGIN
   IF jsonb_typeof(value) = 'object' THEN
     RETURN (
       SELECT jsonb_object_agg(
-        pair.key,
-        CASE WHEN pair.key = 'role' AND pair.value = '"REFEREE"'::jsonb THEN '"JUDGE"'::jsonb
-             WHEN pair.key = 'role' AND pair.value = '"INSPECTOR"'::jsonb THEN '"SUPERVISOR"'::jsonb
-             ELSE "rename_official_role_metadata"(pair.value) END
-      ) FROM jsonb_each(value) AS pair
+        entry.key,
+        CASE WHEN entry.key = 'role' AND entry.value = '"REFEREE"'::jsonb THEN '"JUDGE"'::jsonb
+             WHEN entry.key = 'role' AND entry.value = '"INSPECTOR"'::jsonb THEN '"SUPERVISOR"'::jsonb
+             ELSE "rename_official_role_metadata"(entry.value) END
+      ) FROM jsonb_each(value) AS entry
     );
   ELSIF jsonb_typeof(value) = 'array' THEN
     RETURN (SELECT jsonb_agg("rename_official_role_metadata"(item)) FROM jsonb_array_elements(value) AS item);

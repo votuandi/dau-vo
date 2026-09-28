@@ -157,7 +157,7 @@ describe('AdminMatchMonitoring', () => {
 
   it('styles score events by athlete and retains reverted status', async () => {
     renderMonitoring();
-    await screen.findByText('Điểm trọng tài', { exact: false });
+    await screen.findByText('Điểm giám định', { exact: false });
     expect(screen.getByTestId('score-event-event-blue')).toHaveTextContent('Phạt');
     expect(screen.getByTestId('score-event-event-red')).toHaveClass(
       'border-red-200',

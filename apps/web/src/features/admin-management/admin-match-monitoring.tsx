@@ -93,7 +93,7 @@ function scoreEventHistoryClassName(color: AthleteColor | null): string {
 function scoreEventTypeLabel(type: string): string {
   switch (type) {
     case 'REFEREE_POINT':
-      return 'Điểm trọng tài';
+      return 'Điểm giám định';
     case 'PENALTY':
       return 'Phạt';
     default:
@@ -243,7 +243,7 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                 <ul className="mt-2 space-y-1">
                   {appeal.adjustments.map((adjustment) => (
                     <li key={adjustment.color}>
-                      {colorLabel(adjustment.color)}: trọng tài {adjustment.baseRefereeScore},
+                      {colorLabel(adjustment.color)}: giám định {adjustment.baseRefereeScore},
                       thưởng {adjustment.bonusPoints}, phạt {adjustment.penaltyPoints},{' '}
                       <strong>chung kết {adjustment.finalScore}</strong>
                     </li>
