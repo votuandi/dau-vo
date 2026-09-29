@@ -1,6 +1,6 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { MatchLifecycle, TournamentOfficialRole } from '@/types/shared';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
@@ -420,6 +420,48 @@ function AssignedConsole({
   );
 }
 
+function RoleMismatch({
+  expectedRole,
+  logout,
+  pending,
+  logoutError,
+}: {
+  expectedRole: TournamentOfficialRole;
+  logout: () => void;
+  pending: boolean;
+  logoutError: string | null;
+}) {
+  const expectedLabel = expectedRole === TournamentOfficialRole.JUDGE ? 'giám định' : 'giám sát';
+  const activeLabel = expectedRole === TournamentOfficialRole.JUDGE ? 'giám sát' : 'giám định';
+
+  return (
+    <main className="mx-auto grid min-h-dvh w-full max-w-xl place-items-center p-4">
+      <section className="w-full rounded-2xl border bg-card p-7 shadow-xl">
+        <p className="text-sm font-bold text-primary">Khu vực {expectedLabel}</p>
+        <h1 className="mt-2 text-3xl font-black">Phiên không đúng vai trò</h1>
+        <p className="mt-4 text-muted-foreground">
+          Bạn đang có phiên {activeLabel}. Đăng xuất phiên đó để đăng nhập vào khu vực{' '}
+          {expectedLabel}.
+        </p>
+        <Button
+          className="mt-6"
+          disabled={pending}
+          onClick={logout}
+          type="button"
+          variant="outline"
+        >
+          {pending ? 'Đang đăng xuất…' : 'Đăng xuất'}
+        </Button>
+        {logoutError ? (
+          <p className="mt-4 text-sm text-destructive" role="alert">
+            {logoutError}
+          </p>
+        ) : null}
+      </section>
+    </main>
+  );
+}
+
 export function MatchAccessPage({ expectedRole }: Props) {
   const nav = useNavigate();
   const qc = useQueryClient();
@@ -535,7 +577,17 @@ export function MatchAccessPage({ expectedRole }: Props) {
       </p>
     );
   if (identity && identity.official.role !== expectedRole)
-    return <Navigate replace to={pathFor(identity.official.role)} />;
+    return (
+      <RoleMismatch
+        expectedRole={expectedRole}
+        logout={() => {
+          setLogoutError(null);
+          logout.mutate();
+        }}
+        logoutError={logoutError}
+        pending={logout.isPending}
+      />
+    );
   if (identity && assignment)
     return (
       <AssignedConsole

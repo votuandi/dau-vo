@@ -250,15 +250,13 @@ describe('MatchAccessPage official login', () => {
     expect(router.state.historyAction).toBe('REPLACE');
   });
 
-  it('redirects a restored supervisor from the judge route without a loop, while judge stays canonical', async () => {
+  it('keeps the judge route canonical when a supervisor session is restored', async () => {
     officialAccessApiMock.session.mockResolvedValue({ session: inspectorSession });
     const supervisorRoute = renderRoute('/giam-dinh');
 
-    expect(await screen.findByRole('heading', { name: 'Khu vực giám sát' })).toBeVisible();
-    await waitFor(() => {
-      expect(supervisorRoute.router.state.location.pathname).toBe('/giam-sat');
-    });
-    expect(supervisorRoute.router.state.location.pathname).toBe('/giam-sat');
+    expect(await screen.findByRole('heading', { name: 'Phiên không đúng vai trò' })).toBeVisible();
+    expect(screen.getByText('Khu vực giám định')).toBeVisible();
+    expect(supervisorRoute.router.state.location.pathname).toBe('/giam-dinh');
 
     supervisorRoute.unmount();
     officialAccessApiMock.session.mockResolvedValue({ session: refereeSession });
