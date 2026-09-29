@@ -60,6 +60,7 @@ export function createMatchSnapshot(overrides: Partial<MatchStatePayload> = {}):
         organization: 'CLB Đỏ',
         score: 0,
         violations: 0,
+        faultCounts: { minor: 0, major: 0 },
       },
       {
         color: AthleteColor.BLUE,
@@ -68,6 +69,7 @@ export function createMatchSnapshot(overrides: Partial<MatchStatePayload> = {}):
         organization: 'CLB Xanh',
         score: 0,
         violations: 0,
+        faultCounts: { minor: 0, major: 0 },
       },
     ],
     completion: { canComplete: false, blockedReasons: ['ROUND_1_NOT_ENDED', 'ROUND_2_NOT_ENDED'] },

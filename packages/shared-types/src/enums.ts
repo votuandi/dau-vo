@@ -3,6 +3,12 @@ export enum AthleteColor {
   BLUE = 'BLUE',
 }
 
+/** Severity is independent from the athlete side for every recorded fault. */
+export enum FaultSeverity {
+  MINOR = 'MINOR',
+  MAJOR = 'MAJOR',
+}
+
 export enum TournamentStatus {
   DRAFT = 'DRAFT',
   ACTIVE = 'ACTIVE',

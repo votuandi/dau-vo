@@ -139,7 +139,7 @@ export class RealtimeMatchStateService {
         where: { matchId, revertedAt: null },
       }),
       this.prisma.fault.findMany({
-        select: { athleteId: true, invalidatedAt: true, roundId: true },
+        select: { athleteId: true, invalidatedAt: true, roundId: true, severity: true },
         where: { matchId },
       }),
       this.presence(match.id, match.publicId),
@@ -208,6 +208,15 @@ export class RealtimeMatchStateService {
     const faultByAthlete = new Map(
       canonical.map((value) => [value.athleteId, value.faultCount]),
     );
+    const faultCountsByAthlete = new Map<string, { minor: number; major: number }>();
+    const validRoundIds = new Set(validRounds.map((round) => round.id));
+    for (const fault of faults) {
+      if (fault.invalidatedAt !== null || !validRoundIds.has(fault.roundId)) continue;
+      const counts = faultCountsByAthlete.get(fault.athleteId) ?? { minor: 0, major: 0 };
+      if (fault.severity === 'MINOR') counts.minor += 1;
+      else counts.major += 1;
+      faultCountsByAthlete.set(fault.athleteId, counts);
+    }
     const activeRound = this.activeRound(
       match.status,
       match.currentRound,
@@ -245,6 +254,14 @@ export class RealtimeMatchStateService {
             ? (faultByAthlete.get(athlete.id) ?? 0)
             : (violationsByAthlete.get(athlete.id) ?? 0) +
               (faultByAthlete.get(athlete.id) ?? 0),
+        faultCounts: {
+          minor:
+            (faultCountsByAthlete.get(athlete.id)?.minor ?? 0) +
+            (match.rulesVersion === MatchRulesVersion.LEGACY_SCORE_PENALTY_V1
+              ? (violationsByAthlete.get(athlete.id) ?? 0)
+              : 0),
+          major: faultCountsByAthlete.get(athlete.id)?.major ?? 0,
+        },
       })),
       completion: this.completionCapability(
         match,
@@ -614,12 +631,13 @@ export class RealtimeMatchStateService {
         ? (({ id: _id, ...round }) => round)(snapshot.activeRound)
         : null,
       athletes: snapshot.athletes.map(
-        ({ color, name, organization, score, violations }) => ({
+        ({ color, name, organization, score, violations, faultCounts }) => ({
           color,
           name,
           organization,
           score,
           violations,
+          faultCounts,
         }),
       ),
       generatedAt: snapshot.generatedAt,

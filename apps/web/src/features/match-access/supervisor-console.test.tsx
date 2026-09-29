@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import {
   AthleteColor,
+  FaultSeverity,
   MatchAccessRole,
   MatchExitMode,
   MatchStatus,
@@ -74,7 +75,7 @@ describe('SupervisorConsole', () => {
     expect(screen.getByText('CHỜ BẮT ĐẦU')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'BẮT ĐẦU HIỆP 1' }));
     expect(startRound).toHaveBeenCalledOnce();
-    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận Lỗi nhẹ VĐV ĐỎ' })).toBeDisabled();
 
     rerender(
       <SupervisorConsole
@@ -88,17 +89,16 @@ describe('SupervisorConsole', () => {
 
     expect(screen.getByText('HIỆP 1')).toBeVisible();
     expect(screen.getByText('Nguyễn Văn Đỏ')).toBeVisible();
-    expect(screen.getAllByText('Lỗi vi phạm:')).toHaveLength(2);
+    expect(screen.getAllByText(/Lỗi nhẹ:/u)).toHaveLength(2);
+    expect(screen.getAllByText(/Lỗi nặng:/u)).toHaveLength(2);
     expect(screen.getAllByText('5')).toHaveLength(1);
     expect(screen.getAllByText('3')).toHaveLength(1);
-    const redFault = screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' });
+    const redFault = screen.getByRole('button', { name: 'Ghi nhận Lỗi nhẹ VĐV ĐỎ' });
     await user.click(redFault);
     expect(submitFault).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toHaveTextContent(
-      'XÁC NHẬN LỖI ĐỎ',
-    );
-    await user.click(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' }));
-    expect(submitFault).toHaveBeenCalledExactlyOnceWith(AthleteColor.RED);
+    expect(screen.getByRole('button', { name: 'Ghi nhận Lỗi nhẹ VĐV ĐỎ' })).toHaveTextContent('XÁC NHẬN');
+    await user.click(screen.getByRole('button', { name: 'Ghi nhận Lỗi nhẹ VĐV ĐỎ' }));
+    expect(submitFault).toHaveBeenCalledExactlyOnceWith(AthleteColor.RED, FaultSeverity.MINOR);
 
     rerender(
       <SupervisorConsole
@@ -125,7 +125,7 @@ describe('SupervisorConsole', () => {
     );
 
     expect(screen.getByText('HIỆP 2')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV XANH' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận Lỗi nặng VĐV XANH' })).toBeEnabled();
 
     rerender(
       <SupervisorConsole
@@ -138,8 +138,8 @@ describe('SupervisorConsole', () => {
     );
 
     expect(screen.getByText('KẾT QUẢ CUỐI CÙNG')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV XANH' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận Lỗi nhẹ VĐV ĐỎ' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận Lỗi nặng VĐV XANH' })).toBeDisabled();
   });
 
   it('disables controls when the session is revoked or realtime connection is lost', () => {
@@ -153,8 +153,8 @@ describe('SupervisorConsole', () => {
     );
 
     expect(screen.getByText('Mất kết nối')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV XANH' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận Lỗi nhẹ VĐV ĐỎ' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận Lỗi nặng VĐV XANH' })).toBeDisabled();
   });
 
   it('enables fault recording for a running legacy match', () => {
@@ -171,8 +171,8 @@ describe('SupervisorConsole', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV XANH' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận Lỗi nhẹ VĐV ĐỎ' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận Lỗi nặng VĐV XANH' })).toBeEnabled();
   });
 
   it('shows match-scoped readiness and disables round start until every required display is connected', () => {
@@ -242,7 +242,7 @@ describe('SupervisorConsole', () => {
     );
     expect(screen.getByText('HIỆP 1 TẠM DỪNG')).toBeVisible();
     expect(screen.getByRole('timer')).toHaveTextContent('01:00');
-    expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận Lỗi nhẹ VĐV ĐỎ' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'TIẾP TỤC' }));
     expect(resumeRound).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Tiếp tục' }));

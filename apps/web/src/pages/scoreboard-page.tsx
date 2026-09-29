@@ -49,6 +49,7 @@ function AthletePanel({
     organization: string | null;
     score: number;
     violations: number;
+    faultCounts: { minor: number; major: number };
   };
 }) {
   const red = athlete.color === AthleteColor.RED;
@@ -81,7 +82,7 @@ function AthletePanel({
           </p>
         </div>
         <p className="rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-lg font-bold backdrop-blur sm:text-2xl">
-          Lỗi: {athlete.violations}
+          Lỗi nhẹ: {athlete.faultCounts.minor} · Lỗi nặng: {athlete.faultCounts.major}
         </p>
       </div>
     </section>
@@ -241,6 +242,7 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
               organization: 'Đang tải…',
               score: 0,
               violations: 0,
+              faultCounts: { minor: 0, major: 0 },
             }
           }
         />
@@ -252,6 +254,7 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
               organization: 'Đang tải…',
               score: 0,
               violations: 0,
+              faultCounts: { minor: 0, major: 0 },
             }
           }
         />

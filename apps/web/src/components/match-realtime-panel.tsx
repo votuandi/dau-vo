@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   AthleteColor,
+  FaultSeverity,
   MatchAccessRole,
   MatchStatus,
   type MatchPresenceEntry,
@@ -327,25 +328,36 @@ function InspectorFaultControls({ realtime }: { readonly realtime: MatchRealtime
       <p className="mt-1 text-xs leading-5 text-muted-foreground">
         Mỗi lần ghi lỗi chỉ tăng số lỗi của võ sĩ. Máy chủ ghi nhận hành động này.
       </p>
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        <Button
-          className="bg-red-700 text-white hover:bg-red-800"
-          disabled={!controlsEnabled}
-          onClick={() => void realtime.submitFault(AthleteColor.RED)}
-          size="lg"
-          type="button"
-        >
-          {realtime.submittingFault === AthleteColor.RED ? 'Đang ghi…' : 'ĐỎ VI PHẠM'}
-        </Button>
-        <Button
-          className="bg-blue-700 text-white hover:bg-blue-800"
-          disabled={!controlsEnabled}
-          onClick={() => void realtime.submitFault(AthleteColor.BLUE)}
-          size="lg"
-          type="button"
-        >
-          {realtime.submittingFault === AthleteColor.BLUE ? 'Đang ghi…' : 'XANH VI PHẠM'}
-        </Button>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {([AthleteColor.RED, AthleteColor.BLUE] as const).map((athlete) => (
+          <div className="grid grid-cols-2 gap-2" key={athlete}>
+            {([FaultSeverity.MINOR, FaultSeverity.MAJOR] as const).map((severity) => (
+              <Button
+                aria-label={`${athlete === AthleteColor.RED ? 'Đỏ' : 'Xanh'} ${severity === FaultSeverity.MINOR ? 'Lỗi nhẹ' : 'Lỗi nặng'}`}
+                className={
+                  athlete === AthleteColor.RED
+                    ? severity === FaultSeverity.MAJOR
+                      ? 'border-red-950 bg-red-950 text-white shadow-md shadow-red-950/40 hover:bg-red-900'
+                      : 'bg-red-700 text-white hover:bg-red-800'
+                    : severity === FaultSeverity.MAJOR
+                      ? 'border-blue-950 bg-blue-950 text-white shadow-md shadow-blue-950/40 hover:bg-blue-900'
+                      : 'bg-blue-700 text-white hover:bg-blue-800'
+                }
+                disabled={!controlsEnabled}
+                key={severity}
+                onClick={() => void realtime.submitFault(athlete, severity)}
+                size="lg"
+                type="button"
+              >
+                {realtime.submittingFault === athlete
+                  ? 'Đang ghi…'
+                  : severity === FaultSeverity.MINOR
+                    ? 'Lỗi nhẹ'
+                    : 'Lỗi nặng'}
+              </Button>
+            ))}
+          </div>
+        ))}
       </div>
       {realtime.faultErrorMessage ? (
         <p
@@ -475,7 +487,7 @@ export function MatchRealtimePanel({
                       <p className="mt-1 font-bold">{athlete.name}</p>
                       <p className="text-xs text-muted-foreground">{athlete.organization}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Lỗi vi phạm: {athlete.violations}
+                        Lỗi nhẹ: {athlete.faultCounts.minor} · Lỗi nặng: {athlete.faultCounts.major}
                       </p>
                     </div>
                     <div className="text-right">

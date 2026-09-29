@@ -42,9 +42,11 @@ import {
   type VoteSubmitPayload,
   type VoteSubmitResponse,
   AthleteColor as SharedAthleteColor,
+  FaultSeverity as SharedFaultSeverity,
 } from '@martial-arts-scoring/shared-types';
 import {
   AthleteColor,
+  FaultSeverity,
   MatchAccessRole,
   MatchRole,
   JudgeSlot,
@@ -1309,13 +1311,16 @@ export class RealtimeGateway
       return {
         ok: false,
         error: {
-          code: 'FAULT_INVALID_ATHLETE',
-          message: 'Athlete must be RED or BLUE',
+          code: this.hasFaultSeverity(payload) ? 'FAULT_INVALID_ATHLETE' : 'FAULT_INVALID_SEVERITY',
+          message: this.hasFaultSeverity(payload)
+            ? 'Athlete must be RED or BLUE'
+            : 'Severity must be MINOR or MAJOR',
         },
       };
     try {
       const transition = await this.faults.record({
         athlete: payload.athlete,
+        severity: payload.severity,
         identity: command.identity,
         matchId: command.matchId,
         traceId: payload.traceId,
@@ -1328,6 +1333,10 @@ export class RealtimeGateway
             transition.fault.athlete === AthleteColor.RED
               ? SharedAthleteColor.RED
               : SharedAthleteColor.BLUE,
+          severity:
+            transition.fault.severity === FaultSeverity.MINOR
+              ? SharedFaultSeverity.MINOR
+              : SharedFaultSeverity.MAJOR,
         },
       };
       this.server
@@ -1985,16 +1994,23 @@ export class RealtimeGateway
   private isFaultPayload(payload: unknown): payload is FaultRecordPayload {
     if (typeof payload !== 'object' || payload === null) return false;
     const keys = Object.keys(payload);
-    if (!keys.every((key) => key === 'athlete' || key === 'traceId'))
+    if (!keys.every((key) => key === 'athlete' || key === 'severity' || key === 'traceId'))
       return false;
     const candidate = payload as Record<string, unknown>;
     return (
       (candidate.athlete === AthleteColor.RED ||
         candidate.athlete === AthleteColor.BLUE) &&
+      (candidate.severity === FaultSeverity.MINOR || candidate.severity === FaultSeverity.MAJOR) &&
       (candidate.traceId === undefined ||
         (typeof candidate.traceId === 'string' &&
           candidate.traceId.length <= 128))
     );
+  }
+
+  private hasFaultSeverity(payload: unknown): boolean {
+    if (typeof payload !== 'object' || payload === null) return false;
+    const severity = (payload as Record<string, unknown>).severity;
+    return severity === FaultSeverity.MINOR || severity === FaultSeverity.MAJOR;
   }
 
   private isAppealPayload(payload: unknown): payload is AppealCompletePayload {

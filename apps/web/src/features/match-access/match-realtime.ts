@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   RealtimeEvent,
   type AthleteColor,
+  FaultSeverity,
   type MatchFinishedPayload,
   type AppealCompletePayload,
   type AppealCompleteResponse,
@@ -109,7 +110,7 @@ export interface MatchRealtimeState {
   readonly presence: readonly MatchPresenceEntry[];
   readonly reconnect: () => void;
   readonly requestSnapshot: () => void;
-  readonly submitFault: (athlete: AthleteColor) => Promise<void>;
+  readonly submitFault: (athlete: AthleteColor, severity: FaultSeverity) => Promise<void>;
   readonly roundStartErrorMessage: string | null;
   readonly scoringWindowMessage: string | null;
   readonly snapshot: MatchStatePayload | null;
@@ -284,6 +285,8 @@ function getFaultErrorMessage(code: FaultRecordErrorCode, fallback: string): str
       return 'Phân công giám sát không còn hiệu lực. Vui lòng đăng nhập lại.';
     case 'FAULT_INVALID_ATHLETE':
       return 'Lựa chọn võ sĩ không hợp lệ.';
+    case 'FAULT_INVALID_SEVERITY':
+      return 'Mức độ lỗi không hợp lệ.';
     case 'FAULT_MATCH_NOT_RUNNING':
       return 'Chỉ có thể ghi lỗi khi hiệp đấu đang diễn ra.';
     case 'FAULT_ROUND_PAUSED':
@@ -889,7 +892,7 @@ export function useMatchRealtime({
     }
   }, []);
 
-  const submitFault = useCallback(async (athlete: AthleteColor) => {
+  const submitFault = useCallback(async (athlete: AthleteColor, severity: FaultSeverity) => {
     const socket = getSocketClient();
     if (faultSubmissionInFlightRef.current) {
       return;
@@ -908,7 +911,7 @@ export function useMatchRealtime({
           .timeout(10_000)
           .emit(
             RealtimeEvent.FAULT_RECORD,
-            { athlete, traceId: globalThis.crypto.randomUUID() },
+            { athlete, severity, traceId: globalThis.crypto.randomUUID() },
             (error: Error | null, acknowledgement: FaultRecordResponse) => {
               if (error) {
                 reject(error);

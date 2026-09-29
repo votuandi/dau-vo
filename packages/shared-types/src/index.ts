@@ -1,5 +1,6 @@
 export {
   AthleteColor,
+  FaultSeverity,
   MatchAccessRole,
   MatchRole,
   MatchDisplayState,
