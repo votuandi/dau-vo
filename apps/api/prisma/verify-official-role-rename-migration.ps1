@@ -5,9 +5,11 @@ $ErrorActionPreference = 'Stop'
 $container = "dau-vo-official-role-rename-verify-$PID"
 $migrationRoot = Join-Path $PSScriptRoot 'migrations'
 $targetName = '20260928230000_official_role_judge_supervisor_rename'
+$repairName = '20260929200000_v2_result_scope_delete_repair'
 $migrations = @(Get-ChildItem -Directory $migrationRoot | Sort-Object Name)
 $beforeTarget = @($migrations | Where-Object Name -lt $targetName)
 $targetSql = Join-Path $migrationRoot "$targetName/migration.sql"
+$repairSql = Join-Path $migrationRoot "$repairName/migration.sql"
 
 function Invoke-Sql([string]$Database, [string]$Sql) {
   $Sql | & docker exec -i $container psql -X -v ON_ERROR_STOP=1 -U postgres -d $Database
@@ -68,6 +70,7 @@ INSERT INTO audit_logs (id, match_id, session_id, event_type, metadata) VALUES
   Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM referee_votes;" '1'
   Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM match_sessions WHERE active;" '2'
   Invoke-Sql official_role_rename_upgrade (Get-Content -Raw -Encoding UTF8 $targetSql)
+  Invoke-Sql official_role_rename_upgrade (Get-Content -Raw -Encoding UTF8 $repairSql)
 
   Assert-Scalar official_role_rename_upgrade "SELECT enum_range(NULL::tournament_official_role)::text;" '{JUDGE,SUPERVISOR}'
   Assert-Scalar official_role_rename_upgrade "SELECT enum_range(NULL::match_role)::text;" '{JUDGE,SUPERVISOR}'
@@ -78,11 +81,64 @@ INSERT INTO audit_logs (id, match_id, session_id, event_type, metadata) VALUES
   Assert-Scalar official_role_rename_upgrade "SELECT to_regclass('public.referee_votes') IS NULL;" 't'
   Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM pg_constraint WHERE conname IN ('judge_votes_pkey','judge_votes_authorization_provenance_check','match_official_assignments_assigned_by_supervisor_id_fkey');" '3'
   Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM pg_trigger WHERE tgname='judge_votes_validate_authorization_trigger' AND NOT tgisinternal;" '1'
+  Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM pg_trigger WHERE tgname IN ('faults_validate_scope_trigger','round_athlete_results_validate_scope_trigger','match_appeals_validate_scope_trigger','match_appeal_adjustments_validate_scope_trigger','match_outcomes_validate_scope_trigger') AND NOT tgisinternal AND (tgtype & 28) = 28;" '5'
   Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM judge_votes WHERE id='00000000-0000-0000-0000-000000000015' AND judge_slot='JUDGE_1' AND session_id='00000000-0000-0000-0000-000000000011';" '1'
   Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM match_sessions WHERE active AND id IN ('00000000-0000-0000-0000-000000000010','00000000-0000-0000-0000-000000000011') AND ((id='00000000-0000-0000-0000-000000000010' AND role='SUPERVISOR') OR (id='00000000-0000-0000-0000-000000000011' AND role='JUDGE' AND judge_slot='JUDGE_1'));" '2'
   Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM match_access_codes WHERE match_id='00000000-0000-0000-0000-000000000005' AND access_role IN ('SUPERVISOR','JUDGE_1');" '2'
   Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM match_official_assignments WHERE match_id='00000000-0000-0000-0000-000000000005' AND ((id='00000000-0000-0000-0000-000000000012' AND role='SUPERVISOR' AND assigned_by_supervisor_id IS NULL) OR (id='00000000-0000-0000-0000-000000000013' AND role='JUDGE' AND judge_position=1 AND assigned_by_supervisor_id='00000000-0000-0000-0000-000000000006'));" '2'
   Assert-Scalar official_role_rename_upgrade "SELECT (metadata->>'role') || ':' || (metadata->'before'->>'role') || ':' || (metadata->>'note') FROM audit_logs WHERE id='00000000-0000-0000-0000-000000000016';" 'JUDGE:SUPERVISOR:REFEREE prose remains unchanged'
+  # Exercise every V2 scope-trigger table after the forward repair.  The block
+  # asserts valid INSERT/UPDATE behavior, 23514 scope/role rejections, direct
+  # deletes, and a cascading adjustment delete through its appeal FK.
+  Invoke-Sql official_role_rename_upgrade @'
+BEGIN;
+INSERT INTO matches (id, public_id, tournament_id, round_duration_ms, break_duration_ms) VALUES
+  ('00000000-0000-0000-0000-000000000029', 'RENAME-OTHER', '00000000-0000-0000-0000-000000000004', 60000, 10000);
+INSERT INTO match_athletes (id, match_id, tournament_id, name, organization, color) VALUES
+  ('00000000-0000-0000-0000-000000000020', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000004', 'Red', 'Verify', 'RED'),
+  ('00000000-0000-0000-0000-000000000021', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000004', 'Blue', 'Verify', 'BLUE'),
+  ('00000000-0000-0000-0000-000000000030', '00000000-0000-0000-0000-000000000029', '00000000-0000-0000-0000-000000000004', 'Other', 'Verify', 'RED');
+INSERT INTO rounds (id, match_id, round_number, stage, attempt_number, started_at, ends_at) VALUES
+  ('00000000-0000-0000-0000-000000000022', '00000000-0000-0000-0000-000000000005', 1, 'REGULATION', 0, now(), now() + interval '1 minute'),
+  ('00000000-0000-0000-0000-000000000023', '00000000-0000-0000-0000-000000000005', 1, 'OVERTIME', 1, now(), now() + interval '1 minute');
+INSERT INTO faults (id, match_id, athlete_id, round_id, recording_supervisor_assignment_id) VALUES
+  ('00000000-0000-0000-0000-000000000024', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000020', '00000000-0000-0000-0000-000000000022', '00000000-0000-0000-0000-000000000012');
+INSERT INTO round_athlete_results (id, match_id, round_id, athlete_id, judge_points, fault_count) VALUES
+  ('00000000-0000-0000-0000-000000000025', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000022', '00000000-0000-0000-0000-000000000020', 3, 0);
+INSERT INTO match_appeals (id, match_id, scope, attempt_number, source_round_id, completed_supervisor_assignment_id) VALUES
+  ('00000000-0000-0000-0000-000000000026', '00000000-0000-0000-0000-000000000005', 'REGULATION', 0, '00000000-0000-0000-0000-000000000022', '00000000-0000-0000-0000-000000000012');
+INSERT INTO match_appeal_adjustments (id, appeal_id, athlete_id, base_judge_score, final_score) VALUES
+  ('00000000-0000-0000-0000-000000000027', '00000000-0000-0000-0000-000000000026', '00000000-0000-0000-0000-000000000020', 3, 3);
+INSERT INTO match_outcomes (id, match_id, winner_athlete_id, winner_color, method, source_appeal_id, published_supervisor_assignment_id, snapshot) VALUES
+  ('00000000-0000-0000-0000-000000000028', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000020', 'RED', 'REGULATION_SCORE', '00000000-0000-0000-0000-000000000026', '00000000-0000-0000-0000-000000000012', '{}'::jsonb);
+UPDATE faults SET created_at = created_at WHERE id='00000000-0000-0000-0000-000000000024';
+UPDATE round_athlete_results SET judge_points = 4 WHERE id='00000000-0000-0000-0000-000000000025';
+UPDATE match_appeals SET completed_at = completed_at WHERE id='00000000-0000-0000-0000-000000000026';
+UPDATE match_appeal_adjustments SET base_judge_score = 4, final_score = 4 WHERE id='00000000-0000-0000-0000-000000000027';
+UPDATE match_outcomes SET published_at = published_at WHERE id='00000000-0000-0000-0000-000000000028';
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO faults (match_id, athlete_id, round_id, recording_supervisor_assignment_id) VALUES
+      ('00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000020', '00000000-0000-0000-0000-000000000022', '00000000-0000-0000-0000-000000000013');
+    RAISE EXCEPTION 'wrong-role fault unexpectedly passed';
+  EXCEPTION WHEN SQLSTATE '23514' THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO round_athlete_results (match_id, round_id, athlete_id, judge_points, fault_count) VALUES
+      ('00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000023', '00000000-0000-0000-0000-000000000021', 1, 0);
+    UPDATE round_athlete_results SET athlete_id='00000000-0000-0000-0000-000000000030' WHERE id='00000000-0000-0000-0000-000000000025';
+    RAISE EXCEPTION 'cross-match update unexpectedly passed';
+  EXCEPTION WHEN SQLSTATE '23514' THEN NULL;
+  END;
+END $$;
+DELETE FROM match_outcomes WHERE id='00000000-0000-0000-0000-000000000028';
+DELETE FROM faults WHERE id='00000000-0000-0000-0000-000000000024';
+DELETE FROM round_athlete_results WHERE id='00000000-0000-0000-0000-000000000025';
+DELETE FROM match_appeals WHERE id='00000000-0000-0000-0000-000000000026';
+COMMIT;
+'@
+  Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM match_appeal_adjustments WHERE id='00000000-0000-0000-0000-000000000027';" '0'
   Write-Host 'Official role rename migration catalog verification passed on a disposable PostgreSQL database.'
 } finally {
   if (& docker ps -a --format '{{.Names}}' | Select-String -Quiet -SimpleMatch $container) { & docker rm -f $container | Out-Null }

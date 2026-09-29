@@ -253,7 +253,7 @@ describe('database unique constraints', () => {
         data: { requiredJudgeCount: 0 },
         where: { id: fixture.matchId },
       }),
-    ).rejects.toThrow('matches_required_referee_count_positive_check');
+    ).rejects.toThrow('matches_required_judge_count_positive_check');
   });
 
   it('enforces assignment authorizers, positions, and active assignment uniqueness', async () => {
