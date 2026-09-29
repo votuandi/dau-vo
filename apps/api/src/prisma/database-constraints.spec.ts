@@ -249,11 +249,20 @@ describe('database unique constraints', () => {
       `,
     ).rejects.toMatchObject({ code: 'P2010', meta: { code: '23514' } });
     await expect(
-      prisma.match.update({
-        data: { requiredJudgeCount: 0 },
-        where: { id: fixture.matchId },
-      }),
-    ).rejects.toThrow('matches_required_judge_count_positive_check');
+      prisma.$executeRaw`
+        UPDATE "matches"
+        SET "required_judge_count" = 0
+        WHERE "id" = ${fixture.matchId}::uuid
+      `,
+    ).rejects.toMatchObject({
+      code: 'P2010',
+      meta: {
+        code: '23514',
+        message: expect.stringContaining(
+          'matches_required_judge_count_positive_check',
+        ),
+      },
+    });
   });
 
   it('enforces assignment authorizers, positions, and active assignment uniqueness', async () => {
