@@ -4,8 +4,11 @@ param([string]$Image = 'postgres:16-alpine')
 # Prerequisites: Docker, Node.js 20+, pnpm, and dependencies installed.
 # Run from apps/api: pnpm prisma:verify:official-role-rename
 # Expected output: the disposable database catalog and Prisma-client contract
-# checks pass. This rehearses historical migration SQL only; it does not prove
-# production backups, concurrent production traffic, or application workflows.
+# checks pass. The fixture is installed into a database replayed from the first
+# migration, then every remaining migration is applied in timestamp order. This
+# proves that the clean-replay guard intercepts the historical recursive JSON
+# rewrite; it does not prove production backups, concurrent traffic, or repair
+# of values that were already overwritten in a shared environment.
 # This repository has no CI workflow, so this command is not CI-enforced.
 # DATABASE_URL is constructed below for this container only. Do not change this
 # script to call migrate deploy or to load the repository .env.
@@ -14,16 +17,10 @@ $container = "dau-vo-official-role-rename-verify-$PID"
 $database = 'official_role_rename_upgrade'
 $readinessDeadline = (Get-Date).AddSeconds(60)
 $migrationRoot = Join-Path $PSScriptRoot 'migrations'
-$targetName = '20260928230000_official_role_judge_supervisor_rename'
-$repairName = '20260929200000_v2_result_scope_delete_repair'
-$metadataRepairName = '20260929210000_audit_role_metadata_path_correction'
-$metadataGuardCleanupName = '20260929220000_audit_role_metadata_clean_replay_guard_cleanup'
+$guardName = '20260928220000_audit_role_metadata_clean_replay_guard'
 $migrations = @(Get-ChildItem -Directory $migrationRoot | Sort-Object Name)
-$beforeTarget = @($migrations | Where-Object Name -lt $targetName)
-$targetSql = Join-Path $migrationRoot "$targetName/migration.sql"
-$repairSql = Join-Path $migrationRoot "$repairName/migration.sql"
-$metadataRepairSql = Join-Path $migrationRoot "$metadataRepairName/migration.sql"
-$metadataGuardCleanupSql = Join-Path $migrationRoot "$metadataGuardCleanupName/migration.sql"
+$beforeGuard = @($migrations | Where-Object Name -lt $guardName)
+$remainingMigrations = @($migrations | Where-Object Name -ge $guardName)
 
 function Invoke-Sql([string]$Database, [string]$Sql) {
   $Sql | & docker exec -i $container psql -X -v ON_ERROR_STOP=1 -U postgres -d $Database
@@ -52,7 +49,10 @@ try {
   } while ((Get-Date) -lt $readinessDeadline)
   if ($LASTEXITCODE -ne 0) { throw 'Disposable PostgreSQL did not become ready within 60 seconds. Check Docker daemon/image availability.' }
   Invoke-Sql postgres "CREATE DATABASE $database;"
-  foreach ($migration in $beforeTarget) { Invoke-Migration $database $migration }
+  # Build from the beginning up to, but not including, the guard.  The fixture
+  # is therefore present when the guard and the historical recursive migration
+  # run as part of the same normal migration chain.
+  foreach ($migration in $beforeGuard) { Invoke-Migration $database $migration }
 
   # Snapshot the old enum labels before upgrading; IDs/table rows are not rebuilt
   # by the target migration, which uses only ALTER ... RENAME operations.
@@ -118,10 +118,7 @@ INSERT INTO audit_logs (id, match_id, session_id, event_type, metadata) VALUES
   Assert-Scalar $database "SELECT count(*) FROM match_sessions WHERE NOT active AND revoked_at IS NOT NULL;" '1'
   Assert-Scalar $database "SELECT count(*) FROM match_official_assignments WHERE released_at IS NULL;" '2'
   Assert-Scalar $database "SELECT count(*) FROM match_official_assignments WHERE released_at IS NOT NULL;" '1'
-  Invoke-Sql $database (Get-Content -Raw -Encoding UTF8 $targetSql)
-  Invoke-Sql $database (Get-Content -Raw -Encoding UTF8 $repairSql)
-  Invoke-Sql $database (Get-Content -Raw -Encoding UTF8 $metadataRepairSql)
-  Invoke-Sql $database (Get-Content -Raw -Encoding UTF8 $metadataGuardCleanupSql)
+  foreach ($migration in $remainingMigrations) { Invoke-Migration $database $migration }
 
   Assert-Scalar official_role_rename_upgrade "SELECT enum_range(NULL::tournament_official_role)::text;" '{JUDGE,SUPERVISOR}'
   Assert-Scalar official_role_rename_upgrade "SELECT enum_range(NULL::match_role)::text;" '{JUDGE,SUPERVISOR}'
