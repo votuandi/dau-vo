@@ -1,8 +1,18 @@
 [CmdletBinding()]
 param([string]$Image = 'postgres:16-alpine')
 
+# Prerequisites: Docker, Node.js 20+, pnpm, and dependencies installed.
+# Run from apps/api: pnpm prisma:verify:official-role-rename
+# Expected output: the disposable database catalog and Prisma-client contract
+# checks pass. This rehearses historical migration SQL only; it does not prove
+# production backups, concurrent production traffic, or application workflows.
+# This repository has no CI workflow, so this command is not CI-enforced.
+# DATABASE_URL is constructed below for this container only. Do not change this
+# script to call migrate deploy or to load the repository .env.
 $ErrorActionPreference = 'Stop'
 $container = "dau-vo-official-role-rename-verify-$PID"
+$database = 'official_role_rename_upgrade'
+$readinessDeadline = (Get-Date).AddSeconds(60)
 $migrationRoot = Join-Path $PSScriptRoot 'migrations'
 $targetName = '20260928230000_official_role_judge_supervisor_rename'
 $repairName = '20260929200000_v2_result_scope_delete_repair'
@@ -24,22 +34,32 @@ function Assert-Scalar([string]$Database, [string]$Query, [string]$Expected) {
   $actual = (& docker exec $container psql -X -A -t -v ON_ERROR_STOP=1 -U postgres -d $Database -c $Query).Trim()
   if ($LASTEXITCODE -ne 0 -or $actual -ne $Expected) { throw "Expected '$Expected', received '$actual': $Query" }
 }
+function Get-ContainerPort {
+  $mapping = (& docker port $container 5432/tcp).Trim()
+  if ($LASTEXITCODE -ne 0 -or $mapping -notmatch ':(\d+)$') { throw 'Could not determine the disposable PostgreSQL port.' }
+  return $Matches[1]
+}
 
 try {
-  & docker run --rm -d --name $container -e POSTGRES_PASSWORD=postgres $Image | Out-Null
+  & docker run --rm -d --name $container -p 127.0.0.1::5432 -e POSTGRES_PASSWORD=postgres $Image | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Could not start disposable PostgreSQL.' }
-  do { Start-Sleep -Milliseconds 300; & docker exec $container pg_isready -U postgres | Out-Null } until ($LASTEXITCODE -eq 0)
-  Invoke-Sql postgres 'CREATE DATABASE official_role_rename_upgrade;'
-  foreach ($migration in $beforeTarget) { Invoke-Migration official_role_rename_upgrade $migration }
+  do {
+    Start-Sleep -Milliseconds 300
+    & docker exec $container pg_isready -U postgres | Out-Null
+    if ($LASTEXITCODE -eq 0) { break }
+  } while ((Get-Date) -lt $readinessDeadline)
+  if ($LASTEXITCODE -ne 0) { throw 'Disposable PostgreSQL did not become ready within 60 seconds. Check Docker daemon/image availability.' }
+  Invoke-Sql postgres "CREATE DATABASE $database;"
+  foreach ($migration in $beforeTarget) { Invoke-Migration $database $migration }
 
   # Snapshot the old enum labels before upgrading; IDs/table rows are not rebuilt
   # by the target migration, which uses only ALTER ... RENAME operations.
-  Assert-Scalar official_role_rename_upgrade "SELECT enum_range(NULL::tournament_official_role)::text;" '{REFEREE,INSPECTOR}'
-  Assert-Scalar official_role_rename_upgrade "SELECT to_regclass('public.referee_votes')::text;" 'referee_votes'
+  Assert-Scalar $database "SELECT enum_range(NULL::tournament_official_role)::text;" '{REFEREE,INSPECTOR}'
+  Assert-Scalar $database "SELECT to_regclass('public.referee_votes')::text;" 'referee_votes'
   # A representative, linked legacy crew.  Fixed IDs let the assertions prove
   # that rows, relationships, active state, access codes, sessions, votes, and
   # audit history survive the upgrade instead of merely proving an empty schema.
-  Invoke-Sql official_role_rename_upgrade @'
+  Invoke-Sql $database @'
 INSERT INTO users (id, username, normalized_username, password_hash) VALUES
   ('00000000-0000-0000-0000-000000000001', 'rename-owner', 'rename-owner', 'hash');
 INSERT INTO sport_groups (id, code, name) VALUES
@@ -56,12 +76,29 @@ INSERT INTO tournament_officials (id, tournament_id, role, name, normalized_name
 INSERT INTO match_access_codes (id, match_id, access_role, code_hash) VALUES
   ('00000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000000005', 'INSPECTOR', 'inspector-code'),
   ('00000000-0000-0000-0000-000000000009', '00000000-0000-0000-0000-000000000005', 'REFEREE_1', 'referee-code');
-INSERT INTO match_sessions (id, match_id, access_code_id, role, referee_slot, device_id, token_hash, active) VALUES
-  ('00000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000008', 'INSPECTOR', NULL, 'inspector-device', 'inspector-token', true),
-  ('00000000-0000-0000-0000-000000000011', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000009', 'REFEREE', 'REFEREE_1', 'referee-device', 'referee-token', true);
-INSERT INTO match_official_assignments (id, match_id, tournament_id, official_id, role, referee_position, assigned_by_inspector_id) VALUES
-  ('00000000-0000-0000-0000-000000000012', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000006', 'INSPECTOR', NULL, NULL),
-  ('00000000-0000-0000-0000-000000000013', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000007', 'REFEREE', 1, '00000000-0000-0000-0000-000000000006');
+INSERT INTO match_sessions (id, match_id, access_code_id, role, referee_slot, device_id, token_hash, active, revoked_at) VALUES
+  ('00000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000008', 'INSPECTOR', NULL, 'inspector-device', 'inspector-token', true, NULL),
+  ('00000000-0000-0000-0000-000000000011', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000009', 'REFEREE', 'REFEREE_1', 'referee-device', 'referee-token', true, NULL),
+  ('00000000-0000-0000-0000-000000000018', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000009', 'REFEREE', 'REFEREE_1', 'revoked-referee-device', 'revoked-referee-token', false, now());
+INSERT INTO match_official_assignments (id, match_id, tournament_id, official_id, role, referee_position, assigned_by_inspector_id, assigned_at, released_at, release_reason) VALUES
+  ('00000000-0000-0000-0000-000000000012', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000006', 'INSPECTOR', NULL, NULL, now(), NULL, NULL),
+  ('00000000-0000-0000-0000-000000000013', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000007', 'REFEREE', 1, '00000000-0000-0000-0000-000000000006', now(), NULL, NULL),
+  ('00000000-0000-0000-0000-000000000017', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000007', 'REFEREE', 2, '00000000-0000-0000-0000-000000000006', now() - interval '1 minute', now(), 'REPLACED');
+INSERT INTO match_athletes (id, match_id, tournament_id, name, organization, color) VALUES
+  ('00000000-0000-0000-0000-000000000051', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000004', 'Legacy red', 'Verify', 'RED'),
+  ('00000000-0000-0000-0000-000000000056', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000004', 'Legacy blue', 'Verify', 'BLUE');
+INSERT INTO rounds (id, match_id, round_number, stage, attempt_number, started_at, ends_at) VALUES
+  ('00000000-0000-0000-0000-000000000052', '00000000-0000-0000-0000-000000000005', 1, 'REGULATION', 0, now(), now() + interval '1 minute');
+INSERT INTO round_athlete_results (id, match_id, round_id, athlete_id, referee_points, fault_count) VALUES
+  ('00000000-0000-0000-0000-000000000053', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000052', '00000000-0000-0000-0000-000000000051', 3, 0);
+BEGIN;
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO match_appeals (id, match_id, scope, attempt_number, source_round_id, completed_inspector_assignment_id) VALUES
+  ('00000000-0000-0000-0000-000000000054', '00000000-0000-0000-0000-000000000005', 'REGULATION', 0, '00000000-0000-0000-0000-000000000052', '00000000-0000-0000-0000-000000000012');
+INSERT INTO match_appeal_adjustments (id, appeal_id, athlete_id, base_referee_score, final_score) VALUES
+  ('00000000-0000-0000-0000-000000000055', '00000000-0000-0000-0000-000000000054', '00000000-0000-0000-0000-000000000051', 3, 3),
+  ('00000000-0000-0000-0000-000000000057', '00000000-0000-0000-0000-000000000054', '00000000-0000-0000-0000-000000000056', 2, 2);
+COMMIT;
 INSERT INTO scoring_windows (id, match_id, round_number, started_at, ends_at) VALUES
   ('00000000-0000-0000-0000-000000000014', '00000000-0000-0000-0000-000000000005', 1, now(), now() + interval '1 minute');
 INSERT INTO referee_votes (id, scoring_window_id, match_id, referee_slot, athlete_color, session_id) VALUES
@@ -69,11 +106,14 @@ INSERT INTO referee_votes (id, scoring_window_id, match_id, referee_slot, athlet
 INSERT INTO audit_logs (id, match_id, session_id, event_type, metadata) VALUES
   ('00000000-0000-0000-0000-000000000016', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000011', 'MATCH_ACTION', '{"role":"REFEREE","before":{"role":"INSPECTOR"},"note":"REFEREE prose remains unchanged"}');
 '@
-  Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM referee_votes;" '1'
-  Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM match_sessions WHERE active;" '2'
-  Invoke-Sql official_role_rename_upgrade (Get-Content -Raw -Encoding UTF8 $targetSql)
-  Invoke-Sql official_role_rename_upgrade (Get-Content -Raw -Encoding UTF8 $repairSql)
-  Invoke-Sql official_role_rename_upgrade (Get-Content -Raw -Encoding UTF8 $metadataRepairSql)
+  Assert-Scalar $database "SELECT count(*) FROM referee_votes;" '1'
+  Assert-Scalar $database "SELECT count(*) FROM match_sessions WHERE active;" '2'
+  Assert-Scalar $database "SELECT count(*) FROM match_sessions WHERE NOT active AND revoked_at IS NOT NULL;" '1'
+  Assert-Scalar $database "SELECT count(*) FROM match_official_assignments WHERE released_at IS NULL;" '2'
+  Assert-Scalar $database "SELECT count(*) FROM match_official_assignments WHERE released_at IS NOT NULL;" '1'
+  Invoke-Sql $database (Get-Content -Raw -Encoding UTF8 $targetSql)
+  Invoke-Sql $database (Get-Content -Raw -Encoding UTF8 $repairSql)
+  Invoke-Sql $database (Get-Content -Raw -Encoding UTF8 $metadataRepairSql)
 
   Assert-Scalar official_role_rename_upgrade "SELECT enum_range(NULL::tournament_official_role)::text;" '{JUDGE,SUPERVISOR}'
   Assert-Scalar official_role_rename_upgrade "SELECT enum_range(NULL::match_role)::text;" '{JUDGE,SUPERVISOR}'
@@ -89,7 +129,29 @@ INSERT INTO audit_logs (id, match_id, session_id, event_type, metadata) VALUES
   Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM match_sessions WHERE active AND id IN ('00000000-0000-0000-0000-000000000010','00000000-0000-0000-0000-000000000011') AND ((id='00000000-0000-0000-0000-000000000010' AND role='SUPERVISOR') OR (id='00000000-0000-0000-0000-000000000011' AND role='JUDGE' AND judge_slot='JUDGE_1'));" '2'
   Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM match_access_codes WHERE match_id='00000000-0000-0000-0000-000000000005' AND access_role IN ('SUPERVISOR','JUDGE_1');" '2'
   Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM match_official_assignments WHERE match_id='00000000-0000-0000-0000-000000000005' AND ((id='00000000-0000-0000-0000-000000000012' AND role='SUPERVISOR' AND assigned_by_supervisor_id IS NULL) OR (id='00000000-0000-0000-0000-000000000013' AND role='JUDGE' AND judge_position=1 AND assigned_by_supervisor_id='00000000-0000-0000-0000-000000000006'));" '2'
+  Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM match_official_assignments WHERE id='00000000-0000-0000-0000-000000000017' AND role='JUDGE' AND judge_position=2 AND released_at IS NOT NULL;" '1'
+  Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM match_sessions WHERE id='00000000-0000-0000-0000-000000000018' AND role='JUDGE' AND NOT active AND revoked_at IS NOT NULL;" '1'
+  Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM round_athlete_results WHERE id='00000000-0000-0000-0000-000000000053' AND judge_points=3;" '1'
+  Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM match_appeal_adjustments WHERE id='00000000-0000-0000-0000-000000000055' AND base_judge_score=3 AND final_score=3;" '1'
+  Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM match_appeals WHERE id='00000000-0000-0000-0000-000000000054' AND completed_supervisor_assignment_id='00000000-0000-0000-0000-000000000012';" '1'
+  Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM tournament_officials WHERE (id='00000000-0000-0000-0000-000000000006' AND role='SUPERVISOR') OR (id='00000000-0000-0000-0000-000000000007' AND role='JUDGE');" '2'
+  Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM tournament_officials WHERE id='00000000-0000-0000-0000-000000000006' AND role='JUDGE' OR id='00000000-0000-0000-0000-000000000007' AND role='SUPERVISOR';" '0'
   Assert-Scalar official_role_rename_upgrade "SELECT (metadata->>'role') || ':' || (metadata->'before'->>'role') || ':' || (metadata->>'note') FROM audit_logs WHERE id='00000000-0000-0000-0000-000000000016';" 'JUDGE:SUPERVISOR:REFEREE prose remains unchanged'
+  $port = Get-ContainerPort
+  $previousDatabaseUrl = $env:DATABASE_URL
+  try {
+    $env:DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:$port/$database?schema=public"
+    Push-Location (Split-Path $PSScriptRoot -Parent)
+    try {
+      # The local API may hold Prisma's shared Windows engine DLL open. Client
+      # code still regenerates here; retaining the installed engine avoids a
+      # shared-workspace file lock while the contract runner exercises it.
+      & pnpm exec prisma generate --no-engine
+      if ($LASTEXITCODE -ne 0) { throw 'Prisma generate failed for the disposable database contract check.' }
+      & pnpm exec tsx prisma/verify-official-role-rename-prisma-client.ts
+      if ($LASTEXITCODE -ne 0) { throw 'Generated Prisma client contract verification failed.' }
+    } finally { Pop-Location }
+  } finally { $env:DATABASE_URL = $previousDatabaseUrl }
   # Exercise every V2 scope-trigger table after the forward repair.  The block
   # asserts valid INSERT/UPDATE behavior, 23514 scope/role rejections, direct
   # deletes, and a cascading adjustment delete through its appeal FK.
