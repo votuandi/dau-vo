@@ -1,4 +1,4 @@
-import { Navigate, createBrowserRouter } from 'react-router-dom';
+import { Navigate, createBrowserRouter, type RouteObject } from 'react-router-dom';
 import { AdminRouteGuard } from '@/features/admin-auth/admin-route-guard';
 import { AuthenticatedRouteGuard } from '@/features/auth/authenticated-route-guard';
 import { SuperAdminRouteGuard } from '@/features/auth/super-admin-route-guard';
@@ -27,7 +27,7 @@ import { TournamentOfficialRole } from '@/types/shared';
 import { RoleAwareIndexRedirect } from './role-aware-index-redirect';
 import { LegacyJudgeAlias } from './legacy-judge-alias';
 
-export const router = createBrowserRouter([
+export const routes: RouteObject[] = [
   {
     path: '/',
     element: <AppLayout />,
@@ -116,14 +116,15 @@ export const router = createBrowserRouter([
       },
       {
         path: 'giam-dinh',
-        element: (
-          <MatchAccessPage expectedRole={TournamentOfficialRole.JUDGE} key="judge-access" />
-        ),
+        element: <MatchAccessPage expectedRole={TournamentOfficialRole.JUDGE} key="judge-access" />,
       },
       {
         path: 'giam-sat',
         element: (
-          <MatchAccessPage expectedRole={TournamentOfficialRole.SUPERVISOR} key="supervisor-access" />
+          <MatchAccessPage
+            expectedRole={TournamentOfficialRole.SUPERVISOR}
+            key="supervisor-access"
+          />
         ),
       },
       {
@@ -140,4 +141,6 @@ export const router = createBrowserRouter([
       },
     ],
   },
-]);
+];
+
+export const router = createBrowserRouter(routes);

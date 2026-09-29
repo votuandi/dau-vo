@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { createMemoryRouter, MemoryRouter, RouterProvider, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MatchStatus, TournamentOfficialRole } from '@martial-arts-scoring/shared-types';
 import { MatchAccessPage } from './match-access-page';
+import { routes } from '@/app/router/router';
 import { ApiClientError } from '@/services/api/client';
 import type { OfficialSession } from '@/services/api/official-access';
 
@@ -142,6 +143,23 @@ function renderPage(expectedRole = TournamentOfficialRole.JUDGE) {
   };
 }
 
+function renderRoute(initialEntry: string) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const router = createMemoryRouter(routes, { initialEntries: [initialEntry] });
+
+  return {
+    queryClient,
+    router,
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    ),
+  };
+}
+
 async function fillLoginForm(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   await user.type(await screen.findByLabelText('Mã giải đấu'), 'giai72');
   await user.type(await screen.findByLabelText('Mã bảo mật riêng'), 'JUDGE-PASSCODE');
@@ -196,6 +214,58 @@ describe('MatchAccessPage official login', () => {
     expect(
       window.localStorage.getItem('martial-arts-scoring.match-access.last-match-public-id'),
     ).toBeNull();
+  });
+
+  it.each([
+    ['/giam-dinh', TournamentOfficialRole.JUDGE],
+    ['/giam-sat', TournamentOfficialRole.SUPERVISOR],
+  ] as const)('uses the configured %s route role for login', async (path, expectedRole) => {
+    const user = userEvent.setup();
+    officialAccessApiMock.login.mockResolvedValue({
+      session: expectedRole === TournamentOfficialRole.JUDGE ? refereeSession : inspectorSession,
+    });
+    const { router } = renderRoute(path);
+
+    await fillLoginForm(user);
+    await user.click(screen.getByRole('button', { name: 'Đăng nhập' }));
+
+    await waitFor(() => {
+      expect(officialAccessApiMock.login).toHaveBeenCalledWith(
+        expect.objectContaining({ expectedRole }),
+      );
+    });
+    expect(router.state.location.pathname).toBe(path);
+  });
+
+  it('redirects the legacy judge route once while preserving search and hash', async () => {
+    const { router } = renderRoute('/trong-tai?x=1#top');
+
+    await waitFor(() => {
+      expect(router.state.location).toMatchObject({
+        hash: '#top',
+        pathname: '/giam-dinh',
+        search: '?x=1',
+      });
+    });
+    expect(router.state.historyAction).toBe('REPLACE');
+  });
+
+  it('redirects a restored supervisor from the judge route without a loop, while judge stays canonical', async () => {
+    officialAccessApiMock.session.mockResolvedValue({ session: inspectorSession });
+    const supervisorRoute = renderRoute('/giam-dinh');
+
+    expect(await screen.findByRole('heading', { name: 'Khu vực giám sát' })).toBeVisible();
+    await waitFor(() => {
+      expect(supervisorRoute.router.state.location.pathname).toBe('/giam-sat');
+    });
+    expect(supervisorRoute.router.state.location.pathname).toBe('/giam-sat');
+
+    supervisorRoute.unmount();
+    officialAccessApiMock.session.mockResolvedValue({ session: refereeSession });
+    const judgeRoute = renderRoute('/giam-dinh');
+
+    expect(await screen.findByText('Đang chờ phân công')).toBeVisible();
+    expect(judgeRoute.router.state.location.pathname).toBe('/giam-dinh');
   });
 
   it('shows inspector takeover confirmation and sends the stored challenge only after confirmation', async () => {
