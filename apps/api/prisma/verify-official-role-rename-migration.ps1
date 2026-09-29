@@ -6,10 +6,12 @@ $container = "dau-vo-official-role-rename-verify-$PID"
 $migrationRoot = Join-Path $PSScriptRoot 'migrations'
 $targetName = '20260928230000_official_role_judge_supervisor_rename'
 $repairName = '20260929200000_v2_result_scope_delete_repair'
+$metadataRepairName = '20260929210000_audit_role_metadata_path_correction'
 $migrations = @(Get-ChildItem -Directory $migrationRoot | Sort-Object Name)
 $beforeTarget = @($migrations | Where-Object Name -lt $targetName)
 $targetSql = Join-Path $migrationRoot "$targetName/migration.sql"
 $repairSql = Join-Path $migrationRoot "$repairName/migration.sql"
+$metadataRepairSql = Join-Path $migrationRoot "$metadataRepairName/migration.sql"
 
 function Invoke-Sql([string]$Database, [string]$Sql) {
   $Sql | & docker exec -i $container psql -X -v ON_ERROR_STOP=1 -U postgres -d $Database
@@ -71,6 +73,7 @@ INSERT INTO audit_logs (id, match_id, session_id, event_type, metadata) VALUES
   Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM match_sessions WHERE active;" '2'
   Invoke-Sql official_role_rename_upgrade (Get-Content -Raw -Encoding UTF8 $targetSql)
   Invoke-Sql official_role_rename_upgrade (Get-Content -Raw -Encoding UTF8 $repairSql)
+  Invoke-Sql official_role_rename_upgrade (Get-Content -Raw -Encoding UTF8 $metadataRepairSql)
 
   Assert-Scalar official_role_rename_upgrade "SELECT enum_range(NULL::tournament_official_role)::text;" '{JUDGE,SUPERVISOR}'
   Assert-Scalar official_role_rename_upgrade "SELECT enum_range(NULL::match_role)::text;" '{JUDGE,SUPERVISOR}'
@@ -139,6 +142,35 @@ DELETE FROM match_appeals WHERE id='00000000-0000-0000-0000-000000000026';
 COMMIT;
 '@
   Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM match_appeal_adjustments WHERE id='00000000-0000-0000-0000-000000000027';" '0'
+
+  # Verify the forward repair in isolation against pre-rename audit JSON. This
+  # makes each supported path and preservation boundary explicit; applying it
+  # after the historical migration cannot reconstruct ambiguous nested values
+  # already changed by that migration.
+  Invoke-Sql postgres 'CREATE DATABASE official_role_metadata_path_safety;'
+  foreach ($migration in $beforeTarget) { Invoke-Migration official_role_metadata_path_safety $migration }
+  Invoke-Sql official_role_metadata_path_safety @'
+INSERT INTO audit_logs (id, event_type, metadata) VALUES
+  ('10000000-0000-0000-0000-000000000001', 'MATCH_ACTION', '{"role":"REFEREE","count":7,"enabled":true,"none":null}'::jsonb),
+  ('10000000-0000-0000-0000-000000000002', 'MATCH_ACTION', '{"before":{"role":"INSPECTOR","actor":{"role":"REFEREE"}},"after":{"role":"REFEREE","context":{"role":"INSPECTOR"}}}'::jsonb),
+  ('10000000-0000-0000-0000-000000000003', 'MATCH_ACTION', '{"role":"ADMIN","before":{"role":"USER"},"after":{"role":null}}'::jsonb),
+  ('10000000-0000-0000-0000-000000000004', 'MATCH_ACTION', '{"note":"REFEREE and INSPECTOR remain prose","values":["REFEREE",{"role":"INSPECTOR"},false,3,null]}'::jsonb),
+  ('10000000-0000-0000-0000-000000000005', 'MATCH_ACTION', NULL),
+  ('10000000-0000-0000-0000-000000000006', 'MATCH_ACTION', '{}'::jsonb),
+  ('10000000-0000-0000-0000-000000000007', 'MATCH_ACTION', '[{"role":"REFEREE"},"INSPECTOR",0,false,null]'::jsonb),
+  ('10000000-0000-0000-0000-000000000008', 'MATCH_ACTION', '{"before":{"actor":{"role":"REFEREE"}},"after":{"context":{"role":"INSPECTOR"}},"nested":[{"role":"REFEREE"}]}'::jsonb),
+  ('10000000-0000-0000-0000-000000000009', 'MATCH_ACTION', '{"role":"INSPECTOR","before":{"role":"REFEREE"},"after":{"role":"INSPECTOR"}}'::jsonb);
+'@
+  Invoke-Sql official_role_metadata_path_safety (Get-Content -Raw -Encoding UTF8 $metadataRepairSql)
+  Assert-Scalar official_role_metadata_path_safety "SELECT metadata = '{\"role\":\"JUDGE\",\"count\":7,\"enabled\":true,\"none\":null}'::jsonb FROM audit_logs WHERE id='10000000-0000-0000-0000-000000000001';" 't'
+  Assert-Scalar official_role_metadata_path_safety "SELECT metadata = '{\"before\":{\"role\":\"SUPERVISOR\",\"actor\":{\"role\":\"REFEREE\"}},\"after\":{\"role\":\"JUDGE\",\"context\":{\"role\":\"INSPECTOR\"}}}'::jsonb FROM audit_logs WHERE id='10000000-0000-0000-0000-000000000002';" 't'
+  Assert-Scalar official_role_metadata_path_safety "SELECT metadata = '{\"role\":\"ADMIN\",\"before\":{\"role\":\"USER\"},\"after\":{\"role\":null}}'::jsonb FROM audit_logs WHERE id='10000000-0000-0000-0000-000000000003';" 't'
+  Assert-Scalar official_role_metadata_path_safety "SELECT metadata = '{\"note\":\"REFEREE and INSPECTOR remain prose\",\"values\":[\"REFEREE\",{\"role\":\"INSPECTOR\"},false,3,null]}'::jsonb FROM audit_logs WHERE id='10000000-0000-0000-0000-000000000004';" 't'
+  Assert-Scalar official_role_metadata_path_safety "SELECT count(*) FROM audit_logs WHERE id='10000000-0000-0000-0000-000000000005' AND metadata IS NULL;" '1'
+  Assert-Scalar official_role_metadata_path_safety "SELECT metadata = '{}'::jsonb FROM audit_logs WHERE id='10000000-0000-0000-0000-000000000006';" 't'
+  Assert-Scalar official_role_metadata_path_safety "SELECT metadata = '[{\"role\":\"REFEREE\"},\"INSPECTOR\",0,false,null]'::jsonb FROM audit_logs WHERE id='10000000-0000-0000-0000-000000000007';" 't'
+  Assert-Scalar official_role_metadata_path_safety "SELECT metadata = '{\"before\":{\"actor\":{\"role\":\"REFEREE\"}},\"after\":{\"context\":{\"role\":\"INSPECTOR\"}},\"nested\":[{\"role\":\"REFEREE\"}]}'::jsonb FROM audit_logs WHERE id='10000000-0000-0000-0000-000000000008';" 't'
+  Assert-Scalar official_role_metadata_path_safety "SELECT metadata = '{\"role\":\"SUPERVISOR\",\"before\":{\"role\":\"JUDGE\"},\"after\":{\"role\":\"SUPERVISOR\"}}'::jsonb FROM audit_logs WHERE id='10000000-0000-0000-0000-000000000009';" 't'
   Write-Host 'Official role rename migration catalog verification passed on a disposable PostgreSQL database.'
 } finally {
   if (& docker ps -a --format '{{.Names}}' | Select-String -Quiet -SimpleMatch $container) { & docker rm -f $container | Out-Null }
