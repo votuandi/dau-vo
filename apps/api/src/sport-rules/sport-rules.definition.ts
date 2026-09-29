@@ -7,12 +7,12 @@ export interface SportRulesDefinition {
   readonly minimumScoreboardConnections: number;
   readonly roundCount: number;
   /** Staffing policy used for brackets and manually prepared matches. */
-  readonly defaultRequiredRefereeCount: number;
+  readonly defaultRequiredJudgeCount: number;
   readonly minimumRequiredRefereeCount: number;
   readonly requiresOddRefereeCount: boolean;
-  readonly refereeMajority: (refereeCount: number) => number;
-  readonly refereePointValue: number;
-  readonly inspectorPenaltyValue: number;
+  readonly judgeMajority: (judgeCount: number) => number;
+  readonly judgePointValue: number;
+  readonly supervisorPenaltyValue: number;
   /** Decides a completed match from the server-calculated effective totals. */
   readonly determineWinner: (
     totals: Readonly<Record<AthleteColor, number>>,
@@ -29,7 +29,7 @@ export const oneOnOneCombatRules: SportRulesDefinition = Object.freeze({
   ]),
   athleteColors: Object.freeze([AthleteColor.RED, AthleteColor.BLUE]),
   code: 'ONE_ON_ONE_COMBAT',
-  inspectorPenaltyValue: -1,
+  supervisorPenaltyValue: -1,
   determineWinner: (totals: Readonly<Record<AthleteColor, number>>) =>
     totals[AthleteColor.RED] === totals[AthleteColor.BLUE]
       ? null
@@ -37,10 +37,10 @@ export const oneOnOneCombatRules: SportRulesDefinition = Object.freeze({
         ? AthleteColor.RED
         : AthleteColor.BLUE,
   minimumScoreboardConnections: 1,
-  defaultRequiredRefereeCount: 3,
+  defaultRequiredJudgeCount: 3,
   minimumRequiredRefereeCount: 3,
   requiresOddRefereeCount: true,
-  refereeMajority: (refereeCount: number) => Math.floor(refereeCount / 2) + 1,
-  refereePointValue: 1,
+  judgeMajority: (judgeCount: number) => Math.floor(judgeCount / 2) + 1,
+  judgePointValue: 1,
   roundCount: 2,
 });

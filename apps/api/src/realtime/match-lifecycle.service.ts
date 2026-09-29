@@ -37,7 +37,7 @@ import { BracketOutcomeService } from '../brackets/bracket-outcome.service';
 import { MatchOfficialAssignmentLifecycleService } from '../match-official-assignments/match-official-assignment-lifecycle.service';
 import { RealtimeOfficialRoutingService } from './realtime-official-routing.service';
 import { RealtimeSessionRegistryService } from './realtime-session-registry.service';
-import { auditActor, type InspectorCommandIdentity } from './command-identity';
+import { auditActor, type SupervisorCommandIdentity } from './command-identity';
 import { ScoringService } from './scoring.service';
 import {
   InactiveRoundStartSessionError,
@@ -210,7 +210,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
 
   async startRound(input: {
     matchId: string;
-    identity: InspectorCommandIdentity;
+    identity: SupervisorCommandIdentity;
   }): Promise<RoundStartedTransition> {
     const result = await this.prisma.$transaction(
       async (transaction) => {
@@ -220,7 +220,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
         // session-validation transaction and accidentally starting Round 2.
         await this.lockMatch(transaction, input.matchId);
         await this.rulesForMatch(transaction, input.matchId);
-        await this.lockActiveInspectorIdentity(
+        await this.lockActiveSupervisorIdentity(
           transaction,
           input.matchId,
           input.identity,
@@ -355,7 +355,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
 
   async pauseRound(input: {
     matchId: string;
-    identity: InspectorCommandIdentity;
+    identity: SupervisorCommandIdentity;
   }): Promise<RoundControlTransition> {
     const result = await this.prisma.$transaction(
       async (transaction) => {
@@ -443,7 +443,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
 
   async resumeRound(input: {
     matchId: string;
-    identity: InspectorCommandIdentity;
+    identity: SupervisorCommandIdentity;
   }): Promise<RoundControlTransition> {
     const result = await this.prisma.$transaction(
       async (transaction) => {
@@ -534,21 +534,21 @@ export class MatchLifecycleService implements OnModuleDestroy {
 
   async cancelCurrentRoundResult(input: {
     matchId: string;
-    identity: InspectorCommandIdentity;
+    identity: SupervisorCommandIdentity;
   }): Promise<ResultCancellationTransition> {
     return this.cancelResults(input, false);
   }
 
   async resetMatchResults(input: {
     matchId: string;
-    identity: InspectorCommandIdentity;
+    identity: SupervisorCommandIdentity;
   }): Promise<ResultCancellationTransition> {
     return this.cancelResults(input, true);
   }
 
   async exitMatch(input: {
     matchId: string;
-    identity: InspectorCommandIdentity;
+    identity: SupervisorCommandIdentity;
     mode: MatchExitMode;
     traceId?: string;
   }): Promise<MatchExitTransition> {
@@ -578,7 +578,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
         await this.lockMatch(transaction, input.matchId);
         this.logger.log(logFields, 'Match exit lifecycle match lock acquired');
         await this.rulesForMatch(transaction, input.matchId);
-        await this.lockActiveInspectorIdentity(
+        await this.lockActiveSupervisorIdentity(
           transaction,
           input.matchId,
           input.identity,
@@ -852,13 +852,13 @@ export class MatchLifecycleService implements OnModuleDestroy {
 
   async completeMatch(input: {
     matchId: string;
-    identity: InspectorCommandIdentity;
+    identity: SupervisorCommandIdentity;
   }): Promise<MatchCompletionTransition> {
     return this.prisma.$transaction(
       async (transaction) => {
         await this.lockMatch(transaction, input.matchId);
         await this.rulesForMatch(transaction, input.matchId);
-        await this.lockActiveInspectorIdentity(
+        await this.lockActiveSupervisorIdentity(
           transaction,
           input.matchId,
           input.identity,
@@ -976,7 +976,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
   }
 
   private async cancelResults(
-    input: { matchId: string; identity: InspectorCommandIdentity },
+    input: { matchId: string; identity: SupervisorCommandIdentity },
     entireMatch: boolean,
   ): Promise<ResultCancellationTransition> {
     const result = await this.prisma.$transaction(
@@ -1317,7 +1317,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
   async undoResultCancellation(input: {
     matchId: string;
     operationId: string;
-    identity: InspectorCommandIdentity;
+    identity: SupervisorCommandIdentity;
   }): Promise<ResultCancellationUndoTransition> {
     return this.prisma.$transaction(
       async (transaction) => {
@@ -1888,10 +1888,10 @@ export class MatchLifecycleService implements OnModuleDestroy {
       });
   }
 
-  private async lockActiveInspectorIdentity(
+  private async lockActiveSupervisorIdentity(
     transaction: Prisma.TransactionClient,
     matchId: string,
-    identity: InspectorCommandIdentity,
+    identity: SupervisorCommandIdentity,
   ): Promise<void> {
     if (identity.kind === 'official') {
       const rows = await transaction.$queryRaw<LockedRow[]>`
@@ -1952,10 +1952,10 @@ export class MatchLifecycleService implements OnModuleDestroy {
 
   private async lockActiveControlSession(
     transaction: Prisma.TransactionClient,
-    input: { matchId: string; identity: InspectorCommandIdentity },
+    input: { matchId: string; identity: SupervisorCommandIdentity },
   ): Promise<void> {
     try {
-      await this.lockActiveInspectorIdentity(
+      await this.lockActiveSupervisorIdentity(
         transaction,
         input.matchId,
         input.identity,

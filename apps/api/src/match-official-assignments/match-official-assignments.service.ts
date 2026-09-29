@@ -33,7 +33,7 @@ export class MatchOfficialAssignmentsService {
   ) {}
 
   async list(identity: ValidatedOfficialSession) {
-    this.inspector(identity);
+    this.supervisor(identity);
     const matches = await this.prisma.match.findMany({
       where: {
         tournamentId: identity.tournamentId,
@@ -77,7 +77,7 @@ export class MatchOfficialAssignmentsService {
   }
 
   async state(matchId: string, identity: ValidatedOfficialSession) {
-    this.inspector(identity);
+    this.supervisor(identity);
     const match = await this.prisma.match.findFirst({
       where: { id: matchId, tournamentId: identity.tournamentId },
       select: {
@@ -131,7 +131,7 @@ export class MatchOfficialAssignmentsService {
     judgeIds: string[],
     identity: ValidatedOfficialSession,
   ) {
-    this.inspector(identity);
+    this.supervisor(identity);
     if (new Set(judgeIds).size !== judgeIds.length)
       throw new ConflictException(
         assignmentError('JUDGE_COUNT_MISMATCH', 'Referees must be distinct'),
@@ -316,7 +316,7 @@ export class MatchOfficialAssignmentsService {
   }
 
   async claim(matchId: string, identity: ValidatedOfficialSession) {
-    this.inspector(identity);
+    this.supervisor(identity);
     // Compatibility endpoint intentionally no longer creates an inspector-only
     // assignment. Callers must use take() so no match can be half-assigned.
     throw new ConflictException(
@@ -390,7 +390,7 @@ export class MatchOfficialAssignmentsService {
     judgeIds: string[],
     identity: ValidatedOfficialSession,
   ) {
-    this.inspector(identity);
+    this.supervisor(identity);
     if (new Set(judgeIds).size !== judgeIds.length)
       throw new ConflictException(
         assignmentError('JUDGE_COUNT_MISMATCH', 'Referees must be distinct'),
@@ -579,7 +579,7 @@ export class MatchOfficialAssignmentsService {
   }
 
   async release(matchId: string, identity: ValidatedOfficialSession) {
-    this.inspector(identity);
+    this.supervisor(identity);
     const result = await this.transaction(async (tx) => {
       await this.lockTournament(tx, identity.tournamentId);
       await this.lockMatch(tx, matchId);
@@ -722,7 +722,7 @@ export class MatchOfficialAssignmentsService {
     }
   }
 
-  private inspector(identity: ValidatedOfficialSession) {
+  private supervisor(identity: ValidatedOfficialSession) {
     if (identity.official.role !== TournamentOfficialRole.SUPERVISOR)
       throw new ForbiddenException(
         assignmentError('SUPERVISOR_REQUIRED', 'Inspector role required'),

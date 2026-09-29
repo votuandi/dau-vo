@@ -16,7 +16,7 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
 import { activeRoundElapsedMs } from './round-timing';
-import { auditActor, type InspectorCommandIdentity } from './command-identity';
+import { auditActor, type SupervisorCommandIdentity } from './command-identity';
 import {
   InactivePenaltySessionError,
   MatchNotRunningForPenaltyError,
@@ -70,7 +70,7 @@ export class PenaltyService {
   async addPenalty(input: {
     athlete: AthleteColor;
     matchId: string;
-    identity?: InspectorCommandIdentity;
+    identity?: SupervisorCommandIdentity;
     /** Legacy service callers retained during the migration. */
     sessionId?: string;
   }): Promise<PenaltyTransition> {
@@ -88,7 +88,7 @@ export class PenaltyService {
       async (transaction) => {
         await this.lockMatch(transaction, input.matchId);
         const rules = await this.rulesForMatch(transaction, input.matchId);
-        await this.lockActiveInspectorIdentity(
+        await this.lockActiveSupervisorIdentity(
           transaction,
           input.matchId,
           identity,
@@ -137,7 +137,7 @@ export class PenaltyService {
               identity.kind === 'legacy' ? identity.sessionId : null,
             matchId: input.matchId,
             roundNumber: activeRound.roundNumber,
-            value: rules.inspectorPenaltyValue,
+            value: rules.supervisorPenaltyValue,
           },
           select: { createdAt: true, id: true, value: true },
         });
@@ -260,10 +260,10 @@ export class PenaltyService {
     return this.sportRules.resolve(match.tournament.sport.sportGroup.code);
   }
 
-  private async lockActiveInspectorIdentity(
+  private async lockActiveSupervisorIdentity(
     transaction: Prisma.TransactionClient,
     matchId: string,
-    identity: InspectorCommandIdentity,
+    identity: SupervisorCommandIdentity,
   ): Promise<void> {
     if (identity.kind === 'official') {
       const rows = await transaction.$queryRaw<LockedRow[]>`

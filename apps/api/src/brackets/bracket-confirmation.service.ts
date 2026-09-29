@@ -264,7 +264,7 @@ export class BracketConfirmationService {
           data: Array.from({ length: graph.roundCount }, (_, index) => ({
             bracketId: bracket.id,
             roundNumber: index + 1,
-            requiredJudgeCount: rules.defaultRequiredRefereeCount,
+            requiredJudgeCount: rules.defaultRequiredJudgeCount,
           })),
         });
         await tx.auditLog.create({

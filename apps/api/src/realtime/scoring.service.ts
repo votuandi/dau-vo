@@ -10,7 +10,7 @@ import {
   type ScoringWindowOpenedPayload,
   type ScoringWindowResolvedPayload,
   type VoteAcceptedPayload,
-  JudgeSlot as SharedRefereeSlot,
+  JudgeSlot as SharedJudgeSlot,
 } from '@martial-arts-scoring/shared-types';
 import {
   AthleteColor,
@@ -209,12 +209,12 @@ export class ScoringService implements OnModuleDestroy {
         await this.lockMatch(transaction, input.matchId);
         await this.rulesForMatch(transaction, input.matchId);
         const authorization = input.officialSessionId
-          ? await this.lockActiveRefereeAssignment(
+          ? await this.lockActiveJudgeAssignment(
               transaction,
               input.matchId,
               input.officialSessionId,
             )
-          : await this.lockLegacyRefereeSession(
+          : await this.lockLegacyJudgeSession(
               transaction,
               input.matchId,
               input.sessionId,
@@ -552,9 +552,9 @@ export class ScoringService implements OnModuleDestroy {
       (vote) => vote.athleteColor === AthleteColor.BLUE,
     ).length;
     const winningColor =
-      redVotes >= rules.refereeMajority(match.requiredJudgeCount)
+      redVotes >= rules.judgeMajority(match.requiredJudgeCount)
         ? AthleteColor.RED
-        : blueVotes >= rules.refereeMajority(match.requiredJudgeCount)
+        : blueVotes >= rules.judgeMajority(match.requiredJudgeCount)
           ? AthleteColor.BLUE
           : null;
 
@@ -590,7 +590,7 @@ export class ScoringService implements OnModuleDestroy {
           roundNumber: window.roundNumber,
           scoringWindowId: window.id,
           type: ScoreEventType.JUDGE_POINT,
-          value: rules.refereePointValue,
+          value: rules.judgePointValue,
         },
         select: { id: true },
       });
@@ -618,7 +618,7 @@ export class ScoringService implements OnModuleDestroy {
             judgeSlot:
               vote.judgeSlot === null
                 ? null
-                : this.sharedRefereeSlot(vote.judgeSlot),
+                : this.sharedJudgeSlot(vote.judgeSlot),
             serverReceivedAt: vote.serverReceivedAt.toISOString(),
           })),
           winningColor,
@@ -638,7 +638,7 @@ export class ScoringService implements OnModuleDestroy {
           judgeSlot:
             vote.judgeSlot === null
               ? null
-              : this.sharedRefereeSlot(vote.judgeSlot),
+              : this.sharedJudgeSlot(vote.judgeSlot),
           serverReceivedAt: vote.serverReceivedAt.toISOString(),
         })),
         window: {
@@ -749,7 +749,7 @@ export class ScoringService implements OnModuleDestroy {
       athlete: this.sharedAthleteColor(athlete),
       identity: {
         kind: 'legacy',
-        judgeSlot: this.sharedRefereeSlot(authorization.judgeSlot),
+        judgeSlot: this.sharedJudgeSlot(authorization.judgeSlot),
       },
       matchPublicId,
       scoringWindowId,
@@ -786,7 +786,7 @@ export class ScoringService implements OnModuleDestroy {
     return this.sportRules.resolve(match.tournament.sport.sportGroup.code);
   }
 
-  private async lockActiveRefereeAssignment(
+  private async lockActiveJudgeAssignment(
     transaction: Prisma.TransactionClient,
     matchId: string,
     officialSessionId: string,
@@ -821,14 +821,14 @@ export class ScoringService implements OnModuleDestroy {
     };
   }
 
-  private async lockLegacyRefereeSession(
+  private async lockLegacyJudgeSession(
     transaction: Prisma.TransactionClient,
     matchId: string,
     sessionId: string | undefined,
     judgeSlot: JudgeSlot | undefined,
   ): Promise<VoteAuthorization> {
     if (!sessionId || !judgeSlot) throw new InactiveVoteSessionError();
-    const lockedSessionId = await this.lockActiveRefereeSession(
+    const lockedSessionId = await this.lockActiveJudgeSession(
       transaction,
       matchId,
       sessionId,
@@ -841,7 +841,7 @@ export class ScoringService implements OnModuleDestroy {
     };
   }
 
-  private async lockActiveRefereeSession(
+  private async lockActiveJudgeSession(
     transaction: Prisma.TransactionClient,
     matchId: string,
     sessionId: string,
@@ -939,14 +939,14 @@ export class ScoringService implements OnModuleDestroy {
       : SharedAthleteColor.BLUE;
   }
 
-  private sharedRefereeSlot(slot: JudgeSlot): SharedRefereeSlot {
+  private sharedJudgeSlot(slot: JudgeSlot): SharedJudgeSlot {
     switch (slot) {
       case 'JUDGE_1':
-        return SharedRefereeSlot.JUDGE_1;
+        return SharedJudgeSlot.JUDGE_1;
       case 'JUDGE_2':
-        return SharedRefereeSlot.JUDGE_2;
+        return SharedJudgeSlot.JUDGE_2;
       case 'JUDGE_3':
-        return SharedRefereeSlot.JUDGE_3;
+        return SharedJudgeSlot.JUDGE_3;
     }
   }
 }

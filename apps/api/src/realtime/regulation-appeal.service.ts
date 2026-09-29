@@ -8,9 +8,9 @@ import {
   MatchStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import type { InspectorCommandIdentity } from './command-identity';
+import type { SupervisorCommandIdentity } from './command-identity';
 import { auditActor } from './command-identity';
-import { InspectorAuthorizationService } from './inspector-authorization.service';
+import { SupervisorAuthorizationService } from './supervisor-authorization.service';
 import { finalScore } from './result-calculations';
 
 export const MAX_REGULATION_APPEAL_POINTS = 100;
@@ -50,19 +50,19 @@ export type RegulationAppealTransition = {
 export class RegulationAppealService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(InspectorAuthorizationService)
-    private readonly inspectorAuthorization: InspectorAuthorizationService,
+    @Inject(SupervisorAuthorizationService)
+    private readonly supervisorAuthorization: SupervisorAuthorizationService,
   ) {}
 
   async complete(input: {
     matchId: string;
-    identity: InspectorCommandIdentity;
+    identity: SupervisorCommandIdentity;
     payload: RegulationAppealInput;
   }): Promise<RegulationAppealTransition> {
     return this.prisma.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT "id" FROM "matches" WHERE "id"=${input.matchId}::uuid FOR UPDATE`;
-        await this.inspectorAuthorization.lockAndVerify(
+        await this.supervisorAuthorization.lockAndVerify(
           tx,
           input.matchId,
           input.identity,
@@ -189,8 +189,8 @@ export class RegulationAppealService {
             idempotencyKey: input.payload.idempotencyKey,
             completedAt: clock[0]!.now,
             ...(input.identity.kind === 'official'
-              ? { completedInspectorAssignmentId: input.identity.assignmentId }
-              : { completedInspectorSessionId: input.identity.sessionId }),
+              ? { completedSupervisorAssignmentId: input.identity.assignmentId }
+              : { completedSupervisorSessionId: input.identity.sessionId }),
           },
           select: { id: true },
         });

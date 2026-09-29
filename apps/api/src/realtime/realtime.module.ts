@@ -14,7 +14,7 @@ import { ScoringService } from './scoring.service';
 import { RegulationAppealService } from './regulation-appeal.service';
 import { OvertimeService } from './overtime.service';
 import { ResultPublicationService } from './result-publication.service';
-import { InspectorAuthorizationService } from './inspector-authorization.service';
+import { SupervisorAuthorizationService } from './supervisor-authorization.service';
 import { MatchOfficialAssignmentsModule } from '../match-official-assignments/match-official-assignments.module';
 
 @Module({
@@ -37,7 +37,7 @@ import { MatchOfficialAssignmentsModule } from '../match-official-assignments/ma
     RegulationAppealService,
     OvertimeService,
     ResultPublicationService,
-    InspectorAuthorizationService,
+    SupervisorAuthorizationService,
   ],
 })
 export class RealtimeModule {}

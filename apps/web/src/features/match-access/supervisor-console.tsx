@@ -279,7 +279,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
     !roundIsRunning ||
     realtime.submittingFault !== null;
   const canStartRound = status === MatchStatus.WAITING || status === MatchStatus.BREAK;
-  const refereeReadiness =
+  const judgeReadiness =
     snapshot?.readiness.kind === 'TOURNAMENT_OFFICIALS'
       ? snapshot.readiness.referees.map((referee) => ({
           connected: referee.connected,
@@ -471,7 +471,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
                   Sẵn sàng trận đấu
                 </h2>
                 <ul className="mt-3 grid gap-2 text-sm font-semibold">
-                  {refereeReadiness.map((referee) => (
+                  {judgeReadiness.map((referee) => (
                     <li
                       className={referee.connected ? 'text-emerald-200' : 'text-red-200'}
                       key={referee.label}

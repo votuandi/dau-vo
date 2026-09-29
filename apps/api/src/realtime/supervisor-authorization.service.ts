@@ -1,17 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import { type InspectorCommandIdentity } from './command-identity';
+import { type SupervisorCommandIdentity } from './command-identity';
 
 /**
- * The single locking authorization boundary for inspector mutations.  Legacy
+ * The single locking authorization boundary for supervisor mutations. Legacy
  * credentials are deliberately excluded once a modern assignment exists.
  */
 @Injectable()
-export class InspectorAuthorizationService {
+export class SupervisorAuthorizationService {
   async lockAndVerify(
     tx: Prisma.TransactionClient,
     matchId: string,
-    identity: InspectorCommandIdentity,
+    identity: SupervisorCommandIdentity,
     error: Error,
   ): Promise<void> {
     const rows =

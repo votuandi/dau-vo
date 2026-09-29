@@ -1,8 +1,8 @@
 import type { Prisma } from '@prisma/client';
-import { InspectorAuthorizationService } from './inspector-authorization.service';
+import { SupervisorAuthorizationService } from './supervisor-authorization.service';
 
-describe('InspectorAuthorizationService', () => {
-  const service = new InspectorAuthorizationService();
+describe('SupervisorAuthorizationService', () => {
+  const service = new SupervisorAuthorizationService();
   const denied = new Error('SUPERVISOR_REQUIRED');
   const officialIdentity = {
     assignmentId: 'assignment-id',

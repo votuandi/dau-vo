@@ -20,7 +20,7 @@ import {
   type ResultCapabilityBlockedReason,
   MatchExitMode,
   type PresenceUpdatedPayload,
-  JudgeSlot as SharedRefereeSlot,
+  JudgeSlot as SharedJudgeSlot,
 } from '@martial-arts-scoring/shared-types';
 import {
   AthleteColor,
@@ -723,7 +723,7 @@ export class RealtimeMatchStateService {
         athlete: this.sharedAthleteColor(vote.athleteColor),
         identity: {
           kind: 'legacy',
-          judgeSlot: this.sharedRefereeSlot(viewer.judgeSlot),
+          judgeSlot: this.sharedJudgeSlot(viewer.judgeSlot),
         },
         matchPublicId,
         scoringWindowId: unresolvedWindow.id,
@@ -1105,14 +1105,14 @@ export class RealtimeMatchStateService {
     }
   }
 
-  private sharedRefereeSlot(slot: JudgeSlot): SharedRefereeSlot {
+  private sharedJudgeSlot(slot: JudgeSlot): SharedJudgeSlot {
     switch (slot) {
       case JudgeSlot.JUDGE_1:
-        return SharedRefereeSlot.JUDGE_1;
+        return SharedJudgeSlot.JUDGE_1;
       case JudgeSlot.JUDGE_2:
-        return SharedRefereeSlot.JUDGE_2;
+        return SharedJudgeSlot.JUDGE_2;
       case JudgeSlot.JUDGE_3:
-        return SharedRefereeSlot.JUDGE_3;
+        return SharedJudgeSlot.JUDGE_3;
       default: {
         const exhaustiveSlot: never = slot;
         throw new Error(`Unsupported referee slot: ${exhaustiveSlot}`);

@@ -627,7 +627,7 @@ export class AdminManagementService {
               breakDurationMs: input.breakDurationMs ?? this.breakDurationMs,
               publicId,
               roundDurationMs: input.roundDurationMs ?? this.roundDurationMs,
-              requiredJudgeCount: rules.defaultRequiredRefereeCount,
+              requiredJudgeCount: rules.defaultRequiredJudgeCount,
               tournamentId,
               weightClassId: athletes[0]!.weightClassId,
             },
