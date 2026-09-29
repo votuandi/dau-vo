@@ -149,7 +149,7 @@ export class BracketPreviewController {
       tournamentId,
       weightClassId,
       parsedRound,
-      input.requiredRefereeCount,
+      input.requiredJudgeCount,
       request.user.id,
     );
   }

@@ -1,17 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import { type InspectorCommandIdentity } from './command-identity';
+import { type SupervisorCommandIdentity } from './command-identity';
 
 /**
- * The single locking authorization boundary for inspector mutations.  Legacy
+ * The single locking authorization boundary for supervisor mutations. Legacy
  * credentials are deliberately excluded once a modern assignment exists.
  */
 @Injectable()
-export class InspectorAuthorizationService {
+export class SupervisorAuthorizationService {
   async lockAndVerify(
     tx: Prisma.TransactionClient,
     matchId: string,
-    identity: InspectorCommandIdentity,
+    identity: SupervisorCommandIdentity,
     error: Error,
   ): Promise<void> {
     const rows =
@@ -23,7 +23,7 @@ export class InspectorAuthorizationService {
             WHERE a."id"=${identity.assignmentId}::uuid
               AND a."match_id"=${matchId}::uuid
               AND a."official_id"=${identity.officialId}::uuid
-              AND a."role"='INSPECTOR' AND a."released_at" IS NULL
+              AND a."role"='SUPERVISOR' AND a."released_at" IS NULL
               AND s."id"=${identity.officialSessionId}::uuid
               AND s."active"=true AND s."revoked_at" IS NULL
               AND s."expires_at">clock_timestamp()
@@ -35,7 +35,7 @@ export class InspectorAuthorizationService {
             WHERE s."id"=${identity.sessionId}::uuid
               AND s."match_id"=${matchId}::uuid
               AND s."token_hash"=${identity.sessionTokenHash}
-              AND s."role"='INSPECTOR' AND c."access_role"='INSPECTOR'
+              AND s."role"='SUPERVISOR' AND c."access_role"='SUPERVISOR'
               AND s."active"=true AND s."revoked_at" IS NULL
               AND s."expires_at">clock_timestamp()
               AND NOT EXISTS (

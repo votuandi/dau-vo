@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AthleteColor, MatchStatus } from '@martial-arts-scoring/shared-types';
 import type { MatchRealtimeState, RealtimeConnectionStatus } from './match-realtime';
 
-interface RefereeConsoleProps {
+interface JudgeConsoleProps {
   readonly realtime: MatchRealtimeState;
 }
 
@@ -146,7 +146,7 @@ function AthleteVoteButton({
   );
 }
 
-export function RefereeConsole({ realtime }: RefereeConsoleProps) {
+export function JudgeConsole({ realtime }: JudgeConsoleProps) {
   const snapshot = realtime.snapshot;
   const status = snapshot?.match.phase;
   const roundIsRunning =
@@ -176,7 +176,7 @@ export function RefereeConsole({ realtime }: RefereeConsoleProps) {
         <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/15 bg-blue-950/35 px-4 py-3 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5">
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-200/80">
-              Trọng tài
+              Giám định
             </p>
             <p className="mt-1 truncate font-mono text-lg font-black tracking-[0.14em] text-white sm:text-xl">
               {snapshot?.match.publicId ?? 'Đang đồng bộ'}

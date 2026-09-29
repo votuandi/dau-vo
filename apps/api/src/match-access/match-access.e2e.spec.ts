@@ -5,7 +5,7 @@ import {
   AthleteColor,
   MatchAccessRole,
   MatchRole,
-  RefereeSlot,
+  JudgeSlot,
 } from '@prisma/client';
 import { hash } from 'bcryptjs';
 import Redis from 'ioredis';
@@ -24,39 +24,39 @@ const TEST_RUN_ID = `${process.pid}-${Date.now().toString(36)}`;
 const TEST_PREFIX = `match-access-e2e-${TEST_RUN_ID}`;
 
 const rawAccessCodes = {
-  [MatchAccessRole.INSPECTOR]: `INS-${randomBytes(12).toString('base64url')}`,
-  [MatchAccessRole.REFEREE_1]: `R1-${randomBytes(12).toString('base64url')}`,
-  [MatchAccessRole.REFEREE_2]: `R2-${randomBytes(12).toString('base64url')}`,
-  [MatchAccessRole.REFEREE_3]: `R3-${randomBytes(12).toString('base64url')}`,
+  [MatchAccessRole.SUPERVISOR]: `INS-${randomBytes(12).toString('base64url')}`,
+  [MatchAccessRole.JUDGE_1]: `R1-${randomBytes(12).toString('base64url')}`,
+  [MatchAccessRole.JUDGE_2]: `R2-${randomBytes(12).toString('base64url')}`,
+  [MatchAccessRole.JUDGE_3]: `R3-${randomBytes(12).toString('base64url')}`,
 } as const satisfies Record<MatchAccessRole, string>;
 
 const expectedIdentities = {
-  [MatchAccessRole.INSPECTOR]: {
-    refereeSlot: null,
-    role: MatchRole.INSPECTOR,
+  [MatchAccessRole.SUPERVISOR]: {
+    judgeSlot: null,
+    role: MatchRole.SUPERVISOR,
   },
-  [MatchAccessRole.REFEREE_1]: {
-    refereeSlot: RefereeSlot.REFEREE_1,
-    role: MatchRole.REFEREE,
+  [MatchAccessRole.JUDGE_1]: {
+    judgeSlot: JudgeSlot.JUDGE_1,
+    role: MatchRole.JUDGE,
   },
-  [MatchAccessRole.REFEREE_2]: {
-    refereeSlot: RefereeSlot.REFEREE_2,
-    role: MatchRole.REFEREE,
+  [MatchAccessRole.JUDGE_2]: {
+    judgeSlot: JudgeSlot.JUDGE_2,
+    role: MatchRole.JUDGE,
   },
-  [MatchAccessRole.REFEREE_3]: {
-    refereeSlot: RefereeSlot.REFEREE_3,
-    role: MatchRole.REFEREE,
+  [MatchAccessRole.JUDGE_3]: {
+    judgeSlot: JudgeSlot.JUDGE_3,
+    role: MatchRole.JUDGE,
   },
 } as const satisfies Record<
   MatchAccessRole,
-  { refereeSlot: RefereeSlot | null; role: MatchRole }
+  { judgeSlot: JudgeSlot | null; role: MatchRole }
 >;
 
 interface MatchSessionIdentity {
   deviceId: string;
   expiresAt: string;
   matchPublicId: string;
-  refereeSlot: RefereeSlot | null;
+  judgeSlot: JudgeSlot | null;
   role: MatchRole;
   sessionId: string;
 }
@@ -267,10 +267,10 @@ describe('Match participant authentication (integration)', () => {
   });
 
   it.each([
-    MatchAccessRole.REFEREE_1,
-    MatchAccessRole.REFEREE_2,
-    MatchAccessRole.REFEREE_3,
-    MatchAccessRole.INSPECTOR,
+    MatchAccessRole.JUDGE_1,
+    MatchAccessRole.JUDGE_2,
+    MatchAccessRole.JUDGE_3,
+    MatchAccessRole.SUPERVISOR,
   ])(
     'derives the %s identity from the verified server-side code',
     async (role) => {
@@ -310,9 +310,9 @@ describe('Match participant authentication (integration)', () => {
       .send({
         deviceId: `${TEST_PREFIX}-untrusted-role-device`,
         matchId: matchPublicId,
-        refereeSlot: RefereeSlot.REFEREE_1,
-        role: MatchRole.REFEREE,
-        securityCode: rawAccessCodes[MatchAccessRole.INSPECTOR],
+        judgeSlot: JudgeSlot.JUDGE_1,
+        role: MatchRole.JUDGE,
+        securityCode: rawAccessCodes[MatchAccessRole.SUPERVISOR],
       })
       .expect(400);
 
@@ -333,7 +333,7 @@ describe('Match participant authentication (integration)', () => {
       .send({
         deviceId: `${TEST_PREFIX}-unknown-match-device`,
         matchId: 'ZZZZZZZZ',
-        securityCode: rawAccessCodes[MatchAccessRole.REFEREE_1],
+        securityCode: rawAccessCodes[MatchAccessRole.JUDGE_1],
       })
       .expect(401);
 
@@ -349,7 +349,7 @@ describe('Match participant authentication (integration)', () => {
   });
 
   it('requires takeover for every active owner and never trusts a cloned device ID', async () => {
-    const role = MatchAccessRole.REFEREE_1;
+    const role = MatchAccessRole.JUDGE_1;
     const ownerDeviceId = `${TEST_PREFIX}-active-owner`;
     const owner = await login(role, ownerDeviceId);
     expect(owner.response.status).toBe(200);
@@ -378,7 +378,7 @@ describe('Match participant authentication (integration)', () => {
   });
 
   it('rate limits repeated attempts for the same match credential', async () => {
-    const role = MatchAccessRole.INSPECTOR;
+    const role = MatchAccessRole.SUPERVISOR;
 
     for (let attempt = 1; attempt <= 5; attempt += 1) {
       const result = await login(
@@ -397,7 +397,7 @@ describe('Match participant authentication (integration)', () => {
   });
 
   it('atomically takes ownership and invalidates the old browser session', async () => {
-    const role = MatchAccessRole.REFEREE_2;
+    const role = MatchAccessRole.JUDGE_2;
     const owner = await login(role, `${TEST_PREFIX}-takeover-owner`);
     expect(owner.response.status).toBe(200);
     const ownerSession = (owner.response.body as MatchSessionResponseBody)
@@ -445,7 +445,7 @@ describe('Match participant authentication (integration)', () => {
   });
 
   it('allows exactly one winner when two devices take over simultaneously', async () => {
-    const role = MatchAccessRole.REFEREE_3;
+    const role = MatchAccessRole.JUDGE_3;
     const owner = await login(role, `${TEST_PREFIX}-race-owner`);
     expect(owner.response.status).toBe(200);
 
@@ -500,7 +500,7 @@ describe('Match participant authentication (integration)', () => {
   });
 
   it('recovers a browser session from its HTTP-only cookie after reload', async () => {
-    const role = MatchAccessRole.INSPECTOR;
+    const role = MatchAccessRole.SUPERVISOR;
     const deviceId = `${TEST_PREFIX}-recovery-device`;
     const loginResult = await login(role, deviceId);
     expect(loginResult.response.status).toBe(200);
@@ -541,7 +541,7 @@ describe('Match participant authentication (integration)', () => {
   });
 
   it('recovers a persisted browser session after ephemeral Redis state is reset', async () => {
-    const role = MatchAccessRole.REFEREE_1;
+    const role = MatchAccessRole.JUDGE_1;
     const loginResult = await login(role, `${TEST_PREFIX}-redis-reset-device`);
     expect(loginResult.response.status).toBe(200);
     const cookie = readCookie(loginResult.response.headers);
@@ -558,7 +558,7 @@ describe('Match participant authentication (integration)', () => {
   });
 
   it('logs out, revokes the persisted session, and clears browser recovery', async () => {
-    const role = MatchAccessRole.REFEREE_1;
+    const role = MatchAccessRole.JUDGE_1;
     const authenticated = await login(role, `${TEST_PREFIX}-logout-device`);
     expect(authenticated.response.status).toBe(200);
     const sessionId = (authenticated.response.body as MatchSessionResponseBody)

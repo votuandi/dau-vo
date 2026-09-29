@@ -5,5 +5,5 @@ export class ConfirmMatchOfficialAssignmentDto {
   @ArrayMinSize(1)
   @ArrayMaxSize(99)
   @IsUUID('4', { each: true })
-  refereeIds!: string[];
+  judgeIds!: string[];
 }

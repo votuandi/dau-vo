@@ -41,7 +41,7 @@ import type {
   ResultPublishedPayload,
 } from '@martial-arts-scoring/shared-types';
 import type { MatchAccessRole } from '@prisma/client';
-import type { MatchRole, RefereeSlot } from '@prisma/client';
+import type { MatchRole, JudgeSlot } from '@prisma/client';
 import type { Socket } from 'socket.io';
 
 export interface ClientToServerEvents {
@@ -138,7 +138,7 @@ export interface RealtimeSocketIdentity {
   deviceId: string;
   matchId: string;
   publicMatchId: string;
-  refereeSlot: RefereeSlot | null;
+  judgeSlot: JudgeSlot | null;
   role: MatchRole;
   sessionId: string;
 }

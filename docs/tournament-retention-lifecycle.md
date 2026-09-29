@@ -11,4 +11,8 @@ Run the processor from the API workspace with `pnpm lifecycle:run`. It uses a Po
 Purge captures Tournament, organization, and athlete image keys, deletes Matches before
 the Tournament cascade, and transactionally queues each unreachable key. Object
 storage deletion runs only after commit. Failures are structured-log events and
-remain in `media_deletions`; safely retry with `pnpm media:reconcile`.
+remain in `media_deletions`; safely retry with `pnpm media:reconcile`. The API's
+hourly lifecycle execution reconciles after lifecycle purges, but Compose does
+not schedule a standalone reconciliation job for ordinary image replacement or
+removal. Run that command periodically in production and alert on old or
+repeatedly failing rows.

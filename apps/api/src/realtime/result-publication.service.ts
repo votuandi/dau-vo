@@ -13,8 +13,8 @@ import type { AthleteColor } from '@prisma/client';
 import { BracketOutcomeService } from '../brackets/bracket-outcome.service';
 import { MatchOfficialAssignmentLifecycleService } from '../match-official-assignments/match-official-assignment-lifecycle.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { auditActor, type InspectorCommandIdentity } from './command-identity';
-import { InspectorAuthorizationService } from './inspector-authorization.service';
+import { auditActor, type SupervisorCommandIdentity } from './command-identity';
+import { SupervisorAuthorizationService } from './supervisor-authorization.service';
 import {
   AppealIdentityError,
   AppealStateError,
@@ -43,13 +43,13 @@ export class ResultPublicationService {
     private readonly brackets: BracketOutcomeService,
     @Inject(MatchOfficialAssignmentLifecycleService)
     private readonly assignments: MatchOfficialAssignmentLifecycleService,
-    @Inject(InspectorAuthorizationService)
-    private readonly inspectorAuthorization: InspectorAuthorizationService,
+    @Inject(SupervisorAuthorizationService)
+    private readonly supervisorAuthorization: SupervisorAuthorizationService,
   ) {}
 
   async publish(input: {
     matchId: string;
-    identity: InspectorCommandIdentity;
+    identity: SupervisorCommandIdentity;
     idempotencyKey: string;
     traceId?: string;
   }): Promise<ResultPublicationTransition> {
@@ -74,7 +74,7 @@ export class ResultPublicationService {
             );
           return replay.response as unknown as ResultPublicationTransition;
         }
-        await this.inspectorAuthorization.lockAndVerify(
+        await this.supervisorAuthorization.lockAndVerify(
           tx,
           input.matchId,
           input.identity,
@@ -174,8 +174,8 @@ export class ResultPublicationService {
                 : null,
             publishedAt: now,
             ...(input.identity.kind === 'official'
-              ? { publishedInspectorAssignmentId: input.identity.assignmentId }
-              : { publishedInspectorSessionId: input.identity.sessionId }),
+              ? { publishedSupervisorAssignmentId: input.identity.assignmentId }
+              : { publishedSupervisorSessionId: input.identity.sessionId }),
             snapshot: { committed: true },
           },
         });

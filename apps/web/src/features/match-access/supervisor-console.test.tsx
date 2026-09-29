@@ -7,7 +7,7 @@ import {
   MatchExitMode,
   MatchStatus,
 } from '@martial-arts-scoring/shared-types';
-import { InspectorConsole } from './inspector-console';
+import { SupervisorConsole } from './supervisor-console';
 import { createMatchSnapshot, createRealtimeState } from '@/test/factories';
 
 function snapshotFor(status: MatchStatus) {
@@ -56,13 +56,13 @@ function snapshotFor(status: MatchStatus) {
   });
 }
 
-describe('InspectorConsole', () => {
+describe('SupervisorConsole', () => {
   it('renders the authoritative WAITING → Round 1 → BREAK → Round 2 → FINISHED workflow', async () => {
     const user = userEvent.setup();
     const startRound = vi.fn(() => Promise.resolve());
     const submitFault = vi.fn(() => Promise.resolve());
     const { rerender } = render(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.WAITING),
           startRound,
@@ -77,7 +77,7 @@ describe('InspectorConsole', () => {
     expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV ĐỎ' })).toBeDisabled();
 
     rerender(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING),
           startRound,
@@ -101,7 +101,7 @@ describe('InspectorConsole', () => {
     expect(submitFault).toHaveBeenCalledExactlyOnceWith(AthleteColor.RED);
 
     rerender(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.BREAK),
           startRound,
@@ -115,7 +115,7 @@ describe('InspectorConsole', () => {
     expect(startRound).toHaveBeenCalledTimes(2);
 
     rerender(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.ROUND_2_RUNNING),
           startRound,
@@ -128,7 +128,7 @@ describe('InspectorConsole', () => {
     expect(screen.getByRole('button', { name: 'Ghi nhận lỗi VĐV XANH' })).toBeEnabled();
 
     rerender(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           snapshot: snapshotFor(MatchStatus.FINISHED),
           startRound,
@@ -144,7 +144,7 @@ describe('InspectorConsole', () => {
 
   it('disables controls when the session is revoked or realtime connection is lost', () => {
     render(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           connectionStatus: 'revoked',
           snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING),
@@ -159,7 +159,7 @@ describe('InspectorConsole', () => {
 
   it('enables fault recording for a running legacy match', () => {
     render(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           snapshot: createMatchSnapshot({
             match: {
@@ -177,13 +177,13 @@ describe('InspectorConsole', () => {
 
   it('shows match-scoped readiness and disables round start until every required display is connected', () => {
     const presence = createMatchSnapshot().presence.map((entry) =>
-      entry.accessRole === MatchAccessRole.REFEREE_2
+      entry.accessRole === MatchAccessRole.JUDGE_2
         ? { ...entry, connected: false, connectedSocketCount: 0 }
         : entry,
     );
 
     render(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           presence,
           snapshot: createMatchSnapshot({
@@ -191,9 +191,9 @@ describe('InspectorConsole', () => {
             readiness: {
               canStartRound: false,
               kind: 'LEGACY_MATCH_ACCESS',
-              missingRequirements: ['REFEREE_2'],
-              requiredRefereeCount: 3,
-              referees: { REFEREE_1: true, REFEREE_2: false, REFEREE_3: true },
+              missingRequirements: ['JUDGE_2'],
+              requiredJudgeCount: 3,
+              referees: { JUDGE_1: true, JUDGE_2: false, JUDGE_3: true },
               scoreboardConnectedCount: 1,
             },
           }),
@@ -202,13 +202,13 @@ describe('InspectorConsole', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Sẵn sàng trận đấu' })).toBeVisible();
-    expect(screen.getByText('Trọng tài 1 đã kết nối')).toBeVisible();
-    expect(screen.getByText('Trọng tài 2 chưa kết nối')).toBeVisible();
+    expect(screen.getByText('Giám định 1 đã kết nối')).toBeVisible();
+    expect(screen.getByText('Giám định 2 chưa kết nối')).toBeVisible();
     expect(screen.getByText('Bảng điểm đã kết nối (1)')).toBeVisible();
     expect(screen.getByRole('button', { name: 'BẮT ĐẦU HIỆP 1' })).toBeDisabled();
     expect(
       screen.getByText(
-        'Chưa thể bắt đầu hiệp đấu. Đã phân công 3/3 trọng tài, kết nối 2/3 trọng tài và 1 bảng điểm.',
+        'Chưa thể bắt đầu hiệp đấu. Đã phân công 3/3 giám định, kết nối 2/3 giám định và 1 bảng điểm.',
       ),
     ).toBeVisible();
   });
@@ -218,7 +218,7 @@ describe('InspectorConsole', () => {
     const pauseRound = vi.fn(() => Promise.resolve(true));
     const resumeRound = vi.fn(() => Promise.resolve(true));
     const { rerender } = render(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           pauseRound,
           snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING),
@@ -233,7 +233,7 @@ describe('InspectorConsole', () => {
     expect(pauseRound).toHaveBeenCalledOnce();
 
     rerender(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           resumeRound,
           snapshot: snapshotFor(MatchStatus.ROUND_1_PAUSED),
@@ -254,7 +254,7 @@ describe('InspectorConsole', () => {
     const cancelRoundResult = vi.fn(() => Promise.resolve(true));
     const exitMatch = vi.fn(() => Promise.resolve(true));
     const { rerender } = render(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           cancelRoundResult,
           snapshot: snapshotFor(MatchStatus.BREAK),
@@ -264,12 +264,12 @@ describe('InspectorConsole', () => {
     await user.click(screen.getByRole('button', { name: 'HỦY KẾT QUẢ HIỆP 1 VÀ BẮT ĐẦU LẠI' }));
     expect(cancelRoundResult).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog')).toBeVisible();
-    expect(screen.getByText(/Tất cả điểm trọng tài và lỗi trong Hiệp 1/)).toBeVisible();
+    expect(screen.getByText(/Tất cả điểm giám định và lỗi trong Hiệp 1/)).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Hủy kết quả hiệp' }));
     expect(cancelRoundResult).toHaveBeenCalledOnce();
 
     rerender(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           exitMatch,
           snapshot: createMatchSnapshot({
@@ -295,7 +295,7 @@ describe('InspectorConsole', () => {
 
   it('prioritizes the in-flight exit message and disables exit choices', () => {
     render(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           cancellingResults: true,
           snapshot: createMatchSnapshot({
@@ -315,7 +315,7 @@ describe('InspectorConsole', () => {
 
   it('explains that a server connection is required before exiting', () => {
     render(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           connectionStatus: 'disconnected',
           snapshot: createMatchSnapshot({
@@ -334,7 +334,7 @@ describe('InspectorConsole', () => {
   });
 
   it('waits for an authoritative snapshot before offering exit choices', () => {
-    render(<InspectorConsole realtime={createRealtimeState({ snapshot: null })} />);
+    render(<SupervisorConsole realtime={createRealtimeState({ snapshot: null })} />);
 
     expect(screen.getByRole('button', { name: 'THOÁT TRẬN' })).toBeDisabled();
     expect(screen.getByText('Đang đồng bộ các lựa chọn thoát trận từ máy chủ.')).toBeVisible();
@@ -342,7 +342,7 @@ describe('InspectorConsole', () => {
 
   it('only reports that exit is unavailable when the authoritative capability forbids it', () => {
     render(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           snapshot: createMatchSnapshot({
             exit: { canExit: false, allowedModes: [], blockedReasons: ['ALREADY_COMPLETED'] },
@@ -359,7 +359,7 @@ describe('InspectorConsole', () => {
 
   it('allows cancel-results before round 1 despite informational limitations on other exit modes', () => {
     render(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           snapshot: createMatchSnapshot({
             exit: {
@@ -382,7 +382,7 @@ describe('InspectorConsole', () => {
     const user = userEvent.setup();
     const exitMatch = vi.fn(() => Promise.resolve(false));
     render(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           exitMatch,
           resultCancellationErrorMessage: 'Máy chủ từ chối thao tác này.',
@@ -409,7 +409,7 @@ describe('InspectorConsole', () => {
 
   it('keeps saving visible but disabled before round 2 is complete, using the server reason', () => {
     render(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({ snapshot: snapshotFor(MatchStatus.BREAK) })}
       />,
     );
@@ -423,7 +423,7 @@ describe('InspectorConsole', () => {
     const user = userEvent.setup();
     const publishResult = vi.fn(() => Promise.resolve(true));
     render(
-      <InspectorConsole
+      <SupervisorConsole
         realtime={createRealtimeState({
           publishResult,
           snapshot: createMatchSnapshot({

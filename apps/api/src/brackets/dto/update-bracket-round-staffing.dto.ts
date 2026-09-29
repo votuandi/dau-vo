@@ -5,5 +5,5 @@ export class UpdateBracketRoundStaffingDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  requiredRefereeCount!: number;
+  requiredJudgeCount!: number;
 }

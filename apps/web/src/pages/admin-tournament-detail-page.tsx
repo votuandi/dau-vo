@@ -353,8 +353,8 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
           tail === 'organizations' ||
           tail === 'athletes' ||
           tail === 'matches' ||
-          tail === 'referees' ||
-          tail === 'inspectors'
+          tail === 'judges' ||
+          tail === 'supervisors'
         ? tail
         : 'info';
 
@@ -405,7 +405,7 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
             />
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
-            Trọng tài và giám định sử dụng mã này cùng với mã bảo mật riêng để đăng nhập.
+            Giám định và giám sát sử dụng mã này cùng với mã bảo mật riêng để đăng nhập.
           </p>
         </section>
       </header>
@@ -441,18 +441,18 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
           tournamentId={tournamentId}
         />
       ) : null}
-      {active === 'referees' ? (
+      {active === 'judges' ? (
         <TournamentOfficialsPage
           readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED}
-          role={TournamentOfficialRole.REFEREE}
+          role={TournamentOfficialRole.JUDGE}
           tournamentId={tournamentId}
           tournamentPublicCode={tournament.publicCode}
         />
       ) : null}
-      {active === 'inspectors' ? (
+      {active === 'supervisors' ? (
         <TournamentOfficialsPage
           readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED}
-          role={TournamentOfficialRole.INSPECTOR}
+          role={TournamentOfficialRole.SUPERVISOR}
           tournamentId={tournamentId}
           tournamentPublicCode={tournament.publicCode}
         />

@@ -51,10 +51,10 @@ export const tournamentStatuses = [
 ] as const;
 
 export const accessCodeRoles = [
-  MatchAccessRole.REFEREE_1,
-  MatchAccessRole.REFEREE_2,
-  MatchAccessRole.REFEREE_3,
-  MatchAccessRole.INSPECTOR,
+  MatchAccessRole.JUDGE_1,
+  MatchAccessRole.JUDGE_2,
+  MatchAccessRole.JUDGE_3,
+  MatchAccessRole.SUPERVISOR,
 ] as const;
 
 export const athleteColors = [AthleteColor.RED, AthleteColor.BLUE] as const;
@@ -67,10 +67,10 @@ export const tournamentStatusLabels: Record<TournamentStatus, string> = {
 };
 
 export const accessCodeRoleLabels: Record<MatchAccessRole, string> = {
-  [MatchAccessRole.REFEREE_1]: 'Trọng tài 1',
-  [MatchAccessRole.REFEREE_2]: 'Trọng tài 2',
-  [MatchAccessRole.REFEREE_3]: 'Trọng tài 3',
-  [MatchAccessRole.INSPECTOR]: 'Giám định viên',
+  [MatchAccessRole.JUDGE_1]: 'Giám định 1',
+  [MatchAccessRole.JUDGE_2]: 'Giám định 2',
+  [MatchAccessRole.JUDGE_3]: 'Giám định 3',
+  [MatchAccessRole.SUPERVISOR]: 'Giám sát',
 };
 
 export const athleteColorLabels: Record<AthleteColor, string> = {

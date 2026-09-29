@@ -9,7 +9,7 @@ import {
   MatchRole,
   MatchLifecycle,
   MatchStatus,
-  RefereeSlot,
+  JudgeSlot,
   TournamentStatus,
 } from '@prisma/client';
 import { compare, hash } from 'bcryptjs';
@@ -31,10 +31,10 @@ const TEST_ADMIN_USERNAME = `${TEST_PREFIX}-admin`;
 const TEST_ADMIN_PASSWORD = 'Aa1!'.repeat(15);
 
 const requiredAccessRoles = [
-  MatchAccessRole.REFEREE_1,
-  MatchAccessRole.REFEREE_2,
-  MatchAccessRole.REFEREE_3,
-  MatchAccessRole.INSPECTOR,
+  MatchAccessRole.JUDGE_1,
+  MatchAccessRole.JUDGE_2,
+  MatchAccessRole.JUDGE_3,
+  MatchAccessRole.SUPERVISOR,
 ] as const;
 
 interface TournamentView {
@@ -166,17 +166,17 @@ function expectExactlyOneAthletePerColor(athletes: AthleteView[]): void {
 
 function sessionRoleForAccessRole(role: MatchAccessRole): {
   role: MatchRole;
-  refereeSlot?: RefereeSlot;
+  judgeSlot?: JudgeSlot;
 } {
   switch (role) {
-    case MatchAccessRole.REFEREE_1:
-      return { refereeSlot: RefereeSlot.REFEREE_1, role: MatchRole.REFEREE };
-    case MatchAccessRole.REFEREE_2:
-      return { refereeSlot: RefereeSlot.REFEREE_2, role: MatchRole.REFEREE };
-    case MatchAccessRole.REFEREE_3:
-      return { refereeSlot: RefereeSlot.REFEREE_3, role: MatchRole.REFEREE };
-    case MatchAccessRole.INSPECTOR:
-      return { role: MatchRole.INSPECTOR };
+    case MatchAccessRole.JUDGE_1:
+      return { judgeSlot: JudgeSlot.JUDGE_1, role: MatchRole.JUDGE };
+    case MatchAccessRole.JUDGE_2:
+      return { judgeSlot: JudgeSlot.JUDGE_2, role: MatchRole.JUDGE };
+    case MatchAccessRole.JUDGE_3:
+      return { judgeSlot: JudgeSlot.JUDGE_3, role: MatchRole.JUDGE };
+    case MatchAccessRole.SUPERVISOR:
+      return { role: MatchRole.SUPERVISOR };
   }
 }
 
@@ -789,7 +789,7 @@ describe('Admin tournament and match management (integration)', () => {
     const creation = await createMatch(tournament.id, 'match-create', {
       breakDurationMs: 45_000,
       roundDurationMs: 90_000,
-      requiredRefereeCount: 3,
+      requiredJudgeCount: 3,
     });
 
     expect(creation.match).toMatchObject({
@@ -1285,10 +1285,10 @@ describe('Admin tournament and match management (integration)', () => {
       originalCodes.map(({ codeHash, role }) => [role, codeHash]),
     );
     const refereeOneCode = originalCodes.find(
-      ({ role }) => role === MatchAccessRole.REFEREE_1,
+      ({ role }) => role === MatchAccessRole.JUDGE_1,
     );
     const inspectorCode = originalCodes.find(
-      ({ role }) => role === MatchAccessRole.INSPECTOR,
+      ({ role }) => role === MatchAccessRole.SUPERVISOR,
     );
 
     expect(refereeOneCode).toBeDefined();
@@ -1299,8 +1299,8 @@ describe('Admin tournament and match management (integration)', () => {
           accessCodeId: refereeOneCode?.id ?? '',
           deviceId: `${TEST_PREFIX}-individual-referee-device`,
           matchId: creation.match.id,
-          refereeSlot: RefereeSlot.REFEREE_1,
-          role: MatchRole.REFEREE,
+          judgeSlot: JudgeSlot.JUDGE_1,
+          role: MatchRole.JUDGE,
           tokenHash: `${TEST_PREFIX}-individual-referee-token`,
         },
       }),
@@ -1309,7 +1309,7 @@ describe('Admin tournament and match management (integration)', () => {
           accessCodeId: inspectorCode?.id ?? '',
           deviceId: `${TEST_PREFIX}-individual-inspector-device`,
           matchId: creation.match.id,
-          role: MatchRole.INSPECTOR,
+          role: MatchRole.SUPERVISOR,
           tokenHash: `${TEST_PREFIX}-individual-inspector-token`,
         },
       }),
@@ -1317,7 +1317,7 @@ describe('Admin tournament and match management (integration)', () => {
 
     const individualResponse = await authenticated(
       request(app.getHttpServer()).post(
-        `/api/admin/matches/${creation.match.id}/access-codes/${MatchAccessRole.REFEREE_1}/regenerate`,
+        `/api/admin/matches/${creation.match.id}/access-codes/${MatchAccessRole.JUDGE_1}/regenerate`,
       ),
     ).expect(200);
     const individualResult =
@@ -1326,16 +1326,16 @@ describe('Admin tournament and match management (integration)', () => {
     expect(individualResult.matchId).toBe(creation.match.id);
     expect(individualResult.accessCodes).toHaveLength(1);
     expect(individualResult.accessCodes[0]?.role).toBe(
-      MatchAccessRole.REFEREE_1,
+      MatchAccessRole.JUDGE_1,
     );
     const afterIndividual = await prisma.matchAccessCode.findMany({
       where: { matchId: creation.match.id },
     });
     const changedRefereeCode = afterIndividual.find(
-      ({ role }) => role === MatchAccessRole.REFEREE_1,
+      ({ role }) => role === MatchAccessRole.JUDGE_1,
     );
     expect(changedRefereeCode?.codeHash).not.toBe(
-      originalHashByRole.get(MatchAccessRole.REFEREE_1),
+      originalHashByRole.get(MatchAccessRole.JUDGE_1),
     );
     await expect(
       compare(
@@ -1344,9 +1344,9 @@ describe('Admin tournament and match management (integration)', () => {
       ),
     ).resolves.toBe(true);
     expect(
-      afterIndividual.find(({ role }) => role === MatchAccessRole.INSPECTOR)
+      afterIndividual.find(({ role }) => role === MatchAccessRole.SUPERVISOR)
         ?.codeHash,
-    ).toBe(originalHashByRole.get(MatchAccessRole.INSPECTOR));
+    ).toBe(originalHashByRole.get(MatchAccessRole.SUPERVISOR));
 
     const [revokedDependent, stillActiveIndependent] = await Promise.all([
       prisma.matchSession.findUniqueOrThrow({
@@ -1365,7 +1365,7 @@ describe('Admin tournament and match management (integration)', () => {
 
     const sessionsForAll = await Promise.all(
       afterIndividual.map(async ({ id, role }, index) => {
-        if (role === MatchAccessRole.INSPECTOR) {
+        if (role === MatchAccessRole.SUPERVISOR) {
           return independentSession;
         }
 
@@ -1376,7 +1376,7 @@ describe('Admin tournament and match management (integration)', () => {
             accessCodeId: id,
             deviceId: `${TEST_PREFIX}-all-device-${index}`,
             matchId: creation.match.id,
-            refereeSlot: sessionRole.refereeSlot,
+            judgeSlot: sessionRole.judgeSlot,
             role: sessionRole.role,
             tokenHash: `${TEST_PREFIX}-all-token-${index}`,
           },

@@ -14,7 +14,7 @@ import {
 } from './match-realtime';
 import { presentPhase } from '@/features/match-presentation';
 
-interface InspectorConsoleProps {
+interface SupervisorConsoleProps {
   readonly realtime: MatchRealtimeState;
 }
 
@@ -236,7 +236,7 @@ function FaultButton({
   );
 }
 
-export function InspectorConsole({ realtime }: InspectorConsoleProps) {
+export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
   const snapshot = realtime.snapshot;
   const status = snapshot?.match.phase;
   const roundIsRunning =
@@ -279,33 +279,33 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
     !roundIsRunning ||
     realtime.submittingFault !== null;
   const canStartRound = status === MatchStatus.WAITING || status === MatchStatus.BREAK;
-  const refereeReadiness =
+  const judgeReadiness =
     snapshot?.readiness.kind === 'TOURNAMENT_OFFICIALS'
       ? snapshot.readiness.referees.map((referee) => ({
           connected: referee.connected,
-          label: `Trọng tài ${String(referee.position)}`,
+          label: `Giám định ${String(referee.position)}`,
         }))
       : [
           {
             connected:
               snapshot?.readiness.kind === 'LEGACY_MATCH_ACCESS'
-                ? snapshot.readiness.referees.REFEREE_1
+                ? snapshot.readiness.referees.JUDGE_1
                 : false,
-            label: 'Trọng tài 1',
+            label: 'Giám định 1',
           },
           {
             connected:
               snapshot?.readiness.kind === 'LEGACY_MATCH_ACCESS'
-                ? snapshot.readiness.referees.REFEREE_2
+                ? snapshot.readiness.referees.JUDGE_2
                 : false,
-            label: 'Trọng tài 2',
+            label: 'Giám định 2',
           },
           {
             connected:
               snapshot?.readiness.kind === 'LEGACY_MATCH_ACCESS'
-                ? snapshot.readiness.referees.REFEREE_3
+                ? snapshot.readiness.referees.JUDGE_3
                 : false,
-            label: 'Trọng tài 3',
+            label: 'Giám định 3',
           },
         ];
   const scoreboardConnectedCount = snapshot?.readiness.scoreboardConnectedCount ?? 0;
@@ -316,16 +316,16 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
           assignedRefereeCount: snapshot.readiness.assignedRefereeCount,
           connectedRefereeCount: snapshot.readiness.connectedRefereeCount,
           inspectorConnected: snapshot.readiness.inspector.connected,
-          requiredRefereeCount: snapshot.readiness.requiredRefereeCount,
+          requiredJudgeCount: snapshot.readiness.requiredJudgeCount,
           scoreboardConnectedCount: snapshot.readiness.scoreboardConnectedCount,
         })
       : snapshot?.readiness.kind === 'LEGACY_MATCH_ACCESS'
         ? getParticipantsNotReadyMessage({
-            assignedRefereeCount: snapshot.readiness.requiredRefereeCount,
+            assignedRefereeCount: snapshot.readiness.requiredJudgeCount,
             connectedRefereeCount: Object.values(snapshot.readiness.referees).filter(Boolean)
               .length,
             inspectorConnected: true,
-            requiredRefereeCount: snapshot.readiness.requiredRefereeCount,
+            requiredJudgeCount: snapshot.readiness.requiredJudgeCount,
             scoreboardConnectedCount: snapshot.readiness.scoreboardConnectedCount,
           })
         : getParticipantsNotReadyMessage(undefined);
@@ -418,7 +418,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
         <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/15 bg-blue-950/35 px-4 py-3 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5">
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-200/80">
-              Giám định
+              Giám sát
             </p>
             <p className="mt-1 truncate font-mono text-lg font-black tracking-[0.14em] text-white sm:text-xl">
               {snapshot?.match.publicId ?? 'Đang đồng bộ'}
@@ -455,7 +455,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
               : roundIsRunning
                 ? 'Thời gian chính thức do máy chủ xác định'
                 : status === MatchStatus.BREAK
-                  ? 'Chờ giám định viên bắt đầu Hiệp 2'
+                  ? 'Chờ giám sát viên bắt đầu Hiệp 2'
                   : status === MatchStatus.FINISHED
                     ? 'Trận đấu đã kết thúc'
                     : 'Chờ trạng thái chính thức từ máy chủ'}
@@ -471,7 +471,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                   Sẵn sàng trận đấu
                 </h2>
                 <ul className="mt-3 grid gap-2 text-sm font-semibold">
-                  {refereeReadiness.map((referee) => (
+                  {judgeReadiness.map((referee) => (
                     <li
                       className={referee.connected ? 'text-emerald-200' : 'text-red-200'}
                       key={referee.label}
@@ -702,7 +702,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
                     <strong>
                       {red ? 'ĐỎ' : 'XANH'} — {athlete.name}:
                     </strong>{' '}
-                    Điểm trọng tài {base ?? '—'} + Điểm cộng {bonus ?? '—'} − Điểm phạt{' '}
+                    Điểm giám định {base ?? '—'} + Điểm cộng {bonus ?? '—'} − Điểm phạt{' '}
                     {penalty ?? '—'} ={' '}
                     <strong>
                       Điểm chung cuộc{' '}
@@ -969,7 +969,7 @@ export function InspectorConsole({ realtime }: InspectorConsoleProps) {
           title="Xác nhận"
           warning={
             confirmation === 'cancel-round'
-              ? `Tất cả điểm trọng tài và lỗi trong Hiệp ${status === MatchStatus.BREAK ? '1' : '2'} sẽ bị loại khỏi kết quả chính thức. Hành động này có thể được hoàn tác.`
+              ? `Tất cả điểm giám định và lỗi trong Hiệp ${status === MatchStatus.BREAK ? '1' : '2'} sẽ bị loại khỏi kết quả chính thức. Hành động này có thể được hoàn tác.`
               : confirmation === 'appeal' ||
                   confirmation === 'start-overtime' ||
                   confirmation === 'restart-overtime' ||

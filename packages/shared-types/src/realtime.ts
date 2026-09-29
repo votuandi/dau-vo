@@ -4,7 +4,7 @@ import type {
   MatchLifecycle,
   MatchExitMode,
   MatchPhase,
-  RefereeSlot,
+  JudgeSlot,
 } from './enums';
 
 export const RealtimeEvent = {
@@ -130,10 +130,10 @@ export interface OfficialAssignmentSnapshot {
   assignment: {
     id: string;
     match: { id: string; publicId: string; status: string };
-    refereePosition: number | null;
-    role: 'REFEREE' | 'INSPECTOR';
+    judgePosition: number | null;
+    role: 'JUDGE' | 'SUPERVISOR';
   } | null;
-  official: { id: string; name: string; role: 'REFEREE' | 'INSPECTOR' };
+  official: { id: string; name: string; role: 'JUDGE' | 'SUPERVISOR' };
   sessionId: string;
   status: 'IN_MATCH' | 'READY';
   tournament: { id: string; name: string; publicCode: string };
@@ -168,8 +168,8 @@ export interface MatchOfficialPresenceEntry {
   connectedSocketCount: number;
   name: string;
   officialId: string;
-  refereePosition: number | null;
-  role: 'REFEREE' | 'INSPECTOR';
+  judgePosition: number | null;
+  role: 'JUDGE' | 'SUPERVISOR';
 }
 
 export interface PresenceUpdatedPayload {
@@ -181,7 +181,7 @@ export interface PresenceUpdatedPayload {
 }
 
 export interface MatchStartReadinessDetails {
-  requiredRefereeCount: number;
+  requiredJudgeCount: number;
   assignedRefereeCount: number;
   connectedRefereeCount: number;
   referees: Array<{
@@ -198,7 +198,7 @@ export interface MatchStartReadinessDetails {
 
 /** Safe, aggregate readiness state returned when a round start is rejected. */
 export interface MatchParticipantsNotReadyDetails {
-  requiredRefereeCount: number;
+  requiredJudgeCount: number;
   assignedRefereeCount: number;
   connectedRefereeCount: number;
   scoreboardConnectedCount: number;
@@ -209,11 +209,11 @@ export interface LegacyMatchReadiness {
   kind: 'LEGACY_MATCH_ACCESS';
   canStartRound: boolean;
   missingRequirements: string[];
-  requiredRefereeCount: number;
+  requiredJudgeCount: number;
   referees: {
-    REFEREE_1: boolean;
-    REFEREE_2: boolean;
-    REFEREE_3: boolean;
+    JUDGE_1: boolean;
+    JUDGE_2: boolean;
+    JUDGE_3: boolean;
   };
   scoreboardConnectedCount: number;
 }
@@ -578,13 +578,13 @@ interface VoteAcceptedPayloadBase {
  */
 export type VoteAcceptedPayload =
   | (VoteAcceptedPayloadBase & {
-      identity: { kind: 'legacy'; refereeSlot: RefereeSlot };
+      identity: { kind: 'legacy'; judgeSlot: JudgeSlot };
     })
   | (VoteAcceptedPayloadBase & {
       identity: {
         kind: 'official';
         assignmentId: string;
-        refereePosition: number;
+        judgePosition: number;
       };
     });
 
@@ -618,8 +618,8 @@ export interface ScoringWindowResolvedPayload {
   votes: Array<{
     athlete: AthleteColor;
     assignmentId: string | null;
-    refereePosition: number | null;
-    refereeSlot?: RefereeSlot | null;
+    judgePosition: number | null;
+    judgeSlot?: JudgeSlot | null;
     serverReceivedAt: string;
   }>;
   window: {

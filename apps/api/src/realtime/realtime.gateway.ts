@@ -47,7 +47,7 @@ import {
   AthleteColor,
   MatchAccessRole,
   MatchRole,
-  RefereeSlot,
+  JudgeSlot,
 } from '@prisma/client';
 import type { MatchStatus } from '@prisma/client';
 import type { Server } from 'socket.io';
@@ -63,7 +63,7 @@ import {
   SportGroupRulesNotImplementedError,
 } from '../sport-rules/sport-rules.errors';
 import type { ValidatedMatchSession } from '../match-access/match-access.types';
-import type { InspectorCommandIdentity } from './command-identity';
+import type { SupervisorCommandIdentity } from './command-identity';
 import {
   InactiveRoundStartSessionError,
   InactiveRoundControlSessionError,
@@ -94,7 +94,7 @@ import {
   FaultMatchNotRunningError,
   FaultRoundEndedError,
   FaultRoundPausedError,
-  InactiveFaultInspectorError,
+  InactiveFaultSupervisorError,
   InvalidFaultStateError,
 } from './fault.errors';
 import {
@@ -334,7 +334,7 @@ export class RealtimeGateway
     if (this.isScoreboardSocket(client)) {
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
     }
-    const command = await this.inspectorCommand(client);
+    const command = await this.supervisorCommand(client);
     if (!command) {
       return { error: ROUND_START_FORBIDDEN_ERROR, ok: false };
     }
@@ -419,10 +419,7 @@ export class RealtimeGateway
     // Keep its round-start response intact, though: the client needs the
     // readiness and invalid-state errors produced by that transition rather
     // than treating an overtime start as one of the post-overtime actions.
-    this.logger.log(
-      { socketId: client.id },
-      'Overtime start command received',
-    );
+    this.logger.log({ socketId: client.id }, 'Overtime start command received');
     const response = await this.roundStart(client);
     if (response.ok) {
       this.logger.log(
@@ -473,7 +470,7 @@ export class RealtimeGateway
       };
     if (this.isScoreboardSocket(client))
       return { ok: false, error: REALTIME_AUTHENTICATION_ERROR };
-    const command = await this.inspectorCommand(client);
+    const command = await this.supervisorCommand(client);
     if (
       !command ||
       !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
@@ -591,7 +588,7 @@ export class RealtimeGateway
       };
     if (this.isScoreboardSocket(client))
       return { ok: false, error: REALTIME_AUTHENTICATION_ERROR };
-    const command = await this.inspectorCommand(client);
+    const command = await this.supervisorCommand(client);
     if (!command)
       return {
         ok: false,
@@ -704,7 +701,7 @@ export class RealtimeGateway
     client: RealtimeSocket,
     invoke: (command: {
       matchId: string;
-      identity: InspectorCommandIdentity;
+      identity: SupervisorCommandIdentity;
     }) => Promise<{
       matchId: string;
       matchPublicId: string;
@@ -715,7 +712,7 @@ export class RealtimeGateway
   ): Promise<OvertimeActionResponse> {
     if (this.isScoreboardSocket(client))
       return { ok: false, error: REALTIME_AUTHENTICATION_ERROR };
-    const command = await this.inspectorCommand(client);
+    const command = await this.supervisorCommand(client);
     if (
       !command ||
       !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
@@ -793,7 +790,7 @@ export class RealtimeGateway
         },
       };
     }
-    const command = await this.inspectorCommand(client);
+    const command = await this.supervisorCommand(client);
     if (!command) {
       this.logger.warn(baseLog, 'Match exit rejected: authorization failed');
       return {
@@ -943,7 +940,7 @@ export class RealtimeGateway
   ): Promise<RoundControlResponse> {
     if (this.isScoreboardSocket(client))
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
-    const command = await this.inspectorCommand(client);
+    const command = await this.supervisorCommand(client);
     if (!command) return { error: ROUND_CONTROL_FORBIDDEN_ERROR, ok: false };
     if (
       !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
@@ -1017,7 +1014,7 @@ export class RealtimeGateway
   ): Promise<ResultCancellationResponse> {
     if (this.isScoreboardSocket(client))
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
-    const command = await this.inspectorCommand(client);
+    const command = await this.supervisorCommand(client);
     if (!command)
       return { error: RESULT_CANCELLATION_FORBIDDEN_ERROR, ok: false };
     if (
@@ -1078,7 +1075,7 @@ export class RealtimeGateway
     }
     if (!this.isResultCancellationUndoPayload(payload))
       return { error: RESET_UNDO_NOT_ALLOWED_ERROR, ok: false };
-    const command = await this.inspectorCommand(client);
+    const command = await this.supervisorCommand(client);
     if (!command) {
       return { error: RESET_UNDO_FORBIDDEN_ERROR, ok: false };
     }
@@ -1138,7 +1135,7 @@ export class RealtimeGateway
     if (client.data.connectionKind === 'official') {
       const official = await this.revalidateOfficial(client);
       const assignment = official?.assignment;
-      if (!official || !assignment || assignment.role !== 'REFEREE')
+      if (!official || !assignment || assignment.role !== 'JUDGE')
         return { error: VOTE_FORBIDDEN_ERROR, ok: false };
       if (!this.isVotePayload(payload))
         return { error: VOTE_INVALID_ATHLETE_ERROR, ok: false };
@@ -1186,7 +1183,7 @@ export class RealtimeGateway
     if (!(await this.ensureMatchRoomMembership(client, identity))) {
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
     }
-    if (identity.role !== MatchRole.REFEREE || identity.refereeSlot === null) {
+    if (identity.role !== MatchRole.JUDGE || identity.judgeSlot === null) {
       return this.rejectVote(
         client,
         identity.publicMatchId,
@@ -1205,7 +1202,7 @@ export class RealtimeGateway
       const transition = await this.scoring.submitVote({
         athlete: payload.athlete,
         matchId: identity.matchId,
-        refereeSlot: identity.refereeSlot,
+        judgeSlot: identity.judgeSlot,
         sessionId: identity.sessionId,
       });
 
@@ -1289,7 +1286,7 @@ export class RealtimeGateway
           message: 'Authentication required',
         },
       };
-    const command = await this.inspectorCommand(client);
+    const command = await this.supervisorCommand(client);
     if (!command)
       return {
         ok: false,
@@ -1343,7 +1340,7 @@ export class RealtimeGateway
       return { ok: true, fault: faultPayload.fault };
     } catch (error) {
       const mapped: [FaultRecordError['code'], string] =
-        error instanceof InactiveFaultInspectorError
+        error instanceof InactiveFaultSupervisorError
           ? ['FAULT_STALE_ASSIGNMENT', 'Inspector assignment is stale']
           : error instanceof FaultRoundPausedError
             ? ['FAULT_ROUND_PAUSED', 'Round is paused']
@@ -1376,7 +1373,7 @@ export class RealtimeGateway
     if (this.isScoreboardSocket(client)) {
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
     }
-    const command = await this.inspectorCommand(client);
+    const command = await this.supervisorCommand(client);
     if (!command) {
       return { error: PENALTY_FORBIDDEN_ERROR, ok: false };
     }
@@ -1468,11 +1465,11 @@ export class RealtimeGateway
       const assignment = official?.assignment;
       if (!official || !assignment) return;
       const viewer =
-        assignment.role === 'REFEREE' && assignment.refereePosition !== null
+        assignment.role === 'JUDGE' && assignment.judgePosition !== null
           ? {
               assignmentId: assignment.id,
               kind: 'official' as const,
-              refereePosition: assignment.refereePosition,
+              judgePosition: assignment.judgePosition,
             }
           : undefined;
       const snapshot = await this.matchState.snapshot(
@@ -1501,7 +1498,7 @@ export class RealtimeGateway
     // Room broadcasts intentionally omit this recipient-specific data.
     const snapshot = await this.matchState.snapshot(identity.matchId, {
       kind: 'legacy',
-      refereeSlot: identity.refereeSlot,
+      judgeSlot: identity.judgeSlot,
     });
 
     if (snapshot.match.publicId !== identity.publicMatchId) {
@@ -1615,7 +1612,7 @@ export class RealtimeGateway
       resolved.matchId !== originalIdentity.matchId ||
       resolved.matchPublicId !== originalIdentity.publicMatchId ||
       resolved.role !== originalIdentity.role ||
-      resolved.refereeSlot !== originalIdentity.refereeSlot ||
+      resolved.judgeSlot !== originalIdentity.judgeSlot ||
       resolved.deviceId !== originalIdentity.deviceId
     ) {
       this.sessionRegistry.revokeSessions([originalIdentity.sessionId]);
@@ -1688,15 +1685,15 @@ export class RealtimeGateway
   }
 
   /** Resolve command authority from the authenticated socket only. */
-  private async inspectorCommand(client: RealtimeSocket): Promise<{
-    identity: InspectorCommandIdentity;
+  private async supervisorCommand(client: RealtimeSocket): Promise<{
+    identity: SupervisorCommandIdentity;
     matchId: string;
     publicMatchId: string;
   } | null> {
     if (client.data.connectionKind === 'official') {
       const official = await this.revalidateOfficial(client);
       const assignment = official?.assignment;
-      if (!official || !assignment || assignment.role !== 'INSPECTOR')
+      if (!official || !assignment || assignment.role !== 'SUPERVISOR')
         return null;
       return {
         matchId: assignment.match.id,
@@ -1711,7 +1708,7 @@ export class RealtimeGateway
     }
     const identity = await this.revalidate(client);
     const token = client.data.matchSessionToken;
-    if (!identity || !token || identity.role !== MatchRole.INSPECTOR)
+    if (!identity || !token || identity.role !== MatchRole.SUPERVISOR)
       return null;
     return {
       matchId: identity.matchId,
@@ -1744,7 +1741,7 @@ export class RealtimeGateway
 
   private revokeCommandSocket(
     client: RealtimeSocket,
-    identity: InspectorCommandIdentity,
+    identity: SupervisorCommandIdentity,
   ): void {
     this.sessionRegistry.revokeSessions([
       identity.kind === 'legacy'
@@ -2082,21 +2079,21 @@ export class RealtimeGateway
   }
 
   private accessRole(identity: RealtimeSocketIdentity): MatchAccessRole {
-    if (identity.role === MatchRole.INSPECTOR) {
-      return MatchAccessRole.INSPECTOR;
+    if (identity.role === MatchRole.SUPERVISOR) {
+      return MatchAccessRole.SUPERVISOR;
     }
 
-    switch (identity.refereeSlot) {
-      case RefereeSlot.REFEREE_1:
-        return MatchAccessRole.REFEREE_1;
-      case RefereeSlot.REFEREE_2:
-        return MatchAccessRole.REFEREE_2;
-      case RefereeSlot.REFEREE_3:
-        return MatchAccessRole.REFEREE_3;
+    switch (identity.judgeSlot) {
+      case JudgeSlot.JUDGE_1:
+        return MatchAccessRole.JUDGE_1;
+      case JudgeSlot.JUDGE_2:
+        return MatchAccessRole.JUDGE_2;
+      case JudgeSlot.JUDGE_3:
+        return MatchAccessRole.JUDGE_3;
       case null:
         throw new Error('Referee session is missing its referee slot');
       default: {
-        const exhaustiveSlot: never = identity.refereeSlot;
+        const exhaustiveSlot: never = identity.judgeSlot;
         throw new Error(`Unsupported referee slot: ${exhaustiveSlot}`);
       }
     }
@@ -2109,7 +2106,7 @@ export class RealtimeGateway
       deviceId: session.deviceId,
       matchId: session.matchId,
       publicMatchId: session.matchPublicId,
-      refereeSlot: session.refereeSlot,
+      judgeSlot: session.judgeSlot,
       role: session.role,
       sessionId: session.sessionId,
     };

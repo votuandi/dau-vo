@@ -8,9 +8,9 @@ import {
   MatchStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import type { InspectorCommandIdentity } from './command-identity';
+import type { SupervisorCommandIdentity } from './command-identity';
 import { auditActor } from './command-identity';
-import { InspectorAuthorizationService } from './inspector-authorization.service';
+import { SupervisorAuthorizationService } from './supervisor-authorization.service';
 import { finalScore } from './result-calculations';
 
 export const MAX_REGULATION_APPEAL_POINTS = 100;
@@ -50,19 +50,19 @@ export type RegulationAppealTransition = {
 export class RegulationAppealService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(InspectorAuthorizationService)
-    private readonly inspectorAuthorization: InspectorAuthorizationService,
+    @Inject(SupervisorAuthorizationService)
+    private readonly supervisorAuthorization: SupervisorAuthorizationService,
   ) {}
 
   async complete(input: {
     matchId: string;
-    identity: InspectorCommandIdentity;
+    identity: SupervisorCommandIdentity;
     payload: RegulationAppealInput;
   }): Promise<RegulationAppealTransition> {
     return this.prisma.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT "id" FROM "matches" WHERE "id"=${input.matchId}::uuid FOR UPDATE`;
-        await this.inspectorAuthorization.lockAndVerify(
+        await this.supervisorAuthorization.lockAndVerify(
           tx,
           input.matchId,
           input.identity,
@@ -156,7 +156,7 @@ export class RegulationAppealService {
             roundId: { in: rounds.map((r) => r.id) },
             invalidatedAt: null,
           },
-          select: { athleteId: true, refereePoints: true, roundId: true },
+          select: { athleteId: true, judgePoints: true, roundId: true },
         });
         if (summaries.length !== 4)
           throw new AppealStateError(
@@ -166,7 +166,7 @@ export class RegulationAppealService {
         for (const summary of summaries)
           base.set(
             summary.athleteId,
-            (base.get(summary.athleteId) ?? 0) + summary.refereePoints,
+            (base.get(summary.athleteId) ?? 0) + summary.judgePoints,
           );
         const values = athletes.map((athlete) => {
           const supplied = input.payload[athlete.color];
@@ -189,8 +189,8 @@ export class RegulationAppealService {
             idempotencyKey: input.payload.idempotencyKey,
             completedAt: clock[0]!.now,
             ...(input.identity.kind === 'official'
-              ? { completedInspectorAssignmentId: input.identity.assignmentId }
-              : { completedInspectorSessionId: input.identity.sessionId }),
+              ? { completedSupervisorAssignmentId: input.identity.assignmentId }
+              : { completedSupervisorSessionId: input.identity.sessionId }),
           },
           select: { id: true },
         });
@@ -204,7 +204,7 @@ export class RegulationAppealService {
           data: values.map((x) => ({
             appealId: appeal.id,
             athleteId: x.athlete.id,
-            baseRefereeScore: x.base,
+            baseJudgeScore: x.base,
             bonusPoints: x.bonusPoints,
             penaltyPoints: x.penaltyPoints,
             finalScore: x.final,
@@ -268,7 +268,7 @@ export class RegulationAppealService {
       matchId: string;
       scope: MatchAppealScope;
       adjustments: Array<{
-        baseRefereeScore: number;
+        baseJudgeScore: number;
         bonusPoints: number;
         penaltyPoints: number;
         finalScore: number;
@@ -309,13 +309,13 @@ export class RegulationAppealService {
       isTie,
       regulation: {
         RED: {
-          base: red.baseRefereeScore,
+          base: red.baseJudgeScore,
           bonusPoints: red.bonusPoints,
           penaltyPoints: red.penaltyPoints,
           final: red.finalScore,
         },
         BLUE: {
-          base: blue.baseRefereeScore,
+          base: blue.baseJudgeScore,
           bonusPoints: blue.bonusPoints,
           penaltyPoints: blue.penaltyPoints,
           final: blue.finalScore,

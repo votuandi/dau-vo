@@ -14,8 +14,8 @@ import {
   useMatchRealtime,
   type RealtimeRefereeIdentity,
 } from '@/features/match-access/match-realtime';
-import { InspectorConsole } from '@/features/match-access/inspector-console';
-import { RefereeConsole } from '@/features/match-access/referee-console';
+import { JudgeConsole } from '@/features/match-access/judge-console';
+import { SupervisorConsole } from '@/features/match-access/supervisor-console';
 import { ApiClientError } from '@/services/api/client';
 import { presentLifecycle, presentOfficialStatus } from '@/features/match-presentation';
 import {
@@ -30,14 +30,14 @@ interface Props {
 }
 const sessionKey = officialSessionQueryKey;
 const pathFor = (role: TournamentOfficialRole) =>
-  role === TournamentOfficialRole.REFEREE ? '/trong-tai' : '/giam-dinh';
+  role === TournamentOfficialRole.JUDGE ? '/giam-dinh' : '/giam-sat';
 const realtimeRefereeIdentity = (assignment: OfficialAssignment): RealtimeRefereeIdentity =>
-  assignment.role === TournamentOfficialRole.REFEREE &&
-  typeof assignment.refereePosition === 'number'
+  assignment.role === TournamentOfficialRole.JUDGE &&
+  typeof assignment.judgePosition === 'number'
     ? {
         assignmentId: assignment.id,
         kind: 'official',
-        refereePosition: assignment.refereePosition,
+        judgePosition: assignment.judgePosition,
       }
     : null;
 function errorMessage(e: unknown) {
@@ -58,7 +58,7 @@ function isEligible(match: OfficialMatch): boolean {
 function claimabilityMessage(match: OfficialMatch): string {
   if (match.lifecycle === MatchLifecycle.COMPLETED) return 'Trận đã hoàn thành, không thể nhận.';
   if (match.lifecycle === MatchLifecycle.IN_PROGRESS) return 'Trận đang diễn ra, không thể nhận.';
-  if (!match.claimable) return 'Đã có giám định khác nhận trận.';
+  if (!match.claimable) return 'Đã có giám sát khác nhận trận.';
   return match.lifecycle === MatchLifecycle.SUSPENDED
     ? 'Có thể nhận để tiếp tục trận tạm dừng.'
     : 'Có thể nhận trận.';
@@ -67,18 +67,18 @@ function claimabilityMessage(match: OfficialMatch): string {
 function assignmentErrorMessage(code: string | undefined): string {
   switch (code) {
     case 'MATCH_ALREADY_CLAIMED':
-      return 'Trận đã được giám định khác nhận.';
-    case 'INSPECTOR_ALREADY_IN_MATCH':
+      return 'Trận đã được giám sát khác nhận.';
+    case 'SUPERVISOR_ALREADY_IN_MATCH':
       return 'Bạn đang được phân công ở một trận khác.';
-    case 'REFEREE_INACTIVE':
-      return 'Có trọng tài đang bị đình chỉ.';
-    case 'REFEREE_NOT_AVAILABLE':
-      return 'Trọng tài không còn sẵn sàng.';
+    case 'JUDGE_INACTIVE':
+      return 'Có giám định đang bị đình chỉ.';
+    case 'JUDGE_NOT_AVAILABLE':
+      return 'Giám định không còn sẵn sàng.';
     case 'MATCH_LIFECYCLE_MISMATCH':
     case 'STALE_ASSIGNMENT_SELECTION':
       return 'Trạng thái trận đã thay đổi. Vui lòng cập nhật lại.';
-    case 'REFEREE_COUNT_MISMATCH':
-      return 'Số lượng trọng tài chưa đúng yêu cầu.';
+    case 'JUDGE_COUNT_MISMATCH':
+      return 'Số lượng giám định chưa đúng yêu cầu.';
     case 'SESSION_REVOKED':
       return 'Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại.';
     default:
@@ -117,7 +117,7 @@ function Waiting({
         <p className="mt-4">{session.official.name}</p>
         <p className="mt-2 text-sm text-muted-foreground">
           {connected
-            ? 'Đã kết nối. Vui lòng chờ giám định phân công trận đấu.'
+            ? 'Đã kết nối. Vui lòng chờ giám sát phân công trận đấu.'
             : 'Ngoại tuyến. Đang chờ kết nối để nhận phân công.'}
         </p>
         <Button
@@ -139,7 +139,7 @@ function Waiting({
   );
 }
 
-function InspectorAssignment({
+function SupervisorAssignment({
   session,
   logout,
   pending,
@@ -208,8 +208,8 @@ function InspectorAssignment({
     setPicked((previous) => {
       const next = previous.filter((id) => available.has(id));
       if (next.length !== previous.length)
-        setRefreshAnnouncement('Một số trọng tài đã không còn sẵn sàng và đã được bỏ chọn.');
-      else setRefreshAnnouncement('Đã cập nhật trạng thái trận và trọng tài.');
+        setRefreshAnnouncement('Một số giám định đã không còn sẵn sàng và đã được bỏ chọn.');
+      else setRefreshAnnouncement('Đã cập nhật trạng thái trận và giám định.');
       return next;
     });
   };
@@ -228,7 +228,7 @@ function InspectorAssignment({
     onError: async (error) => {
       const details = error instanceof ApiClientError ? error.body.details : undefined;
       const code = error instanceof ApiClientError ? error.body.code : undefined;
-      if (code === 'REFEREE_ALREADY_IN_MATCH' && details && typeof details === 'object') {
+      if (code === 'JUDGE_ALREADY_IN_MATCH' && details && typeof details === 'object') {
         const officialName =
           'officialName' in details && typeof details.officialName === 'string'
             ? details.officialName
@@ -238,19 +238,19 @@ function InspectorAssignment({
             ? details.officialId
             : null;
         if (officialId) setPicked((previous) => previous.filter((id) => id !== officialId));
-        setConflict(`Trọng tài ${officialName} đã được phân công.`);
+        setConflict(`Giám định ${officialName} đã được phân công.`);
       } else toast({ title: assignmentErrorMessage(code), variant: 'destructive' });
       await refresh();
     },
   });
   const refreshing = state.isFetching || matches.isFetching;
-  const required = state.data?.match.requiredRefereeCount ?? 0;
+  const required = state.data?.match.requiredJudgeCount ?? 0;
   return (
     <main className="mx-auto w-full max-w-5xl p-4 sm:p-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-primary">{session.tournament.name}</p>
-          <h1 className="text-3xl font-black">Khu vực giám định</h1>
+          <h1 className="text-3xl font-black">Khu vực giám sát</h1>
         </div>
         <Button disabled={pending} onClick={logout} type="button" variant="outline">
           {pending ? 'Đang đăng xuất…' : 'Đăng xuất'}
@@ -285,7 +285,7 @@ function InspectorAssignment({
           >
             <strong>{m.publicId}</strong>
             <p className="mt-1 text-sm">
-              {m.athletes.map((a) => a.name).join(' · ')} · Cần {m.requiredRefereeCount} trọng tài
+              {m.athletes.map((a) => a.name).join(' · ')} · Cần {m.requiredJudgeCount} giám định
             </p>
             <p className="mt-2 text-xs font-semibold">{presentLifecycle(m.lifecycle).label}</p>
             <p className="mt-1 text-xs text-muted-foreground">{claimabilityMessage(m)}</p>
@@ -303,7 +303,7 @@ function InspectorAssignment({
       {selected ? (
         <section className="mt-6 rounded-2xl border p-5">
           <div className="flex justify-between gap-3">
-            <h2 className="text-xl font-black">Chọn trọng tài · {selected.publicId}</h2>
+            <h2 className="text-xl font-black">Chọn giám định · {selected.publicId}</h2>
             <Button
               disabled={refreshing || take.isPending}
               onClick={() => {
@@ -316,10 +316,10 @@ function InspectorAssignment({
             </Button>
           </div>
           <p aria-live="polite" className="mt-2 text-sm">
-            Đã chọn {picked.length}/{required} trọng tài.
+            Đã chọn {picked.length}/{required} giám định.
           </p>
           <fieldset className="mt-4 grid gap-2" disabled={take.isPending || refreshing}>
-            <legend className="sr-only">Chọn trọng tài</legend>
+            <legend className="sr-only">Chọn giám định</legend>
             {state.data?.referees.map((r) => {
               const unavailable = r.status !== 'READY';
               return (
@@ -333,7 +333,7 @@ function InspectorAssignment({
                   </span>
                   <input
                     checked={picked.includes(r.id)}
-                    aria-label={`Chọn trọng tài ${r.name}`}
+                    aria-label={`Chọn giám định ${r.name}`}
                     disabled={unavailable || (!picked.includes(r.id) && picked.length >= required)}
                     onChange={() => {
                       setPicked((old) =>
@@ -403,10 +403,10 @@ function AssignedConsole({
   });
   return (
     <>
-      {assignment.role === TournamentOfficialRole.REFEREE ? (
-        <RefereeConsole realtime={realtime} />
+      {assignment.role === TournamentOfficialRole.JUDGE ? (
+        <JudgeConsole realtime={realtime} />
       ) : (
-        <InspectorConsole realtime={realtime} />
+        <SupervisorConsole realtime={realtime} />
       )}
       {notice ? (
         <p
@@ -457,6 +457,8 @@ export function MatchAccessPage({ expectedRole }: Props) {
         expectedRole,
       }),
     onSuccess: (x) => {
+      qc.removeQueries({ queryKey: ['official-matches'] });
+      qc.removeQueries({ queryKey: ['official-match'] });
       qc.setQueryData(sessionKey, x);
       setRevoked(false);
       void nav(pathFor(x.session.official.role), { replace: true });
@@ -484,6 +486,8 @@ export function MatchAccessPage({ expectedRole }: Props) {
         })(),
       }),
     onSuccess: (x) => {
+      qc.removeQueries({ queryKey: ['official-matches'] });
+      qc.removeQueries({ queryKey: ['official-match'] });
       qc.setQueryData(sessionKey, x);
       setChallenge(null);
       setRevoked(false);
@@ -497,6 +501,8 @@ export function MatchAccessPage({ expectedRole }: Props) {
     mutationFn: officialAccessApi.logout,
     onSuccess: () => {
       setLogoutError(null);
+      qc.removeQueries({ queryKey: ['official-matches'] });
+      qc.removeQueries({ queryKey: ['official-match'] });
       qc.setQueryData(sessionKey, null);
     },
     onError: async (logoutFailure) => {
@@ -545,8 +551,8 @@ export function MatchAccessPage({ expectedRole }: Props) {
       />
     );
   if (identity)
-    return identity.official.role === TournamentOfficialRole.INSPECTOR ? (
-      <InspectorAssignment
+    return identity.official.role === TournamentOfficialRole.SUPERVISOR ? (
+      <SupervisorAssignment
         logout={() => {
           setLogoutError(null);
           logout.mutate();
@@ -580,9 +586,9 @@ export function MatchAccessPage({ expectedRole }: Props) {
     <main className="mx-auto grid min-h-dvh max-w-lg place-items-center p-4">
       <form className="w-full rounded-2xl border bg-card p-7 shadow-xl" onSubmit={submit}>
         <p className="text-sm font-bold text-primary">
-          {expectedRole === TournamentOfficialRole.REFEREE
-            ? 'Khu vực trọng tài'
-            : 'Khu vực giám định'}
+          {expectedRole === TournamentOfficialRole.JUDGE
+            ? 'Khu vực giám định'
+            : 'Khu vực giám sát'}
         </p>
         <h1 className="mt-2 text-3xl font-black">
           {revoked ? 'Phiên đã bị thu hồi' : 'Đăng nhập'}

@@ -5,7 +5,7 @@ import {
   MatchAccessRole,
   MatchRole,
   PrismaClient,
-  RefereeSlot,
+  JudgeSlot,
   TournamentOfficialRole,
 } from '@prisma/client';
 import { config as loadEnvironment } from 'dotenv';
@@ -44,7 +44,7 @@ const prisma = new PrismaClient({
 async function cleanFixtures(): Promise<void> {
   const matchIds = [fixture.matchId, fixture.duplicateMatchId];
 
-  await prisma.refereeVote.deleteMany({ where: { matchId: { in: matchIds } } });
+  await prisma.judgeVote.deleteMany({ where: { matchId: { in: matchIds } } });
   await prisma.scoringWindow.deleteMany({
     where: { matchId: { in: matchIds } },
   });
@@ -175,7 +175,7 @@ describe('database unique constraints', () => {
         normalizedName: 'referee one',
         passcodeHash: 'hash',
         passcodeLookupDigest: 'a'.repeat(64),
-        role: TournamentOfficialRole.REFEREE,
+        role: TournamentOfficialRole.JUDGE,
         tournamentId: fixture.tournamentId,
       },
     });
@@ -185,7 +185,7 @@ describe('database unique constraints', () => {
         normalizedName: 'inspector one',
         passcodeHash: 'hash',
         passcodeLookupDigest: 'b'.repeat(64),
-        role: TournamentOfficialRole.INSPECTOR,
+        role: TournamentOfficialRole.SUPERVISOR,
         tournamentId: fixture.tournamentId,
       },
     });
@@ -195,7 +195,7 @@ describe('database unique constraints', () => {
         normalizedName: 'other referee',
         passcodeHash: 'hash',
         passcodeLookupDigest: 'c'.repeat(64),
-        role: TournamentOfficialRole.REFEREE,
+        role: TournamentOfficialRole.JUDGE,
         tournamentId: fixture.otherTournamentId,
       },
     });
@@ -203,18 +203,18 @@ describe('database unique constraints', () => {
       data: {
         matchId: fixture.matchId,
         officialId: inspector.id,
-        role: TournamentOfficialRole.INSPECTOR,
+        role: TournamentOfficialRole.SUPERVISOR,
         tournamentId: fixture.tournamentId,
       },
     });
 
     await prisma.matchOfficialAssignment.create({
       data: {
-        assignedByInspectorId: inspector.id,
+        assignedBySupervisorId: inspector.id,
         matchId: fixture.matchId,
         officialId: referee.id,
-        refereePosition: 1,
-        role: TournamentOfficialRole.REFEREE,
+        judgePosition: 1,
+        role: TournamentOfficialRole.JUDGE,
         tournamentId: fixture.tournamentId,
       },
     });
@@ -223,10 +223,10 @@ describe('database unique constraints', () => {
         data: {
           matchId: fixture.matchId,
           officialId: referee.id,
-          refereePosition: 2,
-          role: TournamentOfficialRole.REFEREE,
+          judgePosition: 2,
+          role: TournamentOfficialRole.JUDGE,
           tournamentId: fixture.tournamentId,
-          assignedByInspectorId: inspectorAssignment.officialId,
+          assignedBySupervisorId: inspectorAssignment.officialId,
         },
       }),
     ).rejects.toMatchObject({ code: 'P2002' });
@@ -235,25 +235,34 @@ describe('database unique constraints', () => {
         data: {
           matchId: fixture.matchId,
           officialId: otherReferee.id,
-          refereePosition: 2,
-          role: TournamentOfficialRole.REFEREE,
+          judgePosition: 2,
+          role: TournamentOfficialRole.JUDGE,
           tournamentId: fixture.tournamentId,
-          assignedByInspectorId: inspectorAssignment.officialId,
+          assignedBySupervisorId: inspectorAssignment.officialId,
         },
       }),
     ).rejects.toBeDefined();
     await expect(
       prisma.$executeRaw`
-        INSERT INTO "match_official_assignments" ("match_id", "tournament_id", "official_id", "role", "referee_position")
-        VALUES (${fixture.matchId}::uuid, ${fixture.tournamentId}::uuid, ${inspector.id}::uuid, 'REFEREE', 2)
+        INSERT INTO "match_official_assignments" ("match_id", "tournament_id", "official_id", "role", "judge_position")
+        VALUES (${fixture.matchId}::uuid, ${fixture.tournamentId}::uuid, ${inspector.id}::uuid, 'JUDGE', 2)
       `,
     ).rejects.toMatchObject({ code: 'P2010', meta: { code: '23514' } });
     await expect(
-      prisma.match.update({
-        data: { requiredRefereeCount: 0 },
-        where: { id: fixture.matchId },
-      }),
-    ).rejects.toThrow('matches_required_referee_count_positive_check');
+      prisma.$executeRaw`
+        UPDATE "matches"
+        SET "required_judge_count" = 0
+        WHERE "id" = ${fixture.matchId}::uuid
+      `,
+    ).rejects.toMatchObject({
+      code: 'P2010',
+      meta: {
+        code: '23514',
+        message: expect.stringContaining(
+          'matches_required_judge_count_positive_check',
+        ),
+      },
+    });
   });
 
   it('enforces assignment authorizers, positions, and active assignment uniqueness', async () => {
@@ -263,7 +272,7 @@ describe('database unique constraints', () => {
         normalizedName: 'inspector authorizer',
         passcodeHash: 'hash',
         passcodeLookupDigest: 'd'.repeat(64),
-        role: TournamentOfficialRole.INSPECTOR,
+        role: TournamentOfficialRole.SUPERVISOR,
         tournamentId: fixture.tournamentId,
       },
     });
@@ -273,7 +282,7 @@ describe('database unique constraints', () => {
         normalizedName: 'referee authorizer one',
         passcodeHash: 'hash',
         passcodeLookupDigest: 'e'.repeat(64),
-        role: TournamentOfficialRole.REFEREE,
+        role: TournamentOfficialRole.JUDGE,
         tournamentId: fixture.tournamentId,
       },
     });
@@ -283,7 +292,7 @@ describe('database unique constraints', () => {
         normalizedName: 'referee authorizer two',
         passcodeHash: 'hash',
         passcodeLookupDigest: 'f'.repeat(64),
-        role: TournamentOfficialRole.REFEREE,
+        role: TournamentOfficialRole.JUDGE,
         tournamentId: fixture.tournamentId,
       },
     });
@@ -293,8 +302,8 @@ describe('database unique constraints', () => {
           matchId: fixture.matchId,
           tournamentId: fixture.tournamentId,
           officialId: refereeOne.id,
-          role: TournamentOfficialRole.REFEREE,
-          refereePosition: 1,
+          role: TournamentOfficialRole.JUDGE,
+          judgePosition: 1,
         },
       }),
     ).rejects.toBeDefined();
@@ -303,7 +312,7 @@ describe('database unique constraints', () => {
         matchId: fixture.matchId,
         tournamentId: fixture.tournamentId,
         officialId: inspector.id,
-        role: TournamentOfficialRole.INSPECTOR,
+        role: TournamentOfficialRole.SUPERVISOR,
       },
     });
     await prisma.matchOfficialAssignment.create({
@@ -311,9 +320,9 @@ describe('database unique constraints', () => {
         matchId: fixture.matchId,
         tournamentId: fixture.tournamentId,
         officialId: refereeOne.id,
-        role: TournamentOfficialRole.REFEREE,
-        refereePosition: 1,
-        assignedByInspectorId: inspectorAssignment.officialId,
+        role: TournamentOfficialRole.JUDGE,
+        judgePosition: 1,
+        assignedBySupervisorId: inspectorAssignment.officialId,
       },
     });
     await expect(
@@ -322,20 +331,20 @@ describe('database unique constraints', () => {
           matchId: fixture.matchId,
           tournamentId: fixture.tournamentId,
           officialId: refereeTwo.id,
-          role: TournamentOfficialRole.REFEREE,
-          refereePosition: 1,
-          assignedByInspectorId: inspectorAssignment.officialId,
+          role: TournamentOfficialRole.JUDGE,
+          judgePosition: 1,
+          assignedBySupervisorId: inspectorAssignment.officialId,
         },
       }),
     ).rejects.toMatchObject({ code: 'P2002' });
     await expect(prisma.$executeRaw`
-      INSERT INTO "match_official_assignments" ("match_id", "tournament_id", "official_id", "role", "referee_position", "assigned_by_inspector_id")
-      VALUES (${fixture.matchId}::uuid, ${fixture.tournamentId}::uuid, ${refereeTwo.id}::uuid, 'REFEREE', 0, ${inspector.id}::uuid)
+      INSERT INTO "match_official_assignments" ("match_id", "tournament_id", "official_id", "role", "judge_position", "assigned_by_supervisor_id")
+      VALUES (${fixture.matchId}::uuid, ${fixture.tournamentId}::uuid, ${refereeTwo.id}::uuid, 'JUDGE', 0, ${inspector.id}::uuid)
     `).rejects.toMatchObject({ code: 'P2010', meta: { code: '23514' } });
     await expect(
       prisma.matchOfficialAssignment.update({
         where: { id: inspectorAssignment.id },
-        data: { releasedAt: new Date(), releaseReason: 'INSPECTOR_RELEASED' },
+        data: { releasedAt: new Date(), releaseReason: 'SUPERVISOR_RELEASED' },
       }),
     ).resolves.toBeDefined();
     await expect(
@@ -344,9 +353,9 @@ describe('database unique constraints', () => {
           matchId: fixture.matchId,
           tournamentId: fixture.tournamentId,
           officialId: refereeTwo.id,
-          role: TournamentOfficialRole.REFEREE,
-          refereePosition: 2,
-          assignedByInspectorId: inspector.id,
+          role: TournamentOfficialRole.JUDGE,
+          judgePosition: 2,
+          assignedBySupervisorId: inspector.id,
         },
       }),
     ).rejects.toBeDefined();
@@ -359,7 +368,7 @@ describe('database unique constraints', () => {
         normalizedName: 'vote inspector',
         passcodeHash: 'hash',
         passcodeLookupDigest: '1'.repeat(64),
-        role: TournamentOfficialRole.INSPECTOR,
+        role: TournamentOfficialRole.SUPERVISOR,
         tournamentId: fixture.tournamentId,
       },
     });
@@ -369,7 +378,7 @@ describe('database unique constraints', () => {
         normalizedName: 'vote referee',
         passcodeHash: 'hash',
         passcodeLookupDigest: '2'.repeat(64),
-        role: TournamentOfficialRole.REFEREE,
+        role: TournamentOfficialRole.JUDGE,
         tournamentId: fixture.tournamentId,
       },
     });
@@ -378,7 +387,7 @@ describe('database unique constraints', () => {
         matchId: fixture.matchId,
         tournamentId: fixture.tournamentId,
         officialId: inspector.id,
-        role: TournamentOfficialRole.INSPECTOR,
+        role: TournamentOfficialRole.SUPERVISOR,
       },
     });
     const refereeAssignment = await prisma.matchOfficialAssignment.create({
@@ -386,9 +395,9 @@ describe('database unique constraints', () => {
         matchId: fixture.matchId,
         tournamentId: fixture.tournamentId,
         officialId: referee.id,
-        role: TournamentOfficialRole.REFEREE,
-        refereePosition: 1,
-        assignedByInspectorId: inspectorAssignment.officialId,
+        role: TournamentOfficialRole.JUDGE,
+        judgePosition: 1,
+        assignedBySupervisorId: inspectorAssignment.officialId,
       },
     });
     await prisma.scoringWindow.create({
@@ -400,7 +409,7 @@ describe('database unique constraints', () => {
         endsAt: new Date('2026-01-01T00:00:05Z'),
       },
     });
-    await prisma.refereeVote.create({
+    await prisma.judgeVote.create({
       data: {
         id: fixture.voteId,
         scoringWindowId: fixture.scoringWindowId,
@@ -410,7 +419,7 @@ describe('database unique constraints', () => {
       },
     });
     await expect(
-      prisma.refereeVote.create({
+      prisma.judgeVote.create({
         data: {
           id: fixture.duplicateVoteId,
           scoringWindowId: fixture.scoringWindowId,
@@ -421,15 +430,15 @@ describe('database unique constraints', () => {
       }),
     ).rejects.toMatchObject({ code: 'P2002' });
     await expect(prisma.$executeRaw`
-      INSERT INTO "referee_votes" ("scoring_window_id", "match_id", "athlete_color")
+      INSERT INTO "judge_votes" ("scoring_window_id", "match_id", "athlete_color")
       VALUES (${fixture.scoringWindowId}::uuid, ${fixture.matchId}::uuid, 'RED')
     `).rejects.toMatchObject({ code: 'P2010', meta: { code: '23514' } });
     await expect(prisma.$executeRaw`
-      INSERT INTO "referee_votes" ("scoring_window_id", "match_id", "athlete_color", "assignment_id", "session_id", "referee_slot")
-      VALUES (${fixture.scoringWindowId}::uuid, ${fixture.matchId}::uuid, 'RED', ${refereeAssignment.id}::uuid, '60000000-0000-4000-8000-000000000099'::uuid, 'REFEREE_1')
+      INSERT INTO "judge_votes" ("scoring_window_id", "match_id", "athlete_color", "assignment_id", "session_id", "judge_slot")
+      VALUES (${fixture.scoringWindowId}::uuid, ${fixture.matchId}::uuid, 'RED', ${refereeAssignment.id}::uuid, '60000000-0000-4000-8000-000000000099'::uuid, 'JUDGE_1')
     `).rejects.toMatchObject({ code: 'P2010', meta: { code: '23514' } });
     await expect(prisma.$executeRaw`
-      INSERT INTO "referee_votes" ("scoring_window_id", "match_id", "athlete_color", "assignment_id")
+      INSERT INTO "judge_votes" ("scoring_window_id", "match_id", "athlete_color", "assignment_id")
       VALUES (${fixture.scoringWindowId}::uuid, ${fixture.matchId}::uuid, 'BLUE', ${inspectorAssignment.id}::uuid)
     `).rejects.toMatchObject({ code: 'P2010', meta: { code: '23514' } });
   });
@@ -671,7 +680,7 @@ describe('database unique constraints', () => {
         codeHash: 'database-constraint-test-code-hash',
         id: fixture.accessCodeId,
         matchId: fixture.matchId,
-        role: MatchAccessRole.REFEREE_1,
+        role: MatchAccessRole.JUDGE_1,
       },
     });
     await prisma.matchSession.create({
@@ -680,8 +689,8 @@ describe('database unique constraints', () => {
         deviceId: 'database-constraint-test-device',
         id: fixture.sessionId,
         matchId: fixture.matchId,
-        refereeSlot: RefereeSlot.REFEREE_1,
-        role: MatchRole.REFEREE,
+        judgeSlot: JudgeSlot.JUDGE_1,
+        role: MatchRole.JUDGE,
         tokenHash: 'database-constraint-test-token-hash',
       },
     });
@@ -694,24 +703,24 @@ describe('database unique constraints', () => {
         startedAt: new Date('2026-01-01T00:00:00.000Z'),
       },
     });
-    await prisma.refereeVote.create({
+    await prisma.judgeVote.create({
       data: {
         athleteColor: AthleteColor.RED,
         id: fixture.voteId,
         matchId: fixture.matchId,
-        refereeSlot: RefereeSlot.REFEREE_1,
+        judgeSlot: JudgeSlot.JUDGE_1,
         scoringWindowId: fixture.scoringWindowId,
         sessionId: fixture.sessionId,
       },
     });
 
     await expect(
-      prisma.refereeVote.create({
+      prisma.judgeVote.create({
         data: {
           athleteColor: AthleteColor.BLUE,
           id: fixture.duplicateVoteId,
           matchId: fixture.matchId,
-          refereeSlot: RefereeSlot.REFEREE_1,
+          judgeSlot: JudgeSlot.JUDGE_1,
           scoringWindowId: fixture.scoringWindowId,
           sessionId: fixture.sessionId,
         },

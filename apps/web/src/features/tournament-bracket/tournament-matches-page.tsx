@@ -380,10 +380,10 @@ export function TournamentMatchesPage({
       void qc.invalidateQueries({
         queryKey: bracketQueryKeys.detail(tournament.id, input.weightClassId),
       });
-      notifyMutationSuccess('Đã cập nhật số trọng tài.');
+      notifyMutationSuccess('Đã cập nhật số giám định.');
     },
     onError: (error) => {
-      notifyMutationError(error, 'Không thể cập nhật số trọng tài.');
+      notifyMutationError(error, 'Không thể cập nhật số giám định.');
     },
   });
   const counts = useMemo(

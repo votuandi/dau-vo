@@ -113,7 +113,7 @@ describe('ScoreboardPage', () => {
       </MemoryRouter>,
     );
     expect(screen.getByText('Người chiến thắng')).toBeVisible();
-    expect(screen.getByText('Quyết định giám định sau hiệp phụ')).toBeVisible();
+    expect(screen.getByText('Quyết định giám sát sau hiệp phụ')).toBeVisible();
     expect(screen.getByText('HIỆP PHỤ LẦN 2')).toBeVisible();
   });
 });

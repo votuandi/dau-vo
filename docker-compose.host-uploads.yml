@@ -1,0 +1,16 @@
+# Optional VPS/VM override. It replaces the default named-volume source only;
+# the container destination remains fixed in docker-compose.yml for both users.
+# IMAGE_UPLOAD_HOST_PATH must be an absolute host path (for example
+# /srv/martial-arts-scoring/uploads). `type: bind` prevents a bare/relative
+# source from being interpreted as a Docker named volume.
+services:
+  api:
+    volumes:
+      - type: bind
+        source: ${IMAGE_UPLOAD_HOST_PATH:?Set IMAGE_UPLOAD_HOST_PATH to an absolute host directory}
+        target: /workspace/apps/api/public/uploads
+  media-reconciler:
+    volumes:
+      - type: bind
+        source: ${IMAGE_UPLOAD_HOST_PATH:?Set IMAGE_UPLOAD_HOST_PATH to an absolute host directory}
+        target: /workspace/apps/api/public/uploads

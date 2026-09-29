@@ -4,7 +4,7 @@ import {
 } from './monitoring-history';
 
 describe('monitoring history projection', () => {
-  it('uses a scoring window occurrence and elapsed time for REFEREE_POINT', () => {
+  it('uses a scoring window occurrence and elapsed time for JUDGE_POINT', () => {
     const windowStartedAt = new Date('2026-09-10T00:00:05.000Z');
     const result = monitoringScoreEvent(
       {

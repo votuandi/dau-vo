@@ -112,7 +112,7 @@ export interface AdminMatchMonitoring {
     winningColor: AthleteColor | null;
     scoreAwarded: boolean;
     refereeVotes: readonly {
-      refereeSlot: string;
+      judgeSlot: string;
       athleteColor: AthleteColor;
       serverReceivedAt: string;
       invalidatedAt: string | null;
@@ -409,7 +409,7 @@ export interface ActiveBracket {
     readonly id: string;
     readonly roundNumber: number;
     readonly roundLabel: string;
-    readonly requiredRefereeCount: number;
+    readonly requiredJudgeCount: number;
   }[];
 }
 
@@ -510,7 +510,7 @@ export const adminManagementApi = {
     tournamentId: string,
     weightClassId: string,
     roundNumber: number,
-    requiredRefereeCount: number,
+    requiredJudgeCount: number,
     options?: ApiRequestWithoutBody,
   ) =>
     apiClient.patch<{
@@ -518,12 +518,12 @@ export const adminManagementApi = {
         readonly id: string;
         readonly roundNumber: number;
         readonly roundLabel: string;
-        readonly requiredRefereeCount: number;
+        readonly requiredJudgeCount: number;
         readonly activeRefereeCount: number;
       };
     }>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/staffing/${String(roundNumber)}`,
-      { requiredRefereeCount },
+      { requiredJudgeCount },
       options,
     ),
   prepareBracketFixtureMatch: (tournamentId: string, bracketId: string, fixtureId: string) =>

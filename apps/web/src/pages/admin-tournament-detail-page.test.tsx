@@ -45,10 +45,10 @@ function renderPage(): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/admin/tournaments/tournament-1/referees']}>
+      <MemoryRouter initialEntries={['/admin/tournaments/tournament-1/judges']}>
         <Routes>
           <Route
-            path="/admin/tournaments/:tournamentId/referees"
+            path="/admin/tournaments/:tournamentId/judges"
             element={<AdminTournamentDetailPage />}
           />
         </Routes>

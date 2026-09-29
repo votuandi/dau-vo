@@ -10,8 +10,8 @@ import {
   type Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { auditActor, type InspectorCommandIdentity } from './command-identity';
-import { InspectorAuthorizationService } from './inspector-authorization.service';
+import { auditActor, type SupervisorCommandIdentity } from './command-identity';
+import { SupervisorAuthorizationService } from './supervisor-authorization.service';
 import {
   AppealIdentityError,
   AppealIdempotencyError,
@@ -36,19 +36,19 @@ export class OvertimeService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RegulationAppealService)
     private readonly appeals: RegulationAppealService,
-    @Inject(InspectorAuthorizationService)
-    private readonly inspectorAuthorization: InspectorAuthorizationService,
+    @Inject(SupervisorAuthorizationService)
+    private readonly supervisorAuthorization: SupervisorAuthorizationService,
   ) {}
 
   async complete(input: {
     matchId: string;
-    identity: InspectorCommandIdentity;
+    identity: SupervisorCommandIdentity;
     payload: RegulationAppealInput;
   }): Promise<OvertimeAppealTransition> {
     return this.prisma.$transaction(
       async (tx) => {
         await this.lockMatch(tx, input.matchId);
-        await this.inspectorAuthorization.lockAndVerify(
+        await this.supervisorAuthorization.lockAndVerify(
           tx,
           input.matchId,
           input.identity,
@@ -157,7 +157,7 @@ export class OvertimeService {
               roundId: round.id,
               invalidatedAt: null,
             },
-            select: { athleteId: true, refereePoints: true },
+            select: { athleteId: true, judgePoints: true },
           }),
         ]);
         if (athletes.length !== 2 || summaries.length !== 2)
@@ -165,7 +165,7 @@ export class OvertimeService {
         const score = (color: AthleteColor) => {
           const athlete = athletes.find((x) => x.color === color)!;
           const base =
-            summaries.find((x) => x.athleteId === athlete.id)?.refereePoints ??
+            summaries.find((x) => x.athleteId === athlete.id)?.judgePoints ??
             0;
           const adjustment = input.payload[color];
           return {
@@ -192,13 +192,13 @@ export class OvertimeService {
             idempotencyKey: input.payload.idempotencyKey,
             completedAt: clock,
             ...(input.identity.kind === 'official'
-              ? { completedInspectorAssignmentId: input.identity.assignmentId }
-              : { completedInspectorSessionId: input.identity.sessionId }),
+              ? { completedSupervisorAssignmentId: input.identity.assignmentId }
+              : { completedSupervisorSessionId: input.identity.sessionId }),
             sourceRounds: { create: { roundId: round.id } },
             adjustments: {
               create: [red, blue].map((x) => ({
                 athleteId: x.athlete.id,
-                baseRefereeScore: x.base,
+                baseJudgeScore: x.base,
                 bonusPoints: x.bonusPoints,
                 penaltyPoints: x.penaltyPoints,
                 finalScore: x.final,
@@ -243,12 +243,12 @@ export class OvertimeService {
 
   async restart(input: {
     matchId: string;
-    identity: InspectorCommandIdentity;
+    identity: SupervisorCommandIdentity;
   }) {
     return this.prisma.$transaction(
       async (tx) => {
         await this.lockMatch(tx, input.matchId);
-        await this.inspectorAuthorization.lockAndVerify(
+        await this.supervisorAuthorization.lockAndVerify(
           tx,
           input.matchId,
           input.identity,
@@ -339,13 +339,13 @@ export class OvertimeService {
 
   async manualWinner(input: {
     matchId: string;
-    identity: InspectorCommandIdentity;
+    identity: SupervisorCommandIdentity;
     winner: AthleteColor;
   }) {
     return this.prisma.$transaction(
       async (tx) => {
         await this.lockMatch(tx, input.matchId);
-        await this.inspectorAuthorization.lockAndVerify(
+        await this.supervisorAuthorization.lockAndVerify(
           tx,
           input.matchId,
           input.identity,
@@ -389,8 +389,8 @@ export class OvertimeService {
             sourceAppealId: appeal.id,
             sourceOvertimeRoundId: appeal.sourceRoundId,
             ...(input.identity.kind === 'official'
-              ? { selectedInspectorAssignmentId: input.identity.assignmentId }
-              : { selectedInspectorSessionId: input.identity.sessionId }),
+              ? { selectedSupervisorAssignmentId: input.identity.assignmentId }
+              : { selectedSupervisorSessionId: input.identity.sessionId }),
           },
         });
         await tx.match.update({

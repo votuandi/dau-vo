@@ -13,7 +13,7 @@ export function finalScore(base: number, adjustment: ResultAdjustment): number {
 }
 
 /** Valid V2 referee points for exactly the supplied rounds. */
-export function refereeBaseForRounds(input: {
+export function judgeBaseForRounds(input: {
   athleteId: string;
   roundIds: readonly string[];
   events: readonly {
@@ -28,7 +28,7 @@ export function refereeBaseForRounds(input: {
   return input.events.reduce(
     (total, event) =>
       event.athleteId === input.athleteId &&
-      event.type === ScoreEventType.REFEREE_POINT &&
+      event.type === ScoreEventType.JUDGE_POINT &&
       event.revertedAt === null &&
       event.roundId !== null &&
       ids.has(event.roundId)
@@ -38,5 +38,5 @@ export function refereeBaseForRounds(input: {
   );
 }
 
-export const regulationBase = refereeBaseForRounds;
-export const overtimeBase = refereeBaseForRounds;
+export const regulationBase = judgeBaseForRounds;
+export const overtimeBase = judgeBaseForRounds;

@@ -1,4 +1,4 @@
-import { Navigate, createBrowserRouter } from 'react-router-dom';
+import { Navigate, createBrowserRouter, type RouteObject } from 'react-router-dom';
 import { AdminRouteGuard } from '@/features/admin-auth/admin-route-guard';
 import { AuthenticatedRouteGuard } from '@/features/auth/authenticated-route-guard';
 import { SuperAdminRouteGuard } from '@/features/auth/super-admin-route-guard';
@@ -25,8 +25,9 @@ import { SuperAdminSportGroupsPage } from '@/features/super-admin/sports/sport-g
 import { SuperAdminSportsPage } from '@/features/super-admin/sports/sports-page';
 import { TournamentOfficialRole } from '@/types/shared';
 import { RoleAwareIndexRedirect } from './role-aware-index-redirect';
+import { LegacyJudgeAlias } from './legacy-judge-alias';
 
-export const router = createBrowserRouter([
+export const routes: RouteObject[] = [
   {
     path: '/',
     element: <AppLayout />,
@@ -83,8 +84,8 @@ export const router = createBrowserRouter([
           },
           { path: 'tournaments/:tournamentId/athletes', element: <AdminTournamentDetailPage /> },
           { path: 'tournaments/:tournamentId/matches', element: <AdminTournamentDetailPage /> },
-          { path: 'tournaments/:tournamentId/referees', element: <AdminTournamentDetailPage /> },
-          { path: 'tournaments/:tournamentId/inspectors', element: <AdminTournamentDetailPage /> },
+          { path: 'tournaments/:tournamentId/judges', element: <AdminTournamentDetailPage /> },
+          { path: 'tournaments/:tournamentId/supervisors', element: <AdminTournamentDetailPage /> },
           {
             path: 'matches/:matchId',
             element: <AdminMatchDetailPage />,
@@ -111,14 +112,19 @@ export const router = createBrowserRouter([
       },
       {
         path: 'trong-tai',
-        element: (
-          <MatchAccessPage expectedRole={TournamentOfficialRole.REFEREE} key="referee-access" />
-        ),
+        element: <LegacyJudgeAlias />,
       },
       {
         path: 'giam-dinh',
+        element: <MatchAccessPage expectedRole={TournamentOfficialRole.JUDGE} key="judge-access" />,
+      },
+      {
+        path: 'giam-sat',
         element: (
-          <MatchAccessPage expectedRole={TournamentOfficialRole.INSPECTOR} key="inspector-access" />
+          <MatchAccessPage
+            expectedRole={TournamentOfficialRole.SUPERVISOR}
+            key="supervisor-access"
+          />
         ),
       },
       {
@@ -135,4 +141,6 @@ export const router = createBrowserRouter([
       },
     ],
   },
-]);
+];
+
+export const router = createBrowserRouter(routes);

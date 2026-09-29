@@ -64,7 +64,7 @@ const sessionSelect = {
         select: {
           id: true,
           role: true,
-          refereePosition: true,
+          judgePosition: true,
           match: { select: { id: true, publicId: true, status: true } },
         },
       },

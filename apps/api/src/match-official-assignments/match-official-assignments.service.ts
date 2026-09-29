@@ -33,7 +33,7 @@ export class MatchOfficialAssignmentsService {
   ) {}
 
   async list(identity: ValidatedOfficialSession) {
-    this.inspector(identity);
+    this.supervisor(identity);
     const matches = await this.prisma.match.findMany({
       where: {
         tournamentId: identity.tournamentId,
@@ -51,7 +51,7 @@ export class MatchOfficialAssignmentsService {
         publicId: true,
         lifecycle: true,
         status: true,
-        requiredRefereeCount: true,
+        requiredJudgeCount: true,
         athletes: {
           orderBy: { color: 'asc' },
           select: { color: true, name: true },
@@ -67,7 +67,7 @@ export class MatchOfficialAssignmentsService {
         ...match,
         claimable:
           !match.officialAssignments.some(
-            (x) => x.role === TournamentOfficialRole.INSPECTOR,
+            (x) => x.role === TournamentOfficialRole.SUPERVISOR,
           ) ||
           match.officialAssignments.some(
             (x) => x.officialId === identity.officialId,
@@ -77,24 +77,24 @@ export class MatchOfficialAssignmentsService {
   }
 
   async state(matchId: string, identity: ValidatedOfficialSession) {
-    this.inspector(identity);
+    this.supervisor(identity);
     const match = await this.prisma.match.findFirst({
       where: { id: matchId, tournamentId: identity.tournamentId },
       select: {
         id: true,
         publicId: true,
         lifecycle: true,
-        requiredRefereeCount: true,
+        requiredJudgeCount: true,
         status: true,
         startedAt: true,
         officialAssignments: {
           where: { releasedAt: null },
-          orderBy: [{ role: 'asc' }, { refereePosition: 'asc' }],
+          orderBy: [{ role: 'asc' }, { judgePosition: 'asc' }],
           select: {
             id: true,
             officialId: true,
             role: true,
-            refereePosition: true,
+            judgePosition: true,
             official: { select: { name: true, isActive: true } },
           },
         },
@@ -107,7 +107,7 @@ export class MatchOfficialAssignmentsService {
     const referees = await this.prisma.tournamentOfficial.findMany({
       where: {
         tournamentId: identity.tournamentId,
-        role: TournamentOfficialRole.REFEREE,
+        role: TournamentOfficialRole.JUDGE,
       },
       orderBy: { name: 'asc' },
       select: {
@@ -128,13 +128,13 @@ export class MatchOfficialAssignmentsService {
   /** Atomically assigns the authenticated inspector and the requested referee team. */
   async take(
     matchId: string,
-    refereeIds: string[],
+    judgeIds: string[],
     identity: ValidatedOfficialSession,
   ) {
-    this.inspector(identity);
-    if (new Set(refereeIds).size !== refereeIds.length)
+    this.supervisor(identity);
+    if (new Set(judgeIds).size !== judgeIds.length)
       throw new ConflictException(
-        assignmentError('REFEREE_COUNT_MISMATCH', 'Referees must be distinct'),
+        assignmentError('JUDGE_COUNT_MISMATCH', 'Referees must be distinct'),
       );
     const result = await this.transaction(async (tx) => {
       await this.lockTournament(tx, identity.tournamentId);
@@ -142,7 +142,7 @@ export class MatchOfficialAssignmentsService {
       const currentOfficialIds = await this.activeOfficialIds(tx, matchId);
       await this.lockOfficials(tx, [
         identity.officialId,
-        ...refereeIds,
+        ...judgeIds,
         ...currentOfficialIds,
       ]);
       await this.lockAssignments(tx, matchId);
@@ -156,28 +156,28 @@ export class MatchOfficialAssignmentsService {
         identity.officialId,
         identity.tournamentId,
       );
-      if (refereeIds.length !== match.requiredRefereeCount)
+      if (judgeIds.length !== match.requiredJudgeCount)
         throw new ConflictException(
           assignmentError(
-            'REFEREE_COUNT_MISMATCH',
+            'JUDGE_COUNT_MISMATCH',
             'Submitted referee count does not match match staffing',
           ),
         );
 
       const current = await tx.matchOfficialAssignment.findMany({
         where: { matchId, releasedAt: null },
-        orderBy: [{ role: 'asc' }, { refereePosition: 'asc' }],
-        select: { officialId: true, role: true, refereePosition: true },
+        orderBy: [{ role: 'asc' }, { judgePosition: 'asc' }],
+        select: { officialId: true, role: true, judgePosition: true },
       });
       const currentInspector = current.find(
-        (x) => x.role === TournamentOfficialRole.INSPECTOR,
+        (x) => x.role === TournamentOfficialRole.SUPERVISOR,
       );
-      const requested = refereeIds.map((officialId, index) => ({
+      const requested = judgeIds.map((officialId, index) => ({
         officialId,
-        refereePosition: index + 1,
+        judgePosition: index + 1,
       }));
       const currentReferees = current.filter(
-        (x) => x.role === TournamentOfficialRole.REFEREE,
+        (x) => x.role === TournamentOfficialRole.JUDGE,
       );
       if (
         currentInspector?.officialId === identity.officialId &&
@@ -185,7 +185,7 @@ export class MatchOfficialAssignmentsService {
         currentReferees.every(
           (x, index) =>
             x.officialId === requested[index]?.officialId &&
-            x.refereePosition === requested[index]?.refereePosition,
+            x.judgePosition === requested[index]?.judgePosition,
         )
       )
         return {
@@ -213,13 +213,13 @@ export class MatchOfficialAssignmentsService {
       if (inspectorOccupied)
         throw new ConflictException(
           assignmentError(
-            'INSPECTOR_ALREADY_IN_MATCH',
+            'SUPERVISOR_ALREADY_IN_MATCH',
             'Inspector is already assigned to another match',
             { matchId: inspectorOccupied.matchId },
           ),
         );
       const officials = await tx.tournamentOfficial.findMany({
-        where: { id: { in: refereeIds } },
+        where: { id: { in: judgeIds } },
         select: {
           id: true,
           name: true,
@@ -229,7 +229,7 @@ export class MatchOfficialAssignmentsService {
         },
       });
       if (
-        officials.length !== refereeIds.length ||
+        officials.length !== judgeIds.length ||
         officials.some((x) => x.tournamentId !== identity.tournamentId)
       )
         throw new ConflictException(
@@ -239,12 +239,12 @@ export class MatchOfficialAssignmentsService {
           ),
         );
       const wrongRole = officials.find(
-        (x) => x.role !== TournamentOfficialRole.REFEREE,
+        (x) => x.role !== TournamentOfficialRole.JUDGE,
       );
       if (wrongRole)
         throw new ConflictException(
           assignmentError(
-            'REFEREE_NOT_AVAILABLE',
+            'JUDGE_NOT_AVAILABLE',
             'Selected official is not a referee',
             { officialId: wrongRole.id, officialName: wrongRole.name },
           ),
@@ -252,19 +252,19 @@ export class MatchOfficialAssignmentsService {
       const inactive = officials.find((x) => !x.isActive);
       if (inactive)
         throw new ConflictException(
-          assignmentError('REFEREE_INACTIVE', 'Selected referee is inactive', {
+          assignmentError('JUDGE_INACTIVE', 'Selected referee is inactive', {
             officialId: inactive.id,
             officialName: inactive.name,
           }),
         );
       const occupied = await tx.matchOfficialAssignment.findFirst({
-        where: { officialId: { in: refereeIds }, releasedAt: null },
+        where: { officialId: { in: judgeIds }, releasedAt: null },
         include: { official: { select: { name: true } } },
       });
       if (occupied)
         throw new ConflictException(
           assignmentError(
-            'REFEREE_ALREADY_IN_MATCH',
+            'JUDGE_ALREADY_IN_MATCH',
             'Selected referee is already assigned',
             {
               officialId: occupied.officialId,
@@ -279,17 +279,17 @@ export class MatchOfficialAssignmentsService {
           matchId,
           tournamentId: match.tournamentId,
           officialId: identity.officialId,
-          role: TournamentOfficialRole.INSPECTOR,
+          role: TournamentOfficialRole.SUPERVISOR,
         },
       });
       await tx.matchOfficialAssignment.createMany({
-        data: requested.map(({ officialId, refereePosition }) => ({
+        data: requested.map(({ officialId, judgePosition }) => ({
           matchId,
           tournamentId: match.tournamentId,
           officialId,
-          role: TournamentOfficialRole.REFEREE,
-          refereePosition,
-          assignedByInspectorId: identity.officialId,
+          role: TournamentOfficialRole.JUDGE,
+          judgePosition,
+          assignedBySupervisorId: identity.officialId,
         })),
       });
       if (match.lifecycle === MatchLifecycle.SUSPENDED)
@@ -316,7 +316,7 @@ export class MatchOfficialAssignmentsService {
   }
 
   async claim(matchId: string, identity: ValidatedOfficialSession) {
-    this.inspector(identity);
+    this.supervisor(identity);
     // Compatibility endpoint intentionally no longer creates an inspector-only
     // assignment. Callers must use take() so no match can be half-assigned.
     throw new ConflictException(
@@ -341,7 +341,7 @@ export class MatchOfficialAssignmentsService {
       const inspector = await tx.matchOfficialAssignment.findFirst({
         where: {
           matchId,
-          role: TournamentOfficialRole.INSPECTOR,
+          role: TournamentOfficialRole.SUPERVISOR,
           releasedAt: null,
         },
         select: { officialId: true },
@@ -358,7 +358,7 @@ export class MatchOfficialAssignmentsService {
         if (own)
           throw new ConflictException(
             assignmentError(
-              'INSPECTOR_ALREADY_IN_MATCH',
+              'SUPERVISOR_ALREADY_IN_MATCH',
               'Inspector is already assigned to another match',
             ),
           );
@@ -367,12 +367,12 @@ export class MatchOfficialAssignmentsService {
             matchId,
             tournamentId: match.tournamentId,
             officialId: identity.officialId,
-            role: TournamentOfficialRole.INSPECTOR,
+            role: TournamentOfficialRole.SUPERVISOR,
           },
         });
         await this.audit(
           tx,
-          AuditEventType.MATCH_INSPECTOR_CLAIMED,
+          AuditEventType.MATCH_SUPERVISOR_CLAIMED,
           matchId,
           identity,
           { inspectorId: identity.officialId },
@@ -387,13 +387,13 @@ export class MatchOfficialAssignmentsService {
 
   async confirm(
     matchId: string,
-    refereeIds: string[],
+    judgeIds: string[],
     identity: ValidatedOfficialSession,
   ) {
-    this.inspector(identity);
-    if (new Set(refereeIds).size !== refereeIds.length)
+    this.supervisor(identity);
+    if (new Set(judgeIds).size !== judgeIds.length)
       throw new ConflictException(
-        assignmentError('REFEREE_COUNT_MISMATCH', 'Referees must be distinct'),
+        assignmentError('JUDGE_COUNT_MISMATCH', 'Referees must be distinct'),
       );
     const result = await this.transaction(async (tx) => {
       await this.lockTournament(tx, identity.tournamentId);
@@ -401,7 +401,7 @@ export class MatchOfficialAssignmentsService {
       const currentOfficialIds = await this.activeOfficialIds(tx, matchId);
       await this.lockOfficials(tx, [
         identity.officialId,
-        ...refereeIds,
+        ...judgeIds,
         ...currentOfficialIds,
       ]);
       await this.lockAssignments(tx, matchId);
@@ -411,10 +411,10 @@ export class MatchOfficialAssignmentsService {
         identity.officialId,
         identity.tournamentId,
       );
-      if (refereeIds.length !== match.requiredRefereeCount)
+      if (judgeIds.length !== match.requiredJudgeCount)
         throw new ConflictException(
           assignmentError(
-            'REFEREE_COUNT_MISMATCH',
+            'JUDGE_COUNT_MISMATCH',
             'Submitted referee count does not match match staffing',
           ),
         );
@@ -422,19 +422,19 @@ export class MatchOfficialAssignmentsService {
         where: {
           matchId,
           officialId: identity.officialId,
-          role: TournamentOfficialRole.INSPECTOR,
+          role: TournamentOfficialRole.SUPERVISOR,
           releasedAt: null,
         },
       });
       if (!owner)
         throw new ForbiddenException(
           assignmentError(
-            'INSPECTOR_NOT_MATCH_OWNER',
+            'SUPERVISOR_NOT_MATCH_OWNER',
             'Inspector does not own this match',
           ),
         );
       const officials = await tx.tournamentOfficial.findMany({
-        where: { id: { in: refereeIds } },
+        where: { id: { in: judgeIds } },
         select: {
           id: true,
           name: true,
@@ -444,7 +444,7 @@ export class MatchOfficialAssignmentsService {
         },
       });
       if (
-        officials.length !== refereeIds.length ||
+        officials.length !== judgeIds.length ||
         officials.some((x) => x.tournamentId !== identity.tournamentId)
       )
         throw new ConflictException(
@@ -454,12 +454,12 @@ export class MatchOfficialAssignmentsService {
           ),
         );
       const invalid = officials.find(
-        (x) => x.role !== TournamentOfficialRole.REFEREE,
+        (x) => x.role !== TournamentOfficialRole.JUDGE,
       );
       if (invalid)
         throw new ConflictException(
           assignmentError(
-            'REFEREE_NOT_AVAILABLE',
+            'JUDGE_NOT_AVAILABLE',
             'Selected official is not a referee',
             { officialId: invalid.id, name: invalid.name },
           ),
@@ -467,14 +467,14 @@ export class MatchOfficialAssignmentsService {
       const inactive = officials.find((x) => !x.isActive);
       if (inactive)
         throw new ConflictException(
-          assignmentError('REFEREE_INACTIVE', 'Selected referee is inactive', {
+          assignmentError('JUDGE_INACTIVE', 'Selected referee is inactive', {
             officialId: inactive.id,
             name: inactive.name,
           }),
         );
       const occupied = await tx.matchOfficialAssignment.findFirst({
         where: {
-          officialId: { in: refereeIds },
+          officialId: { in: judgeIds },
           releasedAt: null,
           matchId: { not: matchId },
         },
@@ -483,7 +483,7 @@ export class MatchOfficialAssignmentsService {
       if (occupied)
         throw new ConflictException(
           assignmentError(
-            'REFEREE_ALREADY_IN_MATCH',
+            'JUDGE_ALREADY_IN_MATCH',
             `Trọng tài ${occupied.official.name} đang trong trận khác. Vui lòng chọn lại.`,
             { officialId: occupied.officialId, name: occupied.official.name },
           ),
@@ -491,15 +491,15 @@ export class MatchOfficialAssignmentsService {
       const before = await tx.matchOfficialAssignment.findMany({
         where: {
           matchId,
-          role: TournamentOfficialRole.REFEREE,
+          role: TournamentOfficialRole.JUDGE,
           releasedAt: null,
         },
-        orderBy: { refereePosition: 'asc' },
-        select: { id: true, officialId: true, refereePosition: true },
+        orderBy: { judgePosition: 'asc' },
+        select: { id: true, officialId: true, judgePosition: true },
       });
-      const after = refereeIds.map((officialId, index) => ({
+      const after = judgeIds.map((officialId, index) => ({
         officialId,
-        refereePosition: index + 1,
+        judgePosition: index + 1,
       }));
       // Keep a durable assignment whenever its official and position are
       // unchanged. This avoids invalidating an otherwise valid session.
@@ -507,7 +507,7 @@ export class MatchOfficialAssignmentsService {
         after.some(
           (next) =>
             next.officialId === old.officialId &&
-            next.refereePosition === old.refereePosition,
+            next.judgePosition === old.judgePosition,
         ),
       );
       const replaced = before.filter(
@@ -518,7 +518,7 @@ export class MatchOfficialAssignmentsService {
           !retained.some(
             (kept) =>
               kept.officialId === next.officialId &&
-              kept.refereePosition === next.refereePosition,
+              kept.judgePosition === next.judgePosition,
           ),
       );
       await tx.matchOfficialAssignment.updateMany({
@@ -531,13 +531,13 @@ export class MatchOfficialAssignmentsService {
         },
       });
       await tx.matchOfficialAssignment.createMany({
-        data: added.map(({ officialId, refereePosition }) => ({
+        data: added.map(({ officialId, judgePosition }) => ({
           matchId,
           tournamentId: match.tournamentId,
           officialId,
-          role: TournamentOfficialRole.REFEREE,
-          refereePosition,
-          assignedByInspectorId: identity.officialId,
+          role: TournamentOfficialRole.JUDGE,
+          judgePosition,
+          assignedBySupervisorId: identity.officialId,
         })),
       });
       await this.audit(
@@ -550,13 +550,13 @@ export class MatchOfficialAssignmentsService {
         {
           before,
           after,
-          retained: retained.map(({ officialId, refereePosition }) => ({
+          retained: retained.map(({ officialId, judgePosition }) => ({
             officialId,
-            refereePosition,
+            judgePosition,
           })),
-          removed: replaced.map(({ officialId, refereePosition }) => ({
+          removed: replaced.map(({ officialId, judgePosition }) => ({
             officialId,
-            refereePosition,
+            judgePosition,
           })),
           added,
         },
@@ -579,7 +579,7 @@ export class MatchOfficialAssignmentsService {
   }
 
   async release(matchId: string, identity: ValidatedOfficialSession) {
-    this.inspector(identity);
+    this.supervisor(identity);
     const result = await this.transaction(async (tx) => {
       await this.lockTournament(tx, identity.tournamentId);
       await this.lockMatch(tx, matchId);
@@ -599,20 +599,20 @@ export class MatchOfficialAssignmentsService {
         where: {
           matchId,
           officialId: identity.officialId,
-          role: TournamentOfficialRole.INSPECTOR,
+          role: TournamentOfficialRole.SUPERVISOR,
           releasedAt: null,
         },
       });
       if (!owner)
         throw new ForbiddenException(
           assignmentError(
-            'INSPECTOR_NOT_MATCH_OWNER',
+            'SUPERVISOR_NOT_MATCH_OWNER',
             'Inspector does not own this match',
           ),
         );
       const before = await tx.matchOfficialAssignment.findMany({
         where: { matchId, releasedAt: null },
-        select: { officialId: true, role: true, refereePosition: true },
+        select: { officialId: true, role: true, judgePosition: true },
       });
       await tx.matchOfficialAssignment.updateMany({
         where: { matchId, releasedAt: null },
@@ -655,7 +655,7 @@ export class MatchOfficialAssignmentsService {
               id: true,
               officialId: true,
               role: true,
-              refereePosition: true,
+              judgePosition: true,
             },
           },
         },
@@ -680,7 +680,7 @@ export class MatchOfficialAssignmentsService {
           assignment: {
             id: assignment.id,
             role: assignment.role,
-            refereePosition: assignment.refereePosition,
+            judgePosition: assignment.judgePosition,
             match: {
               id: matchId,
               publicId: match.publicId,
@@ -722,10 +722,10 @@ export class MatchOfficialAssignmentsService {
     }
   }
 
-  private inspector(identity: ValidatedOfficialSession) {
-    if (identity.official.role !== TournamentOfficialRole.INSPECTOR)
+  private supervisor(identity: ValidatedOfficialSession) {
+    if (identity.official.role !== TournamentOfficialRole.SUPERVISOR)
       throw new ForbiddenException(
-        assignmentError('INSPECTOR_REQUIRED', 'Inspector role required'),
+        assignmentError('SUPERVISOR_REQUIRED', 'Inspector role required'),
       );
   }
   private transaction<T>(work: (tx: Tx) => Promise<T>) {
@@ -765,7 +765,7 @@ export class MatchOfficialAssignmentsService {
       where: {
         id: officialId,
         tournamentId,
-        role: TournamentOfficialRole.INSPECTOR,
+        role: TournamentOfficialRole.SUPERVISOR,
         isActive: true,
       },
       select: { id: true },
@@ -786,7 +786,7 @@ export class MatchOfficialAssignmentsService {
           status: { not: TournamentStatus.ARCHIVED },
         },
       },
-      select: { id: true, tournamentId: true, requiredRefereeCount: true },
+      select: { id: true, tournamentId: true, requiredJudgeCount: true },
     });
     if (!match)
       throw new ConflictException(
@@ -813,7 +813,7 @@ export class MatchOfficialAssignmentsService {
       select: {
         id: true,
         tournamentId: true,
-        requiredRefereeCount: true,
+        requiredJudgeCount: true,
         lifecycle: true,
       },
     });
@@ -865,15 +865,15 @@ export class MatchOfficialAssignmentsService {
         tournamentId: true,
         publicId: true,
         status: true,
-        requiredRefereeCount: true,
+        requiredJudgeCount: true,
         officialAssignments: {
           where: { releasedAt: null },
-          orderBy: [{ role: 'asc' }, { refereePosition: 'asc' }],
+          orderBy: [{ role: 'asc' }, { judgePosition: 'asc' }],
           select: {
             id: true,
             officialId: true,
             role: true,
-            refereePosition: true,
+            judgePosition: true,
             official: { select: { name: true } },
           },
         },
@@ -883,7 +883,7 @@ export class MatchOfficialAssignmentsService {
       api: {
         match: {
           id: match.id,
-          requiredRefereeCount: match.requiredRefereeCount,
+          requiredJudgeCount: match.requiredJudgeCount,
           officialAssignments: match.officialAssignments.map(
             ({ id: _id, ...assignment }) => assignment,
           ),
@@ -915,7 +915,7 @@ export class MatchOfficialAssignmentsService {
         assignment: {
           id: assignment.id,
           role: assignment.role,
-          refereePosition: assignment.refereePosition,
+          judgePosition: assignment.judgePosition,
           match: {
             id: match.id,
             publicId: match.publicId,
@@ -929,14 +929,14 @@ export class MatchOfficialAssignmentsService {
       where: { id: matchId },
       select: {
         id: true,
-        requiredRefereeCount: true,
+        requiredJudgeCount: true,
         officialAssignments: {
           where: { releasedAt: null },
-          orderBy: [{ role: 'asc' }, { refereePosition: 'asc' }],
+          orderBy: [{ role: 'asc' }, { judgePosition: 'asc' }],
           select: {
             officialId: true,
             role: true,
-            refereePosition: true,
+            judgePosition: true,
             official: { select: { name: true } },
           },
         },

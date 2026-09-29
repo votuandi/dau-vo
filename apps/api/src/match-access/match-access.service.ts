@@ -11,7 +11,7 @@ import {
   AuditEventType,
   MatchAccessRole,
   MatchRole,
-  RefereeSlot,
+  JudgeSlot,
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 import { compare, hash } from 'bcryptjs';
@@ -81,7 +81,7 @@ type SessionAcquisitionResult =
   | { conflict: OwnershipConflict; kind: 'conflict' };
 
 interface SessionRole {
-  refereeSlot: RefereeSlot | null;
+  judgeSlot: JudgeSlot | null;
   role: MatchRole;
 }
 
@@ -381,7 +381,7 @@ export class MatchAccessService {
             id: true,
             match: { select: { publicId: true } },
             matchId: true,
-            refereeSlot: true,
+            judgeSlot: true,
             role: true,
           },
           where: {
@@ -425,7 +425,7 @@ export class MatchAccessService {
           expiresAt: session.expiresAt.toISOString(),
           matchId: session.matchId,
           matchPublicId: session.match.publicId,
-          refereeSlot: session.refereeSlot,
+          judgeSlot: session.judgeSlot,
           role: session.role,
           sessionId: session.id,
         };
@@ -676,7 +676,7 @@ export class MatchAccessService {
         expiresAt,
         lastSeenAt: now,
         matchId: credential.matchId,
-        refereeSlot: sessionRole.refereeSlot,
+        judgeSlot: sessionRole.judgeSlot,
         role: sessionRole.role,
         tokenHash,
       },
@@ -684,7 +684,7 @@ export class MatchAccessService {
         deviceId: true,
         expiresAt: true,
         id: true,
-        refereeSlot: true,
+        judgeSlot: true,
         role: true,
       },
     });
@@ -696,7 +696,7 @@ export class MatchAccessService {
         metadata: {
           action,
           deviceId,
-          refereeSlot: sessionRole.refereeSlot,
+          judgeSlot: sessionRole.judgeSlot,
           role: sessionRole.role,
         },
         sessionId: session.id,
@@ -711,7 +711,7 @@ export class MatchAccessService {
       deviceId: session.deviceId,
       expiresAt: session.expiresAt.toISOString(),
       matchPublicId: credential.matchPublicId,
-      refereeSlot: session.refereeSlot,
+      judgeSlot: session.judgeSlot,
       role: session.role,
       sessionId: session.id,
     };
@@ -730,23 +730,23 @@ export class MatchAccessService {
 
   private sessionRole(accessRole: MatchAccessRole): SessionRole {
     switch (accessRole) {
-      case MatchAccessRole.REFEREE_1:
+      case MatchAccessRole.JUDGE_1:
         return {
-          refereeSlot: RefereeSlot.REFEREE_1,
-          role: MatchRole.REFEREE,
+          judgeSlot: JudgeSlot.JUDGE_1,
+          role: MatchRole.JUDGE,
         };
-      case MatchAccessRole.REFEREE_2:
+      case MatchAccessRole.JUDGE_2:
         return {
-          refereeSlot: RefereeSlot.REFEREE_2,
-          role: MatchRole.REFEREE,
+          judgeSlot: JudgeSlot.JUDGE_2,
+          role: MatchRole.JUDGE,
         };
-      case MatchAccessRole.REFEREE_3:
+      case MatchAccessRole.JUDGE_3:
         return {
-          refereeSlot: RefereeSlot.REFEREE_3,
-          role: MatchRole.REFEREE,
+          judgeSlot: JudgeSlot.JUDGE_3,
+          role: MatchRole.JUDGE,
         };
-      case MatchAccessRole.INSPECTOR:
-        return { refereeSlot: null, role: MatchRole.INSPECTOR };
+      case MatchAccessRole.SUPERVISOR:
+        return { judgeSlot: null, role: MatchRole.SUPERVISOR };
       default: {
         const exhaustiveRole: never = accessRole;
         throw new Error(`Unsupported match access role: ${exhaustiveRole}`);

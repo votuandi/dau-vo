@@ -4,7 +4,7 @@ import {
   AthleteColor,
   MatchExitMode,
   RealtimeEvent,
-  RefereeSlot,
+  JudgeSlot,
   type MatchExitResponse,
 } from '@martial-arts-scoring/shared-types';
 import { getParticipantsNotReadyMessage, useMatchRealtime } from './match-realtime';
@@ -114,14 +114,14 @@ describe('useMatchRealtime', () => {
         assignedRefereeCount: 5,
         connectedRefereeCount: 3,
         inspectorConnected: true,
-        requiredRefereeCount: 5,
+        requiredJudgeCount: 5,
         scoreboardConnectedCount: 1,
       }),
     ).toBe(
-      'Chưa thể bắt đầu hiệp đấu. Đã phân công 5/5 trọng tài, kết nối 3/5 trọng tài và 1 bảng điểm.',
+      'Chưa thể bắt đầu hiệp đấu. Đã phân công 5/5 giám định, kết nối 3/5 giám định và 1 bảng điểm.',
     );
     expect(getParticipantsNotReadyMessage(undefined)).toBe(
-      'Chưa thể bắt đầu hiệp đấu. Chưa đáp ứng đủ trọng tài hoặc bảng điểm cần thiết.',
+      'Chưa thể bắt đầu hiệp đấu. Chưa đáp ứng đủ giám định hoặc bảng điểm cần thiết.',
     );
   });
   function renderRealtime(onSessionRevoked = vi.fn()) {
@@ -130,7 +130,7 @@ describe('useMatchRealtime', () => {
         matchPublicId: refereeSession.matchPublicId,
         onAuthenticationRequired: vi.fn(),
         onSessionRevoked,
-        refereeIdentity: { kind: 'legacy', refereeSlot: RefereeSlot.REFEREE_1 },
+        refereeIdentity: { kind: 'legacy', judgeSlot: JudgeSlot.JUDGE_1 },
       }),
     );
   }
@@ -185,12 +185,12 @@ describe('useMatchRealtime', () => {
         matchPublicId: refereeSession.matchPublicId,
         onAuthenticationRequired: vi.fn(),
         onSessionRevoked: vi.fn(),
-        refereeIdentity: { assignmentId: 'assignment-4', kind: 'official', refereePosition: 4 },
+        refereeIdentity: { assignmentId: 'assignment-4', kind: 'official', judgePosition: 4 },
       }),
     );
     const accepted = {
       ...acceptedRedVote,
-      identity: { assignmentId: 'assignment-4', kind: 'official' as const, refereePosition: 4 },
+      identity: { assignmentId: 'assignment-4', kind: 'official' as const, judgePosition: 4 },
     };
     act(() => {
       socketHarness.triggerSocketEvent(RealtimeEvent.VOTE_ACCEPTED, {

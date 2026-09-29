@@ -264,7 +264,7 @@ export class BracketConfirmationService {
           data: Array.from({ length: graph.roundCount }, (_, index) => ({
             bracketId: bracket.id,
             roundNumber: index + 1,
-            requiredRefereeCount: rules.defaultRequiredRefereeCount,
+            requiredJudgeCount: rules.defaultRequiredJudgeCount,
           })),
         });
         await tx.auditLog.create({
@@ -358,7 +358,7 @@ export class BracketConfirmationService {
       this.prisma.tournamentOfficial.count({
         where: {
           tournamentId,
-          role: TournamentOfficialRole.REFEREE,
+          role: TournamentOfficialRole.JUDGE,
           isActive: true,
         },
       }),

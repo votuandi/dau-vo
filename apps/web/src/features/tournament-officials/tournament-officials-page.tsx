@@ -17,13 +17,13 @@ import {
 import { adminManagementApi, type TournamentOfficial } from '@/services/api/admin-management';
 import { TournamentOfficialRole } from '@/types/shared';
 
-const labels = { REFEREE: 'Trọng tài', INSPECTOR: 'Giám định' } as const;
+const labels = { JUDGE: 'Giám định', SUPERVISOR: 'Giám sát' } as const;
 function errorText(error: unknown) {
   const message = getApiErrorMessage(error, 'Không thể thực hiện yêu cầu.');
   if (message.includes('OFFICIAL_IN_ACTIVE_MATCH'))
     return 'Không thể thay đổi vì cán bộ đang được phân công trận đấu.';
   if (message.includes('OFFICIAL_COUNT_BELOW_STAFFING_REQUIREMENT'))
-    return 'Không thể ngừng dùng vì không đủ trọng tài cho nhánh đấu.';
+    return 'Không thể ngừng dùng vì không đủ giám định cho nhánh đấu.';
   return message;
 }
 function Status({ official }: { readonly official: TournamentOfficial }) {

@@ -26,7 +26,7 @@ export class BracketRoundStaffingService {
     tournamentId: string,
     weightClassId: string,
     roundNumber: number,
-    requiredRefereeCount: number,
+    requiredJudgeCount: number,
     actorId: string,
   ) {
     return this.prisma.$transaction(
@@ -51,7 +51,7 @@ export class BracketRoundStaffingService {
           });
         // Global official/staffing order: tournament, officials by UUID, then
         // bracket staffing. This shares the first lock with match preparation.
-        await tx.$queryRaw`SELECT id FROM tournament_officials WHERE tournament_id = ${tournamentId}::uuid AND role = 'REFEREE' ORDER BY id FOR UPDATE`;
+        await tx.$queryRaw`SELECT id FROM tournament_officials WHERE tournament_id = ${tournamentId}::uuid AND role = 'JUDGE' ORDER BY id FOR UPDATE`;
         let policy;
         try {
           policy = this.rules.resolve(tournament.sport.sportGroup.code);
@@ -106,14 +106,14 @@ export class BracketRoundStaffingService {
         const activeRefereeCount = await tx.tournamentOfficial.count({
           where: {
             tournamentId,
-            role: TournamentOfficialRole.REFEREE,
+            role: TournamentOfficialRole.JUDGE,
             isActive: true,
           },
         });
         if (
-          requiredRefereeCount < policy.minimumRequiredRefereeCount ||
-          (policy.requiresOddRefereeCount && requiredRefereeCount % 2 === 0) ||
-          requiredRefereeCount > activeRefereeCount
+          requiredJudgeCount < policy.minimumRequiredRefereeCount ||
+          (policy.requiresOddRefereeCount && requiredJudgeCount % 2 === 0) ||
+          requiredJudgeCount > activeRefereeCount
         )
           throw new ConflictException({
             code: 'BRACKET_ROUND_STAFFING_INVALID',
@@ -127,7 +127,7 @@ export class BracketRoundStaffingService {
           });
         const updated = await tx.bracketRoundStaffing.update({
           where: { id: staffing.id },
-          data: { requiredRefereeCount },
+          data: { requiredJudgeCount },
         });
         await tx.auditLog.create({
           data: {
@@ -137,8 +137,8 @@ export class BracketRoundStaffingService {
               tournamentId,
               bracketId: bracket.id,
               roundNumber,
-              before: staffing.requiredRefereeCount,
-              after: requiredRefereeCount,
+              before: staffing.requiredJudgeCount,
+              after: requiredJudgeCount,
             },
           },
         });

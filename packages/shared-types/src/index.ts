@@ -7,7 +7,7 @@ export {
   MatchExitMode,
   MatchPhase,
   MatchStatus,
-  RefereeSlot,
+  JudgeSlot,
   TournamentStatus,
   TournamentOfficialRole,
 } from './enums';

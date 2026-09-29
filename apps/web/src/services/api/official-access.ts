@@ -4,7 +4,7 @@ import { MatchLifecycle, MatchStatus, type TournamentOfficialRole } from '@/type
 export interface OfficialAssignment {
   readonly id: string;
   readonly role: TournamentOfficialRole;
-  readonly refereePosition: number | null;
+  readonly judgePosition: number | null;
   readonly match: { readonly id: string; readonly publicId: string; readonly status: MatchStatus };
 }
 export interface OfficialSession {
@@ -25,7 +25,7 @@ export interface OfficialMatch {
   readonly publicId: string;
   readonly lifecycle: MatchLifecycle;
   readonly status: MatchStatus;
-  readonly requiredRefereeCount: number;
+  readonly requiredJudgeCount: number;
   readonly athletes: readonly { readonly color: string; readonly name: string }[];
   readonly claimable: boolean;
 }
@@ -58,16 +58,16 @@ export const officialAccessApi = {
       match: {
         id: string;
         lifecycle: MatchLifecycle;
-        requiredRefereeCount: number;
+        requiredJudgeCount: number;
         officialAssignments: readonly {
           officialId: string;
           role: TournamentOfficialRole;
-          refereePosition: number | null;
+          judgePosition: number | null;
           official: { name: string; isActive: boolean };
         }[];
       };
       referees: readonly OfficialReferee[];
     }>(`official/matches/${matchId}`),
-  take: (matchId: string, refereeIds: readonly string[]) =>
-    apiClient.post(`official/matches/${matchId}/take`, { refereeIds }),
+  take: (matchId: string, judgeIds: readonly string[]) =>
+    apiClient.post(`official/matches/${matchId}/take`, { judgeIds }),
 };

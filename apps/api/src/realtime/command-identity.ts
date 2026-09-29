@@ -3,7 +3,7 @@
  * discriminated union: callers cannot turn an official into an inspector by
  * adding a role to a Socket.IO payload.
  */
-export type InspectorCommandIdentity =
+export type SupervisorCommandIdentity =
   | {
       kind: 'legacy';
       sessionId: string;
@@ -16,7 +16,7 @@ export type InspectorCommandIdentity =
       officialSessionId: string;
     };
 
-export function auditActor(identity: InspectorCommandIdentity) {
+export function auditActor(identity: SupervisorCommandIdentity) {
   return identity.kind === 'legacy'
     ? { sessionId: identity.sessionId }
     : { officialSessionId: identity.officialSessionId };

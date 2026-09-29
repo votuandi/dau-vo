@@ -1,19 +1,15 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import {
-  AuditEventType,
-  MatchStatus,
-  RoundStage,
-} from '@prisma/client';
+import { AuditEventType, MatchStatus, RoundStage } from '@prisma/client';
 import type { AthleteColor } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { auditActor, type InspectorCommandIdentity } from './command-identity';
+import { auditActor, type SupervisorCommandIdentity } from './command-identity';
 import { calculateMatchScoreProjection } from './match-score-projection';
-import { InspectorAuthorizationService } from './inspector-authorization.service';
+import { SupervisorAuthorizationService } from './supervisor-authorization.service';
 import {
   FaultMatchNotRunningError,
   FaultRoundEndedError,
   FaultRoundPausedError,
-  InactiveFaultInspectorError,
+  InactiveFaultSupervisorError,
   InvalidFaultStateError,
 } from './fault.errors';
 
@@ -22,13 +18,13 @@ export class FaultService {
   private readonly logger = new Logger(FaultService.name);
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(InspectorAuthorizationService)
-    private readonly inspectorAuthorization: InspectorAuthorizationService,
+    @Inject(SupervisorAuthorizationService)
+    private readonly supervisorAuthorization: SupervisorAuthorizationService,
   ) {}
 
   async record(input: {
     athlete: AthleteColor;
-    identity: InspectorCommandIdentity;
+    identity: SupervisorCommandIdentity;
     matchId: string;
     traceId?: string;
   }) {
@@ -38,11 +34,11 @@ export class FaultService {
           Array<{ id: string }>
         >`SELECT "id" FROM "matches" WHERE "id"=${input.matchId}::uuid FOR UPDATE`;
         if (locks.length !== 1) throw new InvalidFaultStateError();
-        await this.inspectorAuthorization.lockAndVerify(
+        await this.supervisorAuthorization.lockAndVerify(
           tx,
           input.matchId,
           input.identity,
-          new InactiveFaultInspectorError(),
+          new InactiveFaultSupervisorError(),
         );
         const clock = (
           await tx.$queryRaw<
@@ -106,8 +102,8 @@ export class FaultService {
             roundId: round.id,
             createdAt: clock,
             ...(input.identity.kind === 'official'
-              ? { recordingInspectorAssignmentId: input.identity.assignmentId }
-              : { recordingInspectorSessionId: input.identity.sessionId }),
+              ? { recordingSupervisorAssignmentId: input.identity.assignmentId }
+              : { recordingSupervisorSessionId: input.identity.sessionId }),
           },
           select: { id: true, createdAt: true },
         });

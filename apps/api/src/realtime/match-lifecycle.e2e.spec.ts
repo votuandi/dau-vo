@@ -45,10 +45,10 @@ const EVENT_TIMEOUT_MS = 7_500;
 const TEST_RUN_ID = `${process.pid}-${Date.now().toString(36)}`;
 const TEST_PREFIX = `match-lifecycle-e2e-${TEST_RUN_ID}`;
 const ALL_ACCESS_ROLES = [
-  MatchAccessRole.REFEREE_1,
-  MatchAccessRole.REFEREE_2,
-  MatchAccessRole.REFEREE_3,
-  MatchAccessRole.INSPECTOR,
+  MatchAccessRole.JUDGE_1,
+  MatchAccessRole.JUDGE_2,
+  MatchAccessRole.JUDGE_3,
+  MatchAccessRole.SUPERVISOR,
 ] as const;
 
 interface TestMatch {
@@ -370,12 +370,12 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       return { official, passcode };
     };
     const inspector = await create(
-      TournamentOfficialRole.INSPECTOR,
+      TournamentOfficialRole.SUPERVISOR,
       `${label} inspector`,
     );
     const referees = await Promise.all(
       [1, 2, 3].map((position) =>
-        create(TournamentOfficialRole.REFEREE, `${label} referee ${position}`),
+        create(TournamentOfficialRole.JUDGE, `${label} referee ${position}`),
       ),
     );
     const loginOfficial = async (
@@ -399,14 +399,14 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       return cookieFrom(response);
     };
     const inspectorCookie = await loginOfficial(
-      TournamentOfficialRole.INSPECTOR,
+      TournamentOfficialRole.SUPERVISOR,
       `${label}-inspector`,
       inspector.passcode,
     );
     const refereeCookies = await Promise.all(
       referees.map(({ passcode }, index) =>
         loginOfficial(
-          TournamentOfficialRole.REFEREE,
+          TournamentOfficialRole.JUDGE,
           `${label}-referee-${index}`,
           passcode,
         ),
@@ -415,7 +415,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     await request(app.getHttpServer())
       .post(`/api/official/matches/${matchId}/take`)
       .set('Cookie', inspectorCookie)
-      .send({ refereeIds: referees.map(({ official }) => official.id) })
+      .send({ judgeIds: referees.map(({ official }) => official.id) })
       .expect(201);
     return {
       inspector: inspector.official,
@@ -507,9 +507,9 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
   ): Promise<void> {
     const refereeLogins = await Promise.all(
       [
-        MatchAccessRole.REFEREE_1,
-        MatchAccessRole.REFEREE_2,
-        MatchAccessRole.REFEREE_3,
+        MatchAccessRole.JUDGE_1,
+        MatchAccessRole.JUDGE_2,
+        MatchAccessRole.JUDGE_3,
       ].map((role) => login(match, role, `${label}-${role}`)),
     );
     await Promise.all(refereeLogins.map(({ cookie }) => connect(cookie)));
@@ -520,9 +520,9 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       (snapshot) =>
         snapshot.scoreboardConnectedCount >= 1 &&
         [
-          MatchAccessRole.REFEREE_1,
-          MatchAccessRole.REFEREE_2,
-          MatchAccessRole.REFEREE_3,
+          MatchAccessRole.JUDGE_1,
+          MatchAccessRole.JUDGE_2,
+          MatchAccessRole.JUDGE_3,
         ].every((role) =>
           snapshot.presence.some(
             (entry) => entry.accessRole === role && entry.connected,
@@ -739,7 +739,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     const match = await createMatch('complete-flow', 2_000);
     const inspector = await login(
       match,
-      MatchAccessRole.INSPECTOR,
+      MatchAccessRole.SUPERVISOR,
       'complete-flow-inspector',
     );
     const socket = await connect(inspector.cookie);
@@ -878,7 +878,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     const match = await createMatch('authoritative-time', 2_000);
     const inspector = await login(
       match,
-      MatchAccessRole.INSPECTOR,
+      MatchAccessRole.SUPERVISOR,
       'authoritative-time-inspector',
     );
     const socket = await connect(inspector.cookie);
@@ -923,7 +923,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     const match = await createMatch('permissions', 250);
     const referee = await login(
       match,
-      MatchAccessRole.REFEREE_1,
+      MatchAccessRole.JUDGE_1,
       'permissions-referee',
     );
     const refereeSocket = await connect(referee.cookie);
@@ -974,7 +974,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     const match = await createMatch('concurrent-start', 300);
     const inspector = await login(
       match,
-      MatchAccessRole.INSPECTOR,
+      MatchAccessRole.SUPERVISOR,
       'concurrent-start-inspector',
     );
     const [firstSocket, secondSocket] = await Promise.all([
@@ -1012,7 +1012,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     const match = await createMatch('pause-resume', 2_000);
     const inspector = await login(
       match,
-      MatchAccessRole.INSPECTOR,
+      MatchAccessRole.SUPERVISOR,
       'pause-resume-inspector',
     );
     const socket = await connect(inspector.cookie);
@@ -1088,7 +1088,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     const match = await createMatch('cancel-round-one', 500);
     const inspector = await login(
       match,
-      MatchAccessRole.INSPECTOR,
+      MatchAccessRole.SUPERVISOR,
       'cancel-r1-inspector',
     );
     const socket = await connect(inspector.cookie);
@@ -1118,7 +1118,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
         athleteId: athlete.id,
         matchId: match.id,
         roundNumber: 1,
-        type: 'REFEREE_POINT',
+        type: 'JUDGE_POINT',
         value: 3,
       },
     });
@@ -1166,7 +1166,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     const match = await createMatch('reset-entire-match');
     const inspector = await login(
       match,
-      MatchAccessRole.INSPECTOR,
+      MatchAccessRole.SUPERVISOR,
       'reset-match-inspector',
     );
     const socket = await connect(inspector.cookie);
@@ -1210,7 +1210,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
           athleteId: red.id,
           matchId: match.id,
           roundNumber: 1,
-          type: 'REFEREE_POINT',
+          type: 'JUDGE_POINT',
           value: 5,
         },
         {
@@ -1313,7 +1313,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     const match = await createMatch('undo-round-one');
     const inspector = await login(
       match,
-      MatchAccessRole.INSPECTOR,
+      MatchAccessRole.SUPERVISOR,
       'undo-r1-inspector',
     );
     const socket = await connect(inspector.cookie);
@@ -1357,14 +1357,14 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
           athleteId: red.id,
           matchId: match.id,
           roundNumber: 1,
-          type: 'REFEREE_POINT',
+          type: 'JUDGE_POINT',
           value: 3,
         },
         {
           athleteId: blue.id,
           matchId: match.id,
           roundNumber: 1,
-          type: 'REFEREE_POINT',
+          type: 'JUDGE_POINT',
           value: 2,
         },
         {
@@ -1421,7 +1421,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     const match = await createMatch('duplicate-cancel-undo');
     const inspector = await login(
       match,
-      MatchAccessRole.INSPECTOR,
+      MatchAccessRole.SUPERVISOR,
       'duplicate-cancel-undo-inspector',
     );
     const [firstSocket, secondSocket] = await Promise.all([
@@ -1487,7 +1487,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     const match = await createMatch('cancel-round-two');
     const inspector = await login(
       match,
-      MatchAccessRole.INSPECTOR,
+      MatchAccessRole.SUPERVISOR,
       'cancel-r2-inspector',
     );
     const socket = await connect(inspector.cookie);
@@ -1520,14 +1520,14 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
           athleteId: red.id,
           matchId: match.id,
           roundNumber: 1,
-          type: 'REFEREE_POINT',
+          type: 'JUDGE_POINT',
           value: 5,
         },
         {
           athleteId: red.id,
           matchId: match.id,
           roundNumber: 2,
-          type: 'REFEREE_POINT',
+          type: 'JUDGE_POINT',
           value: 3,
         },
       ],

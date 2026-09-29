@@ -467,7 +467,8 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
         previewToken: previewBody.previewToken,
       })
       .expect(201);
-    const bracketId = (confirmation.body as { bracket: { id: string } }).bracket.id;
+    const bracketId = (confirmation.body as { bracket: { id: string } }).bracket
+      .id;
     const fixture = await prisma.bracketFixture.findFirstOrThrow({
       where: { bracketId },
       select: { id: true },
@@ -477,8 +478,11 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
         `/api/admin/tournaments/${tournamentId}/brackets/${bracketId}/fixtures/${fixture.id}/prepare-match`,
       ),
     ).expect(201);
-    const matchId = (prepared.body as { match: { id: string; publicId: string } }).match.id;
-    const publicId = (prepared.body as { match: { publicId: string } }).match.publicId;
+    const matchId = (
+      prepared.body as { match: { id: string; publicId: string } }
+    ).match.id;
+    const publicId = (prepared.body as { match: { publicId: string } }).match
+      .publicId;
     await prisma.match.update({
       where: { id: matchId },
       data: {
@@ -495,7 +499,8 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
       .expect(409)
       .expect({
         code: 'BRACKET_CANCELLATION_UNSAFE',
-        message: 'Linked operational matches require explicit cancellation confirmation',
+        message:
+          'Linked operational matches require explicit cancellation confirmation',
         unsafeMatches: [{ id: matchId, publicId }],
       });
     await authenticated(
