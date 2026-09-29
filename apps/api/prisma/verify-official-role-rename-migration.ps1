@@ -17,11 +17,13 @@ $migrationRoot = Join-Path $PSScriptRoot 'migrations'
 $targetName = '20260928230000_official_role_judge_supervisor_rename'
 $repairName = '20260929200000_v2_result_scope_delete_repair'
 $metadataRepairName = '20260929210000_audit_role_metadata_path_correction'
+$metadataGuardCleanupName = '20260929220000_audit_role_metadata_clean_replay_guard_cleanup'
 $migrations = @(Get-ChildItem -Directory $migrationRoot | Sort-Object Name)
 $beforeTarget = @($migrations | Where-Object Name -lt $targetName)
 $targetSql = Join-Path $migrationRoot "$targetName/migration.sql"
 $repairSql = Join-Path $migrationRoot "$repairName/migration.sql"
 $metadataRepairSql = Join-Path $migrationRoot "$metadataRepairName/migration.sql"
+$metadataGuardCleanupSql = Join-Path $migrationRoot "$metadataGuardCleanupName/migration.sql"
 
 function Invoke-Sql([string]$Database, [string]$Sql) {
   $Sql | & docker exec -i $container psql -X -v ON_ERROR_STOP=1 -U postgres -d $Database
@@ -104,7 +106,12 @@ INSERT INTO scoring_windows (id, match_id, round_number, started_at, ends_at) VA
 INSERT INTO referee_votes (id, scoring_window_id, match_id, referee_slot, athlete_color, session_id) VALUES
   ('00000000-0000-0000-0000-000000000015', '00000000-0000-0000-0000-000000000014', '00000000-0000-0000-0000-000000000005', 'REFEREE_1', 'RED', '00000000-0000-0000-0000-000000000011');
 INSERT INTO audit_logs (id, match_id, session_id, event_type, metadata) VALUES
-  ('00000000-0000-0000-0000-000000000016', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000011', 'MATCH_ACTION', '{"role":"REFEREE","before":{"role":"INSPECTOR"},"note":"REFEREE prose remains unchanged"}');
+  ('00000000-0000-0000-0000-000000000016', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000011', 'MATCH_ACTION', '{"role":"REFEREE","before":{"role":"INSPECTOR"},"note":"REFEREE prose remains unchanged"}'),
+  ('00000000-0000-0000-0000-000000000019', NULL, NULL, 'MATCH_ACTION', '{"role":"REFEREE","before":{"role":"INSPECTOR"},"after":{"role":"REFEREE"},"context":{"actor":{"role":"INSPECTOR"},"entries":[{"role":"REFEREE"},"REFEREE and INSPECTOR are legacy prose"]},"message":"REFEREE and INSPECTOR are legacy prose"}'::jsonb),
+  ('00000000-0000-0000-0000-000000000031', NULL, NULL, 'MATCH_ACTION', '[{"role":"REFEREE"},{"nested":{"role":"INSPECTOR"}},"REFEREE and INSPECTOR are legacy prose"]'::jsonb),
+  ('00000000-0000-0000-0000-000000000032', NULL, NULL, 'MATCH_ACTION', '"REFEREE and INSPECTOR are legacy prose"'::jsonb),
+  ('00000000-0000-0000-0000-000000000033', NULL, NULL, 'MATCH_ACTION', '{"context":{"actor":{"role":"INSPECTOR"}},"message":"REFEREE and INSPECTOR are legacy prose"}'::jsonb),
+  ('00000000-0000-0000-0000-000000000034', NULL, NULL, 'MATCH_ACTION', NULL);
 '@
   Assert-Scalar $database "SELECT count(*) FROM referee_votes;" '1'
   Assert-Scalar $database "SELECT count(*) FROM match_sessions WHERE active;" '2'
@@ -114,6 +121,7 @@ INSERT INTO audit_logs (id, match_id, session_id, event_type, metadata) VALUES
   Invoke-Sql $database (Get-Content -Raw -Encoding UTF8 $targetSql)
   Invoke-Sql $database (Get-Content -Raw -Encoding UTF8 $repairSql)
   Invoke-Sql $database (Get-Content -Raw -Encoding UTF8 $metadataRepairSql)
+  Invoke-Sql $database (Get-Content -Raw -Encoding UTF8 $metadataGuardCleanupSql)
 
   Assert-Scalar official_role_rename_upgrade "SELECT enum_range(NULL::tournament_official_role)::text;" '{JUDGE,SUPERVISOR}'
   Assert-Scalar official_role_rename_upgrade "SELECT enum_range(NULL::match_role)::text;" '{JUDGE,SUPERVISOR}'
@@ -137,6 +145,12 @@ INSERT INTO audit_logs (id, match_id, session_id, event_type, metadata) VALUES
   Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM tournament_officials WHERE (id='00000000-0000-0000-0000-000000000006' AND role='SUPERVISOR') OR (id='00000000-0000-0000-0000-000000000007' AND role='JUDGE');" '2'
   Assert-Scalar official_role_rename_upgrade "SELECT count(*) FROM tournament_officials WHERE id='00000000-0000-0000-0000-000000000006' AND role='JUDGE' OR id='00000000-0000-0000-0000-000000000007' AND role='SUPERVISOR';" '0'
   Assert-Scalar official_role_rename_upgrade "SELECT (metadata->>'role') || ':' || (metadata->'before'->>'role') || ':' || (metadata->>'note') FROM audit_logs WHERE id='00000000-0000-0000-0000-000000000016';" 'JUDGE:SUPERVISOR:REFEREE prose remains unchanged'
+  Assert-Scalar official_role_rename_upgrade "SELECT metadata = '{\"role\":\"JUDGE\",\"before\":{\"role\":\"SUPERVISOR\"},\"after\":{\"role\":\"JUDGE\"},\"context\":{\"actor\":{\"role\":\"INSPECTOR\"},\"entries\":[{\"role\":\"REFEREE\"},\"REFEREE and INSPECTOR are legacy prose\"]},\"message\":\"REFEREE and INSPECTOR are legacy prose\"}'::jsonb FROM audit_logs WHERE id='00000000-0000-0000-0000-000000000019';" 't'
+  Assert-Scalar official_role_rename_upgrade "SELECT metadata = '[{\"role\":\"REFEREE\"},{\"nested\":{\"role\":\"INSPECTOR\"}},\"REFEREE and INSPECTOR are legacy prose\"]'::jsonb FROM audit_logs WHERE id='00000000-0000-0000-0000-000000000031';" 't'
+  Assert-Scalar official_role_rename_upgrade "SELECT metadata = '\"REFEREE and INSPECTOR are legacy prose\"'::jsonb FROM audit_logs WHERE id='00000000-0000-0000-0000-000000000032';" 't'
+  Assert-Scalar official_role_rename_upgrade "SELECT metadata = '{\"context\":{\"actor\":{\"role\":\"INSPECTOR\"}},\"message\":\"REFEREE and INSPECTOR are legacy prose\"}'::jsonb FROM audit_logs WHERE id='00000000-0000-0000-0000-000000000033';" 't'
+  Assert-Scalar official_role_rename_upgrade "SELECT metadata IS NULL FROM audit_logs WHERE id='00000000-0000-0000-0000-000000000034';" 't'
+  Assert-Scalar official_role_rename_upgrade "SELECT to_regprocedure('preserve_audit_role_metadata_during_clean_replay()') IS NULL;" 't'
   $port = Get-ContainerPort
   $previousDatabaseUrl = $env:DATABASE_URL
   try {
