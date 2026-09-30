@@ -260,11 +260,21 @@ export interface AthleteListInput {
   readonly isActive?: boolean;
 }
 export interface AthleteImportResult {
+  readonly inputIndex: number;
   readonly rowNumber: number;
   readonly status: 'eligible' | 'invalid' | 'created' | 'failed';
   readonly errors: readonly string[];
-  readonly unit: { readonly name: string; readonly locality: string; readonly status: string };
-  readonly athlete: { readonly name: string; readonly status: string };
+  readonly unit: {
+    readonly name: string;
+    readonly locality: string;
+    readonly status: 'existing' | 'created' | 'restored' | 'pending' | 'invalid';
+    readonly errors: readonly string[];
+  };
+  readonly athlete: {
+    readonly name: string;
+    readonly status: 'pending' | 'created' | 'invalid' | 'failed';
+    readonly errors: readonly string[];
+  };
 }
 export interface AthleteImportRow {
   readonly rowNumber: number;

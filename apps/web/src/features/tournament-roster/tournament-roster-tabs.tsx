@@ -31,6 +31,11 @@ import {
   AthleteImportFileError,
   parseAthleteImportFile,
 } from './athlete-import-file';
+import {
+  summarizeImportUnits,
+  unitStatusLabel,
+  type UnitImportStatus,
+} from './athlete-import-summary';
 
 const tabs = [
   ['info', 'Thông tin'],
@@ -134,6 +139,50 @@ function ImportCompletionSection({
           ))}
         </ul>
       </div>
+    </section>
+  );
+}
+function ImportUnitSection({
+  records,
+  title,
+}: {
+  readonly title: string;
+  readonly records: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly status: UnitImportStatus;
+    readonly errors: readonly string[];
+  }[];
+}) {
+  const groups: readonly { readonly status: UnitImportStatus; readonly tone: string }[] = [
+    { status: 'pending', tone: 'text-emerald-700' },
+    { status: 'created', tone: 'text-emerald-700' },
+    { status: 'existing', tone: 'text-muted-foreground' },
+    { status: 'restored', tone: 'text-emerald-700' },
+    { status: 'invalid', tone: 'text-destructive' },
+  ];
+  return (
+    <section aria-label={title} className="space-y-2">
+      <h3 className="font-black">{title}</h3>
+      {groups.map(({ status, tone }) => {
+        const items = records.filter((record) => record.status === status);
+        if (!items.length) return null;
+        return (
+          <div key={status}>
+            <p className={`font-bold ${tone}`}>
+              {unitStatusLabel(status)} ({items.length})
+            </p>
+            <ul className="list-disc space-y-1 pl-5">
+              {items.map((record) => (
+                <li key={record.id}>
+                  {record.label}
+                  {record.errors.length ? ` — ${record.errors.join(', ')}` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
     </section>
   );
 }
@@ -960,24 +1009,17 @@ export function AthletesPage({
           title="Xem trước nhập vận động viên"
         >
           <div className="mt-4 max-h-[55vh] space-y-5 overflow-y-auto text-sm">
-            <ImportReviewSection
+            <ImportUnitSection
               title="Đơn vị tham gia"
-              records={importPreview.results.map((result) => ({
-                id: result.rowNumber,
-                label: `${result.unit.name} — ${result.unit.locality}`,
-                eligible: result.status === 'eligible' && result.unit.status === 'pending',
-                reason:
-                  result.errors.join(', ') ||
-                  (result.unit.status === 'existing' ? 'Đơn vị đã tồn tại.' : ''),
-              }))}
+              records={summarizeImportUnits(importPreview.results)}
             />
             <ImportReviewSection
               title="Vận động viên"
               records={importPreview.results.map((result) => ({
-                id: result.rowNumber,
+                id: result.inputIndex,
                 label: `Dòng ${String(result.rowNumber)}: ${result.athlete.name}`,
                 eligible: result.status === 'eligible',
-                reason: result.errors.join(', '),
+                reason: result.athlete.errors.join(', '),
               }))}
             />
           </div>
@@ -1020,33 +1062,20 @@ export function AthletesPage({
               added={importResults
                 .filter((x) => x.athlete.status === 'created')
                 .map((x) => ({
-                  id: x.rowNumber,
+                  id: x.inputIndex,
                   label: `Dòng ${String(x.rowNumber)}: ${x.athlete.name}`,
                 }))}
               notAdded={importResults
                 .filter((x) => x.athlete.status !== 'created')
                 .map((x) => ({
-                  id: x.rowNumber,
+                  id: x.inputIndex,
                   label: `Dòng ${String(x.rowNumber)}: ${x.athlete.name}`,
-                  reason: x.errors.join(', ') || 'Không thể thêm vận động viên.',
+                  reason: x.athlete.errors.join(', ') || 'Không thể thêm vận động viên.',
                 }))}
             />
-            <ImportCompletionSection
+            <ImportUnitSection
               title="Đơn vị tham gia"
-              added={importResults
-                .filter((x) => x.unit.status === 'created')
-                .map((x) => ({ id: x.rowNumber, label: `${x.unit.name} — ${x.unit.locality}` }))}
-              notAdded={importResults
-                .filter((x) => x.unit.status !== 'created')
-                .map((x) => ({
-                  id: x.rowNumber,
-                  label: `${x.unit.name} — ${x.unit.locality}`,
-                  reason:
-                    x.errors.join(', ') ||
-                    (x.unit.status === 'existing'
-                      ? 'Đơn vị đã có, đã được dùng lại.'
-                      : 'Không thể thêm đơn vị.'),
-                }))}
+              records={summarizeImportUnits(importResults)}
             />
           </div>
           <div className="mt-5">
