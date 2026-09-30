@@ -421,18 +421,22 @@ function AssignedConsole({
 }
 
 function RoleMismatch({
+  activeRole,
   expectedRole,
+  returnToActiveRole,
   logout,
   pending,
   logoutError,
 }: {
+  activeRole: TournamentOfficialRole;
   expectedRole: TournamentOfficialRole;
+  returnToActiveRole: () => void;
   logout: () => void;
   pending: boolean;
   logoutError: string | null;
 }) {
   const expectedLabel = expectedRole === TournamentOfficialRole.JUDGE ? 'giám định' : 'giám sát';
-  const activeLabel = expectedRole === TournamentOfficialRole.JUDGE ? 'giám sát' : 'giám định';
+  const activeLabel = activeRole === TournamentOfficialRole.JUDGE ? 'giám định' : 'giám sát';
 
   return (
     <main className="mx-auto grid min-h-dvh w-full max-w-xl place-items-center p-4">
@@ -443,8 +447,11 @@ function RoleMismatch({
           Bạn đang có phiên {activeLabel}. Đăng xuất phiên đó để đăng nhập vào khu vực{' '}
           {expectedLabel}.
         </p>
+        <Button className="mt-6" onClick={returnToActiveRole} type="button">
+          Về khu vực {activeLabel}
+        </Button>
         <Button
-          className="mt-6"
+          className="mt-3"
           disabled={pending}
           onClick={logout}
           type="button"
@@ -579,7 +586,11 @@ export function MatchAccessPage({ expectedRole }: Props) {
   if (identity && identity.official.role !== expectedRole)
     return (
       <RoleMismatch
+        activeRole={identity.official.role}
         expectedRole={expectedRole}
+        returnToActiveRole={() => {
+          void nav(pathFor(identity.official.role));
+        }}
         logout={() => {
           setLogoutError(null);
           logout.mutate();

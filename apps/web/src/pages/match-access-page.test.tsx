@@ -266,6 +266,68 @@ describe('MatchAccessPage official login', () => {
     expect(judgeRoute.router.state.location.pathname).toBe('/giam-dinh');
   });
 
+  it.each([
+    {
+      activeRoute: '/giam-sat',
+      activeRole: 'giám sát',
+      console: 'Inspector console ready',
+      session: inspectorSession,
+      wrongRoute: '/giam-dinh',
+    },
+    {
+      activeRoute: '/giam-dinh',
+      activeRole: 'giám định',
+      console: 'Referee console ready',
+      session: refereeSession,
+      wrongRoute: '/giam-sat',
+    },
+  ] as const)(
+    'returns an assigned $activeRole from the wrong-role route after logout is forbidden',
+    async ({ activeRoute, activeRole, console, session: activeSession, wrongRoute }) => {
+      const user = userEvent.setup();
+      const assignedSession: OfficialSession = {
+        ...activeSession,
+        activeAssignment: {
+          id: `assignment-${activeSession.official.role.toLowerCase()}`,
+          match: { id: 'match-active', publicId: 'M-ACTIVE', status: MatchStatus.WAITING },
+          judgePosition:
+            activeSession.official.role === TournamentOfficialRole.JUDGE ? 1 : null,
+          role: activeSession.official.role,
+        },
+        status: 'IN_MATCH',
+      };
+      officialAccessApiMock.session.mockResolvedValue({ session: assignedSession });
+      officialAccessApiMock.logout.mockRejectedValue(
+        new ApiClientError(409, { code: 'OFFICIAL_IN_MATCH_LOGOUT_FORBIDDEN' }),
+      );
+      const { queryClient, router } = renderRoute(wrongRoute);
+
+      expect(await screen.findByRole('heading', { name: 'Phiên không đúng vai trò' })).toBeVisible();
+      expect(router.state.location.pathname).toBe(wrongRoute);
+
+      await user.click(screen.getByRole('button', { name: 'Đăng xuất' }));
+
+      expect(
+        await screen.findByText(
+          'Bạn đã được phân công vào trận trước khi yêu cầu đăng xuất được xử lý. Phiên vẫn được giữ.',
+        ),
+      ).toHaveAttribute('role', 'alert');
+      expect(screen.getByRole('button', { name: `Về khu vực ${activeRole}` })).toBeEnabled();
+
+      await user.click(screen.getByRole('button', { name: `Về khu vực ${activeRole}` }));
+
+      expect(await screen.findByText(console)).toBeVisible();
+      expect(router.state.location.pathname).toBe(activeRoute);
+      expect(screen.queryByRole('heading', { name: 'Phiên không đúng vai trò' })).not.toBeInTheDocument();
+      expect(queryClient.getQueryData(['official-access', 'session'])).toMatchObject({
+        session: {
+          activeAssignment: { id: assignedSession.activeAssignment?.id },
+          sessionId: assignedSession.sessionId,
+        },
+      });
+    },
+  );
+
   it('shows inspector takeover confirmation and sends the stored challenge only after confirmation', async () => {
     const user = userEvent.setup();
     officialAccessApiMock.login.mockRejectedValue(
@@ -707,11 +769,12 @@ describe('MatchAccessPage official login', () => {
     officialAccessApiMock.session.mockResolvedValue({ session: refereeSession });
     officialAccessApiMock.logout.mockResolvedValue(undefined);
     officialAccessApiMock.login.mockResolvedValue({ session: secondRefereeSession });
-    renderPage();
+    const { queryClient } = renderPage();
     await screen.findByText('Đang chờ phân công');
 
     await user.click(screen.getByRole('button', { name: 'Đăng xuất' }));
     expect(await screen.findByRole('heading', { name: 'Đăng nhập' })).toBeVisible();
+    expect(queryClient.getQueryData(['official-access', 'session'])).toBeNull();
     await fillLoginForm(user);
     await user.click(screen.getByRole('button', { name: 'Đăng nhập' }));
     expect(await screen.findByText('Lê Văn B')).toBeVisible();
