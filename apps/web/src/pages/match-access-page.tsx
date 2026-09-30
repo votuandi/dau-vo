@@ -1,6 +1,6 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { MatchLifecycle, TournamentOfficialRole } from '@/types/shared';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
@@ -32,8 +32,7 @@ const sessionKey = officialSessionQueryKey;
 const pathFor = (role: TournamentOfficialRole) =>
   role === TournamentOfficialRole.JUDGE ? '/giam-dinh' : '/giam-sat';
 const realtimeRefereeIdentity = (assignment: OfficialAssignment): RealtimeRefereeIdentity =>
-  assignment.role === TournamentOfficialRole.JUDGE &&
-  typeof assignment.judgePosition === 'number'
+  assignment.role === TournamentOfficialRole.JUDGE && typeof assignment.judgePosition === 'number'
     ? {
         assignmentId: assignment.id,
         kind: 'official',
@@ -420,6 +419,55 @@ function AssignedConsole({
   );
 }
 
+function RoleMismatch({
+  activeRole,
+  expectedRole,
+  returnToActiveRole,
+  logout,
+  pending,
+  logoutError,
+}: {
+  activeRole: TournamentOfficialRole;
+  expectedRole: TournamentOfficialRole;
+  returnToActiveRole: () => void;
+  logout: () => void;
+  pending: boolean;
+  logoutError: string | null;
+}) {
+  const expectedLabel = expectedRole === TournamentOfficialRole.JUDGE ? 'giám định' : 'giám sát';
+  const activeLabel = activeRole === TournamentOfficialRole.JUDGE ? 'giám định' : 'giám sát';
+
+  return (
+    <main className="mx-auto grid min-h-dvh w-full max-w-xl place-items-center p-4">
+      <section className="w-full rounded-2xl border bg-card p-7 shadow-xl">
+        <p className="text-sm font-bold text-primary">Khu vực {expectedLabel}</p>
+        <h1 className="mt-2 text-3xl font-black">Phiên không đúng vai trò</h1>
+        <p className="mt-4 text-muted-foreground">
+          Bạn đang có phiên {activeLabel}. Đăng xuất phiên đó để đăng nhập vào khu vực{' '}
+          {expectedLabel}.
+        </p>
+        <Button className="mt-6" onClick={returnToActiveRole} type="button">
+          Về khu vực {activeLabel}
+        </Button>
+        <Button
+          className="mt-3"
+          disabled={pending}
+          onClick={logout}
+          type="button"
+          variant="outline"
+        >
+          {pending ? 'Đang đăng xuất…' : 'Đăng xuất'}
+        </Button>
+        {logoutError ? (
+          <p className="mt-4 text-sm text-destructive" role="alert">
+            {logoutError}
+          </p>
+        ) : null}
+      </section>
+    </main>
+  );
+}
+
 export function MatchAccessPage({ expectedRole }: Props) {
   const nav = useNavigate();
   const qc = useQueryClient();
@@ -535,7 +583,21 @@ export function MatchAccessPage({ expectedRole }: Props) {
       </p>
     );
   if (identity && identity.official.role !== expectedRole)
-    return <Navigate replace to={pathFor(identity.official.role)} />;
+    return (
+      <RoleMismatch
+        activeRole={identity.official.role}
+        expectedRole={expectedRole}
+        returnToActiveRole={() => {
+          void nav(pathFor(identity.official.role));
+        }}
+        logout={() => {
+          setLogoutError(null);
+          logout.mutate();
+        }}
+        logoutError={logoutError}
+        pending={logout.isPending}
+      />
+    );
   if (identity && assignment)
     return (
       <AssignedConsole
@@ -586,9 +648,7 @@ export function MatchAccessPage({ expectedRole }: Props) {
     <main className="mx-auto grid min-h-dvh max-w-lg place-items-center p-4">
       <form className="w-full rounded-2xl border bg-card p-7 shadow-xl" onSubmit={submit}>
         <p className="text-sm font-bold text-primary">
-          {expectedRole === TournamentOfficialRole.JUDGE
-            ? 'Khu vực giám định'
-            : 'Khu vực giám sát'}
+          {expectedRole === TournamentOfficialRole.JUDGE ? 'Khu vực giám định' : 'Khu vực giám sát'}
         </p>
         <h1 className="mt-2 text-3xl font-black">
           {revoked ? 'Phiên đã bị thu hồi' : 'Đăng nhập'}

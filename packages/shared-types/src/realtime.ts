@@ -1,5 +1,6 @@
 import type {
   AthleteColor,
+  FaultSeverity,
   MatchAccessRole,
   MatchLifecycle,
   MatchExitMode,
@@ -271,6 +272,7 @@ export interface MatchStateAthlete {
   organization: string | null;
   score: number;
   violations: number;
+  faultCounts: { minor: number; major: number };
 }
 
 /**
@@ -334,6 +336,7 @@ export interface PublicMatchStatePayload {
     organization: string | null;
     score: number;
     violations: number;
+    faultCounts: { minor: number; major: number };
   }>;
   /** Committed score for the currently relevant result scope only. */
   committedScores: {
@@ -651,6 +654,7 @@ export interface PenaltyAddPayload {
 
 export interface FaultRecordPayload {
   athlete: AthleteColor;
+  severity: FaultSeverity;
   traceId?: string;
 }
 export type FaultRecordErrorCode =
@@ -658,6 +662,7 @@ export type FaultRecordErrorCode =
   | 'FAULT_FORBIDDEN'
   | 'FAULT_STALE_ASSIGNMENT'
   | 'FAULT_INVALID_ATHLETE'
+  | 'FAULT_INVALID_SEVERITY'
   | 'FAULT_ROUND_PAUSED'
   | 'FAULT_MATCH_NOT_RUNNING'
   | 'FAULT_ROUND_ENDED'
@@ -671,6 +676,7 @@ export interface FaultRecordedPayload {
   matchPublicId: string;
   fault: {
     athlete: AthleteColor;
+    severity: FaultSeverity;
     athleteId: string;
     createdAt: string;
     id: string;

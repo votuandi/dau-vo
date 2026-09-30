@@ -392,9 +392,7 @@ export class ScoringService implements OnModuleDestroy {
                 ? authorization.assignmentId
                 : null,
             judgeSlot:
-              authorization.kind === 'legacy'
-                ? authorization.judgeSlot
-                : null,
+              authorization.kind === 'legacy' ? authorization.judgeSlot : null,
             scoringWindowId: window.id,
             serverReceivedAt: clock.serverNow,
             sessionId:

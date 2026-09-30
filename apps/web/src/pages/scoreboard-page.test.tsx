@@ -27,13 +27,21 @@ const snapshot: PublicMatchStatePayload = {
     startedAt: '2030-01-01T00:00:00.000Z',
   },
   athletes: [
-    { color: AthleteColor.RED, name: 'Võ sĩ Đỏ', organization: 'CLB Đỏ', score: 4, violations: 1 },
+    {
+      color: AthleteColor.RED,
+      name: 'Võ sĩ Đỏ',
+      organization: 'CLB Đỏ',
+      score: 4,
+      violations: 1,
+      faultCounts: { minor: 1, major: 0 },
+    },
     {
       color: AthleteColor.BLUE,
       name: 'Võ sĩ Xanh',
       organization: 'CLB Xanh',
       score: 2,
       violations: 3,
+      faultCounts: { minor: 2, major: 1 },
     },
   ],
   committedScores: { source: null, attemptNumber: null, RED: null, BLUE: null },
@@ -80,8 +88,8 @@ describe('ScoreboardPage', () => {
     expect(screen.getByText('ĐANG KẾT NỐI LẠI')).toBeVisible();
     expect(screen.getAllByText('4')).toHaveLength(1);
     expect(screen.getAllByText('2')).toHaveLength(1);
-    expect(screen.getByText('Lỗi: 1')).toBeVisible();
-    expect(screen.getByText('Lỗi: 3')).toBeVisible();
+    expect(screen.getByText('Lỗi nhẹ: 1 · Lỗi nặng: 0')).toBeVisible();
+    expect(screen.getByText('Lỗi nhẹ: 2 · Lỗi nặng: 1')).toBeVisible();
     expect(screen.getByText(/Chưa công bố kết quả/u)).toBeVisible();
   });
 

@@ -262,11 +262,11 @@ pnpm build
 ### Official-role rename: clean installs and already-upgraded environments
 
 The historical role-rename migration remains byte-for-byte unchanged because
-Prisma checks its recorded checksum.  For a new database, the preceding
+Prisma checks its recorded checksum. For a new database, the preceding
 `20260928220000_audit_role_metadata_clean_replay_guard` trigger preserves each
 old audit document while the historical migration executes, replacing only the
 document paths that are part of the audit contract: `role`, `before.role`, and
-`after.role`.  It is removed by the subsequent cleanup migration.  Run the
+`after.role`. It is removed by the subsequent cleanup migration. Run the
 full-chain rehearsal before release:
 
 ```powershell
@@ -274,16 +274,16 @@ pnpm --filter @martial-arts-scoring/api prisma:verify:official-role-rename
 ```
 
 The verifier starts at the first checked-in migration, installs a fixture before
-the guard, and replays every remaining migration in order.  Its fixture includes
+the guard, and replays every remaining migration in order. Its fixture includes
 `context.actor.role` and role values in nested arrays, and asserts they remain
 unchanged after the historical recursive migration runs.
 
 For a shared environment where the historical recursive migration already ran,
 the later path-correction migration is not data recovery: it can correct only
 the three documented paths and cannot infer an unrelated value that was already
-rewritten.  Take and verify a backup, identify affected audit rows from a known
+rewritten. Take and verify a backup, identify affected audit rows from a known
 pre-rename backup or other authoritative source, restore only those values via
-a reviewed one-off recovery, and retain the evidence.  If no such source
+a reviewed one-off recovery, and retain the evidence. If no such source
 exists, record the data-loss limitation; do not claim that the forward repair
 reconstructs the original nested values.
 

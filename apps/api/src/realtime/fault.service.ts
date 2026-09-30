@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { AuditEventType, MatchStatus, RoundStage } from '@prisma/client';
-import type { AthleteColor } from '@prisma/client';
+import type { AthleteColor, FaultSeverity } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { auditActor, type SupervisorCommandIdentity } from './command-identity';
 import { calculateMatchScoreProjection } from './match-score-projection';
@@ -24,6 +24,7 @@ export class FaultService {
 
   async record(input: {
     athlete: AthleteColor;
+    severity: FaultSeverity;
     identity: SupervisorCommandIdentity;
     matchId: string;
     traceId?: string;
@@ -100,12 +101,13 @@ export class FaultService {
             matchId: input.matchId,
             athleteId: athlete.id,
             roundId: round.id,
+            severity: input.severity,
             createdAt: clock,
             ...(input.identity.kind === 'official'
               ? { recordingSupervisorAssignmentId: input.identity.assignmentId }
               : { recordingSupervisorSessionId: input.identity.sessionId }),
           },
-          select: { id: true, createdAt: true },
+          select: { id: true, createdAt: true, severity: true },
         });
         const audit = await tx.auditLog.create({
           data: {
@@ -116,6 +118,7 @@ export class FaultService {
             metadata: {
               action: 'FAULT_RECORDED',
               athlete: input.athlete,
+              severity: input.severity,
               faultId: fault.id,
               roundId: round.id,
               traceId: input.traceId,
@@ -169,6 +172,7 @@ export class FaultService {
           auditId: audit.id,
           fault: {
             athlete: input.athlete,
+            severity: fault.severity,
             athleteId: athlete.id,
             createdAt: fault.createdAt.toISOString(),
             id: fault.id,

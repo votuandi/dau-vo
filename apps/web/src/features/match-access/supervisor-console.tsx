@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   AthleteColor,
+  FaultSeverity,
   MatchExitMode,
   MatchStatus,
   type MatchCompletionBlockedReason,
@@ -163,6 +164,7 @@ function AthleteScoreCard({
     organization: string | null;
     score: number;
     violations: number;
+    faultCounts: { minor: number; major: number };
   };
 }) {
   const isRed = athlete.color === AthleteColor.RED;
@@ -195,7 +197,8 @@ function AthleteScoreCard({
         </div>
       </div>
       <p className="mt-4 border-t border-white/15 pt-3 text-sm font-semibold text-sky-50/90">
-        Lỗi vi phạm: <span className="font-mono text-lg font-black">{athlete.violations}</span>
+        Lỗi nhẹ: <span className="font-mono text-lg font-black">{athlete.faultCounts.minor}</span> ·
+        Lỗi nặng: <span className="font-mono text-lg font-black">{athlete.faultCounts.major}</span>
       </p>
     </section>
   );
@@ -207,31 +210,45 @@ function FaultButton({
   isArmed,
   isSubmitting,
   onPress,
+  severity,
 }: {
   readonly athlete: AthleteColor;
   readonly disabled: boolean;
   readonly isArmed: boolean;
   readonly isSubmitting: boolean;
-  readonly onPress: (athlete: AthleteColor) => void;
+  readonly onPress: (athlete: AthleteColor, severity: FaultSeverity) => void;
+  readonly severity: FaultSeverity;
 }) {
   const isRed = athlete === AthleteColor.RED;
   const colorLabel = isRed ? 'ĐỎ' : 'XANH';
   const baseClass = isRed
     ? 'border-red-300/80 bg-gradient-to-br from-red-600 via-red-700 to-red-950 shadow-red-950/30 hover:from-red-700 hover:via-red-800 hover:to-red-950 focus-visible:ring-red-300'
     : 'border-sky-300/80 bg-gradient-to-br from-sky-700 via-blue-800 to-blue-950 shadow-blue-950/30 hover:from-sky-800 hover:via-blue-900 hover:to-blue-950 focus-visible:ring-sky-300';
+  const severityClass =
+    severity === FaultSeverity.MAJOR
+      ? isRed
+        ? 'border-red-400 bg-gradient-to-br from-red-700 via-red-800 to-red-950 shadow-red-950/50 hover:from-red-800 hover:via-red-900 hover:to-red-950 focus-visible:ring-red-300'
+        : 'border-blue-400 bg-gradient-to-br from-blue-800 via-blue-900 to-slate-950 shadow-blue-950/50 hover:from-blue-900 hover:via-blue-950 hover:to-slate-950 focus-visible:ring-blue-300'
+      : '';
 
   return (
     <button
-      aria-label={`Ghi nhận lỗi VĐV ${colorLabel}`}
+      aria-label={`Ghi nhận ${severity === FaultSeverity.MINOR ? 'Lỗi nhẹ' : 'Lỗi nặng'} VĐV ${colorLabel}`}
       aria-pressed={isArmed}
-      className={`min-h-28 rounded-2xl border-4 px-4 py-5 text-center text-xl font-black text-white shadow-lg transition active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-32 sm:text-2xl ${baseClass} focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-4`}
+      className={`min-h-28 rounded-2xl border-4 px-4 py-5 text-center text-xl font-black text-white shadow-lg transition active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-32 sm:text-2xl ${baseClass} ${severityClass} focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-4`}
       disabled={disabled}
       onClick={() => {
-        onPress(athlete);
+        onPress(athlete, severity);
       }}
       type="button"
     >
-      {isSubmitting ? 'ĐANG GHI…' : isArmed ? `XÁC NHẬN LỖI ${colorLabel}` : `LỖI ${colorLabel}`}
+      {isSubmitting
+        ? 'ĐANG GHI…'
+        : isArmed
+          ? 'XÁC NHẬN'
+          : severity === FaultSeverity.MINOR
+            ? 'LỖI NHẸ'
+            : 'LỖI NẶNG'}
     </button>
   );
 }
@@ -251,7 +268,10 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
     roundIsRunning ? snapshot?.activeRound?.endsAt : undefined,
     snapshot?.generatedAt,
   );
-  const [armedFault, setArmedFault] = useState<AthleteColor | null>(null);
+  const [armedFault, setArmedFault] = useState<{
+    athlete: AthleteColor;
+    severity: FaultSeverity;
+  } | null>(null);
   const [confirmation, setConfirmation] = useState<
     | 'pause'
     | 'resume'
@@ -383,18 +403,18 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
     };
   }, [exitMenuOpen]);
 
-  function handleFaultPress(athlete: AthleteColor): void {
+  function handleFaultPress(athlete: AthleteColor, severity: FaultSeverity): void {
     if (faultControlsDisabled) {
       return;
     }
 
-    if (armedFault !== athlete) {
-      setArmedFault(athlete);
+    if (armedFault?.athlete !== athlete || armedFault.severity !== severity) {
+      setArmedFault({ athlete, severity });
       return;
     }
 
     setArmedFault(null);
-    void realtime.submitFault(athlete);
+    void realtime.submitFault(athlete, severity);
   }
   const appealValues = {
     redBonus: appealNumber(appealDraft.redBonus),
@@ -631,6 +651,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
                 organization: 'Đang tải…',
                 score: 0,
                 violations: 0,
+                faultCounts: { minor: 0, major: 0 },
               }
             }
           />
@@ -642,6 +663,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
                 organization: 'Đang tải…',
                 score: 0,
                 violations: 0,
+                faultCounts: { minor: 0, major: 0 },
               }
             }
           />
@@ -835,27 +857,29 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
             </p>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-5">
-            <FaultButton
-              athlete={AthleteColor.RED}
-              disabled={faultControlsDisabled}
-              isArmed={armedFault === AthleteColor.RED}
-              isSubmitting={realtime.submittingFault === AthleteColor.RED}
-              onPress={handleFaultPress}
-            />
-            <FaultButton
-              athlete={AthleteColor.BLUE}
-              disabled={faultControlsDisabled}
-              isArmed={armedFault === AthleteColor.BLUE}
-              isSubmitting={realtime.submittingFault === AthleteColor.BLUE}
-              onPress={handleFaultPress}
-            />
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 sm:gap-5">
+            {([AthleteColor.RED, AthleteColor.BLUE] as const).map((athlete) => (
+              <div className="grid grid-cols-2 gap-3" key={athlete}>
+                {([FaultSeverity.MINOR, FaultSeverity.MAJOR] as const).map((severity) => (
+                  <FaultButton
+                    athlete={athlete}
+                    disabled={faultControlsDisabled}
+                    isArmed={armedFault?.athlete === athlete && armedFault.severity === severity}
+                    isSubmitting={realtime.submittingFault === athlete}
+                    key={severity}
+                    onPress={handleFaultPress}
+                    severity={severity}
+                  />
+                ))}
+              </div>
+            ))}
           </div>
 
           <div aria-live="polite" className="mt-4 min-h-6 text-sm">
             {armedFault ? (
               <p className="font-semibold text-amber-200">
-                Nhấn LỖI {armedFault === AthleteColor.RED ? 'ĐỎ' : 'XANH'} lần nữa để xác nhận.
+                Nhấn {armedFault.severity === FaultSeverity.MINOR ? 'LỖI NHẸ' : 'LỖI NẶNG'} lần nữa
+                để xác nhận.
               </p>
             ) : realtime.faultErrorMessage ? (
               <p

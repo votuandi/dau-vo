@@ -14,6 +14,13 @@ enum AthleteColor {
   @@map("athlete_color")
 }
 
+enum FaultSeverity {
+  MINOR
+  MAJOR
+
+  @@map("fault_severity")
+}
+
 enum TournamentStatus {
   DRAFT
   ACTIVE
@@ -1000,6 +1007,7 @@ model Fault {
   matchId                         String                   @map("match_id") @db.Uuid
   athleteId                       String                   @map("athlete_id") @db.Uuid
   roundId                         String                   @map("round_id") @db.Uuid
+  severity                        FaultSeverity            @default(MINOR)
   recordingSupervisorAssignmentId String?                  @map("recording_supervisor_assignment_id") @db.Uuid
   recordingSupervisorSessionId    String?                  @map("recording_supervisor_session_id") @db.Uuid
   createdAt                       DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)

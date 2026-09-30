@@ -263,11 +263,7 @@ describe('ScoringService (PostgreSQL integration)', () => {
     ],
   ])('applies the >=2 majority rule for votes %p', async (votes, winner) => {
     const current = await fixture();
-    const slots = [
-      JudgeSlot.JUDGE_1,
-      JudgeSlot.JUDGE_2,
-      JudgeSlot.JUDGE_3,
-    ];
+    const slots = [JudgeSlot.JUDGE_1, JudgeSlot.JUDGE_2, JudgeSlot.JUDGE_3];
     for (const [index, athlete] of votes.entries()) {
       await vote(current, slots[index]!, athlete);
     }

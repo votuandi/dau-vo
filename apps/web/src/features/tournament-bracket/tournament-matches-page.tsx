@@ -34,6 +34,20 @@ import { WeightClassMatchTabs } from './weight-class-match-tabs';
 import { ManualMatchCreationForm } from './manual-match-creation-form';
 import { BracketStaffingEditor } from './bracket-staffing-editor';
 
+interface UnsafeCancellationMatch {
+  readonly id: string;
+  readonly publicId: string;
+}
+
+function isUnsafeCancellationMatch(value: unknown): value is UnsafeCancellationMatch {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const match = value as Record<string, unknown>;
+  return typeof match.id === 'string' && typeof match.publicId === 'string';
+}
+
 export function TournamentMatchesPage({
   tournament,
   isReadOnly,
@@ -345,15 +359,7 @@ export function TournamentMatchesPage({
         const unsafeMatches = error.body.unsafeMatches;
         setUnsafeCancellationMatches(
           Array.isArray(unsafeMatches)
-            ? unsafeMatches.filter(
-                (match): match is { readonly id: string; readonly publicId: string } =>
-                  typeof match === 'object' &&
-                  match !== null &&
-                  'id' in match &&
-                  'publicId' in match &&
-                  typeof match.id === 'string' &&
-                  typeof match.publicId === 'string',
-              )
+            ? unsafeMatches.filter(isUnsafeCancellationMatch)
             : [],
         );
         setCancelError('Đã có trận đấu đã hoặc đang diễn ra.');

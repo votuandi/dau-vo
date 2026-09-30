@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   RealtimeEvent,
   type AthleteColor,
+  FaultSeverity,
   type MatchFinishedPayload,
   type AppealCompletePayload,
   type AppealCompleteResponse,
@@ -109,7 +110,7 @@ export interface MatchRealtimeState {
   readonly presence: readonly MatchPresenceEntry[];
   readonly reconnect: () => void;
   readonly requestSnapshot: () => void;
-  readonly submitFault: (athlete: AthleteColor) => Promise<void>;
+  readonly submitFault: (athlete: AthleteColor, severity: FaultSeverity) => Promise<void>;
   readonly roundStartErrorMessage: string | null;
   readonly scoringWindowMessage: string | null;
   readonly snapshot: MatchStatePayload | null;
@@ -284,6 +285,8 @@ function getFaultErrorMessage(code: FaultRecordErrorCode, fallback: string): str
       return 'Phân công giám sát không còn hiệu lực. Vui lòng đăng nhập lại.';
     case 'FAULT_INVALID_ATHLETE':
       return 'Lựa chọn võ sĩ không hợp lệ.';
+    case 'FAULT_INVALID_SEVERITY':
+      return 'Mức độ lỗi không hợp lệ.';
     case 'FAULT_MATCH_NOT_RUNNING':
       return 'Chỉ có thể ghi lỗi khi hiệp đấu đang diễn ra.';
     case 'FAULT_ROUND_PAUSED':
@@ -889,7 +892,7 @@ export function useMatchRealtime({
     }
   }, []);
 
-  const submitFault = useCallback(async (athlete: AthleteColor) => {
+  const submitFault = useCallback(async (athlete: AthleteColor, severity: FaultSeverity) => {
     const socket = getSocketClient();
     if (faultSubmissionInFlightRef.current) {
       return;
@@ -908,7 +911,7 @@ export function useMatchRealtime({
           .timeout(10_000)
           .emit(
             RealtimeEvent.FAULT_RECORD,
-            { athlete, traceId: globalThis.crypto.randomUUID() },
+            { athlete, severity, traceId: globalThis.crypto.randomUUID() },
             (error: Error | null, acknowledgement: FaultRecordResponse) => {
               if (error) {
                 reject(error);
@@ -947,7 +950,7 @@ export function useMatchRealtime({
     ): Promise<boolean> => {
       const socket = getSocketClient();
       const isOvertimeStart = event === RealtimeEvent.OVERTIME_START;
-      const startedAt = isOvertimeStart ? performance.now() : null;
+      const startedAt = performance.now();
       if (resultActionInFlightRef.current || !socket.connected) {
         if (isOvertimeStart) {
           console.info('[match-realtime]', 'overtime-start-not-sent', {
@@ -974,31 +977,26 @@ export function useMatchRealtime({
       try {
         const response = await new Promise<
           AppealCompleteResponse | OvertimeActionResponse | RoundStartResponse
-        >(
-          (resolve, reject) => {
-            const acknowledge = (
-              error: Error | null,
-              result:
-                | AppealCompleteResponse
-                | OvertimeActionResponse
-                | RoundStartResponse,
-            ) => {
-              if (error) reject(error);
-              else resolve(result);
-            };
-            if (event === RealtimeEvent.APPEAL_COMPLETE) {
-              socket.timeout(10_000).emit(event, payload as AppealCompletePayload, acknowledge);
-            } else if (event === RealtimeEvent.OVERTIME_MANUAL_WINNER) {
-              socket.timeout(10_000).emit(event, payload as AthleteColor, acknowledge);
-            } else {
-              socket.timeout(10_000).emit(event, acknowledge);
-            }
-          },
-        );
+        >((resolve, reject) => {
+          const acknowledge = (
+            error: Error | null,
+            result: AppealCompleteResponse | OvertimeActionResponse | RoundStartResponse,
+          ) => {
+            if (error) reject(error);
+            else resolve(result);
+          };
+          if (event === RealtimeEvent.APPEAL_COMPLETE) {
+            socket.timeout(10_000).emit(event, payload as AppealCompletePayload, acknowledge);
+          } else if (event === RealtimeEvent.OVERTIME_MANUAL_WINNER) {
+            socket.timeout(10_000).emit(event, payload as AthleteColor, acknowledge);
+          } else {
+            socket.timeout(10_000).emit(event, acknowledge);
+          }
+        });
         if (!response.ok) {
           if (isOvertimeStart) {
             console.info('[match-realtime]', 'overtime-start-rejected', {
-              durationMs: Math.round(performance.now() - startedAt!),
+              durationMs: Math.round(performance.now() - startedAt),
               errorCode: response.error.code,
               errorMessage: response.error.message,
               matchPublicId,
@@ -1012,7 +1010,7 @@ export function useMatchRealtime({
         if (isOvertimeStart && 'round' in response) {
           console.info('[match-realtime]', 'overtime-start-acknowledged', {
             attemptNumber: response.round.attemptNumber,
-            durationMs: Math.round(performance.now() - startedAt!),
+            durationMs: Math.round(performance.now() - startedAt),
             matchPublicId,
             roundId: response.round.id,
             socketId: socket.id,
@@ -1023,7 +1021,7 @@ export function useMatchRealtime({
       } catch (error: unknown) {
         if (isOvertimeStart) {
           console.info('[match-realtime]', 'overtime-start-transport-failed', {
-            durationMs: Math.round(performance.now() - startedAt!),
+            durationMs: Math.round(performance.now() - startedAt),
             errorMessage: error instanceof Error ? error.message : String(error),
             matchPublicId,
             socketId: socket.id,
