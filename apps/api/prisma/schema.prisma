@@ -485,6 +485,7 @@ model TournamentWeightClass {
   name           String              @db.VarChar(255)
   normalizedName String              @map("normalized_name") @db.VarChar(255)
   details        String?             @db.Text
+  intermissionDurationSeconds Int     @default(0) @map("intermission_duration_seconds")
   isActive       Boolean             @default(true) @map("is_active")
   deactivatedAt  DateTime?           @map("deactivated_at") @db.Timestamptz(3)
   createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)

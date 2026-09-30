@@ -15,6 +15,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type {
   CreateRosterItemDto,
   UpdateRosterItemDto,
+  UpdateWeightClassDto,
 } from './dto/roster.dto';
 import {
   ROSTER_TOURNAMENT_ARCHIVED,
@@ -44,6 +45,7 @@ const weightClassSelect = {
   tournamentId: true,
   name: true,
   details: true,
+  intermissionDurationSeconds: true,
   isActive: true,
   deactivatedAt: true,
   createdAt: true,
@@ -162,7 +164,7 @@ export class OrganizationService {
   async updateWeightClass(
     tournamentId: string,
     id: string,
-    input: UpdateRosterItemDto,
+    input: UpdateWeightClassDto,
     actorId: string,
   ): Promise<WeightClassView> {
     return this.update(
@@ -301,7 +303,7 @@ export class OrganizationService {
     kind: 'organization' | 'weight',
     tournamentId: string,
     id: string,
-    input: UpdateRosterItemDto,
+    input: UpdateWeightClassDto,
     actorId: string,
   ): Promise<RosterView> {
     if (!Object.keys(input).length)
@@ -363,6 +365,10 @@ export class OrganizationService {
           ...(input.details === undefined
             ? {}
             : { details: this.details(input.details) }),
+          ...(kind === 'weight' &&
+          input.intermissionDurationSeconds !== undefined
+            ? { intermissionDurationSeconds: input.intermissionDurationSeconds }
+            : {}),
           ...(kind === 'organization' && input.location !== undefined
             ? { location: this.location(input.location) }
             : {}),

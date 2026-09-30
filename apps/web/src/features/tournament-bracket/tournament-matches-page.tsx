@@ -69,6 +69,13 @@ export function TournamentMatchesPage({
       : active.some((x) => x.id === selectedParam)
         ? selectedParam
         : (active[0]?.id ?? null);
+  const selectedWeightClass = active.find((weightClass) => weightClass.id === selectedId);
+  const [intermissionDurationSeconds, setIntermissionDurationSeconds] = useState('0');
+  const [intermissionError, setIntermissionError] = useState<string | null>(null);
+  useEffect(() => {
+    setIntermissionDurationSeconds(String(selectedWeightClass?.intermissionDurationSeconds ?? 0));
+    setIntermissionError(null);
+  }, [selectedWeightClass?.id, selectedWeightClass?.intermissionDurationSeconds]);
   const matches = useQuery(
     tournamentMatchesQueryOptions(
       tournament.id,
@@ -358,9 +365,7 @@ export function TournamentMatchesPage({
       if (error instanceof ApiClientError && error.body.code === 'BRACKET_CANCELLATION_UNSAFE') {
         const unsafeMatches = error.body.unsafeMatches;
         setUnsafeCancellationMatches(
-          Array.isArray(unsafeMatches)
-            ? unsafeMatches.filter(isUnsafeCancellationMatch)
-            : [],
+          Array.isArray(unsafeMatches) ? unsafeMatches.filter(isUnsafeCancellationMatch) : [],
         );
         setCancelError('Đã có trận đấu đã hoặc đang diễn ra.');
         return;
@@ -390,6 +395,21 @@ export function TournamentMatchesPage({
     },
     onError: (error) => {
       notifyMutationError(error, 'Không thể cập nhật số giám định.');
+    },
+  });
+  const updateIntermission = useMutation({
+    mutationFn: (input: { readonly weightClassId: string; readonly seconds: number }) =>
+      adminManagementApi.updateWeightClass(tournament.id, input.weightClassId, {
+        intermissionDurationSeconds: input.seconds,
+      }),
+    onSuccess: (_, input) => {
+      void qc.invalidateQueries({
+        queryKey: tournamentQueryKeys.weightClasses(tournament.id),
+      });
+      if (input.weightClassId === selectedId) notifyMutationSuccess('Đã cập nhật thời gian nghỉ.');
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể cập nhật thời gian nghỉ.');
     },
   });
   const counts = useMemo(
@@ -498,6 +518,67 @@ export function TournamentMatchesPage({
                 </Button>
               ) : null}
             </div>
+            <form
+              className="mt-4 flex flex-wrap items-end gap-3 rounded-xl border border-border bg-muted/20 p-4"
+              noValidate
+              onSubmit={(event) => {
+                event.preventDefault();
+                const seconds = Number(intermissionDurationSeconds);
+                if (!Number.isInteger(seconds) || seconds < 0 || !selectedId) {
+                  setIntermissionError('Nhập số nguyên không âm. 0 để tắt thời gian nghỉ.');
+                  return;
+                }
+                setIntermissionError(null);
+                updateIntermission.mutate({ weightClassId: selectedId, seconds });
+              }}
+            >
+              <div>
+                <label
+                  className="text-sm font-semibold"
+                  htmlFor="weight-class-intermission-duration"
+                >
+                  Thời gian nghỉ giữa hiệp (giây)
+                </label>
+                <input
+                  aria-describedby="weight-class-intermission-help weight-class-intermission-error"
+                  aria-invalid={Boolean(intermissionError)}
+                  className="mt-1 block h-10 w-64 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary aria-[invalid=true]:border-destructive"
+                  disabled={isReadOnly || updateIntermission.isPending}
+                  id="weight-class-intermission-duration"
+                  inputMode="numeric"
+                  min={0}
+                  onChange={(event) => {
+                    setIntermissionDurationSeconds(event.target.value);
+                    if (intermissionError) setIntermissionError(null);
+                  }}
+                  step={1}
+                  type="number"
+                  value={intermissionDurationSeconds}
+                />
+                <p
+                  className="mt-1 text-xs text-muted-foreground"
+                  id="weight-class-intermission-help"
+                >
+                  Nhập 0 để tắt thời gian nghỉ.
+                </p>
+                {intermissionError ? (
+                  <p
+                    className="mt-1 text-xs text-destructive"
+                    id="weight-class-intermission-error"
+                    role="alert"
+                  >
+                    {intermissionError}
+                  </p>
+                ) : null}
+              </div>
+              <Button
+                disabled={isReadOnly || updateIntermission.isPending}
+                type="submit"
+                variant="outline"
+              >
+                {updateIntermission.isPending ? 'Đang lưu…' : 'Lưu thời gian nghỉ'}
+              </Button>
+            </form>
             {preview && ['reviewingPreview', 'confirming'].includes(workflow) ? (
               <BracketPreviewPanel
                 error={dialogError}

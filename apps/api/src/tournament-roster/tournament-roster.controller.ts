@@ -37,6 +37,7 @@ import {
   CreateRosterItemDto,
   UpdateAthleteDto,
   UpdateRosterItemDto,
+  UpdateWeightClassDto,
 } from './dto/roster.dto';
 import { OrganizationService } from './tournament-roster.service';
 import { OrganizationImageService } from './organization-image.service';
@@ -267,7 +268,7 @@ export class TournamentRosterController {
   @Patch('weight-classes/:weightClassId') async updateWeight(
     @Param('tournamentId', uuid) tournamentId: string,
     @Param('weightClassId', uuid) id: string,
-    @Body() input: UpdateRosterItemDto,
+    @Body() input: UpdateWeightClassDto,
     @Req() req: AuthenticatedUserRequest,
   ) {
     await this.access.assertTournamentAccess(tournamentId, req.user, true);
