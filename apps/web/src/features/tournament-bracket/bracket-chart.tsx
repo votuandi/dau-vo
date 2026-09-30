@@ -21,34 +21,22 @@ interface ConnectorPath {
 
 const FIXTURE_VERTICAL_GAP = 224;
 
-function fixtureTopOffsets(
+export function fixtureTopOffsets(
   rounds: readonly {
+    readonly roundNumber: number;
     readonly fixtures: readonly { readonly id: string; readonly position: number }[];
   }[],
-  edges: ReturnType<typeof bracketPresentation>['edges'],
 ): ReadonlyMap<string, number> {
   const offsets = new Map<string, number>();
-  for (const [roundIndex, round] of rounds.entries()) {
-    const fixtures = [...round.fixtures].sort((a, b) => a.position - b.position);
-    const incoming = new Map<string, string[]>();
-    edges.forEach((edge) => {
-      if (fixtures.some((fixture) => fixture.id === edge.targetFixtureId)) {
-        incoming.set(edge.targetFixtureId, [
-          ...(incoming.get(edge.targetFixtureId) ?? []),
-          edge.sourceFixtureId,
-        ]);
-      }
-    });
-    fixtures.forEach((fixture, index) => {
-      const sourceOffsets = (incoming.get(fixture.id) ?? [])
-        .map((sourceId) => offsets.get(sourceId))
-        .filter((offset): offset is number => offset !== undefined);
-      offsets.set(
-        fixture.id,
-        sourceOffsets.length > 0
-          ? sourceOffsets.reduce((total, offset) => total + offset, 0) / sourceOffsets.length
-          : (roundIndex === 0 ? index : index * 2 ** roundIndex) * FIXTURE_VERTICAL_GAP,
-      );
+  for (const round of rounds) {
+    const roundIndex = round.roundNumber - 1;
+    round.fixtures.forEach((fixture) => {
+      // `position` is the fixture's durable position in its logical round.
+      // It intentionally includes branches omitted because both entrants had a
+      // bye. Deriving this from the filtered fixtures array would collapse
+      // those branches and move every later fixture onto the wrong tree slot.
+      const logicalSlot = (fixture.position - 0.5) * 2 ** roundIndex - 0.5;
+      offsets.set(fixture.id, logicalSlot * FIXTURE_VERTICAL_GAP);
     });
   }
   return offsets;
@@ -92,10 +80,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
         label: bracketRoundLabel(index + 1, data.bracket.roundCount),
         fixtures: data.fixtures.filter((fixture) => fixture.roundNumber === index + 1),
       }));
-  const fixtureOffsets = useMemo(
-    () => fixtureTopOffsets(rounds, graph.edges),
-    [graph.edges, rounds],
-  );
+  const fixtureOffsets = useMemo(() => fixtureTopOffsets(rounds), [rounds]);
   const chartHeight = Math.max(
     280,
     ...Array.from(fixtureOffsets.values(), (offset) => offset + FIXTURE_VERTICAL_GAP),
