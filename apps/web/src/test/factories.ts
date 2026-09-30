@@ -155,6 +155,7 @@ export function createRealtimeState(
     submittingResultAction: false,
     resultActionErrorMessage: null,
     presence: createMatchSnapshot().presence,
+    readinessFresh: true,
     pauseRound: vi.fn(() => Promise.resolve(true)),
     resumeRound: vi.fn(() => Promise.resolve(true)),
     controllingRound: false,

@@ -329,7 +329,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
           },
         ];
   const scoreboardConnectedCount = snapshot?.readiness.scoreboardConnectedCount ?? 0;
-  const participantsReady = snapshot?.readiness.canStartRound ?? false;
+  const participantsReady = realtime.readinessFresh && (snapshot?.readiness.canStartRound ?? false);
   const readinessMessage =
     snapshot?.readiness.kind === 'TOURNAMENT_OFFICIALS'
       ? getParticipantsNotReadyMessage({

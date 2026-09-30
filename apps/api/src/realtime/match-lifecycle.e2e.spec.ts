@@ -733,6 +733,60 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     ).resolves.not.toContain('MATCH_FINISHED');
   });
 
+  it('requires assigned officials to declare current-match presence and retains it across another tab disconnecting', async () => {
+    const match = await createMatch('official-match-presence');
+    const crew = await createOfficialCrew('official-match-presence', match.id);
+    const inspectorSocket = await connect(crew.inspectorCookie);
+    const refereeSockets = await Promise.all(
+      crew.refereeCookies.map((cookie) => connect(cookie)),
+    );
+    await connectScoreboard(match.publicId);
+
+    // An assignment and an application socket alone must never satisfy start
+    // readiness; only the explicit, server-authenticated match-screen lease
+    // counts.
+    await expect(startRound(inspectorSocket)).resolves.toMatchObject({
+      error: { code: 'MATCH_PARTICIPANTS_NOT_READY' },
+      ok: false,
+    });
+
+    for (const socket of [inspectorSocket, ...refereeSockets]) {
+      socket.emit(RealtimeEvent.MATCH_PRESENCE_ENTER);
+    }
+    await waitUntil(
+      () => requestSnapshot(inspectorSocket),
+      (snapshot) =>
+        snapshot.readiness.kind === 'TOURNAMENT_OFFICIALS' &&
+        snapshot.readiness.canStartRound,
+      'tournament official match-screen presence',
+    );
+
+    const secondTab = await connect(crew.refereeCookies[0]!);
+    secondTab.emit(RealtimeEvent.MATCH_PRESENCE_ENTER);
+    await waitUntil(
+      () => requestSnapshot(inspectorSocket),
+      (snapshot) => snapshot.readiness.canStartRound,
+      'second referee tab presence',
+    );
+    secondTab.disconnect();
+    await waitUntil(
+      () => requestSnapshot(inspectorSocket),
+      (snapshot) => snapshot.readiness.canStartRound,
+      'remaining referee tab presence',
+    );
+
+    refereeSockets[1]!.disconnect();
+    await waitUntil(
+      () => requestSnapshot(inspectorSocket),
+      (snapshot) => !snapshot.readiness.canStartRound,
+      'disconnected official presence removal',
+    );
+    await expect(startRound(inspectorSocket)).resolves.toMatchObject({
+      error: { code: 'MATCH_PARTICIPANTS_NOT_READY' },
+      ok: false,
+    });
+  });
+
   it('requires explicit inspector completion after Round 2 and completes exactly once', async () => {
     // The flow awaits multiple socket broadcasts before the invalid-transition
     // check, so allow real database/socket scheduling margin here.

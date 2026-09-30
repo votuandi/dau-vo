@@ -373,7 +373,15 @@ export class RealtimeGateway
         return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
       }
 
-      if (error instanceof MatchParticipantsNotReadyError)
+      if (error instanceof MatchParticipantsNotReadyError) {
+        // Deliberately aggregate-only: this records assignment, match-screen
+        // lease, and scoreboard readiness without session tokens, access
+        // codes, or personal identifiers. Application-online status remains
+        // available in the tournament-official status projection.
+        this.logger.warn(
+          { matchId: command.matchId, readiness: error.details },
+          'Round start rejected because match presence is not ready',
+        );
         return {
           error: {
             ...MATCH_PARTICIPANTS_NOT_READY_ERROR,
@@ -381,6 +389,7 @@ export class RealtimeGateway
           },
           ok: false,
         };
+      }
 
       if (error instanceof InvalidRoundStartStateError) {
         return { error: ROUND_START_INVALID_STATE_ERROR, ok: false };
