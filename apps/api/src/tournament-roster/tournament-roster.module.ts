@@ -8,6 +8,7 @@ import { OrganizationService } from './tournament-roster.service';
 import { OrganizationImageService } from './organization-image.service';
 import { AthleteService, ATHLETE_CLOCK } from './athlete.service';
 import { AthleteImageService } from './athlete-image.service';
+import { AthleteImportService } from './athlete-import.service';
 @Module({
   imports: [AdminManagementModule, AuthModule, PrismaModule, MediaModule],
   controllers: [TournamentRosterController],
@@ -16,6 +17,7 @@ import { AthleteImageService } from './athlete-image.service';
     OrganizationImageService,
     AthleteService,
     AthleteImageService,
+    AthleteImportService,
     { provide: ATHLETE_CLOCK, useValue: { now: () => new Date() } },
   ],
 })

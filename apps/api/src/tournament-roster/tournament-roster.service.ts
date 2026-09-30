@@ -268,7 +268,12 @@ export class OrganizationService {
           normalizedName: this.normalized(name),
           details: this.details(input.details),
           ...(kind === 'organization'
-            ? { location: this.location(input.location) }
+            ? {
+                location: this.location(input.location),
+                normalizedLocation: this.normalized(
+                  this.location(input.location) ?? '',
+                ),
+              }
             : {}),
         };
         const row =
@@ -370,7 +375,12 @@ export class OrganizationService {
             ? { intermissionDurationSeconds: input.intermissionDurationSeconds }
             : {}),
           ...(kind === 'organization' && input.location !== undefined
-            ? { location: this.location(input.location) }
+            ? {
+                location: this.location(input.location),
+                normalizedLocation: this.normalized(
+                  this.location(input.location) ?? '',
+                ),
+              }
             : {}),
           ...(input.isActive === undefined
             ? {}

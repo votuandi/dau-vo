@@ -21,6 +21,8 @@ import {
   type TournamentAthlete,
   type TournamentOrganization,
   type TournamentRosterItem,
+  type AthleteImportResult,
+  type AthleteImportRow,
 } from '@/services/api/admin-management';
 
 const tabs = [
@@ -575,6 +577,10 @@ export function AthletesPage({
   const [draft, setDraft] = useState<AthleteDraft | null>(null);
   const [editing, setEditing] = useState<TournamentAthlete | null>(null);
   const [confirm, setConfirm] = useState<TournamentAthlete | null>(null);
+  const [importPreview, setImportPreview] = useState<{
+    rows: readonly AthleteImportRow[];
+    results: readonly AthleteImportResult[];
+  } | null>(null);
   const submitLock = useRef(false);
   const qc = useQueryClient();
   useEffect(() => {
@@ -668,6 +674,27 @@ export function AthletesPage({
     },
     onError: (e) => {
       notifyMutationError(e, 'Không thể xóa ảnh đại diện.');
+    },
+  });
+  const previewImport = useMutation({
+    mutationFn: (file: File) => adminManagementApi.previewAthleteImport(tournamentId, file),
+    onSuccess: (result) => {
+      setImportPreview(result);
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể đọc tệp nhập.');
+    },
+  });
+  const confirmImport = useMutation({
+    mutationFn: (rows: readonly AthleteImportRow[]) =>
+      adminManagementApi.confirmAthleteImport(tournamentId, rows),
+    onSuccess: (result) => {
+      setImportPreview({ rows: importPreview?.rows ?? [], results: result.results });
+      void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId, 'athletes'] });
+      notifyMutationSuccess('Đã xử lý dữ liệu nhập.');
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể xác nhận nhập dữ liệu.');
     },
   });
   // The roster endpoints are independently loaded. Treat a response without either
@@ -791,6 +818,64 @@ export function AthletesPage({
         <p className="text-sm text-muted-foreground">
           Không thể thêm vận động viên vì tất cả hạng cân đang hoạt động đã được chia nhánh đấu.
         </p>
+      ) : null}
+      {!readOnly ? (
+        <div className="rounded-xl border p-4">
+          <label className="form-field">
+            Nhập vận động viên (.xlsx, .xls hoặc .csv; 5 cột theo mẫu)
+            <input
+              accept=".xlsx,.xls,.csv"
+              className={inputClassName}
+              disabled={previewImport.isPending || confirmImport.isPending}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) previewImport.mutate(file);
+                event.currentTarget.value = '';
+              }}
+              type="file"
+            />
+          </label>
+          {importPreview ? (
+            <div className="mt-3 space-y-2">
+              <p>
+                {importPreview.results.filter((result) => result.status === 'eligible').length} dòng
+                hợp lệ / {importPreview.results.length} dòng.
+              </p>
+              <ul className="max-h-48 overflow-auto text-sm">
+                {importPreview.results.map((result) => (
+                  <li key={result.rowNumber}>
+                    Dòng {result.rowNumber}: {result.athlete.name} — {result.status}
+                    {result.errors.length ? ` (${result.errors.join(', ')})` : ''}
+                  </li>
+                ))}
+              </ul>
+              <div className="flex gap-2">
+                <Button
+                  disabled={
+                    confirmImport.isPending ||
+                    !importPreview.results.some((result) => result.status === 'eligible')
+                  }
+                  onClick={() => {
+                    confirmImport.mutate(importPreview.rows);
+                  }}
+                  type="button"
+                >
+                  {confirmImport.isPending ? 'Đang nhập…' : 'OK'}
+                </Button>
+                <Button
+                  disabled={confirmImport.isPending}
+                  onClick={() => {
+                    setImportPreview(null);
+                  }}
+                  type="button"
+                  variant="outline"
+                >
+                  Hủy
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </div>
       ) : null}
       {draft ? (
         <form

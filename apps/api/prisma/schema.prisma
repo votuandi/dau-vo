@@ -463,6 +463,7 @@ model TournamentOrganization {
   tournamentId   String              @map("tournament_id") @db.Uuid
   name           String              @db.VarChar(255)
   normalizedName String              @map("normalized_name") @db.VarChar(255)
+  normalizedLocation String           @default("") @map("normalized_location") @db.VarChar(255)
   location       String?             @db.VarChar(255)
   details        String?             @db.Text
   imagePath      String?             @map("image_path") @db.VarChar(1024)
@@ -474,7 +475,7 @@ model TournamentOrganization {
   athletes       TournamentAthlete[]
 
   @@unique([tournamentId, id], map: "tournament_organizations_tournament_id_id_key")
-  @@unique([tournamentId, normalizedName], map: "tournament_organizations_tournament_id_normalized_name_key")
+  @@unique([tournamentId, normalizedName, normalizedLocation], map: "tournament_organizations_name_location_key")
   @@index([tournamentId, isActive, normalizedName], map: "tournament_organizations_active_name_idx")
   @@map("tournament_organizations")
 }

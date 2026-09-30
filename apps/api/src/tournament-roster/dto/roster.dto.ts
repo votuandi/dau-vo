@@ -7,6 +7,8 @@ import {
   Min,
   MaxLength,
   MinLength,
+  IsArray,
+  ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
@@ -94,4 +96,20 @@ export class AthleteListQueryDto {
   )
   @IsBoolean()
   isActive?: boolean;
+}
+
+export class AthleteImportRowDto {
+  @IsInt() @Min(1) rowNumber!: number;
+  @IsString() @MaxLength(255) name!: string;
+  @IsInt() birthYear!: number;
+  @IsString() @MaxLength(255) weightClass!: string;
+  @IsString() @MaxLength(255) organizationName!: string;
+  @IsString() @MaxLength(255) organizationLocation!: string;
+}
+
+export class ConfirmAthleteImportDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AthleteImportRowDto)
+  rows!: AthleteImportRowDto[];
 }
