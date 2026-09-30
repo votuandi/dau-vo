@@ -15,9 +15,9 @@ const setup = {
     firstRoundFixtureCount: 2,
   },
   eligibleAthletes: [
-    { id: 'a', name: 'An', organizationName: 'A', imageUrl: null },
-    { id: 'b', name: 'Bình', organizationName: 'B', imageUrl: null },
-    { id: 'c', name: 'Chi', organizationName: 'C', imageUrl: null },
+    { id: 'a', name: 'An', organizationName: 'A', imageUrl: null, isSeed: true },
+    { id: 'b', name: 'Bình', organizationName: 'B', imageUrl: null, isSeed: true },
+    { id: 'c', name: 'Chi', organizationName: 'C', imageUrl: null, isSeed: false },
   ],
 } as const;
 
@@ -68,7 +68,7 @@ describe('BracketDrawSetupDialog', () => {
     );
     expect(screen.getByRole('dialog')).toHaveTextContent('3 vòng');
     await user.click(screen.getByRole('button', { name: 'Xác nhận và bốc thăm' }));
-    expect(submit).toHaveBeenCalledWith([]);
+    expect(submit).toHaveBeenCalledWith([], 'RANDOM');
   });
 
   it('enforces the authoritative maximum and permits deselection', async () => {
@@ -92,7 +92,7 @@ describe('BracketDrawSetupDialog', () => {
     await user.click(screen.getByLabelText('Chọn An'));
     expect(screen.getByLabelText('Chọn Chi')).not.toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Xác nhận và bốc thăm' }));
-    expect(submit).toHaveBeenCalledWith(['b']);
+    expect(submit).toHaveBeenCalledWith(['b'], 'MANUAL');
   });
 
   it('states that no bye is available and closes with Escape', async () => {

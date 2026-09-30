@@ -347,6 +347,7 @@ export interface BracketDrawSetup {
     readonly name: string;
     readonly organizationName: string | null;
     readonly imageUrl: string | null;
+    readonly isSeed: boolean;
   }[];
 }
 export interface BracketFixture {
@@ -479,7 +480,11 @@ export const adminManagementApi = {
   previewBracket: (
     tournamentId: string,
     weightClassId: string,
-    input: { readonly setupToken: string; readonly designatedByeAthleteIds: readonly string[] },
+    input: {
+      readonly setupToken: string;
+      readonly designatedByeAthleteIds: readonly string[];
+      readonly byeStrategy?: 'RANDOM' | 'MANUAL' | 'SEEDED';
+    },
     options?: ApiRequestWithoutBody,
   ) =>
     apiClient.post<BracketPreview>(

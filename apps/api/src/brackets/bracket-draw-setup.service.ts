@@ -94,6 +94,7 @@ export class BracketDrawSetupService {
         id: true,
         name: true,
         imagePath: true,
+        isSeed: true,
         isActive: true,
         weightClassId: true,
         updatedAt: true,
@@ -131,6 +132,7 @@ export class BracketDrawSetupService {
       eligibleAthletes: athletes.map((a) => ({
         id: a.id,
         name: a.name,
+        isSeed: a.isSeed,
         organizationName: a.organization?.name ?? null,
         imageUrl: a.imagePath ? `/api/media/${a.imagePath}` : null,
       })),

@@ -173,6 +173,12 @@ export class BracketConfirmationService {
             'BRACKET_ROSTER_CHANGED',
             'The eligible roster changed after preview',
           );
+        this.previews.assertStrategySelection(
+          claims.byeStrategy,
+          claims.designatedByeAthleteIds,
+          athletes,
+          claims.placements.length - athletes.length,
+        );
         const graph = this.graph(claims, new Set(athletes.map((a) => a.id)));
         const byId = new Map(athletes.map((a) => [a.id, a]));
         const openingByAthleteId = new Map(
@@ -316,6 +322,7 @@ export class BracketConfirmationService {
       weightClassId: c.weightClassId,
       rosterFingerprint: c.rosterFingerprint,
       designatedByeAthleteIds: [...c.designatedByeAthleteIds].sort(),
+      byeStrategy: c.byeStrategy,
       bracketSize: c.placements.length,
       placements: [...c.placements]
         .sort((a, b) => a.drawPosition - b.drawPosition)

@@ -13,6 +13,7 @@ export interface BracketPreviewTokenClaims {
   weightClassId: string;
   placements: readonly { drawPosition: number; athleteId: string | null }[];
   designatedByeAthleteIds: readonly string[];
+  byeStrategy: 'RANDOM' | 'MANUAL' | 'SEEDED';
   rosterFingerprint: string;
   issuedAt: number;
   expiresAt: number;
@@ -85,6 +86,7 @@ export class BracketPreviewTokenService {
       claims.weightClassId !== context.weightClassId ||
       !Array.isArray(claims.placements) ||
       !Array.isArray(claims.designatedByeAthleteIds) ||
+      !['RANDOM', 'MANUAL', 'SEEDED'].includes(claims.byeStrategy) ||
       typeof claims.rosterFingerprint !== 'string' ||
       typeof claims.nonce !== 'string' ||
       !Number.isSafeInteger(claims.issuedAt) ||

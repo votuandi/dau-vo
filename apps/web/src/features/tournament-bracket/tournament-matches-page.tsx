@@ -128,6 +128,7 @@ export function TournamentMatchesPage({
   const [preview, setPreview] = useState<BracketPreview | null>(null);
   const [drawSetup, setDrawSetup] = useState<BracketDrawSetup | null>(null);
   const [designatedByeAthleteIds, setDesignatedByeAthleteIds] = useState<readonly string[]>([]);
+  const [byeStrategy, setByeStrategy] = useState<'RANDOM' | 'MANUAL' | 'SEEDED'>('RANDOM');
   // A key is created once for each user action and survives mutation retries.
   const [confirmationKey, setConfirmationKey] = useState<string | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
@@ -154,6 +155,7 @@ export function TournamentMatchesPage({
     setPreview(null);
     setDrawSetup(null);
     setDesignatedByeAthleteIds([]);
+    setByeStrategy('RANDOM');
     setConfirmationKey(null);
     setDialogError(null);
   };
@@ -187,11 +189,16 @@ export function TournamentMatchesPage({
       };
       readonly setupToken: string;
       readonly designatedByeAthleteIds: readonly string[];
+      readonly byeStrategy: 'RANDOM' | 'MANUAL' | 'SEEDED';
     }) => {
       return adminManagementApi.previewBracket(
         tournament.id,
         input.context.weightClassId,
-        { setupToken: input.setupToken, designatedByeAthleteIds: input.designatedByeAthleteIds },
+        {
+          setupToken: input.setupToken,
+          designatedByeAthleteIds: input.designatedByeAthleteIds,
+          byeStrategy: input.byeStrategy,
+        },
         { signal: input.context.signal },
       );
     },
@@ -553,6 +560,7 @@ export function TournamentMatchesPage({
                       context: beginWorkflow(selectedId),
                       setupToken: drawSetup.setupToken,
                       designatedByeAthleteIds,
+                      byeStrategy,
                     });
                   }
                 }}
@@ -722,8 +730,9 @@ export function TournamentMatchesPage({
             setWorkflow('loadingSetup');
             if (selectedId) setupDraw.mutate(beginWorkflow(selectedId));
           }}
-          onSubmit={(ids) => {
+          onSubmit={(ids, byeStrategy) => {
             setDesignatedByeAthleteIds(ids);
+            setByeStrategy(byeStrategy);
             setDialogError(null);
             setPreview(null);
             setWorkflow('generatingPreview');
@@ -732,6 +741,7 @@ export function TournamentMatchesPage({
                 context: beginWorkflow(selectedId),
                 setupToken: drawSetup.setupToken,
                 designatedByeAthleteIds: ids,
+                byeStrategy,
               });
             }
           }}
