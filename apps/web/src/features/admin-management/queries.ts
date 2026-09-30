@@ -91,10 +91,10 @@ export function matchQueryOptions(id: string) {
   });
 }
 
-export function matchMonitoringQueryOptions(id: string) {
+export function matchMonitoringQueryOptions(id: string, live = true) {
   return queryOptions({
     queryKey: matchQueryKeys.monitoring(id),
     queryFn: () => adminManagementApi.getMatchMonitoring(id),
-    refetchInterval: 1_500,
+    refetchInterval: live ? 1_500 : false,
   });
 }

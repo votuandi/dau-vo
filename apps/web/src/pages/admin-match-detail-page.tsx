@@ -368,7 +368,7 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
       </header>
 
       <MatchEditor isReadOnly={isReadOnly} key={match.updatedAt} match={match} />
-      {shouldMonitorLiveMatch(match) ? <AdminMatchMonitoring matchId={match.id} /> : null}
+      <AdminMatchMonitoring live={shouldMonitorLiveMatch(match)} matchId={match.id} />
     </div>
   );
 }

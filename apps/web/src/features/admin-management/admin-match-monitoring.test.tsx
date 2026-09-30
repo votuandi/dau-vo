@@ -59,12 +59,20 @@ function monitoringFixture(
         invalidatedAt: null,
         invalidatedByAuditId: null,
         occurredAt,
-        refereeVotes: [
+        judgeVotes: [
           {
             athleteColor: AthleteColor.RED,
             invalidatedAt: null,
+            judgePosition: null,
             judgeSlot: 'JUDGE_1',
             serverReceivedAt: occurredAt,
+          },
+          {
+            athleteColor: AthleteColor.BLUE,
+            invalidatedAt: null,
+            judgePosition: 2,
+            judgeSlot: null,
+            serverReceivedAt: '2026-09-10T10:05:08.500Z',
           },
         ],
         resolvedAt: '2026-09-10T10:05:09.000Z',
@@ -80,7 +88,7 @@ function monitoringFixture(
         invalidatedAt: '2026-09-10T10:07:09.000Z',
         invalidatedByAuditId: 'audit-2',
         occurredAt,
-        refereeVotes: [],
+        judgeVotes: [],
         resolvedAt: '2026-09-10T10:06:09.000Z',
         roundElapsedMs: 61_000,
         roundNumber: 2,
@@ -94,7 +102,7 @@ function monitoringFixture(
         invalidatedAt: null,
         invalidatedByAuditId: null,
         occurredAt,
-        refereeVotes: [],
+        judgeVotes: [],
         resolvedAt: '2026-09-10T10:07:09.000Z',
         roundElapsedMs: null,
         roundNumber: 1,
@@ -135,6 +143,21 @@ describe('AdminMatchMonitoring', () => {
     expect(screen.getByText('Đang tải trạng thái trận đấu…')).toBeVisible();
   });
 
+  it('shows saved match information without live monitoring', async () => {
+    adminManagementApiMock.getMatchMonitoring.mockResolvedValue(monitoringFixture());
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <AdminMatchMonitoring live={false} matchId="a92bbb35-3fa2-4e52-9749-ad16b4e659cc" />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText('Thông tin trận đấu');
+    expect(screen.getByText('Kết quả và lịch sử trận đấu đã lưu.')).toBeVisible();
+    expect(screen.queryByText('Đang theo dõi')).not.toBeInTheDocument();
+  });
+
   it('styles awarded and no-score scoring windows by their valid outcome', async () => {
     renderMonitoring();
     await screen.findByText('Hiệp 1 · ĐỎ +1');
@@ -153,6 +176,17 @@ describe('AdminMatchMonitoring', () => {
       'bg-slate-100',
       'text-slate-800',
     );
+  });
+
+  it('shows each judge vote with its selected athlete, matching color, and server time', async () => {
+    renderMonitoring();
+
+    const redAthlete = await screen.findByText('+1 VĐV đỏ');
+    expect(redAthlete).toHaveClass('text-red-700');
+    expect(redAthlete.closest('li')).toHaveTextContent(
+      'Giám định 1: +1 VĐV đỏ [10/09/2026 17:05:08]',
+    );
+    expect(screen.getByText('+1 VĐV xanh')).toHaveClass('text-blue-700');
   });
 
   it('styles score events by athlete and retains reverted status', async () => {

@@ -48,6 +48,20 @@ function colorLabel(color: AthleteColor | null): string {
   return color === AthleteColor.RED ? 'ĐỎ' : 'XANH';
 }
 
+function athleteColorLabel(color: AthleteColor): string {
+  return color === AthleteColor.RED ? 'VĐV đỏ' : 'VĐV xanh';
+}
+
+function judgeVoteColorClassName(color: AthleteColor): string {
+  return color === AthleteColor.RED ? 'text-red-700' : 'text-blue-700';
+}
+
+function judgeVoteLabel(vote: { judgePosition: number | null; judgeSlot: string | null }): string {
+  if (vote.judgePosition !== null) return `Giám định ${String(vote.judgePosition)}`;
+  if (vote.judgeSlot !== null) return roleLabels[vote.judgeSlot as MatchAccessRole];
+  return 'Giám định';
+}
+
 function historyRoundLabel(round: {
   stage: 'REGULATION' | 'OVERTIME';
   roundNumber: number;
@@ -122,8 +136,14 @@ function auditEventLabel(eventType: string): string {
   return labels[eventType] ?? eventType;
 }
 
-export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) {
-  const monitoring = useQuery(matchMonitoringQueryOptions(matchId));
+export function AdminMatchMonitoring({
+  live = true,
+  matchId,
+}: {
+  readonly live?: boolean;
+  readonly matchId: string;
+}) {
+  const monitoring = useQuery(matchMonitoringQueryOptions(matchId, live));
   const snapshot = monitoring.data?.snapshot;
   // Monitoring data can be served by an API instance that predates a newly
   // introduced history field. Treat omitted collections as empty so that the
@@ -146,19 +166,29 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
       : timer;
   const red = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
   const blue = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
+  const outcome = monitoring.data?.outcome;
+  const winner = outcome
+    ? snapshot?.athletes.find((athlete) => athlete.color === outcome.winnerColor)
+    : undefined;
 
   return (
     <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <div>
-          <h2 className="text-xl font-black tracking-tight">Theo dõi trực tiếp</h2>
+          <h2 className="text-xl font-black tracking-tight">
+            {live ? 'Theo dõi trực tiếp' : 'Thông tin trận đấu'}
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Tự làm mới mỗi 1,5 giây từ trạng thái authoritative của máy chủ.
+            {live
+              ? 'Tự làm mới mỗi 1,5 giây từ trạng thái authoritative của máy chủ.'
+              : 'Kết quả và lịch sử trận đấu đã lưu.'}
           </p>
         </div>
-        <span className="text-sm font-bold text-emerald-700">
-          {monitoring.isFetching ? 'Đang đồng bộ…' : 'Đang theo dõi'}
-        </span>
+        {live ? (
+          <span className="text-sm font-bold text-emerald-700">
+            {monitoring.isFetching ? 'Đang đồng bộ…' : 'Đang theo dõi'}
+          </span>
+        ) : null}
       </div>
       {monitoring.isError ? (
         <p className="mt-4 text-sm text-destructive" role="alert">
@@ -201,6 +231,11 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
               </p>
             </div>
           </div>
+          {winner ? (
+            <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+              <strong>Vận động viên chiến thắng:</strong> {winner.name} ({colorLabel(winner.color)})
+            </p>
+          ) : null}
           <h3 className="mt-7 font-black">Hiện diện thiết bị</h3>
           <ul className="mt-3 grid gap-2 sm:grid-cols-2">
             {presence.map((entry) => (
@@ -266,16 +301,13 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                 </ul>
               </article>
             ))}
-            {monitoring.data?.outcome ? (
+            {outcome ? (
               <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900">
-                <strong>Kết quả công bố:</strong> {colorLabel(monitoring.data.outcome.winnerColor)}{' '}
-                · {monitoring.data.outcome.method} ·{' '}
-                {formatDateTime(monitoring.data.outcome.publishedAt)}
+                <strong>Kết quả công bố:</strong> {colorLabel(outcome.winnerColor)} ·{' '}
+                {outcome.method} · {formatDateTime(outcome.publishedAt)}
               </p>
             ) : null}
-            {!rounds.length && !appeals.length ? (
-              <p>Chưa có lịch sử trận đấu.</p>
-            ) : null}
+            {!rounds.length && !appeals.length ? <p>Chưa có lịch sử trận đấu.</p> : null}
           </div>
         </details>
         <details className="rounded-xl border p-4" open>
@@ -305,12 +337,16 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                   </div>
                 </div>
                 <ul className="mt-2 text-sm">
-                  {(window.refereeVotes ?? []).map((vote) => (
-                    <li key={vote.judgeSlot}>
-                      {roleLabels[vote.judgeSlot as MatchAccessRole]} →{' '}
-                      <strong>{colorLabel(vote.athleteColor)}</strong>{' '}
+                  {(window.judgeVotes ?? []).map((vote) => (
+                    <li
+                      key={`${String(vote.judgePosition ?? vote.judgeSlot ?? 'unknown')}-${vote.serverReceivedAt}`}
+                    >
+                      {judgeVoteLabel(vote)}:{' '}
+                      <strong className={judgeVoteColorClassName(vote.athleteColor)}>
+                        +1 {athleteColorLabel(vote.athleteColor)}
+                      </strong>{' '}
                       <span className="opacity-80">
-                        {formatDateTimeWithSeconds(vote.serverReceivedAt)}
+                        [{formatDateTimeWithSeconds(vote.serverReceivedAt)}]
                       </span>
                       {vote.invalidatedAt ? (
                         <span className="ml-2 font-bold">Đã vô hiệu</span>
@@ -324,9 +360,7 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
           </div>
         </details>
         <details className="rounded-xl border p-4">
-          <summary className="cursor-pointer font-black">
-            Lỗi phạt ({penalties.length})
-          </summary>
+          <summary className="cursor-pointer font-black">Lỗi phạt ({penalties.length})</summary>
           <ul className="mt-4 space-y-2 text-sm">
             {penalties.map((penalty) => (
               <li className="rounded-lg bg-muted/60 p-3" key={penalty.id}>
@@ -374,9 +408,7 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
           </ul>
         </details>
         <details className="rounded-xl border p-4">
-          <summary className="cursor-pointer font-black">
-            Audit logs ({auditLogs.length})
-          </summary>
+          <summary className="cursor-pointer font-black">Audit logs ({auditLogs.length})</summary>
           <ul className="mt-4 space-y-2 text-sm">
             {auditLogs.map((event) => (
               <li className="rounded-lg bg-muted/60 p-3" key={event.id}>

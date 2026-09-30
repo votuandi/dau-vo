@@ -1,9 +1,36 @@
 import {
+  monitoringAuditJudgeVotes,
   monitoringScoreEvent,
   monitoringScoringWindow,
 } from './monitoring-history';
 
 describe('monitoring history projection', () => {
+  it('restores historic judge votes from a scoring-window resolution audit record', () => {
+    expect(
+      monitoringAuditJudgeVotes(
+        {
+          action: 'SCORING_WINDOW_RESOLVED',
+          scoringWindowId: 'window-1',
+          votes: [
+            {
+              athlete: 'BLUE',
+              judgePosition: 2,
+              judgeSlot: null,
+              serverReceivedAt: '2026-09-30T04:23:51.000Z',
+            },
+          ],
+        },
+        'window-1',
+      ),
+    ).toEqual([
+      {
+        athleteColor: 'BLUE',
+        judgePosition: 2,
+        judgeSlot: null,
+        serverReceivedAt: '2026-09-30T04:23:51.000Z',
+      },
+    ]);
+  });
   it('uses a scoring window occurrence and elapsed time for JUDGE_POINT', () => {
     const windowStartedAt = new Date('2026-09-10T00:00:05.000Z');
     const result = monitoringScoreEvent(
