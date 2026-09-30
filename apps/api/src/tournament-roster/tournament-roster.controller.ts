@@ -38,11 +38,14 @@ import {
   UpdateAthleteDto,
   UpdateRosterItemDto,
   UpdateWeightClassDto,
+  ConfirmAthleteImportDto,
+  PreviewAthleteImportDto,
 } from './dto/roster.dto';
 import { OrganizationService } from './tournament-roster.service';
 import { OrganizationImageService } from './organization-image.service';
 import { AthleteService } from './athlete.service';
 import { AthleteImageService } from './athlete-image.service';
+import { AthleteImportService } from './athlete-import.service';
 const uuid = new ParseUUIDPipe({
   exceptionFactory: () => new BadRequestException(INVALID_ID_ERROR),
 });
@@ -62,6 +65,8 @@ export class TournamentRosterController {
     @Inject(AthleteService) private readonly athletes: AthleteService,
     @Inject(AthleteImageService)
     private readonly athleteImages: AthleteImageService,
+    @Inject(AthleteImportService)
+    private readonly imports: AthleteImportService,
   ) {}
   @Get('athletes') async listAthletes(
     @Param('tournamentId', uuid) tournamentId: string,
@@ -80,6 +85,28 @@ export class TournamentRosterController {
     return {
       athlete: await this.athletes.create(tournamentId, input, req.user.id),
     };
+  }
+  @Post('athletes/import/preview')
+  async previewAthleteImport(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Body() input: PreviewAthleteImportDto,
+    @Req() req: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, req.user, true);
+    return this.imports.preview(tournamentId, input.rows);
+  }
+  @Post('athletes/import/confirm') async confirmAthleteImport(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Body() input: ConfirmAthleteImportDto,
+    @Req() req: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, req.user, true);
+    return this.imports.confirm(
+      tournamentId,
+      input.rows,
+      req.user.id,
+      input.idempotencyKey,
+    );
   }
   @Get('athletes/:athleteId') async getAthlete(
     @Param('tournamentId', uuid) tournamentId: string,

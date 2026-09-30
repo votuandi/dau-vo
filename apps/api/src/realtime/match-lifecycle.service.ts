@@ -1621,13 +1621,13 @@ export class MatchLifecycleService implements OnModuleDestroy {
         const clock = await this.serverClock(transaction);
         const [match, round] = await Promise.all([
           transaction.match.findUniqueOrThrow({
-          select: {
-            currentRound: true,
-            intermissionEndsAt: true,
-            publicId: true,
-            rulesVersion: true,
-            status: true,
-            weightClass: { select: { intermissionDurationSeconds: true } },
+            select: {
+              currentRound: true,
+              intermissionEndsAt: true,
+              publicId: true,
+              rulesVersion: true,
+              status: true,
+              weightClass: { select: { intermissionDurationSeconds: true } },
             },
             where: { id: matchId },
           }),
@@ -1675,14 +1675,14 @@ export class MatchLifecycleService implements OnModuleDestroy {
         // observes the ended round and cannot move the deadline forward.
         const intermissionEndsAt =
           round.stage === RoundStage.REGULATION && round.roundNumber === 1
-            ? match.intermissionEndsAt ??
+            ? (match.intermissionEndsAt ??
               ((match.weightClass?.intermissionDurationSeconds ?? 0) > 0
                 ? new Date(
                     clock.serverNow.getTime() +
                       (match.weightClass?.intermissionDurationSeconds ?? 0) *
                         1_000,
                   )
-                : null)
+                : null))
             : null;
         const endedAt = round.endsAt;
         const endedRound = await transaction.round.update({

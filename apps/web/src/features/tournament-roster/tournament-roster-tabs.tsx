@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { toast } from '@/components/ui/toast';
 import {
   inputClassName,
   notifyMutationError,
@@ -21,7 +23,19 @@ import {
   type TournamentAthlete,
   type TournamentOrganization,
   type TournamentRosterItem,
+  type AthleteImportResult,
+  type AthleteImportRow,
 } from '@/services/api/admin-management';
+import {
+  athleteImportHeaderHelp,
+  AthleteImportFileError,
+  parseAthleteImportFile,
+} from './athlete-import-file';
+import {
+  summarizeImportUnits,
+  unitStatusLabel,
+  type UnitImportStatus,
+} from './athlete-import-summary';
 
 const tabs = [
   ['info', 'Thông tin'],
@@ -51,6 +65,126 @@ class AthleteImageUploadError extends Error {
   ) {
     super('Athlete was saved but its image could not be uploaded.');
   }
+}
+function ImportReviewSection({
+  records,
+  title,
+}: {
+  readonly title: string;
+  readonly records: readonly {
+    readonly id: number;
+    readonly label: string;
+    readonly eligible: boolean;
+    readonly reason: string;
+  }[];
+}) {
+  const eligible = records.filter((record) => record.eligible);
+  const ineligible = records.filter((record) => !record.eligible);
+  return (
+    <section aria-label={title} className="space-y-2">
+      <h3 className="font-black">{title}</h3>
+      <div>
+        <p className="font-bold text-emerald-700">Có thể thêm ({eligible.length})</p>
+        <ul className="list-disc space-y-1 pl-5">
+          {eligible.map((record) => (
+            <li key={record.id}>{record.label}</li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <p className="font-bold text-destructive">Không thể thêm ({ineligible.length})</p>
+        <ul className="list-disc space-y-1 pl-5">
+          {ineligible.map((record) => (
+            <li key={record.id}>
+              {record.label}
+              {record.reason ? ` — ${record.reason}` : ''}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+function ImportCompletionSection({
+  added,
+  notAdded,
+  title,
+}: {
+  readonly title: string;
+  readonly added: readonly { readonly id: number; readonly label: string }[];
+  readonly notAdded: readonly {
+    readonly id: number;
+    readonly label: string;
+    readonly reason: string;
+  }[];
+}) {
+  return (
+    <section aria-label={title} className="space-y-2">
+      <h3 className="font-black">{title}</h3>
+      <div>
+        <p className="font-bold text-emerald-700">Đã thêm ({added.length})</p>
+        <ul className="list-disc space-y-1 pl-5">
+          {added.map((record) => (
+            <li key={record.id}>{record.label}</li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <p className="font-bold text-destructive">Không thêm được ({notAdded.length})</p>
+        <ul className="list-disc space-y-1 pl-5">
+          {notAdded.map((record) => (
+            <li key={record.id}>
+              {record.label} — {record.reason}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+function ImportUnitSection({
+  records,
+  title,
+}: {
+  readonly title: string;
+  readonly records: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly status: UnitImportStatus;
+    readonly errors: readonly string[];
+  }[];
+}) {
+  const groups: readonly { readonly status: UnitImportStatus; readonly tone: string }[] = [
+    { status: 'pending', tone: 'text-emerald-700' },
+    { status: 'created', tone: 'text-emerald-700' },
+    { status: 'existing', tone: 'text-muted-foreground' },
+    { status: 'restored', tone: 'text-emerald-700' },
+    { status: 'invalid', tone: 'text-destructive' },
+  ];
+  return (
+    <section aria-label={title} className="space-y-2">
+      <h3 className="font-black">{title}</h3>
+      {groups.map(({ status, tone }) => {
+        const items = records.filter((record) => record.status === status);
+        if (!items.length) return null;
+        return (
+          <div key={status}>
+            <p className={`font-bold ${tone}`}>
+              {unitStatusLabel(status)} ({items.length})
+            </p>
+            <ul className="list-disc space-y-1 pl-5">
+              {items.map((record) => (
+                <li key={record.id}>
+                  {record.label}
+                  {record.errors.length ? ` — ${record.errors.join(', ')}` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </section>
+  );
 }
 type Tab = (typeof tabs)[number][0];
 
@@ -575,7 +709,14 @@ export function AthletesPage({
   const [draft, setDraft] = useState<AthleteDraft | null>(null);
   const [editing, setEditing] = useState<TournamentAthlete | null>(null);
   const [confirm, setConfirm] = useState<TournamentAthlete | null>(null);
+  const [importPreview, setImportPreview] = useState<{
+    rows: readonly AthleteImportRow[];
+    results: readonly AthleteImportResult[];
+    idempotencyKey: string;
+  } | null>(null);
+  const [importResults, setImportResults] = useState<readonly AthleteImportResult[] | null>(null);
   const submitLock = useRef(false);
+  const importFilePicker = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
   useEffect(() => {
     if (query.data && query.data.totalPages > 0 && filters.page > query.data.totalPages) {
@@ -668,6 +809,29 @@ export function AthletesPage({
     },
     onError: (e) => {
       notifyMutationError(e, 'Không thể xóa ảnh đại diện.');
+    },
+  });
+  const previewImport = useMutation({
+    mutationFn: (rows: readonly AthleteImportRow[]) =>
+      adminManagementApi.previewAthleteImport(tournamentId, rows),
+    onSuccess: (result) => {
+      setImportPreview({ ...result, idempotencyKey: crypto.randomUUID() });
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể tạo bản xem trước dữ liệu nhập.');
+    },
+  });
+  const confirmImport = useMutation({
+    mutationFn: (preview: NonNullable<typeof importPreview>) =>
+      adminManagementApi.confirmAthleteImport(tournamentId, preview.rows, preview.idempotencyKey),
+    onSuccess: (result) => {
+      setImportPreview(null);
+      setImportResults(result.results);
+      void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId, 'athletes'] });
+      notifyMutationSuccess('Đã xử lý dữ liệu nhập.');
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể xác nhận nhập dữ liệu.');
     },
   });
   // The roster endpoints are independently loaded. Treat a response without either
@@ -763,25 +927,36 @@ export function AthletesPage({
       </div>
       {!readOnly &&
         (activeWeights.length ? (
-          <Button
-            disabled={!activeUnlockedWeights.length}
-            onClick={() => {
-              setDraft({
-                name: '',
-                birthYear: new Date().getFullYear(),
-                weightClassId: activeUnlockedWeights[0]?.id ?? '',
-                organizationId: null,
-                details: null,
-                isSeed: false,
-                file: null,
-                imageError: '',
-              });
-              setEditing(null);
-            }}
-            type="button"
-          >
-            Thêm vận động viên
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              disabled={!activeUnlockedWeights.length}
+              onClick={() => {
+                setDraft({
+                  name: '',
+                  birthYear: new Date().getFullYear(),
+                  weightClassId: activeUnlockedWeights[0]?.id ?? '',
+                  organizationId: null,
+                  details: null,
+                  isSeed: false,
+                  file: null,
+                  imageError: '',
+                });
+                setEditing(null);
+              }}
+              type="button"
+            >
+              Thêm vận động viên
+            </Button>
+            <Button
+              className="bg-emerald-600 text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500 hover:shadow-lg hover:shadow-emerald-600/25"
+              disabled={previewImport.isPending || confirmImport.isPending}
+              onClick={() => importFilePicker.current?.click()}
+              title={`Chấp nhận đúng một tệp .xlsx, .xls hoặc .csv. Tệp có thể không có tiêu đề; chỉ bỏ dòng đầu nếu khớp chính xác: ${athleteImportHeaderHelp}. Thứ tự 5 cột bắt buộc là như trên.`}
+              type="button"
+            >
+              Thêm từ file Excel
+            </Button>
+          </div>
         ) : (
           <Button asChild>
             <Link to={`/admin/tournaments/${tournamentId}/weight-classes`}>Tạo hạng cân trước</Link>
@@ -791,6 +966,120 @@ export function AthletesPage({
         <p className="text-sm text-muted-foreground">
           Không thể thêm vận động viên vì tất cả hạng cân đang hoạt động đã được chia nhánh đấu.
         </p>
+      ) : null}
+      {!readOnly ? (
+        <input
+          accept=".xlsx,.xls,.csv"
+          className="sr-only"
+          disabled={previewImport.isPending || confirmImport.isPending}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.currentTarget.value = '';
+            if (!file) return;
+            void parseAthleteImportFile(file)
+              .then((rows) => {
+                previewImport.mutate(rows);
+              })
+              .catch((error: unknown) => {
+                toast({
+                  title:
+                    error instanceof AthleteImportFileError
+                      ? error.message
+                      : 'Tệp không hợp lệ: không thể đọc tệp.',
+                  variant: 'destructive',
+                });
+              });
+          }}
+          ref={importFilePicker}
+          type="file"
+        />
+      ) : null}
+      {importPreview ? (
+        <Dialog
+          className="max-w-2xl"
+          description="Xem lại kết quả trước khi xác nhận. Dữ liệu chưa được lưu cho đến khi chọn OK."
+          onClose={() => {
+            setImportPreview(null);
+          }}
+          pending={confirmImport.isPending}
+          title="Xem trước nhập vận động viên"
+        >
+          <div className="mt-4 max-h-[55vh] space-y-5 overflow-y-auto text-sm">
+            <ImportUnitSection
+              title="Đơn vị tham gia"
+              records={summarizeImportUnits(importPreview.results)}
+            />
+            <ImportReviewSection
+              title="Vận động viên"
+              records={importPreview.results.map((result) => ({
+                id: result.inputIndex,
+                label: `Dòng ${String(result.rowNumber)}: ${result.athlete.name}`,
+                eligible: result.status === 'eligible',
+                reason: result.athlete.errors.join(', '),
+              }))}
+            />
+          </div>
+          <div className="mt-5 flex gap-2">
+            <Button
+              disabled={
+                confirmImport.isPending ||
+                !importPreview.results.some((result) => result.status === 'eligible')
+              }
+              onClick={() => {
+                if (!confirmImport.isPending) confirmImport.mutate(importPreview);
+              }}
+              type="button"
+            >
+              {confirmImport.isPending ? 'Đang xác nhận…' : 'OK'}
+            </Button>
+            <Button
+              disabled={confirmImport.isPending}
+              onClick={() => {
+                setImportPreview(null);
+              }}
+              type="button"
+              variant="outline"
+            >
+              Hủy
+            </Button>
+          </div>
+        </Dialog>
+      ) : null}
+      {importResults ? (
+        <Dialog
+          className="max-w-2xl"
+          description="Kết quả xử lý từng dòng trong tệp nhập."
+          onClose={() => setImportResults(null)}
+          title="Hoàn tất nhập vận động viên"
+        >
+          <div className="mt-4 max-h-[55vh] space-y-5 overflow-y-auto text-sm">
+            <ImportCompletionSection
+              title="Vận động viên"
+              added={importResults
+                .filter((x) => x.athlete.status === 'created')
+                .map((x) => ({
+                  id: x.inputIndex,
+                  label: `Dòng ${String(x.rowNumber)}: ${x.athlete.name}`,
+                }))}
+              notAdded={importResults
+                .filter((x) => x.athlete.status !== 'created')
+                .map((x) => ({
+                  id: x.inputIndex,
+                  label: `Dòng ${String(x.rowNumber)}: ${x.athlete.name}`,
+                  reason: x.athlete.errors.join(', ') || 'Không thể thêm vận động viên.',
+                }))}
+            />
+            <ImportUnitSection
+              title="Đơn vị tham gia"
+              records={summarizeImportUnits(importResults)}
+            />
+          </div>
+          <div className="mt-5">
+            <Button onClick={() => setImportResults(null)} type="button">
+              Đóng
+            </Button>
+          </div>
+        </Dialog>
       ) : null}
       {draft ? (
         <form

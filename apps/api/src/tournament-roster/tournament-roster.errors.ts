@@ -13,7 +13,8 @@ export const WEIGHT_CLASS_NOT_FOUND = {
 };
 export const ORGANIZATION_NAME_EXISTS = {
   code: 'ORGANIZATION_NAME_ALREADY_EXISTS',
-  message: 'A participating organization with this name already exists',
+  message:
+    'A participating organization with this name and locality already exists',
 };
 export const WEIGHT_CLASS_NAME_EXISTS = {
   code: 'WEIGHT_CLASS_NAME_ALREADY_EXISTS',

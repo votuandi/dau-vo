@@ -802,7 +802,10 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       .expect(200);
 
     expect(Object.keys(response.body.varMonitoring).sort()).toEqual([
-      'auditLogs', 'penalties', 'scoreEvents', 'scoringWindows',
+      'auditLogs',
+      'penalties',
+      'scoreEvents',
+      'scoringWindows',
     ]);
     expect(response.body.varMonitoring).not.toHaveProperty('snapshot');
     expect(response.body.varMonitoring).not.toHaveProperty('diagnostics');

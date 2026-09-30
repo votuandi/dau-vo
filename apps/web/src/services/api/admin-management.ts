@@ -259,6 +259,31 @@ export interface AthleteListInput {
   readonly noOrganization?: boolean;
   readonly isActive?: boolean;
 }
+export interface AthleteImportResult {
+  readonly inputIndex: number;
+  readonly rowNumber: number;
+  readonly status: 'eligible' | 'invalid' | 'created' | 'failed';
+  readonly errors: readonly string[];
+  readonly unit: {
+    readonly name: string;
+    readonly locality: string;
+    readonly status: 'existing' | 'created' | 'restored' | 'pending' | 'invalid';
+    readonly errors: readonly string[];
+  };
+  readonly athlete: {
+    readonly name: string;
+    readonly status: 'pending' | 'created' | 'invalid' | 'failed';
+    readonly errors: readonly string[];
+  };
+}
+export interface AthleteImportRow {
+  readonly rowNumber: number;
+  readonly name: string;
+  readonly birthYear: number;
+  readonly weightClass: string;
+  readonly organizationName: string;
+  readonly organizationLocation: string;
+}
 export interface TournamentOfficial {
   readonly id: string;
   readonly tournamentId: string;
@@ -616,6 +641,21 @@ export const adminManagementApi = {
     apiClient.post<AthleteResponse>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/athletes`,
       input,
+    ),
+  previewAthleteImport: (tournamentId: string, rows: readonly AthleteImportRow[]) => {
+    return apiClient.post<{
+      readonly rows: readonly AthleteImportRow[];
+      readonly results: readonly AthleteImportResult[];
+    }>(`admin/tournaments/${encodePathSegment(tournamentId)}/athletes/import/preview`, { rows });
+  },
+  confirmAthleteImport: (
+    tournamentId: string,
+    rows: readonly AthleteImportRow[],
+    idempotencyKey: string,
+  ) =>
+    apiClient.post<{ readonly results: readonly AthleteImportResult[] }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/athletes/import/confirm`,
+      { rows, idempotencyKey },
     ),
   updateAthlete: (tournamentId: string, id: string, input: UpdateAthleteInput) =>
     apiClient.patch<AthleteResponse>(

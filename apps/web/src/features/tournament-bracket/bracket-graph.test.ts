@@ -163,8 +163,8 @@ describe('bracketPresentation', () => {
         round.roundNumber === 1
           ? {
               ...round,
-              fixtures: round.fixtures.filter((fixture) =>
-                !['r1-1', 'r1-3', 'r1-4'].includes(fixture.id),
+              fixtures: round.fixtures.filter(
+                (fixture) => !['r1-1', 'r1-3', 'r1-4'].includes(fixture.id),
               ),
             }
           : round,

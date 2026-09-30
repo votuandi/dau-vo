@@ -7,7 +7,12 @@ import { MatchOfficialAssignmentsService } from './match-official-assignments.se
 import { MatchOfficialAssignmentLifecycleService } from './match-official-assignment-lifecycle.service';
 import { AdminManagementModule } from '../admin-management/admin-management.module';
 @Module({
-  imports: [PrismaModule, OfficialAccessModule, RealtimeCoreModule, forwardRef(() => AdminManagementModule)],
+  imports: [
+    PrismaModule,
+    OfficialAccessModule,
+    RealtimeCoreModule,
+    forwardRef(() => AdminManagementModule),
+  ],
   controllers: [MatchOfficialAssignmentsController],
   exports: [MatchOfficialAssignmentLifecycleService],
   providers: [
