@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
+import { Dialog } from '@/components/ui/dialog';
+import { toast } from '@/components/ui/toast';
 import {
   inputClassName,
   notifyMutationError,
@@ -24,6 +26,11 @@ import {
   type AthleteImportResult,
   type AthleteImportRow,
 } from '@/services/api/admin-management';
+import {
+  athleteImportHeaderHelp,
+  AthleteImportFileError,
+  parseAthleteImportFile,
+} from './athlete-import-file';
 
 const tabs = [
   ['info', 'Thông tin'],
@@ -53,6 +60,45 @@ class AthleteImageUploadError extends Error {
   ) {
     super('Athlete was saved but its image could not be uploaded.');
   }
+}
+function ImportReviewSection({
+  records,
+  title,
+}: {
+  readonly title: string;
+  readonly records: readonly {
+    readonly id: number;
+    readonly label: string;
+    readonly eligible: boolean;
+    readonly reason: string;
+  }[];
+}) {
+  const eligible = records.filter((record) => record.eligible);
+  const ineligible = records.filter((record) => !record.eligible);
+  return (
+    <section aria-label={title} className="space-y-2">
+      <h3 className="font-black">{title}</h3>
+      <div>
+        <p className="font-bold text-emerald-700">Có thể thêm ({eligible.length})</p>
+        <ul className="list-disc space-y-1 pl-5">
+          {eligible.map((record) => (
+            <li key={record.id}>{record.label}</li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <p className="font-bold text-destructive">Không thể thêm ({ineligible.length})</p>
+        <ul className="list-disc space-y-1 pl-5">
+          {ineligible.map((record) => (
+            <li key={record.id}>
+              {record.label}
+              {record.reason ? ` — ${record.reason}` : ''}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
 }
 type Tab = (typeof tabs)[number][0];
 
@@ -582,6 +628,7 @@ export function AthletesPage({
     results: readonly AthleteImportResult[];
   } | null>(null);
   const submitLock = useRef(false);
+  const importFilePicker = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
   useEffect(() => {
     if (query.data && query.data.totalPages > 0 && filters.page > query.data.totalPages) {
@@ -677,19 +724,20 @@ export function AthletesPage({
     },
   });
   const previewImport = useMutation({
-    mutationFn: (file: File) => adminManagementApi.previewAthleteImport(tournamentId, file),
+    mutationFn: (rows: readonly AthleteImportRow[]) =>
+      adminManagementApi.previewAthleteImport(tournamentId, rows),
     onSuccess: (result) => {
       setImportPreview(result);
     },
     onError: (error) => {
-      notifyMutationError(error, 'Không thể đọc tệp nhập.');
+      notifyMutationError(error, 'Không thể tạo bản xem trước dữ liệu nhập.');
     },
   });
   const confirmImport = useMutation({
     mutationFn: (rows: readonly AthleteImportRow[]) =>
       adminManagementApi.confirmAthleteImport(tournamentId, rows),
-    onSuccess: (result) => {
-      setImportPreview({ rows: importPreview?.rows ?? [], results: result.results });
+    onSuccess: () => {
+      setImportPreview(null);
       void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId, 'athletes'] });
       notifyMutationSuccess('Đã xử lý dữ liệu nhập.');
     },
@@ -821,61 +869,103 @@ export function AthletesPage({
       ) : null}
       {!readOnly ? (
         <div className="rounded-xl border p-4">
-          <label className="form-field">
-            Nhập vận động viên (.xlsx, .xls hoặc .csv; 5 cột theo mẫu)
+          <div className="form-field">
+            <Button
+              disabled={previewImport.isPending || confirmImport.isPending}
+              onClick={() => importFilePicker.current?.click()}
+              type="button"
+            >
+              Thêm từ file Excel
+            </Button>
+            <span className="mb-2 block text-xs text-muted-foreground">
+              Chấp nhận đúng một tệp .xlsx, .xls hoặc .csv. Tệp có thể không có tiêu đề; chỉ bỏ dòng
+              đầu nếu khớp chính xác: {athleteImportHeaderHelp}. Thứ tự 5 cột bắt buộc là như trên.
+            </span>
             <input
               accept=".xlsx,.xls,.csv"
-              className={inputClassName}
+              className="sr-only"
               disabled={previewImport.isPending || confirmImport.isPending}
               onChange={(event) => {
                 const file = event.target.files?.[0];
-                if (file) previewImport.mutate(file);
                 event.currentTarget.value = '';
+                if (!file) return;
+                void parseAthleteImportFile(file)
+                  .then((rows) => {
+                    previewImport.mutate(rows);
+                  })
+                  .catch((error: unknown) => {
+                    toast({
+                      title:
+                        error instanceof AthleteImportFileError
+                          ? error.message
+                          : 'Tệp không hợp lệ: không thể đọc tệp.',
+                      variant: 'destructive',
+                    });
+                  });
               }}
+              ref={importFilePicker}
               type="file"
             />
-          </label>
-          {importPreview ? (
-            <div className="mt-3 space-y-2">
-              <p>
-                {importPreview.results.filter((result) => result.status === 'eligible').length} dòng
-                hợp lệ / {importPreview.results.length} dòng.
-              </p>
-              <ul className="max-h-48 overflow-auto text-sm">
-                {importPreview.results.map((result) => (
-                  <li key={result.rowNumber}>
-                    Dòng {result.rowNumber}: {result.athlete.name} — {result.status}
-                    {result.errors.length ? ` (${result.errors.join(', ')})` : ''}
-                  </li>
-                ))}
-              </ul>
-              <div className="flex gap-2">
-                <Button
-                  disabled={
-                    confirmImport.isPending ||
-                    !importPreview.results.some((result) => result.status === 'eligible')
-                  }
-                  onClick={() => {
-                    confirmImport.mutate(importPreview.rows);
-                  }}
-                  type="button"
-                >
-                  {confirmImport.isPending ? 'Đang nhập…' : 'OK'}
-                </Button>
-                <Button
-                  disabled={confirmImport.isPending}
-                  onClick={() => {
-                    setImportPreview(null);
-                  }}
-                  type="button"
-                  variant="outline"
-                >
-                  Hủy
-                </Button>
-              </div>
-            </div>
-          ) : null}
+          </div>
         </div>
+      ) : null}
+      {importPreview ? (
+        <Dialog
+          className="max-w-2xl"
+          description="Xem lại kết quả trước khi xác nhận. Dữ liệu chưa được lưu cho đến khi chọn OK."
+          onClose={() => {
+            setImportPreview(null);
+          }}
+          pending={confirmImport.isPending}
+          title="Xem trước nhập vận động viên"
+        >
+          <div className="mt-4 max-h-[55vh] space-y-5 overflow-y-auto text-sm">
+            <ImportReviewSection
+              title="Đơn vị tham gia"
+              records={importPreview.results.map((result) => ({
+                id: result.rowNumber,
+                label: `${result.unit.name} — ${result.unit.locality}`,
+                eligible: result.status === 'eligible' && result.unit.status === 'pending',
+                reason:
+                  result.errors.join(', ') ||
+                  (result.unit.status === 'existing' ? 'Đơn vị đã tồn tại.' : ''),
+              }))}
+            />
+            <ImportReviewSection
+              title="Vận động viên"
+              records={importPreview.results.map((result) => ({
+                id: result.rowNumber,
+                label: `Dòng ${String(result.rowNumber)}: ${result.athlete.name}`,
+                eligible: result.status === 'eligible',
+                reason: result.errors.join(', '),
+              }))}
+            />
+          </div>
+          <div className="mt-5 flex gap-2">
+            <Button
+              disabled={
+                confirmImport.isPending ||
+                !importPreview.results.some((result) => result.status === 'eligible')
+              }
+              onClick={() => {
+                if (!confirmImport.isPending) confirmImport.mutate(importPreview.rows);
+              }}
+              type="button"
+            >
+              {confirmImport.isPending ? 'Đang xác nhận…' : 'OK'}
+            </Button>
+            <Button
+              disabled={confirmImport.isPending}
+              onClick={() => {
+                setImportPreview(null);
+              }}
+              type="button"
+              variant="outline"
+            >
+              Hủy
+            </Button>
+          </div>
+        </Dialog>
       ) : null}
       {draft ? (
         <form

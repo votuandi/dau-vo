@@ -86,20 +86,13 @@ export class TournamentRosterController {
     };
   }
   @Post('athletes/import/preview')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: memoryStorage(),
-      limits: { fileSize: 5 * 1024 * 1024, files: 1 },
-    }),
-  )
-  @UseFilters(MulterErrorFilter)
   async previewAthleteImport(
     @Param('tournamentId', uuid) tournamentId: string,
-    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() input: ConfirmAthleteImportDto,
     @Req() req: AuthenticatedUserRequest,
   ) {
     await this.access.assertTournamentAccess(tournamentId, req.user, true);
-    return this.imports.preview(tournamentId, this.imports.parse(file));
+    return this.imports.preview(tournamentId, input.rows);
   }
   @Post('athletes/import/confirm') async confirmAthleteImport(
     @Param('tournamentId', uuid) tournamentId: string,

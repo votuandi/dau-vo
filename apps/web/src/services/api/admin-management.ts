@@ -632,13 +632,11 @@ export const adminManagementApi = {
       `admin/tournaments/${encodePathSegment(tournamentId)}/athletes`,
       input,
     ),
-  previewAthleteImport: (tournamentId: string, file: File) => {
-    const body = new FormData();
-    body.append('file', file);
+  previewAthleteImport: (tournamentId: string, rows: readonly AthleteImportRow[]) => {
     return apiClient.post<{
       readonly rows: readonly AthleteImportRow[];
       readonly results: readonly AthleteImportResult[];
-    }>(`admin/tournaments/${encodePathSegment(tournamentId)}/athletes/import/preview`, body);
+    }>(`admin/tournaments/${encodePathSegment(tournamentId)}/athletes/import/preview`, { rows });
   },
   confirmAthleteImport: (tournamentId: string, rows: readonly AthleteImportRow[]) =>
     apiClient.post<{ readonly results: readonly AthleteImportResult[] }>(

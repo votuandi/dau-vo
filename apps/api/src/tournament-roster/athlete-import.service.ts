@@ -11,12 +11,9 @@ import {
   TournamentStatus,
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
-import * as XLSX from 'xlsx';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AthleteImportRowDto } from './dto/roster.dto';
-import {
-  ROSTER_TOURNAMENT_ARCHIVED,
-} from './tournament-roster.errors';
+import { ROSTER_TOURNAMENT_ARCHIVED } from './tournament-roster.errors';
 
 type ImportRow = AthleteImportRowDto;
 type Result = {
@@ -37,53 +34,6 @@ type Result = {
 @Injectable()
 export class AthleteImportService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
-
-  parse(file: Express.Multer.File | undefined): ImportRow[] {
-    if (!file)
-      throw new BadRequestException({
-        code: 'IMPORT_FILE_REQUIRED',
-        message: 'Select one import file',
-      });
-    const extension = file.originalname
-      .toLowerCase()
-      .match(/\.(xlsx|xls|csv)$/)?.[1];
-    if (!extension)
-      throw new BadRequestException({
-        code: 'IMPORT_FILE_TYPE',
-        message: 'Only .xlsx, .xls, and .csv files are supported',
-      });
-    let sheet: unknown[][];
-    try {
-      const workbook = XLSX.read(file.buffer, { type: 'buffer' });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0] ?? ''];
-      if (!firstSheet) throw new Error('No worksheet');
-      sheet = XLSX.utils.sheet_to_json(firstSheet, {
-        header: 1,
-        defval: '',
-      }) as unknown[][];
-    } catch {
-      throw new BadRequestException({
-        code: 'IMPORT_FILE_INVALID',
-        message: 'The import file cannot be read',
-      });
-    }
-    const rows = sheet.filter((row) => row.some((cell) => String(cell).trim()));
-    if (!rows.length) return [];
-    if (rows.some((row) => row.length !== 5))
-      throw new BadRequestException({
-        code: 'IMPORT_COLUMNS_INVALID',
-        message: 'The import file must have exactly five columns',
-      });
-    const data = rows.slice(1);
-    return data.map((r, index) => ({
-      rowNumber: index + 2,
-      name: String(r[0] ?? '').trim(),
-      birthYear: Number(r[1]),
-      weightClass: String(r[2] ?? '').trim(),
-      organizationName: String(r[3] ?? '').trim(),
-      organizationLocation: String(r[4] ?? '').trim(),
-    }));
-  }
 
   async preview(tournamentId: string, rows: ImportRow[]) {
     return { rows, results: await this.validate(tournamentId, rows) };
