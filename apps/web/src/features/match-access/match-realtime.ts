@@ -950,7 +950,7 @@ export function useMatchRealtime({
     ): Promise<boolean> => {
       const socket = getSocketClient();
       const isOvertimeStart = event === RealtimeEvent.OVERTIME_START;
-      const startedAt = isOvertimeStart ? performance.now() : null;
+      const startedAt = performance.now();
       if (resultActionInFlightRef.current || !socket.connected) {
         if (isOvertimeStart) {
           console.info('[match-realtime]', 'overtime-start-not-sent', {
@@ -996,7 +996,7 @@ export function useMatchRealtime({
         if (!response.ok) {
           if (isOvertimeStart) {
             console.info('[match-realtime]', 'overtime-start-rejected', {
-              durationMs: Math.round(performance.now() - startedAt!),
+              durationMs: Math.round(performance.now() - startedAt),
               errorCode: response.error.code,
               errorMessage: response.error.message,
               matchPublicId,
@@ -1010,7 +1010,7 @@ export function useMatchRealtime({
         if (isOvertimeStart && 'round' in response) {
           console.info('[match-realtime]', 'overtime-start-acknowledged', {
             attemptNumber: response.round.attemptNumber,
-            durationMs: Math.round(performance.now() - startedAt!),
+            durationMs: Math.round(performance.now() - startedAt),
             matchPublicId,
             roundId: response.round.id,
             socketId: socket.id,
@@ -1021,7 +1021,7 @@ export function useMatchRealtime({
       } catch (error: unknown) {
         if (isOvertimeStart) {
           console.info('[match-realtime]', 'overtime-start-transport-failed', {
-            durationMs: Math.round(performance.now() - startedAt!),
+            durationMs: Math.round(performance.now() - startedAt),
             errorMessage: error instanceof Error ? error.message : String(error),
             matchPublicId,
             socketId: socket.id,
