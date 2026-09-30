@@ -32,8 +32,7 @@ const sessionKey = officialSessionQueryKey;
 const pathFor = (role: TournamentOfficialRole) =>
   role === TournamentOfficialRole.JUDGE ? '/giam-dinh' : '/giam-sat';
 const realtimeRefereeIdentity = (assignment: OfficialAssignment): RealtimeRefereeIdentity =>
-  assignment.role === TournamentOfficialRole.JUDGE &&
-  typeof assignment.judgePosition === 'number'
+  assignment.role === TournamentOfficialRole.JUDGE && typeof assignment.judgePosition === 'number'
     ? {
         assignmentId: assignment.id,
         kind: 'official',
@@ -649,9 +648,7 @@ export function MatchAccessPage({ expectedRole }: Props) {
     <main className="mx-auto grid min-h-dvh max-w-lg place-items-center p-4">
       <form className="w-full rounded-2xl border bg-card p-7 shadow-xl" onSubmit={submit}>
         <p className="text-sm font-bold text-primary">
-          {expectedRole === TournamentOfficialRole.JUDGE
-            ? 'Khu vực giám định'
-            : 'Khu vực giám sát'}
+          {expectedRole === TournamentOfficialRole.JUDGE ? 'Khu vực giám định' : 'Khu vực giám sát'}
         </p>
         <h1 className="mt-2 text-3xl font-black">
           {revoked ? 'Phiên đã bị thu hồi' : 'Đăng nhập'}

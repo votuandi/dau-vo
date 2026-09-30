@@ -27,11 +27,7 @@ export const SHARED_ENUM_VALUES = {
     MatchStatus.ROUND_2_RUNNING,
     MatchStatus.FINISHED,
   ],
-  refereeSlots: [
-    JudgeSlot.JUDGE_1,
-    JudgeSlot.JUDGE_2,
-    JudgeSlot.JUDGE_3,
-  ],
+  refereeSlots: [JudgeSlot.JUDGE_1, JudgeSlot.JUDGE_2, JudgeSlot.JUDGE_3],
   tournamentStatuses: [
     TournamentStatus.DRAFT,
     TournamentStatus.ACTIVE,

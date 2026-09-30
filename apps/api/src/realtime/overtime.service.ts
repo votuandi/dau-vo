@@ -165,8 +165,7 @@ export class OvertimeService {
         const score = (color: AthleteColor) => {
           const athlete = athletes.find((x) => x.color === color)!;
           const base =
-            summaries.find((x) => x.athleteId === athlete.id)?.judgePoints ??
-            0;
+            summaries.find((x) => x.athleteId === athlete.id)?.judgePoints ?? 0;
           const adjustment = input.payload[color];
           return {
             athlete,

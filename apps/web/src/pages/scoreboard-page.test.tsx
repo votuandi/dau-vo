@@ -27,7 +27,14 @@ const snapshot: PublicMatchStatePayload = {
     startedAt: '2030-01-01T00:00:00.000Z',
   },
   athletes: [
-    { color: AthleteColor.RED, name: 'Võ sĩ Đỏ', organization: 'CLB Đỏ', score: 4, violations: 1, faultCounts: { minor: 1, major: 0 } },
+    {
+      color: AthleteColor.RED,
+      name: 'Võ sĩ Đỏ',
+      organization: 'CLB Đỏ',
+      score: 4,
+      violations: 1,
+      faultCounts: { minor: 1, major: 0 },
+    },
     {
       color: AthleteColor.BLUE,
       name: 'Võ sĩ Xanh',

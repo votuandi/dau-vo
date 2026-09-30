@@ -178,12 +178,16 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
             <div className="rounded-xl border-2 border-red-200 bg-red-50 p-4">
               <p className="font-black text-red-800">ĐỎ · {red?.name ?? '—'}</p>
               <p className="mt-2 text-3xl font-black">{red?.score ?? 0} điểm</p>
-              <p className="text-sm font-semibold">Lỗi nhẹ: {red?.faultCounts.minor ?? 0} · Lỗi nặng: {red?.faultCounts.major ?? 0}</p>
+              <p className="text-sm font-semibold">
+                Lỗi nhẹ: {red?.faultCounts.minor ?? 0} · Lỗi nặng: {red?.faultCounts.major ?? 0}
+              </p>
             </div>
             <div className="rounded-xl border-2 border-blue-200 bg-blue-50 p-4">
               <p className="font-black text-blue-800">XANH · {blue?.name ?? '—'}</p>
               <p className="mt-2 text-3xl font-black">{blue?.score ?? 0} điểm</p>
-              <p className="text-sm font-semibold">Lỗi nhẹ: {blue?.faultCounts.minor ?? 0} · Lỗi nặng: {blue?.faultCounts.major ?? 0}</p>
+              <p className="text-sm font-semibold">
+                Lỗi nhẹ: {blue?.faultCounts.minor ?? 0} · Lỗi nặng: {blue?.faultCounts.major ?? 0}
+              </p>
             </div>
           </div>
           <h3 className="mt-7 font-black">Hiện diện thiết bị</h3>

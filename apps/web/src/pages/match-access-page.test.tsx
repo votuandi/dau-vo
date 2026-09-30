@@ -290,8 +290,7 @@ describe('MatchAccessPage official login', () => {
         activeAssignment: {
           id: `assignment-${activeSession.official.role.toLowerCase()}`,
           match: { id: 'match-active', publicId: 'M-ACTIVE', status: MatchStatus.WAITING },
-          judgePosition:
-            activeSession.official.role === TournamentOfficialRole.JUDGE ? 1 : null,
+          judgePosition: activeSession.official.role === TournamentOfficialRole.JUDGE ? 1 : null,
           role: activeSession.official.role,
         },
         status: 'IN_MATCH',
@@ -302,7 +301,9 @@ describe('MatchAccessPage official login', () => {
       );
       const { queryClient, router } = renderRoute(wrongRoute);
 
-      expect(await screen.findByRole('heading', { name: 'Phiên không đúng vai trò' })).toBeVisible();
+      expect(
+        await screen.findByRole('heading', { name: 'Phiên không đúng vai trò' }),
+      ).toBeVisible();
       expect(router.state.location.pathname).toBe(wrongRoute);
 
       await user.click(screen.getByRole('button', { name: 'Đăng xuất' }));
@@ -318,7 +319,9 @@ describe('MatchAccessPage official login', () => {
 
       expect(await screen.findByText(console)).toBeVisible();
       expect(router.state.location.pathname).toBe(activeRoute);
-      expect(screen.queryByRole('heading', { name: 'Phiên không đúng vai trò' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { name: 'Phiên không đúng vai trò' }),
+      ).not.toBeInTheDocument();
       expect(queryClient.getQueryData(['official-access', 'session'])).toMatchObject({
         session: {
           activeAssignment: { id: assignedSession.activeAssignment?.id },

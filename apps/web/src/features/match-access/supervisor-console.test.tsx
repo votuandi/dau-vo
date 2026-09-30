@@ -96,7 +96,9 @@ describe('SupervisorConsole', () => {
     const redFault = screen.getByRole('button', { name: 'Ghi nhận Lỗi nhẹ VĐV ĐỎ' });
     await user.click(redFault);
     expect(submitFault).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Ghi nhận Lỗi nhẹ VĐV ĐỎ' })).toHaveTextContent('XÁC NHẬN');
+    expect(screen.getByRole('button', { name: 'Ghi nhận Lỗi nhẹ VĐV ĐỎ' })).toHaveTextContent(
+      'XÁC NHẬN',
+    );
     await user.click(screen.getByRole('button', { name: 'Ghi nhận Lỗi nhẹ VĐV ĐỎ' }));
     expect(submitFault).toHaveBeenCalledExactlyOnceWith(AthleteColor.RED, FaultSeverity.MINOR);
 

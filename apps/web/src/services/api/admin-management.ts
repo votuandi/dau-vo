@@ -494,12 +494,7 @@ export const adminManagementApi = {
     apiClient.get<ActiveBracket>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket`,
     ),
-  cancelBracket: (
-    tournamentId: string,
-    weightClassId: string,
-    reason: string,
-    force = false,
-  ) =>
+  cancelBracket: (tournamentId: string, weightClassId: string, reason: string, force = false) =>
     apiClient.post<{
       readonly bracket: { readonly id: string; readonly status: 'CANCELLED' | 'DELETED' };
     }>(

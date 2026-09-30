@@ -1325,9 +1325,7 @@ describe('Admin tournament and match management (integration)', () => {
 
     expect(individualResult.matchId).toBe(creation.match.id);
     expect(individualResult.accessCodes).toHaveLength(1);
-    expect(individualResult.accessCodes[0]?.role).toBe(
-      MatchAccessRole.JUDGE_1,
-    );
+    expect(individualResult.accessCodes[0]?.role).toBe(MatchAccessRole.JUDGE_1);
     const afterIndividual = await prisma.matchAccessCode.findMany({
       where: { matchId: creation.match.id },
     });

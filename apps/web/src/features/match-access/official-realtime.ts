@@ -45,9 +45,7 @@ function assignmentFromSnapshot(
 ): OfficialAssignment | null {
   if (assignment === null) return null;
   const role =
-    assignment.role === 'JUDGE'
-      ? TournamentOfficialRole.JUDGE
-      : TournamentOfficialRole.SUPERVISOR;
+    assignment.role === 'JUDGE' ? TournamentOfficialRole.JUDGE : TournamentOfficialRole.SUPERVISOR;
   return {
     ...assignment,
     match: { ...assignment.match, status: matchStatusFromWire(assignment.match.status) },

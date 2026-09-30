@@ -139,7 +139,12 @@ export class RealtimeMatchStateService {
         where: { matchId, revertedAt: null },
       }),
       this.prisma.fault.findMany({
-        select: { athleteId: true, invalidatedAt: true, roundId: true, severity: true },
+        select: {
+          athleteId: true,
+          invalidatedAt: true,
+          roundId: true,
+          severity: true,
+        },
         where: { matchId },
       }),
       this.presence(match.id, match.publicId),
@@ -208,11 +213,18 @@ export class RealtimeMatchStateService {
     const faultByAthlete = new Map(
       canonical.map((value) => [value.athleteId, value.faultCount]),
     );
-    const faultCountsByAthlete = new Map<string, { minor: number; major: number }>();
+    const faultCountsByAthlete = new Map<
+      string,
+      { minor: number; major: number }
+    >();
     const validRoundIds = new Set(validRounds.map((round) => round.id));
     for (const fault of faults) {
-      if (fault.invalidatedAt !== null || !validRoundIds.has(fault.roundId)) continue;
-      const counts = faultCountsByAthlete.get(fault.athleteId) ?? { minor: 0, major: 0 };
+      if (fault.invalidatedAt !== null || !validRoundIds.has(fault.roundId))
+        continue;
+      const counts = faultCountsByAthlete.get(fault.athleteId) ?? {
+        minor: 0,
+        major: 0,
+      };
       if (fault.severity === 'MINOR') counts.minor += 1;
       else counts.major += 1;
       faultCountsByAthlete.set(fault.athleteId, counts);

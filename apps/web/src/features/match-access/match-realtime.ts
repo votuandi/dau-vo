@@ -977,27 +977,22 @@ export function useMatchRealtime({
       try {
         const response = await new Promise<
           AppealCompleteResponse | OvertimeActionResponse | RoundStartResponse
-        >(
-          (resolve, reject) => {
-            const acknowledge = (
-              error: Error | null,
-              result:
-                | AppealCompleteResponse
-                | OvertimeActionResponse
-                | RoundStartResponse,
-            ) => {
-              if (error) reject(error);
-              else resolve(result);
-            };
-            if (event === RealtimeEvent.APPEAL_COMPLETE) {
-              socket.timeout(10_000).emit(event, payload as AppealCompletePayload, acknowledge);
-            } else if (event === RealtimeEvent.OVERTIME_MANUAL_WINNER) {
-              socket.timeout(10_000).emit(event, payload as AthleteColor, acknowledge);
-            } else {
-              socket.timeout(10_000).emit(event, acknowledge);
-            }
-          },
-        );
+        >((resolve, reject) => {
+          const acknowledge = (
+            error: Error | null,
+            result: AppealCompleteResponse | OvertimeActionResponse | RoundStartResponse,
+          ) => {
+            if (error) reject(error);
+            else resolve(result);
+          };
+          if (event === RealtimeEvent.APPEAL_COMPLETE) {
+            socket.timeout(10_000).emit(event, payload as AppealCompletePayload, acknowledge);
+          } else if (event === RealtimeEvent.OVERTIME_MANUAL_WINNER) {
+            socket.timeout(10_000).emit(event, payload as AthleteColor, acknowledge);
+          } else {
+            socket.timeout(10_000).emit(event, acknowledge);
+          }
+        });
         if (!response.ok) {
           if (isOvertimeStart) {
             console.info('[match-realtime]', 'overtime-start-rejected', {
