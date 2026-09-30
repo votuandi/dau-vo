@@ -6,12 +6,52 @@ import type {
 import { bracketRoundLabel, MatchLifecycle } from '@martial-arts-scoring/shared-types';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { bracketPresentation, isBracketPreview } from './bracket-graph';
-import { presentDisplayState, presentLifecycle, presentPhase } from '@/features/match-presentation';
+import {
+  matchVariantClassName,
+  presentDisplayState,
+  presentLifecycle,
+  presentPhase,
+} from '@/features/match-presentation';
 
 type ChartData = Pick<BracketPreview, 'rounds' | 'initialEntrants'> | ActiveBracket;
 interface ConnectorPath {
   readonly key: string;
   readonly d: string;
+}
+
+const FIXTURE_VERTICAL_GAP = 224;
+
+function fixtureTopOffsets(
+  rounds: readonly {
+    readonly fixtures: readonly { readonly id: string; readonly position: number }[];
+  }[],
+  edges: ReturnType<typeof bracketPresentation>['edges'],
+): ReadonlyMap<string, number> {
+  const offsets = new Map<string, number>();
+  for (const [roundIndex, round] of rounds.entries()) {
+    const fixtures = [...round.fixtures].sort((a, b) => a.position - b.position);
+    const incoming = new Map<string, string[]>();
+    edges.forEach((edge) => {
+      if (fixtures.some((fixture) => fixture.id === edge.targetFixtureId)) {
+        incoming.set(edge.targetFixtureId, [
+          ...(incoming.get(edge.targetFixtureId) ?? []),
+          edge.sourceFixtureId,
+        ]);
+      }
+    });
+    fixtures.forEach((fixture, index) => {
+      const sourceOffsets = (incoming.get(fixture.id) ?? [])
+        .map((sourceId) => offsets.get(sourceId))
+        .filter((offset): offset is number => offset !== undefined);
+      offsets.set(
+        fixture.id,
+        sourceOffsets.length > 0
+          ? sourceOffsets.reduce((total, offset) => total + offset, 0) / sourceOffsets.length
+          : (roundIndex === 0 ? index : index * 2 ** roundIndex) * FIXTURE_VERTICAL_GAP,
+      );
+    });
+  }
+  return offsets;
 }
 
 export function BracketChart({ data }: { readonly data: ChartData }) {
@@ -52,6 +92,14 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
         label: bracketRoundLabel(index + 1, data.bracket.roundCount),
         fixtures: data.fixtures.filter((fixture) => fixture.roundNumber === index + 1),
       }));
+  const fixtureOffsets = useMemo(
+    () => fixtureTopOffsets(rounds, graph.edges),
+    [graph.edges, rounds],
+  );
+  const chartHeight = Math.max(
+    280,
+    ...Array.from(fixtureOffsets.values(), (offset) => offset + FIXTURE_VERTICAL_GAP),
+  );
 
   useEffect(() => {
     let frame = 0;
@@ -72,7 +120,8 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
             const startY = sourceBounds.top + sourceBounds.height / 2 - contentBounds.top;
             const endX = targetBounds.left - contentBounds.left;
             const endY = targetBounds.top + targetBounds.height / 2 - contentBounds.top;
-            const middleX = startX + Math.max(16, (endX - startX) / 2);
+            const middleX =
+              startX + Math.max(28, endX - startX) * (edge.targetSide === 'RED' ? 0.38 : 0.62);
             return [
               {
                 key: `${edge.sourceFixtureId}:${edge.targetFixtureId}:${edge.targetSide}`,
@@ -104,7 +153,11 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
 
   return (
     <div className="overflow-x-auto rounded-xl border bg-muted/20 p-4" aria-label="Sơ đồ nhánh đấu">
-      <div className="relative flex min-w-max items-stretch gap-5" ref={contentRef}>
+      <div
+        className="relative flex min-w-max items-stretch gap-24"
+        ref={contentRef}
+        style={{ minHeight: `${String(chartHeight)}px` }}
+      >
         <svg
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 z-0 size-full overflow-visible"
@@ -126,35 +179,55 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
             <h4 className="sticky left-0 top-0 z-10 mb-3 bg-muted/95 py-1 font-black">
               {round.label}
             </h4>
-            <div className="flex min-h-full flex-col justify-around gap-4">
+            <div className="relative pt-10" style={{ minHeight: `${String(chartHeight)}px` }}>
               {round.fixtures.map((fixture) => {
                 const activeFixture = isPreview
                   ? null
                   : (fixture as ActiveBracket['fixtures'][number]);
                 return (
                   <article
-                    className="rounded-lg border bg-card shadow-sm"
+                    className="absolute left-0 w-full rounded-lg border bg-card shadow-sm"
                     data-fixture-id={fixture.id}
                     key={fixture.id}
                     ref={(element) => {
                       if (element) fixtureRefs.current.set(fixture.id, element);
                       else fixtureRefs.current.delete(fixture.id);
                     }}
+                    style={{ top: `${String(fixtureOffsets.get(fixture.id) ?? 0)}px` }}
                   >
-                    <p className="border-b px-3 py-2 text-xs font-bold text-muted-foreground">
-                      {fixture.displayReference}
-                    </p>
                     {activeFixture ? (
-                      <p className="border-b px-3 py-2 text-xs font-semibold">
-                        {activeFixture.match
-                          ? activeFixture.match.lifecycle === MatchLifecycle.SUSPENDED
-                            ? presentLifecycle(activeFixture.match.lifecycle).label
-                            : presentLifecycle(activeFixture.match.lifecycle).label +
-                              ' · ' +
-                              presentPhase(activeFixture.match.phase).label
-                          : presentDisplayState(activeFixture.displayState).label}
-                      </p>
-                    ) : null}
+                      (() => {
+                        const statuses = activeFixture.match
+                          ? [
+                              presentLifecycle(activeFixture.match.lifecycle),
+                              presentPhase(activeFixture.match.phase),
+                            ]
+                          : [presentDisplayState(activeFixture.displayState)];
+                        return (
+                          <header className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+                            <p className="text-xs font-bold text-muted-foreground">
+                              {fixture.displayReference}
+                            </p>
+                            <span className="flex flex-wrap justify-end gap-1">
+                              {statuses.map((status) => (
+                                <span
+                                  className={`rounded-full border px-2 py-0.5 text-xs font-bold ${matchVariantClassName[status.variant]}`}
+                                  key={status.label}
+                                >
+                                  {status.label}
+                                </span>
+                              ))}
+                            </span>
+                          </header>
+                        );
+                      })()
+                    ) : (
+                      <header className="border-b px-3 py-2">
+                        <p className="text-xs font-bold text-muted-foreground">
+                          {fixture.displayReference}
+                        </p>
+                      </header>
+                    )}
                     {fixture.slots.map((slot) => {
                       // Confirmed slots retain Prisma's `resolvedEntrantId`
                       // scalar, so it cannot distinguish preview and persisted
@@ -174,7 +247,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                             : 'Đặc cách';
                       return (
                         <div
-                          className={`flex min-h-14 items-center gap-2 border-l-4 px-3 py-2 ${slot.side === 'RED' ? 'border-l-red-500' : 'border-l-blue-500'}`}
+                          className={`flex min-h-14 items-center gap-2 border-l-4 px-3 py-2 ${slot.side === 'RED' ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/20' : 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20'}`}
                           data-fixture-slot={`${fixture.id}:${slot.side}`}
                           key={slot.side}
                           ref={(element) => {
@@ -191,8 +264,10 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                             />
                           ) : null}
                           <div className="min-w-0">
-                            <span className="text-xs font-bold">{slot.side}</span>
-                            <p className="truncate text-sm font-semibold">
+                            <span className="sr-only">
+                              {slot.side === 'RED' ? 'Bên đỏ' : 'Bên xanh'}
+                            </span>
+                            <p className="line-clamp-2 text-sm font-semibold">
                               {entrant
                                 ? 'name' in entrant
                                   ? entrant.name
@@ -200,7 +275,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                                 : waiting}
                             </p>
                             {entrant ? (
-                              <p className="truncate text-xs text-muted-foreground">
+                              <p className="line-clamp-1 text-xs text-muted-foreground">
                                 {'organizationName' in entrant
                                   ? entrant.organizationName
                                   : (entrant.snapshotOrganization ?? 'Không đơn vị')}

@@ -95,7 +95,7 @@ function confirmedFor(athleteCount: number): ActiveBracket {
 }
 
 describe('bracketPresentation', () => {
-  it.each([3, 5, 29, 31, 32, 64])(
+  it.each([2, 3, 4, 5, 8, 16, 29, 31, 32, 64])(
     'maps every valid advancement for %i athletes',
     (athleteCount) => {
       const graph = bracketPresentation(previewFor(athleteCount));
@@ -117,6 +117,41 @@ describe('bracketPresentation', () => {
     expect(preview.edges.filter((edge) => edge.targetFixtureId === 'r2-1')).toEqual([
       { sourceFixtureId: 'r1-1', targetFixtureId: 'r2-1', targetSide: 'RED' },
       { sourceFixtureId: 'r1-2', targetFixtureId: 'r2-1', targetSide: 'BLUE' },
+    ]);
+  });
+
+  it('does not draw a connector for a missing source fixture', () => {
+    const preview = previewFor(4);
+    const finalFixture = preview.rounds[1]?.fixtures[0];
+    if (!finalFixture) throw new Error('Expected final fixture');
+    const missingSourcePreview = {
+      ...preview,
+      rounds: preview.rounds.map((round) =>
+        round.roundNumber === 2
+          ? {
+              ...round,
+              fixtures: round.fixtures.map((fixture) =>
+                fixture.id === finalFixture.id
+                  ? {
+                      ...fixture,
+                      slots: fixture.slots.map((slot) =>
+                        slot.side === 'BLUE'
+                          ? {
+                              ...slot,
+                              source: { kind: 'FIXTURE_WINNER' as const, fixtureId: 'gone' },
+                            }
+                          : slot,
+                      ),
+                    }
+                  : fixture,
+              ),
+            }
+          : round,
+      ),
+    };
+
+    expect(bracketPresentation(missingSourcePreview).edges).toEqual([
+      { sourceFixtureId: 'r1-1', targetFixtureId: 'r2-1', targetSide: 'RED' },
     ]);
   });
 });
