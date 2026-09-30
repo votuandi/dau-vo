@@ -138,7 +138,8 @@ describe('BracketDrawSetupDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Xác nhận và bốc thăm' }));
 
     expect(submit).toHaveBeenCalledWith(expect.arrayContaining(['a']), 'SEEDED');
-    const selectedIds = submit.mock.calls[0]![0] as string[];
+    const selectedIds = submit.mock.calls[0]?.[0];
+    if (!selectedIds) throw new Error('Expected the draw submission to include selected athletes');
     expect(selectedIds).toHaveLength(3);
     expect(new Set(selectedIds).size).toBe(3);
     expect(selectedIds.every((id) => ['a', 'b', 'c', 'd', 'e'].includes(id))).toBe(true);
