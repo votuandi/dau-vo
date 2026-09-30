@@ -3,6 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { BracketDrawSetupDialog, shuffle } from './bracket-draw-setup-dialog';
 
+type DrawStrategy = 'RANDOM' | 'MANUAL' | 'SEEDED';
+type DrawSubmit = (ids: readonly string[], strategy: DrawStrategy) => void;
+
 const setup = {
   setupToken: 'setup',
   expiresAt: '',
@@ -109,7 +112,7 @@ describe('BracketDrawSetupDialog', () => {
 
   it('fills missing seeded byes from remaining eligible athletes only', async () => {
     const user = userEvent.setup();
-    const submit = vi.fn();
+    const submit = vi.fn<DrawSubmit>();
     const seededSetup = {
       ...setup,
       summary: { ...setup.summary, athleteCount: 5, byeCount: 3 },
@@ -138,8 +141,9 @@ describe('BracketDrawSetupDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Xác nhận và bốc thăm' }));
 
     expect(submit).toHaveBeenCalledWith(expect.arrayContaining(['a']), 'SEEDED');
-    const selectedIds = submit.mock.calls[0]?.[0];
-    if (!selectedIds) throw new Error('Expected the draw submission to include selected athletes');
+    const firstSubmission = submit.mock.calls[0];
+    if (!firstSubmission) throw new Error('Expected a draw submission');
+    const [selectedIds] = firstSubmission;
     expect(selectedIds).toHaveLength(3);
     expect(new Set(selectedIds).size).toBe(3);
     expect(selectedIds.every((id) => ['a', 'b', 'c', 'd', 'e'].includes(id))).toBe(true);

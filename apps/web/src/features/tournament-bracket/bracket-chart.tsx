@@ -26,7 +26,7 @@ interface ConnectorPath {
  */
 export const BRACKET_LAYOUT = {
   fixtureWidth: 240,
-  roundGap: 56,
+  roundGap: 32,
   rowPitch: 176,
 } as const;
 
@@ -241,7 +241,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                             <span className="flex flex-wrap justify-end gap-1">
                               {statuses.map((status) => (
                                 <span
-                                  className={`rounded-full border px-1.5 py-0.5 text-[11px] font-bold ${matchVariantClassName[status.variant]}`}
+                                  className={`rounded-full border px-1 py-0.5 text-[10px] font-bold ${matchVariantClassName[status.variant]}`}
                                   key={status.label}
                                 >
                                   {status.label}
@@ -305,7 +305,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                                 : waiting}
                             </p>
                             {entrant ? (
-                              <p className="break-words text-xs leading-4 text-muted-foreground">
+                              <p className="break-words text-[10px] leading-4 text-muted-foreground">
                                 {'organizationName' in entrant
                                   ? entrant.organizationName
                                   : (entrant.snapshotOrganization ?? 'Không đơn vị')}
