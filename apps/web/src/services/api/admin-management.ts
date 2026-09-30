@@ -61,6 +61,7 @@ export interface AdminMatch {
   } | null;
   readonly phase: MatchStatus;
   readonly lifecycle: MatchLifecycle;
+  readonly hasFinalOutcome: boolean;
   readonly displayState: MatchDisplayState;
   readonly currentRound: number | null;
   readonly roundDurationMs: number;

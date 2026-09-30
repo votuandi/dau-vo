@@ -112,6 +112,7 @@ const matchSelect = {
   finishedAt: true,
   id: true,
   lifecycle: true,
+  outcome: { select: { id: true } },
   publicId: true,
   requiredJudgeCount: true,
   roundDurationMs: true,
@@ -150,19 +151,21 @@ type StoredMatchView = Prisma.MatchGetPayload<{
   select: typeof matchSelect;
 }>;
 
-export type MatchView = Omit<StoredMatchView, 'status'> & {
+export type MatchView = Omit<StoredMatchView, 'outcome' | 'status'> & {
   displayState: ReturnType<typeof projectMatchDisplayState>;
+  hasFinalOutcome: boolean;
   phase: StoredMatchView['status'];
 };
 
 function matchView(match: StoredMatchView): MatchView {
-  const { status, ...safeMatch } = match;
+  const { outcome, status, ...safeMatch } = match;
   return {
     ...safeMatch,
     displayState: projectMatchDisplayState({
       kind: 'OPERATIONAL_MATCH',
       lifecycle: match.lifecycle,
     }),
+    hasFinalOutcome: outcome !== null,
     phase: status,
   };
 }

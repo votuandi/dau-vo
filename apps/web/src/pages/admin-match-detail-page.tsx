@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { ClipboardCopyButton } from '@/components/ui/clipboard-copy-button';
 import { AdminMatchMonitoring } from '@/features/admin-management/admin-match-monitoring';
+import { shouldMonitorLiveMatch } from '@/features/admin-management/admin-match-monitoring-visibility';
 import { Button } from '@/components/ui/button';
 import {
   formatDateTime,
@@ -367,7 +368,7 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
       </header>
 
       <MatchEditor isReadOnly={isReadOnly} key={match.updatedAt} match={match} />
-      <AdminMatchMonitoring matchId={match.id} />
+      {shouldMonitorLiveMatch(match) ? <AdminMatchMonitoring matchId={match.id} /> : null}
     </div>
   );
 }
