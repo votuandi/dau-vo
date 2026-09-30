@@ -1061,6 +1061,9 @@ export function useMatchRealtime({
     function handleConnect(): void {
       setConnectionStatus('connected');
       setErrorMessage(null);
+      // The authenticated official socket is application-scoped.  Explicitly
+      // lease presence only while this match console is mounted.
+      socket.emit(RealtimeEvent.MATCH_PRESENCE_ENTER);
       socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
     }
 
@@ -1126,6 +1129,9 @@ export function useMatchRealtime({
             }
           : null,
       );
+      // Presence changes are authoritative but do not carry readiness; fetch
+      // a fresh snapshot before enabling supervisor controls.
+      socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
     }
 
     function handleSessionRevoked(payload: SessionRevokedPayload): void {
@@ -1315,7 +1321,13 @@ export function useMatchRealtime({
       socket.connect();
     }
 
+    const presenceHeartbeat = globalThis.setInterval(() => {
+      if (socket.connected) socket.emit(RealtimeEvent.MATCH_PRESENCE_HEARTBEAT);
+    }, 15_000);
+
     return () => {
+      globalThis.clearInterval(presenceHeartbeat);
+      if (socket.connected) socket.emit(RealtimeEvent.MATCH_PRESENCE_LEAVE);
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('connect_error', handleConnectError);

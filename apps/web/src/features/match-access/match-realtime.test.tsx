@@ -134,6 +134,12 @@ describe('useMatchRealtime', () => {
       }),
     );
   }
+  it('declares and releases match-screen presence independently of the socket lifecycle', () => {
+    const { unmount } = renderRealtime();
+    expect(socketHarness.socket.emit).toHaveBeenCalledWith(RealtimeEvent.MATCH_PRESENCE_ENTER);
+    unmount();
+    expect(socketHarness.socket.emit).toHaveBeenCalledWith(RealtimeEvent.MATCH_PRESENCE_LEAVE);
+  });
   it('hydrates an accepted referee vote from the direct recovery snapshot and prevents a duplicate submit', async () => {
     const { result } = renderRealtime();
     const snapshot = createMatchSnapshot({ viewer: { acceptedVote: acceptedRedVote } });

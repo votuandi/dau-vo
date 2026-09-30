@@ -86,6 +86,12 @@ export class RealtimeOfficialRoutingService {
         .to(matchRoom(payload.matchPublicId))
         .emit(RealtimeEvent.MATCH_ASSIGNMENT_RELEASED, payload);
       for (const officialId of payload.releasedOfficialIds) {
+        // Assigned officials are deliberately not match-room members until
+        // their console declares presence, so release must also reach their
+        // private room.
+        this.requireServer()
+          .to(officialRoom(officialId))
+          .emit(RealtimeEvent.MATCH_ASSIGNMENT_RELEASED, payload);
         this.requireServer()
           .to(officialRoom(officialId))
           .emit(RealtimeEvent.OFFICIAL_ASSIGNMENT_UPDATED, {

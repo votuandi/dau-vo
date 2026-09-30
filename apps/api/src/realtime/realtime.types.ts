@@ -47,6 +47,9 @@ import type { Socket } from 'socket.io';
 export interface ClientToServerEvents {
   'official:assignment-snapshot:request': () => void;
   'match:state:request': () => void;
+  'match:presence:enter': () => void;
+  'match:presence:leave': () => void;
+  'match:presence:heartbeat': () => void;
   'scoreboard:state:request': () => void;
   'penalty:add': (
     payload: PenaltyAddPayload,
@@ -157,6 +160,7 @@ export interface RealtimeSocketData {
     tournamentId: string;
   };
   officialMatchPublicId?: string;
+  officialPresenceMatchPublicId?: string;
 }
 
 export type RealtimeSocket = Socket<

@@ -11,6 +11,7 @@ import type {
 } from './realtime.types';
 
 const PRESENCE_TTL_SECONDS = 24 * 60 * 60;
+const OFFICIAL_MATCH_PRESENCE_TTL_SECONDS = 45;
 
 interface RealtimeConnectionRegistration {
   accessRole: MatchAccessRole;
@@ -69,13 +70,12 @@ export class RealtimeSessionRegistryService {
         PRESENCE_TTL_SECONDS,
       );
       if (officialRegistration?.matchPublicId) {
-        await this.redis.incrementByWithExpiry(
+        await this.redis.delete(
           this.officialPresenceKey(
             officialRegistration.matchPublicId,
             officialRegistration.officialId,
+            socketId,
           ),
-          -1,
-          PRESENCE_TTL_SECONDS,
         );
       }
       if (officialSockets.size === 0)
@@ -118,55 +118,69 @@ export class RealtimeSessionRegistryService {
       1,
       PRESENCE_TTL_SECONDS,
     );
-    if (registration.matchPublicId) {
-      await this.redis.incrementByWithExpiry(
-        this.officialPresenceKey(
-          registration.matchPublicId,
-          registration.officialId,
-        ),
-        1,
-        PRESENCE_TTL_SECONDS,
-      );
-    }
   }
 
-  async updateOfficialAssignment(
+  async enterOfficialMatchPresence(
     sessionId: string,
     socketId: string,
-    matchPublicId: string | null,
-  ): Promise<void> {
+    matchPublicId: string,
+  ): Promise<boolean> {
     const registration = this.officialConnections.get(sessionId)?.get(socketId);
-    if (registration && registration.matchPublicId !== matchPublicId) {
-      if (registration.matchPublicId) {
-        await this.redis.incrementByWithExpiry(
-          this.officialPresenceKey(
-            registration.matchPublicId,
-            registration.officialId,
-          ),
-          -1,
-          PRESENCE_TTL_SECONDS,
-        );
-      }
-      registration.matchPublicId = matchPublicId;
-      if (matchPublicId) {
-        await this.redis.incrementByWithExpiry(
-          this.officialPresenceKey(matchPublicId, registration.officialId),
-          1,
-          PRESENCE_TTL_SECONDS,
-        );
-      }
-    }
+    if (!registration) return false;
+    await this.redis.setWithExpiry(
+      this.officialPresenceKey(
+        matchPublicId,
+        registration.officialId,
+        socketId,
+      ),
+      '1',
+      OFFICIAL_MATCH_PRESENCE_TTL_SECONDS,
+    );
+    registration.matchPublicId = matchPublicId;
+    return true;
+  }
+
+  async renewOfficialMatchPresence(
+    sessionId: string,
+    socketId: string,
+    matchPublicId: string,
+  ): Promise<boolean> {
+    return this.enterOfficialMatchPresence(sessionId, socketId, matchPublicId);
+  }
+
+  async leaveOfficialMatchPresence(
+    sessionId: string,
+    socketId: string,
+  ): Promise<string | null> {
+    const registration = this.officialConnections.get(sessionId)?.get(socketId);
+    if (!registration) return null;
+    const matchPublicId = registration.matchPublicId;
+    if (!matchPublicId) return null;
+    await this.redis.delete(
+      this.officialPresenceKey(
+        matchPublicId,
+        registration.officialId,
+        socketId,
+      ),
+    );
+    registration.matchPublicId = null;
+    return matchPublicId;
+  }
+
+  async clearOfficialMatchPresence(
+    sessionId: string,
+    socketId: string,
+  ): Promise<string | null> {
+    return this.leaveOfficialMatchPresence(sessionId, socketId);
   }
 
   async officialConnectedSocketCount(
     matchPublicId: string,
     officialId: string,
   ): Promise<number> {
-    const value = await this.redis.get(
-      this.officialPresenceKey(matchPublicId, officialId),
+    return this.redis.countKeys(
+      this.officialPresencePattern(matchPublicId, officialId),
     );
-    const count = Number(value);
-    return Number.isSafeInteger(count) && count > 0 ? count : 0;
   }
 
   async isOfficialConnected(officialId: string): Promise<boolean> {
@@ -268,8 +282,16 @@ export class RealtimeSessionRegistryService {
   private officialPresenceKey(
     matchPublicId: string,
     officialId: string,
+    socketId: string,
   ): string {
-    return `realtime:official-presence:${matchPublicId}:${officialId}`;
+    return `realtime:official-match-presence:${matchPublicId}:${officialId}:${socketId}`;
+  }
+
+  private officialPresencePattern(
+    matchPublicId: string,
+    officialId: string,
+  ): string {
+    return `realtime:official-match-presence:${matchPublicId}:${officialId}:*`;
   }
 
   private officialOnlineKey(officialId: string): string {

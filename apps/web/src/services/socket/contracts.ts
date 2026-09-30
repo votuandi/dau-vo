@@ -74,6 +74,9 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
   'official:assignment-snapshot:request': () => void;
   'match:state:request': () => void;
+  'match:presence:enter': () => void;
+  'match:presence:leave': () => void;
+  'match:presence:heartbeat': () => void;
   'scoreboard:state:request': () => void;
   'penalty:add': (
     payload: PenaltyAddPayload,
