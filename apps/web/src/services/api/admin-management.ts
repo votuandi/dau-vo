@@ -247,6 +247,7 @@ export interface UpdateAthleteInput {
   readonly weightClassId?: string;
   readonly organizationId?: string | null;
   readonly details?: string | null;
+  readonly isSeed?: boolean;
   readonly isActive?: boolean;
 }
 export interface AthleteListInput {
