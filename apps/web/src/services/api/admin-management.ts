@@ -212,6 +212,7 @@ export interface TournamentAthlete {
   readonly details: string | null;
   readonly imagePath: string | null;
   readonly imageUrl: string | null;
+  readonly isSeed: boolean;
   readonly isActive: boolean;
   readonly organizationId: string | null;
   readonly weightClassId: string;
@@ -237,6 +238,7 @@ export interface CreateAthleteInput {
   readonly weightClassId: string;
   readonly organizationId?: string | null;
   readonly details?: string | null;
+  readonly isSeed?: boolean;
   readonly isActive?: boolean;
 }
 export interface UpdateAthleteInput {

@@ -63,6 +63,7 @@ export class CreateAthleteDto {
   @IsUUID() weightClassId!: string;
   @IsOptional() @IsUUID() organizationId?: string | null;
   @IsOptional() @IsString() @MaxLength(5000) details?: string | null;
+  @IsOptional() @IsBoolean() isSeed?: boolean;
 }
 
 export class UpdateAthleteDto {
@@ -72,6 +73,7 @@ export class UpdateAthleteDto {
   @IsOptional() @IsUUID() organizationId?: string | null;
   @IsOptional() @IsString() @MaxLength(5000) details?: string | null;
   @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsBoolean() isSeed?: boolean;
 }
 
 export class AthleteListQueryDto {

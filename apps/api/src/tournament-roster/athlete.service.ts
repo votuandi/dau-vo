@@ -45,6 +45,7 @@ const view = {
   birthYear: true,
   details: true,
   imagePath: true,
+  isSeed: true,
   isActive: true,
   deactivatedAt: true,
   createdAt: true,
@@ -127,6 +128,7 @@ export class AthleteService {
           name: this.name(input.name),
           birthYear: this.birth(input.birthYear),
           details: this.details(input.details),
+          isSeed: input.isSeed ?? false,
         },
         select: view,
       });
@@ -204,6 +206,7 @@ export class AthleteService {
                 isActive: input.isActive,
                 deactivatedAt: input.isActive ? null : this.clock.now(),
               }),
+          ...(input.isSeed === undefined ? {} : { isSeed: input.isSeed }),
         },
         select: view,
       });
