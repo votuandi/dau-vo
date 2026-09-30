@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import {
   AthleteColor,
+  AuditEventType,
+  FaultSeverity,
   MatchAccessRole,
   MatchRole,
   JudgeSlot,
@@ -20,6 +22,8 @@ import {
   type ScoreUpdatedPayload,
   type SessionRevokedPayload,
   type VoteSubmitResponse,
+  type FaultRecordResponse,
+  type FaultRecordedPayload,
 } from '@martial-arts-scoring/shared-types';
 import { hash } from 'bcryptjs';
 import Redis from 'ioredis';
@@ -425,6 +429,15 @@ describe('Realtime match infrastructure (integration)', () => {
     });
   }
 
+  function recordFault(
+    socket: Socket,
+    payload: unknown,
+  ): Promise<FaultRecordResponse> {
+    return new Promise((resolve) => {
+      socket.emit(RealtimeEvent.FAULT_RECORD, payload, resolve);
+    });
+  }
+
   beforeAll(async () => {
     configureTestEnvironment();
 
@@ -500,6 +513,9 @@ describe('Realtime match infrastructure (integration)', () => {
   });
 
   beforeEach(async () => {
+    await prisma.fault.deleteMany({
+      where: { matchId: { in: [...createdMatchIds] } },
+    });
     await prisma.penalty.deleteMany({
       where: { matchId: { in: [...createdMatchIds] } },
     });
@@ -1292,5 +1308,212 @@ describe('Realtime match infrastructure (integration)', () => {
     await expect(
       prisma.penalty.count({ where: { matchId: match.id } }),
     ).resolves.toBe(1);
+  });
+
+  it('normalizes legacy faults, persists each side/severity, and projects only valid faults', async () => {
+    const match = await createTestMatch('fault-severity');
+    const [inspector, referee, refereeTwo, refereeThree] = await Promise.all([
+      login(
+        match,
+        MatchAccessRole.SUPERVISOR,
+        `${TEST_PREFIX}-fault-inspector`,
+      ),
+      login(match, MatchAccessRole.JUDGE_1, `${TEST_PREFIX}-fault-r1`),
+      login(match, MatchAccessRole.JUDGE_2, `${TEST_PREFIX}-fault-r2`),
+      login(match, MatchAccessRole.JUDGE_3, `${TEST_PREFIX}-fault-r3`),
+    ]);
+    const [inspectorSocket, refereeSocket] = await Promise.all([
+      connect(inspector.cookie),
+      connect(referee.cookie),
+      connect(refereeTwo.cookie),
+      connect(refereeThree.cookie),
+    ]);
+    await connectScoreboard(match.publicId);
+    await waitForReadySnapshot(inspectorSocket);
+    await expect(startRound(inspectorSocket)).resolves.toMatchObject({
+      ok: true,
+    });
+
+    await expect(
+      recordFault(refereeSocket, { athlete: AthleteColor.RED }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'FAULT_FORBIDDEN' },
+    });
+
+    const combinations = [
+      { athlete: AthleteColor.RED, severity: FaultSeverity.MINOR },
+      { athlete: AthleteColor.RED, severity: FaultSeverity.MAJOR },
+      { athlete: AthleteColor.BLUE, severity: FaultSeverity.MINOR },
+      { athlete: AthleteColor.BLUE, severity: FaultSeverity.MAJOR },
+    ] as const;
+    const recorded: FaultRecordedPayload['fault'][] = [];
+    const legacyBroadcast = waitForEvent<FaultRecordedPayload>(
+      refereeSocket,
+      RealtimeEvent.FAULT_RECORDED,
+      (event) => event.matchPublicId === match.publicId,
+    );
+    const legacyResponse = await recordFault(inspectorSocket, {
+      athlete: AthleteColor.RED,
+    });
+    expect(legacyResponse).toMatchObject({
+      ok: true,
+      fault: { athlete: AthleteColor.RED, severity: FaultSeverity.MINOR },
+    });
+    await expect(legacyBroadcast).resolves.toMatchObject({
+      fault: { athlete: AthleteColor.RED, severity: FaultSeverity.MINOR },
+    });
+    if (legacyResponse.ok) recorded.push(legacyResponse.fault);
+    for (const combination of combinations) {
+      const broadcast = waitForEvent<FaultRecordedPayload>(
+        refereeSocket,
+        RealtimeEvent.FAULT_RECORDED,
+        (event) => event.matchPublicId === match.publicId,
+      );
+      const response = await recordFault(inspectorSocket, combination);
+      expect(response).toMatchObject({ ok: true, fault: combination });
+      const event = await broadcast;
+      expect(event.fault).toMatchObject(combination);
+      if (response.ok) recorded.push(response.fault);
+    }
+    expect(recorded).toHaveLength(5);
+    await expect(
+      prisma.fault.findMany({
+        where: { matchId: match.id },
+        select: { athleteId: true, severity: true },
+      }),
+    ).resolves.toEqual(
+      expect.arrayContaining(
+        combinations.map((fault) =>
+          expect.objectContaining({
+            athleteId: match.athleteIds[fault.athlete],
+            severity: fault.severity,
+          }),
+        ),
+      ),
+    );
+    await expect(
+      prisma.auditLog.findMany({
+        where: { matchId: match.id },
+        select: { metadata: true },
+      }),
+    ).resolves.toEqual(
+      expect.arrayContaining(
+        combinations.map((fault) =>
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              action: 'FAULT_RECORDED',
+              athlete: fault.athlete,
+              severity: fault.severity,
+            }),
+          }),
+        ),
+      ),
+    );
+
+    let snapshot = await requestSnapshot(inspectorSocket);
+    expect(snapshot.athletes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          color: AthleteColor.RED,
+          faultCounts: { minor: 2, major: 1 },
+        }),
+        expect.objectContaining({
+          color: AthleteColor.BLUE,
+          faultCounts: { minor: 1, major: 1 },
+        }),
+      ]),
+    );
+    const invalidationAudit = await prisma.auditLog.create({
+      data: {
+        eventType: AuditEventType.MATCH_ACTION,
+        matchId: match.id,
+        sessionId: inspector.response.body.session.sessionId,
+      },
+      select: { id: true },
+    });
+    await prisma.fault.update({
+      where: { id: recorded[0]!.id },
+      data: {
+        invalidatedAt: new Date(),
+        invalidatedByAuditId: invalidationAudit.id,
+      },
+    });
+    snapshot = await requestSnapshot(inspectorSocket);
+    expect(snapshot.athletes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          color: AthleteColor.RED,
+          faultCounts: { minor: 1, major: 1 },
+        }),
+      ]),
+    );
+    await prisma.round.update({
+      where: { id: recorded[1]!.roundId },
+      data: { invalidatedAt: new Date() },
+    });
+    const reconnect = await connect(inspector.cookie);
+    snapshot = await requestSnapshot(reconnect);
+    expect(snapshot.athletes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          color: AthleteColor.RED,
+          faultCounts: { minor: 0, major: 0 },
+        }),
+        expect.objectContaining({
+          color: AthleteColor.BLUE,
+          faultCounts: { minor: 0, major: 0 },
+        }),
+      ]),
+    );
+  });
+
+  it('rejects malformed explicit fault payloads without mutation and preserves stale-session rejection', async () => {
+    const match = await createTestMatch('fault-invalid');
+    const [inspector, referee] = await Promise.all([
+      login(
+        match,
+        MatchAccessRole.SUPERVISOR,
+        `${TEST_PREFIX}-invalid-inspector`,
+      ),
+      login(match, MatchAccessRole.JUDGE_1, `${TEST_PREFIX}-invalid-referee`),
+    ]);
+    const [inspectorSocket, refereeSocket] = await Promise.all([
+      connect(inspector.cookie),
+      connect(referee.cookie),
+    ]);
+    const invalidPayloads = [
+      { athlete: AthleteColor.RED, severity: null },
+      { athlete: AthleteColor.RED, severity: '' },
+      { athlete: AthleteColor.RED, severity: 'minor' },
+      { athlete: AthleteColor.RED, severity: 'OTHER' },
+      { athlete: AthleteColor.RED, severity: FaultSeverity.MINOR, extra: true },
+      { athlete: 'GREEN', severity: FaultSeverity.MINOR },
+      { athlete: AthleteColor.RED, severity: FaultSeverity.MINOR, traceId: '' },
+    ];
+    for (const payload of invalidPayloads) {
+      await expect(
+        recordFault(inspectorSocket, payload),
+      ).resolves.toMatchObject({ ok: false });
+    }
+    await expect(
+      prisma.fault.count({ where: { matchId: match.id } }),
+    ).resolves.toBe(0);
+    await expect(
+      recordFault(refereeSocket, { athlete: AthleteColor.RED }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'FAULT_FORBIDDEN' },
+    });
+    await prisma.matchSession.update({
+      where: { id: inspector.response.body.session.sessionId },
+      data: { active: false, revokedAt: new Date() },
+    });
+    await expect(
+      recordFault(inspectorSocket, { athlete: AthleteColor.RED }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'FAULT_FORBIDDEN' },
+    });
   });
 });

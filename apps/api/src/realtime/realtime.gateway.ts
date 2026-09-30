@@ -1307,23 +1307,26 @@ export class RealtimeGateway
           message: 'Authentication required',
         },
       };
-    if (!this.isFaultPayload(payload))
+    const normalizedPayload = this.normalizeFaultPayload(payload);
+    if (!normalizedPayload.ok)
       return {
         ok: false,
         error: {
-          code: this.hasFaultSeverity(payload) ? 'FAULT_INVALID_ATHLETE' : 'FAULT_INVALID_SEVERITY',
-          message: this.hasFaultSeverity(payload)
-            ? 'Athlete must be RED or BLUE'
-            : 'Severity must be MINOR or MAJOR',
+          code: normalizedPayload.error,
+          message:
+            normalizedPayload.error === 'FAULT_INVALID_ATHLETE'
+              ? 'Athlete must be RED or BLUE'
+              : 'Severity must be MINOR or MAJOR',
         },
       };
+    const faultPayloadInput = normalizedPayload.payload;
     try {
       const transition = await this.faults.record({
-        athlete: payload.athlete,
-        severity: payload.severity,
+        athlete: faultPayloadInput.athlete,
+        severity: faultPayloadInput.severity,
         identity: command.identity,
         matchId: command.matchId,
-        traceId: payload.traceId,
+        traceId: faultPayloadInput.traceId,
       });
       const faultPayload: FaultRecordedPayload = {
         matchPublicId: transition.matchPublicId,
@@ -1991,26 +1994,58 @@ export class RealtimeGateway
     return this.isVotePayload(payload);
   }
 
-  private isFaultPayload(payload: unknown): payload is FaultRecordPayload {
-    if (typeof payload !== 'object' || payload === null) return false;
-    const keys = Object.keys(payload);
-    if (!keys.every((key) => key === 'athlete' || key === 'severity' || key === 'traceId'))
-      return false;
+  /**
+   * This is intentionally the sole compatibility boundary. The shared client
+   * contract still requires severity; only pre-deployment browser sessions may
+   * omit the property, in which case their historic fault semantics are MINOR.
+   */
+  private normalizeFaultPayload(
+    payload: unknown,
+  ):
+    | { ok: true; payload: FaultRecordPayload }
+    | { ok: false; error: 'FAULT_INVALID_ATHLETE' | 'FAULT_INVALID_SEVERITY' } {
+    if (
+      typeof payload !== 'object' ||
+      payload === null ||
+      Array.isArray(payload)
+    )
+      return { ok: false, error: 'FAULT_INVALID_SEVERITY' };
     const candidate = payload as Record<string, unknown>;
-    return (
-      (candidate.athlete === AthleteColor.RED ||
-        candidate.athlete === AthleteColor.BLUE) &&
-      (candidate.severity === FaultSeverity.MINOR || candidate.severity === FaultSeverity.MAJOR) &&
-      (candidate.traceId === undefined ||
-        (typeof candidate.traceId === 'string' &&
-          candidate.traceId.length <= 128))
-    );
-  }
+    if (
+      !Object.keys(candidate).every(
+        (key) => key === 'athlete' || key === 'severity' || key === 'traceId',
+      )
+    )
+      return { ok: false, error: 'FAULT_INVALID_SEVERITY' };
+    if (
+      candidate.athlete !== AthleteColor.RED &&
+      candidate.athlete !== AthleteColor.BLUE
+    )
+      return { ok: false, error: 'FAULT_INVALID_ATHLETE' };
+    if (
+      candidate.traceId !== undefined &&
+      (typeof candidate.traceId !== 'string' ||
+        candidate.traceId.length === 0 ||
+        candidate.traceId.length > 128)
+    )
+      return { ok: false, error: 'FAULT_INVALID_SEVERITY' };
 
-  private hasFaultSeverity(payload: unknown): boolean {
-    if (typeof payload !== 'object' || payload === null) return false;
-    const severity = (payload as Record<string, unknown>).severity;
-    return severity === FaultSeverity.MINOR || severity === FaultSeverity.MAJOR;
+    const severity = Object.hasOwn(candidate, 'severity')
+      ? candidate.severity
+      : FaultSeverity.MINOR;
+    if (severity !== FaultSeverity.MINOR && severity !== FaultSeverity.MAJOR)
+      return { ok: false, error: 'FAULT_INVALID_SEVERITY' };
+
+    return {
+      ok: true,
+      payload: {
+        athlete: candidate.athlete as FaultRecordPayload['athlete'],
+        severity: severity as FaultRecordPayload['severity'],
+        ...(candidate.traceId === undefined
+          ? {}
+          : { traceId: candidate.traceId }),
+      },
+    };
   }
 
   private isAppealPayload(payload: unknown): payload is AppealCompletePayload {
