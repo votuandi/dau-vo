@@ -518,67 +518,6 @@ export function TournamentMatchesPage({
                 </Button>
               ) : null}
             </div>
-            <form
-              className="mt-4 flex flex-wrap items-end gap-3 rounded-xl border border-border bg-muted/20 p-4"
-              noValidate
-              onSubmit={(event) => {
-                event.preventDefault();
-                const seconds = Number(intermissionDurationSeconds);
-                if (!Number.isInteger(seconds) || seconds < 0 || !selectedId) {
-                  setIntermissionError('Nhập số nguyên không âm. 0 để tắt thời gian nghỉ.');
-                  return;
-                }
-                setIntermissionError(null);
-                updateIntermission.mutate({ weightClassId: selectedId, seconds });
-              }}
-            >
-              <div>
-                <label
-                  className="text-sm font-semibold"
-                  htmlFor="weight-class-intermission-duration"
-                >
-                  Thời gian nghỉ giữa hiệp (giây)
-                </label>
-                <input
-                  aria-describedby="weight-class-intermission-help weight-class-intermission-error"
-                  aria-invalid={Boolean(intermissionError)}
-                  className="mt-1 block h-10 w-64 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary aria-[invalid=true]:border-destructive"
-                  disabled={isReadOnly || updateIntermission.isPending}
-                  id="weight-class-intermission-duration"
-                  inputMode="numeric"
-                  min={0}
-                  onChange={(event) => {
-                    setIntermissionDurationSeconds(event.target.value);
-                    if (intermissionError) setIntermissionError(null);
-                  }}
-                  step={1}
-                  type="number"
-                  value={intermissionDurationSeconds}
-                />
-                <p
-                  className="mt-1 text-xs text-muted-foreground"
-                  id="weight-class-intermission-help"
-                >
-                  Nhập 0 để tắt thời gian nghỉ.
-                </p>
-                {intermissionError ? (
-                  <p
-                    className="mt-1 text-xs text-destructive"
-                    id="weight-class-intermission-error"
-                    role="alert"
-                  >
-                    {intermissionError}
-                  </p>
-                ) : null}
-              </div>
-              <Button
-                disabled={isReadOnly || updateIntermission.isPending}
-                type="submit"
-                variant="outline"
-              >
-                {updateIntermission.isPending ? 'Đang lưu…' : 'Lưu thời gian nghỉ'}
-              </Button>
-            </form>
             {preview && ['reviewingPreview', 'confirming'].includes(workflow) ? (
               <BracketPreviewPanel
                 error={dialogError}
@@ -664,6 +603,63 @@ export function TournamentMatchesPage({
                     staffing.mutate({ weightClassId: selectedId, roundNumber, count });
                   }}
                 />
+                <form
+                  className="mt-5 rounded-xl border border-border bg-muted/20 p-4"
+                  noValidate
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const seconds = Number(intermissionDurationSeconds);
+                    if (!Number.isInteger(seconds) || seconds < 0 || !selectedId) {
+                      setIntermissionError('Nhập số nguyên không âm. 0 để tắt thời gian nghỉ.');
+                      return;
+                    }
+                    setIntermissionError(null);
+                    updateIntermission.mutate({ weightClassId: selectedId, seconds });
+                  }}
+                >
+                  <label
+                    className="text-sm font-semibold"
+                    htmlFor="weight-class-intermission-duration"
+                  >
+                    Thời gian nghỉ giữa hiệp (giây)
+                  </label>
+                  <div className="mt-1 flex flex-wrap items-center gap-3">
+                    <input
+                      aria-describedby="weight-class-intermission-help weight-class-intermission-error"
+                      aria-invalid={Boolean(intermissionError)}
+                      className="block h-10 w-64 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary aria-[invalid=true]:border-destructive"
+                      disabled={isReadOnly || updateIntermission.isPending}
+                      id="weight-class-intermission-duration"
+                      inputMode="numeric"
+                      min={0}
+                      onChange={(event) => {
+                        setIntermissionDurationSeconds(event.target.value);
+                        if (intermissionError) setIntermissionError(null);
+                      }}
+                      step={1}
+                      type="number"
+                      value={intermissionDurationSeconds}
+                    />
+                    <Button disabled={isReadOnly || updateIntermission.isPending} type="submit">
+                      {updateIntermission.isPending ? 'Đang lưu…' : 'Lưu'}
+                    </Button>
+                  </div>
+                  <p
+                    className="mt-1 text-xs text-muted-foreground"
+                    id="weight-class-intermission-help"
+                  >
+                    Nhập 0 để tắt thời gian nghỉ.
+                  </p>
+                  {intermissionError ? (
+                    <p
+                      className="mt-1 text-xs text-destructive"
+                      id="weight-class-intermission-error"
+                      role="alert"
+                    >
+                      {intermissionError}
+                    </p>
+                  ) : null}
+                </form>
                 <FixtureList
                   data={bracket.data}
                   disabled={isReadOnly || prepare.isPending || cancelBracket.isPending}
