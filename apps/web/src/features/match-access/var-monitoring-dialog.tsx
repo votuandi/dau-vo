@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { officialAccessApi, type VarMonitoring } from '@/services/api/official-access';
+import { varMonitoringQueryOptions } from './queries';
 
 function timestamp(value: unknown): string {
   if (typeof value !== 'string') return '—';
@@ -10,8 +10,10 @@ function timestamp(value: unknown): string {
 }
 
 function text(value: unknown): string {
-  if (value === null || value === undefined) return '—';
-  return String(value);
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return '—';
 }
 
 function HistoryList({
@@ -37,22 +39,9 @@ export function VarMonitoringDialog({
   readonly matchId: string;
   readonly onClose: () => void;
 }) {
-  const [data, setData] = useState<VarMonitoring | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [retry, setRetry] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    setData(null);
-    setFailed(false);
-    void officialAccessApi.varMonitoring(matchId).then(
-      (result) => active && setData(result),
-      () => active && setFailed(true),
-    );
-    return () => {
-      active = false;
-    };
-  }, [matchId, retry]);
+  const monitoring = useQuery(varMonitoringQueryOptions(matchId));
+  const data = monitoring.data;
+  const failed = monitoring.isError;
 
   return (
     <Dialog
@@ -63,12 +52,15 @@ export function VarMonitoringDialog({
     >
       {failed ? (
         <div className="mt-5" role="alert">
-          <p className="text-sm text-destructive">Không thể tải dữ liệu VAR.</p>
-          <Button className="mt-3" onClick={() => setRetry((value) => value + 1)} type="button">
+          <p className="text-sm text-destructive">
+            {data ? 'Không thể đồng bộ dữ liệu VAR.' : 'Không thể tải dữ liệu VAR.'}
+          </p>
+          <Button className="mt-3" onClick={() => void monitoring.refetch()} type="button">
             Thử lại
           </Button>
         </div>
-      ) : !data ? (
+      ) : null}
+      {!data ? (
         <p className="mt-5 text-sm text-muted-foreground">Đang tải dữ liệu VAR…</p>
       ) : (
         <div className="mt-5 grid max-h-[70vh] gap-4 overflow-y-auto pr-1 md:grid-cols-2">
