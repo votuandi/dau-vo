@@ -144,7 +144,10 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
         observer.observe(element);
       });
     }
-    document.fonts.ready.then(schedule).catch(() => undefined);
+    // Font Loading API is absent in a few supported browser/test environments.
+    // The first scheduled measurement is still sufficient there.
+    const fontSet = (document as Partial<Document>).fonts;
+    fontSet?.ready.then(schedule).catch(() => undefined);
     return () => {
       cancelAnimationFrame(frame);
       observer?.disconnect();
