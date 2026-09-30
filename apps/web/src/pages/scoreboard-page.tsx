@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { AthleteColor, MatchLifecycle } from '@martial-arts-scoring/shared-types';
+import { AthleteColor, MatchLifecycle, MatchStatus } from '@martial-arts-scoring/shared-types';
 import { useScoreboardRealtime } from '@/features/scoreboard/scoreboard-realtime';
+import { IntermissionCountdown } from '@/components/intermission-countdown';
 import {
   isPausedPhase,
   isRunningPhase,
@@ -206,6 +207,10 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
               ? formatRemaining(activeRound.remainingDurationMs)
               : '--:--'}
         </p>
+        <IntermissionCountdown
+          endsAt={snapshot?.match.phase === MatchStatus.BREAK ? snapshot.intermissionEndsAt : null}
+          generatedAt={snapshot?.generatedAt}
+        />
       </section>
       <section
         className={`mb-4 rounded-2xl border px-6 py-4 text-center font-bold backdrop-blur sm:mb-7 ${

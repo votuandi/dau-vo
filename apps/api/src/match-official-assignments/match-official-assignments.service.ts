@@ -125,6 +125,31 @@ export class MatchOfficialAssignmentsService {
     };
   }
 
+  /** Authorization for read-only data which is meaningful only to the active supervisor. */
+  async assertActiveSupervisorAssignment(
+    matchId: string,
+    identity: ValidatedOfficialSession,
+  ): Promise<void> {
+    this.supervisor(identity);
+    const assignment = await this.prisma.matchOfficialAssignment.findFirst({
+      where: {
+        matchId,
+        officialId: identity.officialId,
+        releasedAt: null,
+        role: TournamentOfficialRole.SUPERVISOR,
+        tournamentId: identity.tournamentId,
+      },
+      select: { id: true },
+    });
+    if (!assignment)
+      throw new ForbiddenException(
+        assignmentError(
+          'SUPERVISOR_NOT_MATCH_OWNER',
+          'Inspector does not own this match',
+        ),
+      );
+  }
+
   /** Atomically assigns the authenticated inspector and the requested referee team. */
   async take(
     matchId: string,

@@ -14,6 +14,8 @@ import {
   type RealtimeConnectionStatus,
 } from './match-realtime';
 import { presentPhase } from '@/features/match-presentation';
+import { IntermissionCountdown } from '@/components/intermission-countdown';
+import { VarMonitoringDialog } from './var-monitoring-dialog';
 
 interface SupervisorConsoleProps {
   readonly realtime: MatchRealtimeState;
@@ -290,6 +292,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
   const [exitMenuOpen, setExitMenuOpen] = useState(false);
   const [exitConfirmation, setExitConfirmation] = useState<MatchExitMode | null>(null);
   const [exitAttempted, setExitAttempted] = useState(false);
+  const [varOpen, setVarOpen] = useState(false);
   const exitMenuFirstOptionRef = useRef<HTMLButtonElement>(null);
   const displayedRemaining = roundIsPaused
     ? (snapshot?.activeRound?.remainingDurationMs ?? null)
@@ -299,6 +302,9 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
     !roundIsRunning ||
     realtime.submittingFault !== null;
   const canStartRound = status === MatchStatus.WAITING || status === MatchStatus.BREAK;
+  const varDisabled =
+    snapshot === null ||
+    roundIsRunning;
   const judgeReadiness =
     snapshot?.readiness.kind === 'TOURNAMENT_OFFICIALS'
       ? snapshot.readiness.referees.map((referee) => ({
@@ -480,6 +486,19 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
                     ? 'Trận đấu đã kết thúc'
                     : 'Chờ trạng thái chính thức từ máy chủ'}
           </p>
+          <IntermissionCountdown
+            endsAt={status === MatchStatus.BREAK ? snapshot?.match.intermissionEndsAt : null}
+            generatedAt={snapshot?.generatedAt}
+          />
+          <Button
+            className="mt-4 h-12 w-full max-w-md font-black"
+            disabled={varDisabled}
+            onClick={() => setVarOpen(true)}
+            type="button"
+            variant="outline"
+          >
+            CHECK VAR
+          </Button>
 
           {canStartRound ? (
             <>
@@ -760,6 +779,10 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
               </p>
             ) : null}
           </section>
+        ) : null}
+
+        {varOpen && snapshot ? (
+          <VarMonitoringDialog matchId={snapshot.match.id} onClose={() => setVarOpen(false)} />
         ) : null}
 
         <section aria-label="Hành động kết quả" className="mt-3 grid gap-3 sm:grid-cols-2">

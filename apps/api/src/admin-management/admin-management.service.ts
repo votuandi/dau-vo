@@ -1010,6 +1010,21 @@ export class AdminManagementService {
     };
   }
 
+  /**
+   * Read model for an assigned supervisor's VAR view.  Keep this deliberately
+   * narrower than the admin monitoring response: the live snapshot and
+   * administration diagnostics are already supplied by the match console.
+   */
+  async getSupervisorVarMonitoring(id: string) {
+    const monitoring = await this.getMatchMonitoring(id);
+    return {
+      auditLogs: monitoring.auditLogs,
+      penalties: monitoring.penalties,
+      scoreEvents: monitoring.scoreEvents,
+      scoringWindows: monitoring.scoringWindows,
+    };
+  }
+
   async updateMatch(
     id: string,
     input: UpdateMatchDto,

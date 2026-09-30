@@ -58,6 +58,32 @@ function snapshotFor(status: MatchStatus) {
 }
 
 describe('SupervisorConsole', () => {
+  it('locks Check VAR only while an authoritative round is running', () => {
+    const { rerender } = render(
+      <SupervisorConsole
+        realtime={createRealtimeState({ snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING) })}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'CHECK VAR' })).toBeDisabled();
+
+    for (const status of [
+      MatchStatus.ROUND_1_PAUSED,
+      MatchStatus.BREAK,
+      MatchStatus.REGULATION_APPEAL,
+      MatchStatus.FINISHED,
+    ]) {
+      rerender(
+        <SupervisorConsole realtime={createRealtimeState({ snapshot: snapshotFor(status) })} />,
+      );
+      expect(screen.getByRole('button', { name: 'CHECK VAR' })).toBeEnabled();
+    }
+  });
+
+  it('guards Check VAR until an authoritative match snapshot exists', () => {
+    render(<SupervisorConsole realtime={createRealtimeState({ snapshot: null })} />);
+    expect(screen.getByRole('button', { name: 'CHECK VAR' })).toBeDisabled();
+  });
+
   it('renders the authoritative WAITING → Round 1 → BREAK → Round 2 → FINISHED workflow', async () => {
     const user = userEvent.setup();
     const startRound = vi.fn(() => Promise.resolve());

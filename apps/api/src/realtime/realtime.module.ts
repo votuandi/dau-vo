@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 
 import { MatchAccessModule } from '../match-access/match-access.module';
 import { OfficialAccessModule } from '../official-access/official-access.module';
@@ -25,7 +25,7 @@ import { MatchOfficialAssignmentsModule } from '../match-official-assignments/ma
     PrismaModule,
     RealtimeCoreModule,
     SportRulesModule,
-    MatchOfficialAssignmentsModule,
+    forwardRef(() => MatchOfficialAssignmentsModule),
   ],
   providers: [
     MatchLifecycleService,

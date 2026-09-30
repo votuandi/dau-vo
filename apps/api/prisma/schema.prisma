@@ -541,6 +541,7 @@ model Match {
   currentRound         Int?                      @map("current_round") @db.SmallInt
   roundDurationMs      Int                       @map("round_duration_ms")
   breakDurationMs      Int                       @map("break_duration_ms")
+  intermissionEndsAt   DateTime?                 @map("intermission_ends_at") @db.Timestamptz(3)
   startedAt            DateTime?                 @map("started_at") @db.Timestamptz(3)
   finishedAt           DateTime?                 @map("finished_at") @db.Timestamptz(3)
   createdAt            DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)

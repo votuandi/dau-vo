@@ -36,6 +36,13 @@ export interface OfficialReferee {
   readonly assignedMatchId: string | null;
 }
 
+export interface VarMonitoring {
+  readonly scoringWindows: readonly Record<string, unknown>[];
+  readonly penalties: readonly Record<string, unknown>[];
+  readonly scoreEvents: readonly Record<string, unknown>[];
+  readonly auditLogs: readonly Record<string, unknown>[];
+}
+
 export const officialAccessApi = {
   login: (input: {
     tournamentCode: string;
@@ -68,6 +75,8 @@ export const officialAccessApi = {
       };
       referees: readonly OfficialReferee[];
     }>(`official/matches/${matchId}`),
+  varMonitoring: (matchId: string) =>
+    apiClient.get<VarMonitoring>(`official/matches/${matchId}/var-monitoring`),
   take: (matchId: string, judgeIds: readonly string[]) =>
     apiClient.post(`official/matches/${matchId}/take`, { judgeIds }),
 };

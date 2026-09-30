@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AthleteColor, MatchStatus } from '@martial-arts-scoring/shared-types';
 import type { MatchRealtimeState, RealtimeConnectionStatus } from './match-realtime';
+import { IntermissionCountdown } from '@/components/intermission-countdown';
 
 interface JudgeConsoleProps {
   readonly realtime: MatchRealtimeState;
@@ -221,6 +222,10 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
                   ? 'Trận đấu đã kết thúc'
                   : 'Chờ trạng thái chính thức từ máy chủ'}
           </p>
+          <IntermissionCountdown
+            endsAt={status === MatchStatus.BREAK ? snapshot?.match.intermissionEndsAt : null}
+            generatedAt={snapshot?.generatedAt}
+          />
         </section>
 
         <section

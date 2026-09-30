@@ -84,6 +84,7 @@ export class RealtimeMatchStateService {
         currentRound: true,
         lifecycle: true,
         finishedAt: true,
+        intermissionEndsAt: true,
         id: true,
         publicId: true,
         rulesVersion: true,
@@ -301,6 +302,7 @@ export class RealtimeMatchStateService {
         phase: this.sharedMatchStatus(match.status),
         rulesVersion: match.rulesVersion,
         startedAt: match.startedAt?.toISOString() ?? null,
+        intermissionEndsAt: match.intermissionEndsAt?.toISOString() ?? null,
         status: this.sharedMatchStatus(match.status),
       },
       presence: presenceState.presence,
@@ -642,6 +644,7 @@ export class RealtimeMatchStateService {
       activeRound: snapshot.activeRound
         ? (({ id: _id, ...round }) => round)(snapshot.activeRound)
         : null,
+      intermissionEndsAt: snapshot.match.intermissionEndsAt,
       athletes: snapshot.athletes.map(
         ({ color, name, organization, score, violations, faultCounts }) => ({
           color,
@@ -682,6 +685,7 @@ export class RealtimeMatchStateService {
       match: {
         currentRound: snapshot.match.currentRound,
         finishedAt: snapshot.match.finishedAt,
+        intermissionEndsAt: snapshot.match.intermissionEndsAt,
         publicId: snapshot.match.publicId,
         lifecycle: snapshot.match.lifecycle,
         phase: snapshot.match.phase,

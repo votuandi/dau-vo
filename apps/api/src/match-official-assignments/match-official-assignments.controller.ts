@@ -12,6 +12,7 @@ import {
 import { OfficialSessionGuard } from '../official-access/official-session.guard';
 import type { AuthenticatedOfficialRequest } from '../official-access/official-access.types';
 import { MatchOfficialAssignmentsService } from './match-official-assignments.service';
+import { AdminManagementService } from '../admin-management/admin-management.service';
 // Nest reads this class from decorator metadata at runtime.
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { TakeMatchDto } from './dto/take-match.dto';
@@ -22,7 +23,20 @@ export class MatchOfficialAssignmentsController {
   constructor(
     @Inject(MatchOfficialAssignmentsService)
     private readonly assignments: MatchOfficialAssignmentsService,
+    @Inject(AdminManagementService)
+    private readonly management: AdminManagementService,
   ) {}
+  @Get(':matchId/var-monitoring')
+  async varMonitoring(
+    @Param('matchId', new ParseUUIDPipe()) matchId: string,
+    @Req() request: AuthenticatedOfficialRequest,
+  ) {
+    await this.assignments.assertActiveSupervisorAssignment(
+      matchId,
+      request.officialSession,
+    );
+    return this.management.getSupervisorVarMonitoring(matchId);
+  }
   @Get() list(@Req() request: AuthenticatedOfficialRequest) {
     return this.assignments.list(request.officialSession);
   }
