@@ -1,5 +1,6 @@
 import { apiClient, request } from '@/services/api/client';
 import { MatchLifecycle, MatchStatus, type TournamentOfficialRole } from '@/types/shared';
+import type { AdminMatchMonitoring } from './admin-management';
 
 export interface OfficialAssignment {
   readonly id: string;
@@ -36,12 +37,12 @@ export interface OfficialReferee {
   readonly assignedMatchId: string | null;
 }
 
-export interface VarMonitoring {
-  readonly scoringWindows: readonly Record<string, unknown>[];
-  readonly penalties: readonly Record<string, unknown>[];
-  readonly scoreEvents: readonly Record<string, unknown>[];
-  readonly auditLogs: readonly Record<string, unknown>[];
-}
+// The supervisor endpoint deliberately exposes only these read-only histories,
+// but their item shapes are the same read model used by admin monitoring.
+export type VarMonitoring = Pick<
+  AdminMatchMonitoring,
+  'scoringWindows' | 'penalties' | 'scoreEvents' | 'auditLogs'
+>;
 
 export const officialAccessApi = {
   login: (input: {
