@@ -1,6 +1,8 @@
 import {
   ArrayUnique,
   IsArray,
+  IsIn,
+  IsOptional,
   IsString,
   IsUUID,
   Length,
@@ -15,4 +17,9 @@ export class PreviewBracketDto {
   @ArrayUnique()
   @IsUUID('all', { each: true })
   designatedByeAthleteIds!: string[];
+
+  /** Omitted values retain the legacy random/manual interpretation. */
+  @IsOptional()
+  @IsIn(['RANDOM', 'MANUAL', 'SEEDED'])
+  byeStrategy?: 'RANDOM' | 'MANUAL' | 'SEEDED';
 }

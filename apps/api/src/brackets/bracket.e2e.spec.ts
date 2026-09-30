@@ -437,8 +437,25 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
         `/api/admin/tournaments/${tournamentId}/athletes/${athleteIds[0]}`,
       ),
     )
+      .send({ isSeed: true })
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.athlete).toEqual(
+          expect.objectContaining({ isSeed: true }),
+        );
+      });
+    await authenticated(
+      request(app.getHttpServer()).patch(
+        `/api/admin/tournaments/${tournamentId}/athletes/${athleteIds[0]}`,
+      ),
+    )
       .send({ name: `${prefix}-renamed` })
-      .expect(200);
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.athlete).toEqual(
+          expect.objectContaining({ isSeed: true }),
+        );
+      });
 
     await authenticated(
       request(app.getHttpServer()).post(`${bracketPath}/cancel`),
@@ -452,6 +469,59 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
     )
       .send({ birthYear: 2000, name: `${prefix}-allowed`, weightClassId })
       .expect(201);
+  });
+
+  it('defaults seeds to false and supports explicit partial updates', async () => {
+    const tournamentId = await createTournament();
+    const weightClassId = await createWeightClass(tournamentId, 'seed');
+    const created = await authenticated(
+      request(app.getHttpServer()).post(
+        `/api/admin/tournaments/${tournamentId}/athletes`,
+      ),
+    )
+      .send({ birthYear: 2000, name: `${prefix}-seed`, weightClassId })
+      .expect(201);
+    const athleteId = (created.body as AthleteResponse).athlete.id;
+    expect(created.body.athlete).toEqual(
+      expect.objectContaining({ isSeed: false }),
+    );
+
+    await authenticated(
+      request(app.getHttpServer()).patch(
+        `/api/admin/tournaments/${tournamentId}/athletes/${athleteId}`,
+      ),
+    )
+      .send({ isSeed: true })
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.athlete).toEqual(
+          expect.objectContaining({ isSeed: true }),
+        );
+      });
+    await authenticated(
+      request(app.getHttpServer()).patch(
+        `/api/admin/tournaments/${tournamentId}/athletes/${athleteId}`,
+      ),
+    )
+      .send({ name: `${prefix}-seed-renamed` })
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.athlete).toEqual(
+          expect.objectContaining({ isSeed: true }),
+        );
+      });
+    await authenticated(
+      request(app.getHttpServer()).patch(
+        `/api/admin/tournaments/${tournamentId}/athletes/${athleteId}`,
+      ),
+    )
+      .send({ isSeed: false })
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.athlete).toEqual(
+          expect.objectContaining({ isSeed: false }),
+        );
+      });
   });
 
   it('lists operational matches before requiring an explicit forced cancellation', async () => {

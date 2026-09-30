@@ -23,11 +23,14 @@ export function isBracketPreview(
 export function bracketPresentation(data: ChartData): BracketPresentation {
   if (isBracketPreview(data)) {
     const fixtures = data.rounds.flatMap((round) => round.fixtures);
+    const fixtureIds = new Set(fixtures.map((fixture) => fixture.id));
     return {
       fixtures,
       edges: fixtures.flatMap((fixture) =>
         fixture.slots.flatMap((slot) =>
-          slot.source.kind === 'FIXTURE_WINNER' && slot.source.fixtureId
+          slot.source.kind === 'FIXTURE_WINNER' &&
+          slot.source.fixtureId &&
+          fixtureIds.has(slot.source.fixtureId)
             ? [
                 {
                   sourceFixtureId: slot.source.fixtureId,
@@ -41,11 +44,12 @@ export function bracketPresentation(data: ChartData): BracketPresentation {
     };
   }
 
+  const fixtureIds = new Set(data.fixtures.map((fixture) => fixture.id));
   return {
     fixtures: data.fixtures,
     edges: data.fixtures.flatMap((fixture) =>
       fixture.slots.flatMap((slot) =>
-        slot.sourceFixtureId
+        slot.sourceFixtureId && fixtureIds.has(slot.sourceFixtureId)
           ? [
               {
                 sourceFixtureId: slot.sourceFixtureId,

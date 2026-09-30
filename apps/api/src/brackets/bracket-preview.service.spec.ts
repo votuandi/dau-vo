@@ -12,6 +12,7 @@ function athlete(index: number) {
     name: `Athlete ${index}`,
     birthYear: 2000,
     imagePath: null,
+    isSeed: false,
     isActive: true,
     weightClassId,
     updatedAt: new Date('2026-09-12T00:00:00.000Z'),
@@ -100,6 +101,31 @@ describe('BracketPreviewService', () => {
     expect(service.rosterFingerprint(entrants)).toBe(
       service.rosterFingerprint([...entrants].reverse()),
     );
+  });
+
+  it('requires an exact, valid seeded-bye selection', async () => {
+    const { prisma, service } = subject(6);
+    const roster = Array.from({ length: 6 }, (_, index) => ({
+      ...athlete(index + 1),
+      isSeed: index < 2,
+    }));
+    prisma.tournamentAthlete.findMany.mockResolvedValue(roster);
+    await expect(
+      service.preview(tournamentId, weightClassId, {
+        setupToken: 'setup-token',
+        byeStrategy: 'SEEDED',
+        designatedByeAthleteIds: [roster[0]!.id, roster[1]!.id],
+      }),
+    ).resolves.toMatchObject({ previewToken: 'opaque-token' });
+    await expect(
+      service.preview(tournamentId, weightClassId, {
+        setupToken: 'setup-token',
+        byeStrategy: 'SEEDED',
+        designatedByeAthleteIds: [roster[0]!.id],
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'BRACKET_SEEDED_BYE_SELECTION_INVALID' },
+    });
   });
 
   it('rejects a preview when a completed bracket is still current', async () => {

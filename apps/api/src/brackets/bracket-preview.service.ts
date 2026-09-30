@@ -106,6 +106,7 @@ export class BracketPreviewService {
         name: true,
         birthYear: true,
         imagePath: true,
+        isSeed: true,
         isActive: true,
         weightClassId: true,
         updatedAt: true,
@@ -157,6 +158,15 @@ export class BracketPreviewService {
         code: 'BRACKET_BYE_SELECTION_EXCESSIVE',
         message: `At most ${summary.byeCount} athletes may be designated for a bye`,
       });
+    const byeStrategy =
+      input.byeStrategy ??
+      (input.designatedByeAthleteIds.length === 0 ? 'RANDOM' : 'MANUAL');
+    this.assertStrategySelection(
+      byeStrategy,
+      input.designatedByeAthleteIds,
+      athletes,
+      summary.byeCount,
+    );
     const generated = generateSingleEliminationBracket({
       athleteIds: athletes.map(({ id }) => id),
       designatedByeAthleteIds: input.designatedByeAthleteIds,
@@ -178,6 +188,7 @@ export class BracketPreviewService {
       placements: generated.initialEntrants,
       rosterFingerprint,
       designatedByeAthleteIds: [...input.designatedByeAthleteIds].sort(),
+      byeStrategy,
     });
     return {
       previewToken: token.previewToken,
@@ -193,6 +204,7 @@ export class BracketPreviewService {
   rosterFingerprint(
     athletes: readonly {
       id: string;
+      isSeed: boolean;
       isActive: boolean;
       weightClassId: string;
       updatedAt: Date;
@@ -204,6 +216,7 @@ export class BracketPreviewService {
       .map((athlete) => ({
         athleteId: athlete.id,
         active: athlete.isActive,
+        isSeed: athlete.isSeed,
         weightClassId: athlete.weightClassId,
         updatedAt: athlete.updatedAt.toISOString(),
         organizationId: athlete.organizationId,
@@ -218,6 +231,44 @@ export class BracketPreviewService {
       }))
       .sort((a, b) => a.athleteId.localeCompare(b.athleteId));
     return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
+  }
+
+  /** Reused at confirmation after the roster locks have been acquired. */
+  assertStrategySelection(
+    strategy: 'RANDOM' | 'MANUAL' | 'SEEDED',
+    ids: readonly string[],
+    athletes: readonly { id: string; isSeed: boolean }[],
+    byeCount: number,
+  ): void {
+    if (strategy === 'RANDOM') {
+      if (ids.length !== 0)
+        throw new ConflictException({
+          code: 'BRACKET_BYE_STRATEGY_INVALID',
+          message: 'Random bye selection cannot designate athletes',
+        });
+      return;
+    }
+    if (strategy !== 'SEEDED') return;
+    if (ids.length !== byeCount)
+      throw new ConflictException({
+        code: 'BRACKET_SEEDED_BYE_SELECTION_INVALID',
+        message: 'Seeded bye selection must contain exactly the required number of athletes',
+      });
+    const seeds = athletes.filter((athlete) => athlete.isSeed).map((athlete) => athlete.id);
+    const selected = new Set(ids);
+    if (seeds.length >= byeCount) {
+      if (ids.some((id) => !seeds.includes(id)))
+        throw new ConflictException({
+          code: 'BRACKET_SEEDED_BYE_SELECTION_INVALID',
+          message: 'Seeded bye selection may only contain seeded athletes',
+        });
+      return;
+    }
+    if (seeds.some((id) => !selected.has(id)))
+      throw new ConflictException({
+        code: 'BRACKET_SEEDED_BYE_SELECTION_INVALID',
+        message: 'All seeded athletes must be selected before adding other athletes',
+      });
   }
 
   private snapshot(athlete: {

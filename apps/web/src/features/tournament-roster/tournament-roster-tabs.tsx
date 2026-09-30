@@ -603,6 +603,7 @@ export function AthletesPage({
         weightClassId: input.weightClassId,
         organizationId: input.organizationId ?? null,
         details: input.details?.trim() ?? null,
+        isSeed: input.isSeed ?? false,
       };
       const result = athlete
         ? await adminManagementApi.updateAthlete(tournamentId, athlete.id, text)
@@ -771,6 +772,7 @@ export function AthletesPage({
                 weightClassId: activeUnlockedWeights[0]?.id ?? '',
                 organizationId: null,
                 details: null,
+                isSeed: false,
                 file: null,
                 imageError: '',
               });
@@ -883,6 +885,16 @@ export function AthletesPage({
                 ))}
             </select>
           </label>
+          <label className="flex items-center gap-2">
+            <input
+              checked={draft.isSeed ?? false}
+              onChange={(e) => {
+                setDraft({ ...draft, isSeed: e.target.checked });
+              }}
+              type="checkbox"
+            />
+            Hạt giống
+          </label>
           <label>
             Ảnh đại diện (JPEG, PNG hoặc WebP, tối đa 2 MiB)
             <input
@@ -974,6 +986,7 @@ export function AthletesPage({
                   <div>
                     <b>{x.name}</b> · {x.birthYear} · {x.organization?.name ?? 'Không đơn vị'} ·{' '}
                     {x.weightClass.name} · {x.isActive ? 'Đang hoạt động' : 'Đã ngừng'}
+                    {x.isSeed ? ' · Hạt giống' : ''}
                     {x.details ? (
                       <p className="text-sm text-muted-foreground">{x.details}</p>
                     ) : null}
@@ -991,6 +1004,7 @@ export function AthletesPage({
                           weightClassId: x.weightClassId,
                           organizationId: x.organizationId,
                           details: x.details,
+                          isSeed: x.isSeed,
                           file: null,
                           imageError: '',
                         });

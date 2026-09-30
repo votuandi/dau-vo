@@ -510,6 +510,7 @@ model TournamentAthlete {
   birthYear       Int                     @map("birth_year") @db.SmallInt
   details         String?                 @db.Text
   imagePath       String?                 @map("image_path") @db.VarChar(1024)
+  isSeed          Boolean                 @default(false) @map("is_seed")
   isActive        Boolean                 @default(true) @map("is_active")
   deactivatedAt   DateTime?               @map("deactivated_at") @db.Timestamptz(3)
   createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
