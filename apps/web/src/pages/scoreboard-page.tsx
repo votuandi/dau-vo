@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { AthleteColor, MatchLifecycle } from '@martial-arts-scoring/shared-types';
+import { ArrowRightLeft, Save, X } from 'lucide-react';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { AthleteColor, MatchLifecycle, MatchStatus } from '@martial-arts-scoring/shared-types';
 import { useScoreboardRealtime } from '@/features/scoreboard/scoreboard-realtime';
+import { IntermissionCountdown, useIntermissionActive } from '@/components/intermission-countdown';
+import { toast } from '@/components/ui/toast';
 import {
   isPausedPhase,
   isRunningPhase,
@@ -152,6 +155,46 @@ export function ScoreboardPage() {
 
 function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }) {
   const { connectionStatus, snapshot } = useScoreboardRealtime(matchPublicId);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const invalidMatchHandled = useRef(false);
+  const [editingMatchId, setEditingMatchId] = useState(false);
+  const [matchIdDraft, setMatchIdDraft] = useState(matchPublicId);
+  const previousMatchId = (location.state as { previousMatchId?: string } | null)?.previousMatchId;
+
+  useEffect(() => {
+    setEditingMatchId(false);
+    setMatchIdDraft(matchPublicId);
+    invalidMatchHandled.current = false;
+  }, [matchPublicId]);
+
+  useEffect(() => {
+    if (
+      previousMatchId &&
+      connectionStatus === 'disconnected' &&
+      snapshot === null &&
+      !invalidMatchHandled.current
+    ) {
+      invalidMatchHandled.current = true;
+      toast({ title: 'Mã trận đấu không chính xác', variant: 'destructive' });
+      void navigate(`/bang-diem?match=${encodeURIComponent(previousMatchId)}`, { replace: true });
+    }
+  }, [connectionStatus, navigate, previousMatchId, snapshot]);
+
+  function submitMatchId(): void {
+    const nextMatchId = matchIdDraft.trim().toUpperCase();
+    if (nextMatchId === matchPublicId) {
+      toast({ title: 'Đây là mã trận đấu cũ', variant: 'destructive' });
+      return;
+    }
+    if (!nextMatchId) {
+      toast({ title: 'Mã trận đấu không chính xác', variant: 'destructive' });
+      return;
+    }
+    void navigate(`/bang-diem?match=${encodeURIComponent(nextMatchId)}`, {
+      state: { previousMatchId: matchPublicId },
+    });
+  }
   const activeRound = snapshot?.activeRound;
   const running = isRunningPhase(snapshot?.match.phase);
   const paused = isPausedPhase(snapshot?.match.phase);
@@ -172,13 +215,70 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
     : null;
   const outcomeMethod = snapshot?.match.outcome?.method;
   const committedScores = snapshot?.committedScores;
+  const intermission = useIntermissionActive(
+    snapshot?.match.phase === MatchStatus.BREAK ? snapshot.intermissionEndsAt : null,
+    snapshot?.generatedAt,
+  );
+  const appealActive =
+    snapshot?.match.phase === MatchStatus.REGULATION_APPEAL ||
+    snapshot?.match.phase === MatchStatus.OVERTIME_APPEAL;
+  const yellowPresentation = paused || intermission.active || appealActive;
 
   return (
-    <main className="arena-background min-h-dvh p-4 text-white sm:p-8">
-      <header className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-blue-950/25 px-4 py-3 backdrop-blur sm:px-6">
-        <p className="font-mono text-2xl font-black tracking-[0.2em] sm:text-4xl">
-          {snapshot?.match.publicId ?? matchPublicId}
-        </p>
+    <main
+      className={`min-h-dvh p-4 text-white sm:p-8 ${yellowPresentation ? 'bg-gradient-to-br from-amber-950 via-yellow-800 to-amber-950' : 'arena-background'}`}
+    >
+      <header
+        className={`flex items-center justify-between gap-4 rounded-2xl border px-4 py-3 backdrop-blur sm:px-6 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/45' : 'border-white/10 bg-blue-950/25'}`}
+      >
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          {editingMatchId ? (
+            <input
+              aria-label="Mã trận đấu"
+              autoFocus
+              className="h-11 min-w-0 max-w-44 rounded-lg border border-sky-200/70 bg-white px-3 font-mono text-lg font-black tracking-[0.12em] text-blue-950 outline-none transition focus:ring-4 focus:ring-sky-300 sm:h-14 sm:max-w-xs sm:text-3xl"
+              onChange={(event) => {
+                setMatchIdDraft(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') submitMatchId();
+              }}
+              value={matchIdDraft}
+            />
+          ) : (
+            <p className="truncate font-mono text-2xl font-black tracking-[0.2em] sm:text-4xl">
+              {snapshot?.match.publicId ?? matchPublicId}
+            </p>
+          )}
+          <button
+            aria-label={editingMatchId ? 'Lưu mã trận đấu' : 'Chuyển đổi mã trận đấu'}
+            className="grid size-11 shrink-0 place-items-center rounded-lg border border-sky-200/50 bg-sky-500/20 text-sky-100 shadow-lg shadow-blue-950/20 transition hover:bg-sky-400/35 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sky-300/50 sm:size-14"
+            onClick={() => {
+              if (editingMatchId) submitMatchId();
+              else setEditingMatchId(true);
+            }}
+            type="button"
+          >
+            {editingMatchId ? (
+              <Save aria-hidden="true" className="size-5 sm:size-6" strokeWidth={2.5} />
+            ) : (
+              <ArrowRightLeft aria-hidden="true" className="size-5 sm:size-6" strokeWidth={2.5} />
+            )}
+          </button>
+          {editingMatchId ? (
+            <button
+              aria-label="Hủy chỉnh sửa mã trận đấu"
+              className="grid size-11 shrink-0 place-items-center rounded-lg border border-rose-200/50 bg-rose-500/20 text-rose-100 shadow-lg shadow-rose-950/20 transition hover:bg-rose-400/35 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-rose-300/50 sm:size-14"
+              onClick={() => {
+                setMatchIdDraft(matchPublicId);
+                setEditingMatchId(false);
+              }}
+              type="button"
+            >
+              <X aria-hidden="true" className="size-5 sm:size-6" strokeWidth={2.5} />
+            </button>
+          ) : null}
+        </div>
         <p
           className={`text-sm font-bold sm:text-lg ${connectionStatus === 'connected' ? 'text-emerald-300' : 'text-amber-200'}`}
         >
@@ -189,7 +289,9 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
               : 'ĐANG KẾT NỐI'}
         </p>
       </header>
-      <section className="my-4 rounded-[2rem] border border-white/15 bg-white/10 px-6 py-5 text-center shadow-2xl shadow-blue-950/20 backdrop-blur-xl sm:my-7">
+      <section
+        className={`my-4 rounded-[2rem] border px-6 py-5 text-center shadow-2xl backdrop-blur-xl sm:my-7 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/30 shadow-amber-950/30' : 'border-white/15 bg-white/10 shadow-blue-950/20'}`}
+      >
         <p className="text-2xl font-black tracking-[0.2em] text-sky-100 sm:text-4xl">
           {presentation?.label ?? 'ĐANG KẾT NỐI'}
         </p>
@@ -206,6 +308,10 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
               ? formatRemaining(activeRound.remainingDurationMs)
               : '--:--'}
         </p>
+        <IntermissionCountdown
+          endsAt={snapshot?.match.phase === MatchStatus.BREAK ? snapshot.intermissionEndsAt : null}
+          generatedAt={snapshot?.generatedAt}
+        />
       </section>
       <section
         className={`mb-4 rounded-2xl border px-6 py-4 text-center font-bold backdrop-blur sm:mb-7 ${

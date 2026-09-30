@@ -295,6 +295,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
         await transaction.match.update({
           data: {
             currentRound: roundNumber,
+            intermissionEndsAt: null,
             lifecycle: MatchLifecycle.IN_PROGRESS,
             startedAt:
               roundNumber === 1 && descriptor.stage === RoundStage.REGULATION
@@ -792,6 +793,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
                     ? 1
                     : 2,
             finishedAt: null,
+            intermissionEndsAt: null,
             lifecycle: nextLifecycle,
             startedAt:
               input.mode === MatchExitMode.CANCEL_RESULTS
@@ -1263,6 +1265,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
           data: {
             currentRound: resultingCurrentRound,
             finishedAt: null,
+            intermissionEndsAt: null,
             lifecycle:
               nextStatus === MatchStatus.WAITING
                 ? MatchLifecycle.NOT_STARTED
@@ -1456,6 +1459,9 @@ export class MatchLifecycleService implements OnModuleDestroy {
           data: {
             currentRound: operation.previousCurrentRound,
             finishedAt: operation.previousFinishedAt,
+            // Undo restores lifecycle state but never resurrects a stale
+            // wall-clock deadline from before the cancellation.
+            intermissionEndsAt: null,
             lifecycle: operation.previousLifecycle,
             startedAt: operation.previousStartedAt,
             status: operation.previousStatus,
@@ -1615,11 +1621,13 @@ export class MatchLifecycleService implements OnModuleDestroy {
         const clock = await this.serverClock(transaction);
         const [match, round] = await Promise.all([
           transaction.match.findUniqueOrThrow({
-            select: {
-              currentRound: true,
-              publicId: true,
-              rulesVersion: true,
-              status: true,
+          select: {
+            currentRound: true,
+            intermissionEndsAt: true,
+            publicId: true,
+            rulesVersion: true,
+            status: true,
+            weightClass: { select: { intermissionDurationSeconds: true } },
             },
             where: { id: matchId },
           }),
@@ -1663,6 +1671,19 @@ export class MatchLifecycleService implements OnModuleDestroy {
                   MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2
                 ? MatchStatus.REGULATION_APPEAL
                 : MatchStatus.AWAITING_RESULT_SAVE;
+        // The match lock makes this write idempotent: a duplicate expiration
+        // observes the ended round and cannot move the deadline forward.
+        const intermissionEndsAt =
+          round.stage === RoundStage.REGULATION && round.roundNumber === 1
+            ? match.intermissionEndsAt ??
+              ((match.weightClass?.intermissionDurationSeconds ?? 0) > 0
+                ? new Date(
+                    clock.serverNow.getTime() +
+                      (match.weightClass?.intermissionDurationSeconds ?? 0) *
+                        1_000,
+                  )
+                : null)
+            : null;
         const endedAt = round.endsAt;
         const endedRound = await transaction.round.update({
           data: { endedAt },
@@ -1729,6 +1750,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
 
         await transaction.match.update({
           data: {
+            intermissionEndsAt,
             lifecycle: MatchLifecycle.IN_PROGRESS,
             status: nextStatus,
           },

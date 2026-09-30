@@ -104,6 +104,7 @@ export function createMatchSnapshot(overrides: Partial<MatchStatePayload> = {}):
     match: {
       currentRound: 1,
       finishedAt: null,
+      intermissionEndsAt: null,
       id: 'match-1',
       lifecycle: MatchLifecycle.IN_PROGRESS,
       phase: MatchStatus.ROUND_1_RUNNING,

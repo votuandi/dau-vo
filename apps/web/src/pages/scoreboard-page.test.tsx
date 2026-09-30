@@ -26,6 +26,7 @@ const snapshot: PublicMatchStatePayload = {
     stage: 'REGULATION',
     startedAt: '2030-01-01T00:00:00.000Z',
   },
+  intermissionEndsAt: null,
   athletes: [
     {
       color: AthleteColor.RED,
@@ -49,6 +50,7 @@ const snapshot: PublicMatchStatePayload = {
   match: {
     currentRound: 1,
     finishedAt: null,
+    intermissionEndsAt: null,
     lifecycle: MatchLifecycle.IN_PROGRESS,
     phase: MatchStatus.ROUND_1_RUNNING,
     publicId: 'A72K9P',
@@ -91,6 +93,35 @@ describe('ScoreboardPage', () => {
     expect(screen.getByText('Lỗi nhẹ: 1 · Lỗi nặng: 0')).toBeVisible();
     expect(screen.getByText('Lỗi nhẹ: 2 · Lỗi nặng: 1')).toBeVisible();
     expect(screen.getByText(/Chưa công bố kết quả/u)).toBeVisible();
+  });
+
+  it('shows the server-projected intermission countdown only while it remains', () => {
+    const intermissionEndsAt = new Date(Date.now() + 30_000).toISOString();
+    realtimeMock.mockReturnValue({
+      connectionStatus: 'connected',
+      snapshot: {
+        ...snapshot,
+        activeRound: null,
+        generatedAt: new Date().toISOString(),
+        intermissionEndsAt,
+        match: {
+          ...snapshot.match,
+          intermissionEndsAt,
+          phase: MatchStatus.BREAK,
+          status: MatchStatus.BREAK,
+        },
+      } satisfies PublicMatchStatePayload,
+    });
+    render(
+      <MemoryRouter initialEntries={['/bang-diem?match=A72K9P']}>
+        <Routes>
+          <Route element={<ScoreboardPage />} path="/bang-diem" />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Thời gian giải lao giữa hiệp')).toBeVisible();
+    expect(screen.getByRole('timer', { name: /giải lao còn lại/u })).toBeVisible();
   });
 
   it('announces only a published outcome and labels an overtime inspector decision', () => {

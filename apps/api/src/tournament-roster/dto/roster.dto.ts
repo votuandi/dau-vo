@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Min,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -46,6 +47,14 @@ export class UpdateRosterItemDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+}
+
+export class UpdateWeightClassDto extends UpdateRosterItemDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  intermissionDurationSeconds?: number;
 }
 
 export class CreateAthleteDto {

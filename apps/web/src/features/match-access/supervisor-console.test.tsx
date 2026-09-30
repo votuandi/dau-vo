@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -58,6 +59,89 @@ function snapshotFor(status: MatchStatus) {
 }
 
 describe('SupervisorConsole', () => {
+  it('locks Check VAR only while an authoritative round is running', () => {
+    const { rerender } = render(
+      <SupervisorConsole
+        realtime={createRealtimeState({ snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING) })}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'CHECK VAR' })).toBeDisabled();
+
+    for (const status of [
+      MatchStatus.ROUND_1_PAUSED,
+      MatchStatus.BREAK,
+      MatchStatus.REGULATION_APPEAL,
+      MatchStatus.FINISHED,
+    ]) {
+      rerender(
+        <SupervisorConsole realtime={createRealtimeState({ snapshot: snapshotFor(status) })} />,
+      );
+      expect(screen.getByRole('button', { name: 'CHECK VAR' })).toBeEnabled();
+    }
+  });
+
+  it('guards Check VAR until an authoritative match snapshot exists', () => {
+    render(<SupervisorConsole realtime={createRealtimeState({ snapshot: null })} />);
+    expect(screen.getByRole('button', { name: 'CHECK VAR' })).toBeDisabled();
+  });
+
+  it('hides an expired intermission countdown without starting Round 2', async () => {
+    const user = userEvent.setup();
+    const startRound = vi.fn(() => Promise.resolve());
+    const expiredDeadline = new Date(Date.now() - 1_000).toISOString();
+    render(
+      <SupervisorConsole
+        realtime={createRealtimeState({
+          snapshot: createMatchSnapshot({
+            activeRound: null,
+            generatedAt: new Date().toISOString(),
+            match: {
+              ...snapshotFor(MatchStatus.BREAK).match,
+              intermissionEndsAt: expiredDeadline,
+              phase: MatchStatus.BREAK,
+              status: MatchStatus.BREAK,
+            },
+          }),
+          startRound,
+        })}
+      />,
+    );
+
+    expect(screen.queryByRole('timer', { name: /giải lao còn lại/u })).not.toBeInTheDocument();
+    expect(startRound).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'BẮT ĐẦU HIỆP 2' }));
+    expect(startRound).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the appeal presentation after Check VAR closes', async () => {
+    const user = userEvent.setup();
+    const { container, rerender } = render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <SupervisorConsole
+          realtime={createRealtimeState({ snapshot: snapshotFor(MatchStatus.REGULATION_APPEAL) })}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(container.firstElementChild).toHaveClass('from-amber-950');
+    await user.click(screen.getByRole('button', { name: 'CHECK VAR' }));
+    expect(screen.getByRole('dialog', { name: 'Check VAR' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Đóng' }));
+
+    rerender(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <SupervisorConsole
+          realtime={createRealtimeState({ snapshot: snapshotFor(MatchStatus.REGULATION_APPEAL) })}
+        />
+      </QueryClientProvider>,
+    );
+    expect(container.firstElementChild).toHaveClass('from-amber-950');
+  });
+
   it('renders the authoritative WAITING → Round 1 → BREAK → Round 2 → FINISHED workflow', async () => {
     const user = userEvent.setup();
     const startRound = vi.fn(() => Promise.resolve());

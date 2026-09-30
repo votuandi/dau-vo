@@ -235,6 +235,8 @@ export interface MatchStateIdentity {
   id: string;
   publicId: string;
   startedAt: string | null;
+  /** Authoritative end timestamp for the round-one intermission, if enabled. */
+  intermissionEndsAt: string | null;
   lifecycle: MatchLifecycle;
   phase: MatchPhase;
   rulesVersion: 'LEGACY_SCORE_PENALTY_V1' | 'FAULT_APPEAL_OVERTIME_V2';
@@ -333,6 +335,8 @@ export type MatchExitResponse =
  */
 export interface PublicMatchStatePayload {
   activeRound: Omit<MatchRoundState, 'id'> | null;
+  /** Authoritative end timestamp for the round-one intermission, if enabled. */
+  intermissionEndsAt: string | null;
   athletes: Array<{
     color: AthleteColor;
     name: string;

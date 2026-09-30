@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { CirclePause, CirclePlay, LogOut, Monitor, Save } from 'lucide-react';
 import {
   AthleteColor,
   FaultSeverity,
@@ -14,6 +15,8 @@ import {
   type RealtimeConnectionStatus,
 } from './match-realtime';
 import { presentPhase } from '@/features/match-presentation';
+import { IntermissionCountdown, useIntermissionActive } from '@/components/intermission-countdown';
+import { VarMonitoringDialog } from './var-monitoring-dialog';
 
 interface SupervisorConsoleProps {
   readonly realtime: MatchRealtimeState;
@@ -290,6 +293,14 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
   const [exitMenuOpen, setExitMenuOpen] = useState(false);
   const [exitConfirmation, setExitConfirmation] = useState<MatchExitMode | null>(null);
   const [exitAttempted, setExitAttempted] = useState(false);
+  const [varOpen, setVarOpen] = useState(false);
+  const intermission = useIntermissionActive(
+    status === MatchStatus.BREAK ? snapshot?.match.intermissionEndsAt : null,
+    snapshot?.generatedAt,
+  );
+  const appealActive =
+    status === MatchStatus.REGULATION_APPEAL || status === MatchStatus.OVERTIME_APPEAL;
+  const yellowPresentation = roundIsPaused || intermission.active || appealActive || varOpen;
   const exitMenuFirstOptionRef = useRef<HTMLButtonElement>(null);
   const displayedRemaining = roundIsPaused
     ? (snapshot?.activeRound?.remainingDurationMs ?? null)
@@ -299,6 +310,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
     !roundIsRunning ||
     realtime.submittingFault !== null;
   const canStartRound = status === MatchStatus.WAITING || status === MatchStatus.BREAK;
+  const varDisabled = snapshot === null || roundIsRunning;
   const judgeReadiness =
     snapshot?.readiness.kind === 'TOURNAMENT_OFFICIALS'
       ? snapshot.readiness.referees.map((referee) => ({
@@ -433,9 +445,17 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
       : snapshot?.result.regulationAppeal;
 
   return (
-    <div className="arena-background min-h-dvh text-white">
+    <div
+      className={`min-h-dvh text-white ${
+        yellowPresentation
+          ? 'bg-gradient-to-br from-amber-950 via-yellow-800 to-amber-950'
+          : 'arena-background'
+      }`}
+    >
       <main className="mx-auto w-full max-w-6xl px-3 py-3 sm:px-5 sm:py-5">
-        <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/15 bg-blue-950/35 px-4 py-3 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5">
+        <header
+          className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/45' : 'border-white/15 bg-blue-950/35'}`}
+        >
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-200/80">
               Giám sát
@@ -456,7 +476,9 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
           </div>
         </header>
 
-        <section className="mt-3 rounded-3xl border border-white/15 bg-white/10 px-5 py-7 text-center shadow-2xl shadow-blue-950/20 backdrop-blur-xl sm:mt-5 sm:px-8 sm:py-9">
+        <section
+          className={`mt-3 rounded-3xl border px-5 py-7 text-center shadow-2xl backdrop-blur-xl sm:mt-5 sm:px-8 sm:py-9 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/30 shadow-amber-950/30' : 'border-white/15 bg-white/10 shadow-blue-950/20'}`}
+        >
           <p className="text-sm font-black tracking-[0.2em] text-sky-200">
             {status ? presentPhase(status).label.toUpperCase() : 'ĐANG ĐỒNG BỘ'}
           </p>
@@ -480,7 +502,10 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
                     ? 'Trận đấu đã kết thúc'
                     : 'Chờ trạng thái chính thức từ máy chủ'}
           </p>
-
+          <IntermissionCountdown
+            endsAt={status === MatchStatus.BREAK ? snapshot?.match.intermissionEndsAt : null}
+            generatedAt={snapshot?.generatedAt}
+          />
           {canStartRound ? (
             <>
               <section
@@ -531,32 +556,55 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
             </>
           ) : null}
 
-          {roundIsRunning || roundIsPaused ? (
+          <div className="mx-auto mt-6 grid max-w-md grid-cols-2 gap-3 lg:max-w-5xl lg:grid-cols-4">
             <Button
-              className="mt-6 h-14 w-full max-w-md text-lg font-black"
-              disabled={realtime.connectionStatus !== 'connected' || realtime.controllingRound}
+              className="h-24 flex-col gap-2 border border-violet-300/50 bg-violet-700 text-center font-black text-white shadow-lg shadow-violet-950/30 hover:bg-violet-600"
+              disabled={varDisabled}
               onClick={() => {
-                setConfirmation(roundIsPaused ? 'resume' : 'pause');
+                setVarOpen(true);
               }}
               type="button"
-              variant={roundIsPaused ? 'default' : 'outline'}
             >
-              {realtime.controllingRound ? 'ĐANG XỬ LÝ…' : roundIsPaused ? 'TIẾP TỤC' : 'TẠM DỪNG'}
+              <Monitor aria-hidden="true" className="size-7" strokeWidth={2.5} />
+              <span>CHECK VAR</span>
             </Button>
-          ) : null}
-
-          <div className="mx-auto mt-6 grid max-w-md gap-3 sm:grid-cols-2 sm:max-w-2xl">
+            {roundIsRunning ? (
+              <Button
+                className="h-24 flex-col gap-2 border border-amber-200/60 bg-amber-500 text-center font-black text-amber-950 shadow-lg shadow-amber-950/25 hover:bg-amber-400"
+                disabled={realtime.connectionStatus !== 'connected' || realtime.controllingRound}
+                onClick={() => {
+                  setConfirmation('pause');
+                }}
+                type="button"
+              >
+                <CirclePause aria-hidden="true" className="size-7" strokeWidth={2.5} />
+                <span>{realtime.controllingRound ? 'ĐANG XỬ LÝ…' : 'TẠM DỪNG'}</span>
+              </Button>
+            ) : roundIsPaused ? (
+              <Button
+                className="h-24 flex-col gap-2 border border-emerald-200/50 bg-emerald-600 text-center font-black text-white shadow-lg shadow-emerald-950/25 hover:bg-emerald-500"
+                disabled={realtime.connectionStatus !== 'connected' || realtime.controllingRound}
+                onClick={() => {
+                  setConfirmation('resume');
+                }}
+                type="button"
+              >
+                <CirclePlay aria-hidden="true" className="size-7" strokeWidth={2.5} />
+                <span>{realtime.controllingRound ? 'ĐANG XỬ LÝ…' : 'TIẾP TỤC'}</span>
+              </Button>
+            ) : null}
             <div>
               <Button
                 aria-describedby={saveResultDisabled ? 'save-result-help' : undefined}
-                className="h-16 w-full text-lg font-black"
+                className="h-24 w-full flex-col gap-2 border border-sky-200/50 bg-sky-600 text-center font-black text-white shadow-lg shadow-sky-950/25 hover:bg-sky-500"
                 disabled={saveResultDisabled}
                 onClick={() => {
                   setConfirmation('complete');
                 }}
                 type="button"
               >
-                {realtime.completingMatch ? 'ĐANG LƯU…' : 'LƯU KẾT QUẢ'}
+                <Save aria-hidden="true" className="size-7" strokeWidth={2.5} />
+                <span>{realtime.completingMatch ? 'ĐANG LƯU…' : 'LƯU KẾT QUẢ'}</span>
               </Button>
               {saveResultDisabled ? (
                 <p className="mt-3 text-sm font-semibold text-amber-100" id="save-result-help">
@@ -569,15 +617,15 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
             <div>
               <Button
                 aria-describedby={exitDisabled ? 'exit-match-help' : undefined}
-                className="h-16 w-full text-lg font-black"
+                className="h-24 w-full flex-col gap-2 border border-rose-200/50 bg-rose-700 text-center font-black text-white shadow-lg shadow-rose-950/25 hover:bg-rose-600"
                 disabled={exitDisabled}
                 onClick={() => {
                   setExitMenuOpen(true);
                 }}
                 type="button"
-                variant="outline"
               >
-                THOÁT TRẬN
+                <LogOut aria-hidden="true" className="size-7" strokeWidth={2.5} />
+                <span>THOÁT TRẬN</span>
               </Button>
               {exitDisabled ? (
                 <p className="mt-3 text-sm font-semibold text-amber-100" id="exit-match-help">
@@ -760,6 +808,15 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
               </p>
             ) : null}
           </section>
+        ) : null}
+
+        {varOpen && snapshot ? (
+          <VarMonitoringDialog
+            matchId={snapshot.match.id}
+            onClose={() => {
+              setVarOpen(false);
+            }}
+          />
         ) : null}
 
         <section aria-label="Hành động kết quả" className="mt-3 grid gap-3 sm:grid-cols-2">

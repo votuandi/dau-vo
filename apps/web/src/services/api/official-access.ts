@@ -1,5 +1,6 @@
 import { apiClient, request } from '@/services/api/client';
 import { MatchLifecycle, MatchStatus, type TournamentOfficialRole } from '@/types/shared';
+import type { AdminMatchMonitoring } from './admin-management';
 
 export interface OfficialAssignment {
   readonly id: string;
@@ -36,6 +37,13 @@ export interface OfficialReferee {
   readonly assignedMatchId: string | null;
 }
 
+// The supervisor endpoint deliberately exposes only these read-only histories,
+// but their item shapes are the same read model used by admin monitoring.
+export type VarMonitoring = Pick<
+  AdminMatchMonitoring,
+  'scoringWindows' | 'penalties' | 'scoreEvents' | 'auditLogs'
+>;
+
 export const officialAccessApi = {
   login: (input: {
     tournamentCode: string;
@@ -53,7 +61,7 @@ export const officialAccessApi = {
   logout: () => request<undefined>('official-access/logout', { method: 'POST' }),
   session: () => apiClient.get<{ session: OfficialSession }>('official-access/session'),
   matches: () => apiClient.get<{ matches: readonly OfficialMatch[] }>('official/matches'),
-  state: (matchId: string) =>
+  state: (matchId: string, options?: { readonly includeVarMonitoring?: boolean }) =>
     apiClient.get<{
       match: {
         id: string;
@@ -67,7 +75,8 @@ export const officialAccessApi = {
         }[];
       };
       referees: readonly OfficialReferee[];
-    }>(`official/matches/${matchId}`),
+      varMonitoring?: VarMonitoring;
+    }>(`official/matches/${matchId}${options?.includeVarMonitoring ? '?include=var' : ''}`),
   take: (matchId: string, judgeIds: readonly string[]) =>
     apiClient.post(`official/matches/${matchId}/take`, { judgeIds }),
 };

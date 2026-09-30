@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 
 import { AuthModule } from '../auth/admin-auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -24,7 +24,7 @@ import { TournamentImageService } from './tournament-image.service';
     AuthModule,
     PrismaModule,
     RealtimeCoreModule,
-    RealtimeModule,
+    forwardRef(() => RealtimeModule),
     SportRulesModule,
     MediaModule,
   ],

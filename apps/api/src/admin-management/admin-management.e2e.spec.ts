@@ -68,6 +68,7 @@ interface RosterItemView {
   id: string;
   name: string;
   isActive: boolean;
+  intermissionDurationSeconds: number;
 }
 
 interface RosterAthleteView extends RosterItemView {
@@ -440,6 +441,67 @@ describe('Admin tournament and match management (integration)', () => {
         code: 'AUTH_REQUIRED',
         message: 'Authentication required',
       });
+  });
+
+  it('persists and serializes per-weight-class intermission duration', async () => {
+    const tournament = await createTournament('weight-intermission');
+    const otherTournament = await createTournament('weight-intermission-other');
+    const weightClass = await createWeightClass(tournament.id, 'configured');
+    const foreignWeightClass = await createWeightClass(
+      otherTournament.id,
+      'foreign',
+    );
+    const endpoint = `/api/admin/tournaments/${tournament.id}/weight-classes/${weightClass.id}`;
+
+    expect(weightClass.intermissionDurationSeconds).toBe(0);
+    await authenticated(request(app.getHttpServer()).patch(endpoint))
+      .send({ intermissionDurationSeconds: -1 })
+      .expect(400);
+    await authenticated(request(app.getHttpServer()).patch(endpoint))
+      .send({ intermissionDurationSeconds: 12.5 })
+      .expect(400);
+
+    await authenticated(request(app.getHttpServer()).patch(endpoint))
+      .send({ intermissionDurationSeconds: 45 })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(
+          (body as { weightClass: RosterItemView }).weightClass,
+        ).toMatchObject({
+          id: weightClass.id,
+          intermissionDurationSeconds: 45,
+        });
+      });
+
+    await authenticated(
+      request(app.getHttpServer()).get(
+        `/api/admin/tournaments/${tournament.id}/weight-classes`,
+      ),
+    )
+      .expect(200)
+      .expect(({ body }) => {
+        const weightClasses = (body as { weightClasses: RosterItemView[] })
+          .weightClasses;
+        expect(
+          weightClasses.find(({ id }) => id === weightClass.id),
+        ).toMatchObject({
+          intermissionDurationSeconds: 45,
+        });
+      });
+    expect(
+      await prisma.tournamentWeightClass.findUniqueOrThrow({
+        where: { id: weightClass.id },
+        select: { intermissionDurationSeconds: true },
+      }),
+    ).toEqual({ intermissionDurationSeconds: 45 });
+
+    await authenticated(
+      request(app.getHttpServer()).patch(
+        `/api/admin/tournaments/${tournament.id}/weight-classes/${foreignWeightClass.id}`,
+      ),
+    )
+      .send({ intermissionDurationSeconds: 10 })
+      .expect(404);
   });
 
   it('creates, lists, reads, updates, and archives a tournament', async () => {

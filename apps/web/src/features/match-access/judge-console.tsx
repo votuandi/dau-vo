@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AthleteColor, MatchStatus } from '@martial-arts-scoring/shared-types';
 import type { MatchRealtimeState, RealtimeConnectionStatus } from './match-realtime';
+import { IntermissionCountdown, useIntermissionActive } from '@/components/intermission-countdown';
 
 interface JudgeConsoleProps {
   readonly realtime: MatchRealtimeState;
@@ -160,6 +161,13 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
   const displayedRemaining = roundIsPaused
     ? (snapshot?.activeRound?.remainingDurationMs ?? null)
     : remainingTime;
+  const intermission = useIntermissionActive(
+    status === MatchStatus.BREAK ? snapshot?.match.intermissionEndsAt : null,
+    snapshot?.generatedAt,
+  );
+  const appealActive =
+    status === MatchStatus.REGULATION_APPEAL || status === MatchStatus.OVERTIME_APPEAL;
+  const yellowPresentation = roundIsPaused || intermission.active || appealActive;
   const redAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
   const blueAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
   const controlsDisabled =
@@ -171,9 +179,13 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
   const acceptedVote = realtime.lastAcceptedVote;
 
   return (
-    <div className="arena-background min-h-dvh text-white">
+    <div
+      className={`min-h-dvh text-white ${yellowPresentation ? 'bg-gradient-to-br from-amber-950 via-yellow-800 to-amber-950' : 'arena-background'}`}
+    >
       <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-3 py-3 sm:px-5 sm:py-5">
-        <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/15 bg-blue-950/35 px-4 py-3 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5">
+        <header
+          className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/45' : 'border-white/15 bg-blue-950/35'}`}
+        >
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-200/80">
               Giám định
@@ -195,7 +207,7 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
 
         <section
           aria-labelledby="referee-round-title"
-          className="mt-3 flex flex-1 flex-col justify-center rounded-3xl border border-white/15 bg-white/10 px-5 py-7 text-center shadow-2xl shadow-blue-950/20 backdrop-blur-xl sm:mt-5 sm:px-8 sm:py-10"
+          className={`mt-3 flex flex-1 flex-col justify-center rounded-3xl border px-5 py-7 text-center shadow-2xl backdrop-blur-xl sm:mt-5 sm:px-8 sm:py-10 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/30 shadow-amber-950/30' : 'border-white/15 bg-white/10 shadow-blue-950/20'}`}
         >
           <p
             className="text-sm font-black uppercase tracking-[0.2em] text-sky-200"
@@ -221,6 +233,10 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
                   ? 'Trận đấu đã kết thúc'
                   : 'Chờ trạng thái chính thức từ máy chủ'}
           </p>
+          <IntermissionCountdown
+            endsAt={status === MatchStatus.BREAK ? snapshot?.match.intermissionEndsAt : null}
+            generatedAt={snapshot?.generatedAt}
+          />
         </section>
 
         <section

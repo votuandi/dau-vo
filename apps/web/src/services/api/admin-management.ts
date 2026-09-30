@@ -197,6 +197,7 @@ export interface TournamentRosterItem {
 }
 export interface TournamentWeightClass extends TournamentRosterItem {
   readonly hasCurrentBracket: boolean;
+  readonly intermissionDurationSeconds: number;
 }
 export interface TournamentOrganization extends TournamentRosterItem {
   readonly location: string | null;
@@ -226,6 +227,9 @@ export interface RosterItemInput {
   readonly location?: string | null;
   readonly details?: string | null;
   readonly isActive?: boolean;
+}
+export interface WeightClassInput extends RosterItemInput {
+  readonly intermissionDurationSeconds?: number;
 }
 export interface CreateAthleteInput {
   readonly name: string;
@@ -582,8 +586,8 @@ export const adminManagementApi = {
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes`,
       input,
     ),
-  updateWeightClass: (tournamentId: string, id: string, input: RosterItemInput) =>
-    apiClient.patch<{ readonly weightClass: TournamentRosterItem }>(
+  updateWeightClass: (tournamentId: string, id: string, input: WeightClassInput) =>
+    apiClient.patch<{ readonly weightClass: TournamentWeightClass }>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(id)}`,
       input,
     ),
