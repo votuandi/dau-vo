@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { BracketDrawSetupDialog } from './bracket-draw-setup-dialog';
+import { BracketDrawSetupDialog, shuffle } from './bracket-draw-setup-dialog';
 
 const setup = {
   setupToken: 'setup',
@@ -22,6 +22,18 @@ const setup = {
 } as const;
 
 describe('BracketDrawSetupDialog', () => {
+  it('shuffles without mutating, dropping, or duplicating elements', () => {
+    expect(shuffle([])).toEqual([]);
+    expect(shuffle(['a'])).toEqual(['a']);
+
+    const values = ['a', 'b', 'c', 'd'];
+    const shuffled = shuffle(values);
+
+    expect(shuffled).toHaveLength(values.length);
+    expect(new Set(shuffled)).toEqual(new Set(values));
+    expect(values).toEqual(['a', 'b', 'c', 'd']);
+  });
+
   it.each([
     [29, 32, 13],
     [31, 32, 15],
@@ -93,6 +105,43 @@ describe('BracketDrawSetupDialog', () => {
     expect(screen.getByLabelText('Chọn Chi')).not.toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Xác nhận và bốc thăm' }));
     expect(submit).toHaveBeenCalledWith(['b'], 'MANUAL');
+  });
+
+  it('fills missing seeded byes from remaining eligible athletes only', async () => {
+    const user = userEvent.setup();
+    const submit = vi.fn();
+    const seededSetup = {
+      ...setup,
+      summary: { ...setup.summary, athleteCount: 5, byeCount: 3 },
+      eligibleAthletes: [
+        { ...setup.eligibleAthletes[0], isSeed: true },
+        { ...setup.eligibleAthletes[1], isSeed: false },
+        ...setup.eligibleAthletes.slice(2),
+        { id: 'd', name: 'Dung', organizationName: 'D', imageUrl: null, isSeed: false },
+        { id: 'e', name: 'Em', organizationName: 'E', imageUrl: null, isSeed: false },
+      ],
+    };
+    render(
+      <BracketDrawSetupDialog
+        error={null}
+        onClose={vi.fn()}
+        onReload={vi.fn()}
+        onSubmit={submit}
+        pending={false}
+        selectedIds={[]}
+        setup={seededSetup}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('Đặc cách hạt giống'));
+    await user.click(screen.getByRole('button', { name: /Chọn ngẫu nhiên 2/u }));
+    await user.click(screen.getByRole('button', { name: 'Xác nhận và bốc thăm' }));
+
+    expect(submit).toHaveBeenCalledWith(expect.arrayContaining(['a']), 'SEEDED');
+    const selectedIds = submit.mock.calls[0]![0] as string[];
+    expect(selectedIds).toHaveLength(3);
+    expect(new Set(selectedIds).size).toBe(3);
+    expect(selectedIds.every((id) => ['a', 'b', 'c', 'd', 'e'].includes(id))).toBe(true);
   });
 
   it('states that no bye is available and closes with Escape', async () => {

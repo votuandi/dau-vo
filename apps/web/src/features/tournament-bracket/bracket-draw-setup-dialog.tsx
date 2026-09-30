@@ -4,6 +4,15 @@ import { Dialog } from '@/components/ui/dialog';
 import type { BracketDrawSetup } from '@/services/api/admin-management';
 type Strategy = 'RANDOM' | 'MANUAL' | 'SEEDED';
 
+export function shuffle<T>(values: readonly T[]): T[] {
+  const shuffled = [...values];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex]!, shuffled[index]!];
+  }
+  return shuffled;
+}
+
 export function BracketDrawSetupDialog({
   setup,
   selectedIds,
@@ -51,9 +60,7 @@ export function BracketDrawSetupDialog({
   const selectRandomRemaining = () => {
     setSelected((old) => [
       ...old,
-      ...[...pool]
-        .filter((x) => !old.includes(x.id))
-        .sort(() => Math.random() - 0.5)
+      ...shuffle(pool.filter((x) => !old.includes(x.id)))
         .slice(0, byeCount - old.length)
         .map((x) => x.id),
     ]);
