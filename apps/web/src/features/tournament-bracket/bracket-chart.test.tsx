@@ -2,7 +2,12 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { MatchDisplayState, MatchLifecycle, MatchPhase } from '@martial-arts-scoring/shared-types';
 import type { ActiveBracket } from '@/services/api/admin-management';
-import { BracketChart, fixtureTopOffsets } from './bracket-chart';
+import {
+  BRACKET_LAYOUT,
+  BracketChart,
+  bracketConnectorPath,
+  fixtureTopOffsets,
+} from './bracket-chart';
 
 function activeBracket(phase: MatchPhase, lifecycle: MatchLifecycle): ActiveBracket {
   return {
@@ -56,7 +61,7 @@ function activeBracket(phase: MatchPhase, lifecycle: MatchLifecycle): ActiveBrac
 }
 
 describe('BracketChart', () => {
-  it('keeps the display reference and standard status chips together without RED/BLUE text labels', () => {
+  it('keeps the reference, status chips, side labels, participant names, and organizations visible', () => {
     render(
       <BracketChart data={activeBracket(MatchPhase.ROUND_1_PAUSED, MatchLifecycle.SUSPENDED)} />,
     );
@@ -64,6 +69,10 @@ describe('BracketChart', () => {
     expect(screen.getByText('TK-01')).toBeInTheDocument();
     expect(screen.getByText('Tạm hoãn')).toBeInTheDocument();
     expect(screen.getByText('Hiệp 1 tạm dừng')).toBeInTheDocument();
+    expect(screen.getByText('Nguyễn An')).toBeInTheDocument();
+    expect(screen.getByText('CLB A')).toBeInTheDocument();
+    expect(screen.getByText('Trần Bình')).toBeInTheDocument();
+    expect(screen.getByText('CLB B')).toBeInTheDocument();
     expect(screen.queryByText('RED')).not.toBeInTheDocument();
     expect(screen.queryByText('BLUE')).not.toBeInTheDocument();
     expect(screen.getByText('Bên đỏ')).toHaveClass('sr-only');
@@ -103,10 +112,12 @@ describe('BracketChart', () => {
 
       for (let position = 1; position <= firstRoundSlots; position += 1) {
         if (missingPositions.includes(position)) continue;
-        expect(offsets.get(`r1-${String(position)}`)).toBe((position - 1) * 224);
+        expect(offsets.get(`r1-${String(position)}`)).toBe(
+          (position - 1) * BRACKET_LAYOUT.rowPitch,
+        );
       }
-      expect(offsets.get('r2-1')).toBe(112);
-      if (firstRoundSlots >= 4) expect(offsets.get('r2-2')).toBe(560);
+      expect(offsets.get('r2-1')).toBe(BRACKET_LAYOUT.rowPitch / 2);
+      if (firstRoundSlots >= 4) expect(offsets.get('r2-2')).toBe(BRACKET_LAYOUT.rowPitch * 2.5);
     },
   );
 
@@ -125,8 +136,26 @@ describe('BracketChart', () => {
       );
 
       for (let roundIndex = 0; roundIndex < roundCount; roundIndex += 1) {
-        expect(offsets.get(`r${String(roundIndex + 1)}-1`)).toBe((2 ** roundIndex - 1) * 112);
+        expect(offsets.get(`r${String(roundIndex + 1)}-1`)).toBe(
+          (2 ** roundIndex - 1) * (BRACKET_LAYOUT.rowPitch / 2),
+        );
       }
     },
   );
+
+  it('uses distinct connector lanes for RED and BLUE target ports', () => {
+    const sharedBounds = {
+      sourceRight: 240,
+      sourceCenterY: 88,
+      targetLeft: 296,
+      targetCenterY: 132,
+    };
+
+    expect(bracketConnectorPath({ ...sharedBounds, targetSide: 'RED' })).toBe(
+      'M 240 88 H 261.28 V 132 H 296',
+    );
+    expect(bracketConnectorPath({ ...sharedBounds, targetSide: 'BLUE' })).toBe(
+      'M 240 88 H 274.72 V 132 H 296',
+    );
+  });
 });

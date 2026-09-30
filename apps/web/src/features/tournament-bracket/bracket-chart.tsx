@@ -19,7 +19,38 @@ interface ConnectorPath {
   readonly d: string;
 }
 
-const FIXTURE_VERTICAL_GAP = 224;
+/**
+ * These values deliberately describe both the CSS layout and the logical tree
+ * coordinates. Keeping them together means a denser card cannot leave the
+ * connector tree using the dimensions of the previous layout.
+ */
+export const BRACKET_LAYOUT = {
+  fixtureWidth: 240,
+  roundGap: 56,
+  rowPitch: 176,
+} as const;
+
+interface ConnectorBounds {
+  readonly sourceRight: number;
+  readonly sourceCenterY: number;
+  readonly targetLeft: number;
+  readonly targetCenterY: number;
+  readonly targetSide: 'RED' | 'BLUE';
+}
+
+export function bracketConnectorPath({
+  sourceRight,
+  sourceCenterY,
+  targetLeft,
+  targetCenterY,
+  targetSide,
+}: ConnectorBounds): string {
+  // Use separate lanes for the RED and BLUE target ports. This keeps sibling
+  // advances distinct even when a round has skipped/missing fixture cards.
+  const middleX =
+    sourceRight + Math.max(28, targetLeft - sourceRight) * (targetSide === 'RED' ? 0.38 : 0.62);
+  return `M ${String(sourceRight)} ${String(sourceCenterY)} H ${String(middleX)} V ${String(targetCenterY)} H ${String(targetLeft)}`;
+}
 
 export function fixtureTopOffsets(
   rounds: readonly {
@@ -36,7 +67,7 @@ export function fixtureTopOffsets(
       // bye. Deriving this from the filtered fixtures array would collapse
       // those branches and move every later fixture onto the wrong tree slot.
       const logicalSlot = (fixture.position - 0.5) * 2 ** roundIndex - 0.5;
-      offsets.set(fixture.id, logicalSlot * FIXTURE_VERTICAL_GAP);
+      offsets.set(fixture.id, logicalSlot * BRACKET_LAYOUT.rowPitch);
     });
   }
   return offsets;
@@ -83,7 +114,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
   const fixtureOffsets = useMemo(() => fixtureTopOffsets(rounds), [rounds]);
   const chartHeight = Math.max(
     280,
-    ...Array.from(fixtureOffsets.values(), (offset) => offset + FIXTURE_VERTICAL_GAP),
+    ...Array.from(fixtureOffsets.values(), (offset) => offset + BRACKET_LAYOUT.rowPitch),
   );
 
   useEffect(() => {
@@ -105,12 +136,16 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
             const startY = sourceBounds.top + sourceBounds.height / 2 - contentBounds.top;
             const endX = targetBounds.left - contentBounds.left;
             const endY = targetBounds.top + targetBounds.height / 2 - contentBounds.top;
-            const middleX =
-              startX + Math.max(28, endX - startX) * (edge.targetSide === 'RED' ? 0.38 : 0.62);
             return [
               {
                 key: `${edge.sourceFixtureId}:${edge.targetFixtureId}:${edge.targetSide}`,
-                d: `M ${String(startX)} ${String(startY)} H ${String(middleX)} V ${String(endY)} H ${String(endX)}`,
+                d: bracketConnectorPath({
+                  sourceRight: startX,
+                  sourceCenterY: startY,
+                  targetLeft: endX,
+                  targetCenterY: endY,
+                  targetSide: edge.targetSide,
+                }),
               },
             ];
           }),
@@ -142,9 +177,12 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
   return (
     <div className="overflow-x-auto rounded-xl border bg-muted/20 p-4" aria-label="Sơ đồ nhánh đấu">
       <div
-        className="relative flex min-w-max items-stretch gap-24"
+        className="relative flex min-w-max items-stretch"
         ref={contentRef}
-        style={{ minHeight: `${String(chartHeight)}px` }}
+        style={{
+          columnGap: `${String(BRACKET_LAYOUT.roundGap)}px`,
+          minHeight: `${String(chartHeight)}px`,
+        }}
       >
         <svg
           aria-hidden="true"
@@ -163,11 +201,15 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
           ))}
         </svg>
         {rounds.map((round) => (
-          <section className="relative z-10 w-72 shrink-0" key={round.roundNumber}>
-            <h4 className="sticky left-0 top-0 z-10 mb-3 bg-muted/95 py-1 font-black">
+          <section
+            className="relative z-10 shrink-0"
+            key={round.roundNumber}
+            style={{ width: `${String(BRACKET_LAYOUT.fixtureWidth)}px` }}
+          >
+            <h4 className="sticky left-0 top-0 z-10 mb-2 bg-muted/95 py-1 text-sm font-black">
               {round.label}
             </h4>
-            <div className="relative pt-10" style={{ minHeight: `${String(chartHeight)}px` }}>
+            <div className="relative pt-8" style={{ minHeight: `${String(chartHeight)}px` }}>
               {round.fixtures.map((fixture) => {
                 const activeFixture = isPreview
                   ? null
@@ -192,14 +234,14 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                             ]
                           : [presentDisplayState(activeFixture.displayState)];
                         return (
-                          <header className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+                          <header className="flex flex-wrap items-center justify-between gap-1 border-b px-2 py-1.5">
                             <p className="text-xs font-bold text-muted-foreground">
                               {fixture.displayReference}
                             </p>
                             <span className="flex flex-wrap justify-end gap-1">
                               {statuses.map((status) => (
                                 <span
-                                  className={`rounded-full border px-2 py-0.5 text-xs font-bold ${matchVariantClassName[status.variant]}`}
+                                  className={`rounded-full border px-1.5 py-0.5 text-[11px] font-bold ${matchVariantClassName[status.variant]}`}
                                   key={status.label}
                                 >
                                   {status.label}
@@ -210,7 +252,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                         );
                       })()
                     ) : (
-                      <header className="border-b px-3 py-2">
+                      <header className="border-b px-2 py-1.5">
                         <p className="text-xs font-bold text-muted-foreground">
                           {fixture.displayReference}
                         </p>
@@ -235,7 +277,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                             : 'Đặc cách';
                       return (
                         <div
-                          className={`flex min-h-14 items-center gap-2 border-l-4 px-3 py-2 ${slot.side === 'RED' ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/20' : 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20'}`}
+                          className={`flex min-h-11 items-center gap-1.5 border-l-4 px-2 py-1.5 ${slot.side === 'RED' ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/20' : 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20'}`}
                           data-fixture-slot={`${fixture.id}:${slot.side}`}
                           key={slot.side}
                           ref={(element) => {
@@ -247,7 +289,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                           {entrant && 'imageUrl' in entrant && entrant.imageUrl ? (
                             <img
                               alt=""
-                              className="size-8 rounded-full object-cover"
+                              className="size-7 shrink-0 rounded-full object-cover"
                               src={entrant.imageUrl}
                             />
                           ) : null}
@@ -255,7 +297,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                             <span className="sr-only">
                               {slot.side === 'RED' ? 'Bên đỏ' : 'Bên xanh'}
                             </span>
-                            <p className="line-clamp-2 text-sm font-semibold">
+                            <p className="break-words text-sm font-semibold leading-5">
                               {entrant
                                 ? 'name' in entrant
                                   ? entrant.name
@@ -263,7 +305,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                                 : waiting}
                             </p>
                             {entrant ? (
-                              <p className="line-clamp-1 text-xs text-muted-foreground">
+                              <p className="break-words text-xs leading-4 text-muted-foreground">
                                 {'organizationName' in entrant
                                   ? entrant.organizationName
                                   : (entrant.snapshotOrganization ?? 'Không đơn vị')}
@@ -275,12 +317,12 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                     })}
                     {activeFixture?.winnerEntrant &&
                     activeFixture.match?.lifecycle === MatchLifecycle.COMPLETED ? (
-                      <p className="border-t px-3 py-2 text-sm font-bold">
+                      <p className="border-t px-2 py-1.5 text-sm font-bold">
                         Thắng: {activeFixture.winnerEntrant.snapshotName}
                       </p>
                     ) : null}
                     {activeFixture?.status === 'AWAITING_WINNER' ? (
-                      <p className="border-t px-3 py-2 text-sm text-muted-foreground">
+                      <p className="border-t px-2 py-1.5 text-sm text-muted-foreground">
                         Chờ xác định người thắng
                       </p>
                     ) : null}
