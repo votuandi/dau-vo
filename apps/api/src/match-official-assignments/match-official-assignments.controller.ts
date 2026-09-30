@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -26,25 +27,26 @@ export class MatchOfficialAssignmentsController {
     @Inject(AdminManagementService)
     private readonly management: AdminManagementService,
   ) {}
-  @Get(':matchId/var-monitoring')
-  async varMonitoring(
+  @Get() list(@Req() request: AuthenticatedOfficialRequest) {
+    return this.assignments.list(request.officialSession);
+  }
+  @Get(':matchId')
+  async state(
     @Param('matchId', new ParseUUIDPipe()) matchId: string,
     @Req() request: AuthenticatedOfficialRequest,
+    @Query('include') include?: string,
   ) {
+    const state = await this.assignments.state(matchId, request.officialSession);
+    if (include !== 'var') return state;
+
     await this.assignments.assertActiveSupervisorAssignment(
       matchId,
       request.officialSession,
     );
-    return this.management.getSupervisorVarMonitoring(matchId);
-  }
-  @Get() list(@Req() request: AuthenticatedOfficialRequest) {
-    return this.assignments.list(request.officialSession);
-  }
-  @Get(':matchId') state(
-    @Param('matchId', new ParseUUIDPipe()) matchId: string,
-    @Req() request: AuthenticatedOfficialRequest,
-  ) {
-    return this.assignments.state(matchId, request.officialSession);
+    return {
+      ...state,
+      varMonitoring: await this.management.getSupervisorVarMonitoring(matchId),
+    };
   }
   @Post(':matchId/take') take(
     @Param('matchId', new ParseUUIDPipe()) matchId: string,

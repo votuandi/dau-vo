@@ -26,6 +26,10 @@ function athleteColorLabel(color: AthleteColor): string {
   return color === AthleteColor.RED ? 'VĐV đỏ' : 'VĐV xanh';
 }
 
+function nullableAthlete(value: unknown): { color?: AthleteColor; name?: string } | null {
+  return typeof value === 'object' && value !== null ? value : null;
+}
+
 function judgeVoteLabel(vote: { judgePosition: number | null; judgeSlot: string | null }): string {
   if (vote.judgePosition !== null) return `Giám định ${String(vote.judgePosition)}`;
   if (vote.judgeSlot && vote.judgeSlot in roleLabels) {
@@ -42,8 +46,35 @@ function formatRoundElapsedTime(roundElapsedMs: number | null, roundNumber: numb
   return `Giây ${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')} trong hiệp ${String(roundNumber)}`;
 }
 
+function scoringWindowHistoryClassName(
+  scoreAwarded: boolean,
+  winningColor: AthleteColor | null,
+): string {
+  if (scoreAwarded && winningColor === AthleteColor.RED) {
+    return 'border border-red-200 bg-red-50 text-red-800';
+  }
+  if (scoreAwarded && winningColor === AthleteColor.BLUE) {
+    return 'border border-blue-200 bg-blue-50 text-blue-800';
+  }
+  return 'border border-slate-200 bg-slate-100 text-slate-800';
+}
+
+function judgeVoteColorClassName(color: AthleteColor): string {
+  return color === AthleteColor.RED ? 'text-red-700' : 'text-blue-700';
+}
+
+function scoreEventHistoryClassName(color: AthleteColor | undefined): string {
+  if (color === AthleteColor.RED) {
+    return 'border border-red-200 bg-red-50 text-red-800';
+  }
+  if (color === AthleteColor.BLUE) {
+    return 'border border-blue-200 bg-blue-50 text-blue-800';
+  }
+  return 'border border-slate-200 bg-slate-100 text-slate-800';
+}
+
 function scoreEventTypeLabel(type: string): string {
-  if (type === 'REFEREE_POINT') return 'Điểm giám định';
+  if (type === 'REFEREE_POINT' || type === 'JUDGE_POINT') return 'Điểm giám định';
   if (type === 'PENALTY') return 'Phạt';
   return type;
 }
@@ -104,7 +135,7 @@ export function VarMonitoringDialog({
 
   return (
     <Dialog
-      className="max-w-5xl border border-amber-300/60 bg-amber-50 text-amber-950"
+      className="!flex !h-[80vh] !max-h-[80vh] !w-[95vw] !max-w-[95vw] !flex-col !overflow-hidden border border-amber-300/60 bg-amber-50 text-amber-950"
       description="Dữ liệu chỉ đọc phục vụ kiểm tra VAR của trận đấu hiện tại."
       onClose={onClose}
       title="Check VAR"
@@ -122,14 +153,22 @@ export function VarMonitoringDialog({
       {!data ? (
         <p className="mt-5 text-sm text-muted-foreground">Đang tải dữ liệu VAR…</p>
       ) : (
-        <div className="mt-5 grid max-h-[70vh] gap-4 overflow-y-auto pr-1 md:grid-cols-2">
-          <section className="rounded-xl border border-amber-200 bg-amber-100/60 p-4">
-            <h3 className="font-black">Lịch sử cửa sổ chấm điểm ({scoringWindows.length})</h3>
+        <div className="mt-5 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+          <details className="rounded-xl border p-4" open>
+            <summary className="cursor-pointer font-black">
+              Lịch sử cửa sổ chấm điểm ({scoringWindows.length})
+            </summary>
             <HistoryList
               empty="Chưa có cửa sổ chấm điểm."
               entries={scoringWindows}
               renderEntry={(entry) => (
-                <li className="rounded-lg bg-amber-50 p-3 text-sm" key={entry.id}>
+                <li
+                  className={`rounded-lg p-3 text-sm ${scoringWindowHistoryClassName(
+                    entry.scoreAwarded,
+                    entry.winningColor,
+                  )}`}
+                  key={entry.id}
+                >
                   <div className="flex flex-wrap justify-between gap-2">
                     <p className="font-bold">
                       Hiệp {entry.roundNumber} ·{' '}
@@ -138,7 +177,7 @@ export function VarMonitoringDialog({
                         : 'Không tính điểm'}
                       {entry.invalidatedAt ? ' · Đã hủy kết quả' : ''}
                     </p>
-                    <div className="text-right text-xs text-amber-900/75">
+                    <div className="text-right text-xs opacity-80">
                       <time className="block">{timestamp(entry.occurredAt)}</time>
                       <p className="mt-1">
                         {formatRoundElapsedTime(entry.roundElapsedMs, entry.roundNumber)}
@@ -152,10 +191,10 @@ export function VarMonitoringDialog({
                           key={`${String(vote.judgePosition ?? vote.judgeSlot ?? 'unknown')}-${vote.serverReceivedAt}`}
                         >
                           {judgeVoteLabel(vote)}:{' '}
-                          <strong>{`+1 ${athleteColorLabel(vote.athleteColor)}`}</strong>{' '}
-                          <span className="text-amber-900/75">
-                            [{timestamp(vote.serverReceivedAt)}]
-                          </span>
+                          <strong className={judgeVoteColorClassName(vote.athleteColor)}>
+                            +1 {athleteColorLabel(vote.athleteColor)}
+                          </strong>{' '}
+                          <span className="opacity-80">[{timestamp(vote.serverReceivedAt)}]</span>
                           {vote.invalidatedAt ? (
                             <span className="ml-2 font-bold">Đã vô hiệu</span>
                           ) : null}
@@ -166,52 +205,65 @@ export function VarMonitoringDialog({
                 </li>
               )}
             />
-          </section>
-          <section className="rounded-xl border border-amber-200 bg-amber-100/60 p-4">
-            <h3 className="font-black">Lỗi phạt ({penalties.length})</h3>
+          </details>
+          <details className="rounded-xl border p-4">
+            <summary className="cursor-pointer font-black">Lỗi phạt ({penalties.length})</summary>
             <HistoryList
               empty="Chưa có lỗi phạt."
               entries={penalties}
-              renderEntry={(entry) => (
-                <li className="rounded-lg bg-amber-50 p-3 text-sm" key={entry.id}>
-                  Hiệp {entry.roundNumber ?? '—'} · {colorLabel(entry.athlete?.color)} ·{' '}
-                  {entry.athlete?.name ?? '—'} · <strong>{entry.value}</strong> ·{' '}
-                  {timestamp(entry.createdAt)}
-                  {entry.revertedAt ? <span className="ml-2 font-bold">Đã hoàn tác</span> : null}
-                </li>
-              )}
+              renderEntry={(entry) => {
+                const athlete = nullableAthlete(entry.athlete);
+                return (
+                  <li className="rounded-lg bg-muted/60 p-3 text-sm" key={entry.id}>
+                    Hiệp {entry.roundNumber ?? '—'} · {colorLabel(athlete?.color)} ·{' '}
+                    {athlete?.name ?? '—'} · <strong>{entry.value}</strong> ·{' '}
+                    {timestamp(entry.createdAt)}
+                    {entry.revertedAt ? <span className="ml-2 font-bold">Đã hoàn tác</span> : null}
+                  </li>
+                );
+              }}
             />
-          </section>
-          <section className="rounded-xl border border-amber-200 bg-amber-100/60 p-4">
-            <h3 className="font-black">Score events ({scoreEvents.length})</h3>
+          </details>
+          <details className="rounded-xl border p-4">
+            <summary className="cursor-pointer font-black">
+              Score events ({scoreEvents.length})
+            </summary>
             <HistoryList
               empty="Chưa có score event."
               entries={scoreEvents}
-              renderEntry={(entry) => (
-                <li className="rounded-lg bg-amber-50 p-3 text-sm" key={entry.id}>
-                  {scoreEventTypeLabel(entry.type)} · Hiệp {entry.roundNumber ?? '—'} ·{' '}
-                  {colorLabel(entry.athlete?.color)} · {entry.athlete?.name ?? '—'} ·{' '}
-                  <strong>
-                    {entry.value > 0 ? '+' : ''}
-                    {entry.value}
-                  </strong>{' '}
-                  · {timestamp(entry.occurredAt)}
-                  <span className="text-xs text-amber-900/75">
-                    {' '}
-                    · {formatRoundElapsedTime(entry.roundElapsedMs, entry.roundNumber)}
-                  </span>
-                  {entry.revertedAt ? <span className="ml-2 font-bold">Đã hoàn tác</span> : null}
-                </li>
-              )}
+              renderEntry={(entry) => {
+                const athlete = nullableAthlete(entry.athlete);
+                return (
+                  <li
+                    className={`overflow-x-auto whitespace-nowrap rounded-lg p-3 text-sm ${scoreEventHistoryClassName(
+                      athlete?.color,
+                    )}`}
+                    key={entry.id}
+                  >
+                    {scoreEventTypeLabel(entry.type)} · Hiệp {entry.roundNumber ?? '—'} ·{' '}
+                    {colorLabel(athlete?.color)} · {athlete?.name ?? '—'} ·{' '}
+                    <strong>
+                      {entry.value > 0 ? '+' : ''}
+                      {entry.value}
+                    </strong>{' '}
+                    · {timestamp(entry.occurredAt)}
+                    <span className="text-xs opacity-80">
+                      {' '}
+                      · {formatRoundElapsedTime(entry.roundElapsedMs, entry.roundNumber)}
+                    </span>
+                    {entry.revertedAt ? <span className="ml-2 font-bold">Đã hoàn tác</span> : null}
+                  </li>
+                );
+              }}
             />
-          </section>
-          <section className="rounded-xl border border-amber-200 bg-amber-100/60 p-4">
-            <h3 className="font-black">Audit logs ({auditLogs.length})</h3>
+          </details>
+          <details className="rounded-xl border p-4">
+            <summary className="cursor-pointer font-black">Audit logs ({auditLogs.length})</summary>
             <HistoryList
               empty="Chưa có audit log."
               entries={auditLogs}
               renderEntry={(entry) => (
-                <li className="rounded-lg bg-amber-50 p-3 text-sm" key={entry.id}>
+                <li className="rounded-lg bg-muted/60 p-3 text-sm" key={entry.id}>
                   <strong>{auditEventLabel(entry.eventType)}</strong> · {timestamp(entry.createdAt)}
                   <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs text-muted-foreground">
                     {metadataText(entry.metadata)}
@@ -219,10 +271,10 @@ export function VarMonitoringDialog({
                 </li>
               )}
             />
-          </section>
+          </details>
         </div>
       )}
-      <div className="mt-5 flex justify-end">
+      <div className="mt-5 flex shrink-0 justify-end pt-5">
         <Button onClick={onClose} type="button" variant="outline">
           Đóng
         </Button>

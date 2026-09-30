@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- this display hook is shared by three match views. */
 import { useEffect, useRef, useState } from 'react';
 
 function formatRemaining(milliseconds: number): string {
@@ -23,8 +24,12 @@ export function useIntermissionActive(
     serverOffset.current = Number.isNaN(serverNow) ? 0 : serverNow - localNow;
     setNow(localNow);
     if (!endsAt) return;
-    const interval = window.setInterval(() => setNow(Date.now()), 250);
-    return () => window.clearInterval(interval);
+    const interval = window.setInterval(() => {
+      setNow(Date.now());
+    }, 250);
+    return () => {
+      window.clearInterval(interval);
+    };
   }, [endsAt, generatedAt]);
 
   const end = endsAt ? new Date(endsAt).getTime() : Number.NaN;

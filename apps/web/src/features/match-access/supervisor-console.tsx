@@ -299,7 +299,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
   );
   const appealActive =
     status === MatchStatus.REGULATION_APPEAL || status === MatchStatus.OVERTIME_APPEAL;
-  const yellowPresentation = intermission.active || appealActive || varOpen;
+  const yellowPresentation = roundIsPaused || intermission.active || appealActive || varOpen;
   const exitMenuFirstOptionRef = useRef<HTMLButtonElement>(null);
   const displayedRemaining = roundIsPaused
     ? (snapshot?.activeRound?.remainingDurationMs ?? null)
@@ -508,7 +508,9 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
           <Button
             className="mt-4 h-12 w-full max-w-md font-black"
             disabled={varDisabled}
-            onClick={() => setVarOpen(true)}
+            onClick={() => {
+              setVarOpen(true);
+            }}
             type="button"
             variant="outline"
           >
@@ -797,7 +799,12 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
         ) : null}
 
         {varOpen && snapshot ? (
-          <VarMonitoringDialog matchId={snapshot.match.id} onClose={() => setVarOpen(false)} />
+          <VarMonitoringDialog
+            matchId={snapshot.match.id}
+            onClose={() => {
+              setVarOpen(false);
+            }}
+          />
         ) : null}
 
         <section aria-label="Hành động kết quả" className="mt-3 grid gap-3 sm:grid-cols-2">

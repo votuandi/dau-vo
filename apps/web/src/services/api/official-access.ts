@@ -61,7 +61,7 @@ export const officialAccessApi = {
   logout: () => request<undefined>('official-access/logout', { method: 'POST' }),
   session: () => apiClient.get<{ session: OfficialSession }>('official-access/session'),
   matches: () => apiClient.get<{ matches: readonly OfficialMatch[] }>('official/matches'),
-  state: (matchId: string) =>
+  state: (matchId: string, options?: { readonly includeVarMonitoring?: boolean }) =>
     apiClient.get<{
       match: {
         id: string;
@@ -75,9 +75,8 @@ export const officialAccessApi = {
         }[];
       };
       referees: readonly OfficialReferee[];
-    }>(`official/matches/${matchId}`),
-  varMonitoring: (matchId: string) =>
-    apiClient.get<VarMonitoring>(`official/matches/${matchId}/var-monitoring`),
+      varMonitoring?: VarMonitoring;
+    }>(`official/matches/${matchId}${options?.includeVarMonitoring ? '?include=var' : ''}`),
   take: (matchId: string, judgeIds: readonly string[]) =>
     apiClient.post(`official/matches/${matchId}/take`, { judgeIds }),
 };

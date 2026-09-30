@@ -167,7 +167,7 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
   );
   const appealActive =
     status === MatchStatus.REGULATION_APPEAL || status === MatchStatus.OVERTIME_APPEAL;
-  const yellowPresentation = intermission.active || appealActive;
+  const yellowPresentation = roundIsPaused || intermission.active || appealActive;
   const redAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
   const blueAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
   const controlsDisabled =

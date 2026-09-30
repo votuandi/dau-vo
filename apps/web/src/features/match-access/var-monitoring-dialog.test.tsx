@@ -5,11 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AthleteColor } from '@/types/shared';
 import type { VarMonitoring } from '@/services/api/official-access';
 
-const api = vi.hoisted(() => ({ varMonitoring: vi.fn() }));
+const api = vi.hoisted(() => ({ state: vi.fn() }));
 vi.mock('@/services/api/official-access', () => ({ officialAccessApi: api }));
 
 import { VarMonitoringDialog } from './var-monitoring-dialog';
-import { officialMatchQueryKeys } from './queries';
 
 const empty: VarMonitoring = { auditLogs: [], penalties: [], scoreEvents: [], scoringWindows: [] };
 
@@ -55,7 +54,7 @@ const historyFixture: VarMonitoring = {
       roundNumber: 1,
       occurredAt: '2026-09-30T10:00:00.000Z',
       roundElapsedMs: 65_000,
-      type: 'REFEREE_POINT',
+      type: 'JUDGE_POINT',
       value: 1,
       createdAt: '2026-09-30T10:00:00.000Z',
       revertedAt: null,
@@ -105,25 +104,30 @@ function renderDialog(
 
 describe('VarMonitoringDialog', () => {
   beforeEach(() => {
-    api.varMonitoring.mockReset();
+    api.state.mockReset();
   });
   afterEach(() => {
     vi.useRealTimers();
   });
 
   it('renders all four read-only history sections and their empty states', async () => {
-    api.varMonitoring.mockResolvedValueOnce(empty);
+    api.state.mockResolvedValueOnce({ varMonitoring: empty });
+    const user = userEvent.setup();
     renderDialog();
     expect(screen.getByText('Đang tải dữ liệu VAR…')).toBeVisible();
     await screen.findByText('Lịch sử cửa sổ chấm điểm (0)');
     expect(screen.getByText('Lỗi phạt (0)')).toBeVisible();
     expect(screen.getByText('Score events (0)')).toBeVisible();
     expect(screen.getByText('Audit logs (0)')).toBeVisible();
+    await user.click(screen.getByText('Lỗi phạt (0)'));
+    await user.click(screen.getByText('Score events (0)'));
+    await user.click(screen.getByText('Audit logs (0)'));
     expect(screen.getAllByText(/Chưa có/u)).toHaveLength(4);
   });
 
   it('renders the complete VAR history, including invalidated and reverted records', async () => {
-    api.varMonitoring.mockResolvedValueOnce(historyFixture);
+    api.state.mockResolvedValueOnce({ varMonitoring: historyFixture });
+    const user = userEvent.setup();
     renderDialog();
 
     await screen.findByText('Giám định 2:');
@@ -131,49 +135,60 @@ describe('VarMonitoringDialog', () => {
     expect(
       screen.getByText(
         (_, element) =>
-          element?.tagName === 'P' && element.textContent?.includes('Đã hủy kết quả') === true,
+          element !== null &&
+          element.tagName === 'P' &&
+          element.textContent.includes('Đã hủy kết quả'),
       ),
     ).toBeVisible();
     expect(screen.getAllByText('Đã vô hiệu')).toHaveLength(1);
     expect(screen.getByText('Giây 01:05 trong hiệp 1')).toBeVisible();
+    await user.click(screen.getByText('Lỗi phạt (1)'));
+    await user.click(screen.getByText('Score events (2)'));
+    await user.click(screen.getByText('Audit logs (1)'));
     expect(
       screen.getByText(
         (_, element) =>
-          element?.tagName === 'LI' && element.textContent?.includes('Hiệp 2 · XANH') === true,
+          element !== null &&
+          element.tagName === 'LI' &&
+          element.textContent.includes('Hiệp 2 · XANH'),
       ),
     ).toBeVisible();
     expect(screen.getAllByText('Đã hoàn tác')).toHaveLength(2);
     expect(
       screen.getByText(
         (_, element) =>
-          element?.tagName === 'LI' &&
-          element.textContent?.startsWith('Điểm giám định · Hiệp 1') === true,
+          element !== null &&
+          element.tagName === 'LI' &&
+          element.textContent.startsWith('Điểm giám định · Hiệp 1'),
       ),
     ).toHaveTextContent('+1');
     expect(
       screen.getByText(
         (_, element) =>
-          element?.tagName === 'LI' && element.textContent?.startsWith('Phạt · Hiệp —') === true,
+          element !== null &&
+          element.tagName === 'LI' &&
+          element.textContent.startsWith('Phạt · Hiệp —'),
       ),
     ).toHaveTextContent('-1');
     expect(
       screen.getByText(
         (_, element) =>
-          element?.tagName === 'SPAN' &&
-          element.textContent?.includes('Không xác định thời gian trong hiệp') === true,
+          element !== null &&
+          element.tagName === 'SPAN' &&
+          element.textContent.includes('Không xác định thời gian trong hiệp'),
       ),
     ).toBeVisible();
     expect(screen.getByText('Đã hủy kết quả hiệp')).toBeVisible();
     expect(
       screen.getByText(
         (_, element) =>
-          element?.tagName === 'PRE' && element.textContent?.includes('review') === true,
+          element !== null && element.tagName === 'PRE' && element.textContent.includes('review'),
       ),
     ).toBeVisible();
   });
 
   it('uses stable fallbacks for nullable or missing history fields', async () => {
-    api.varMonitoring.mockResolvedValueOnce({
+    api.state.mockResolvedValueOnce({ varMonitoring: {
       scoringWindows: undefined,
       penalties: [
         {
@@ -198,14 +213,19 @@ describe('VarMonitoringDialog', () => {
         },
       ],
       auditLogs: undefined,
-    } as unknown as VarMonitoring);
+    }});
+    const user = userEvent.setup();
     renderDialog();
 
+    await screen.findByText('Score events (1)');
+    await user.click(screen.getByText('Score events (1)'));
     await screen.findByText(/UNKNOWN_EVENT/u);
     expect(
       screen.getByText(
         (_, element) =>
-          element?.tagName === 'LI' && element.textContent?.startsWith('UNKNOWN_EVENT') === true,
+          element !== null &&
+          element.tagName === 'LI' &&
+          element.textContent.startsWith('UNKNOWN_EVENT'),
       ),
     ).toBeVisible();
     expect(screen.getByText('Lịch sử cửa sổ chấm điểm (0)')).toBeVisible();
@@ -214,71 +234,46 @@ describe('VarMonitoringDialog', () => {
 
   it('surfaces fetch failure and retries without any mutation control', async () => {
     const user = userEvent.setup();
-    api.varMonitoring.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(empty);
+    api.state.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ varMonitoring: empty });
     renderDialog();
     await screen.findByRole('alert');
     expect(screen.getByText('Không thể tải dữ liệu VAR.')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Thử lại' }));
     await waitFor(() => {
-      expect(api.varMonitoring).toHaveBeenCalledTimes(2);
+      expect(api.state).toHaveBeenCalledTimes(2);
     });
     await screen.findByText('Audit logs (0)');
     expect(screen.queryByRole('button', { name: /lưu|xác nhận|phạt/i })).not.toBeInTheDocument();
   });
 
-  it('refreshes the four history collections at the admin monitoring interval', async () => {
+  it('loads one snapshot when the dialog opens and does not poll', async () => {
     vi.useFakeTimers();
-    api.varMonitoring.mockResolvedValueOnce(empty).mockResolvedValueOnce({
-      ...empty,
-      scoreEvents: [{ id: 'new-event', type: 'REFEREE_POINT' }],
-    });
-    const { queryClient } = renderDialog();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(screen.getByText('Score events (0)')).toBeVisible();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1_500);
-      await Promise.resolve();
-      await vi.advanceTimersByTimeAsync(0);
-    });
-
-    expect(api.varMonitoring).toHaveBeenCalledTimes(2);
-    expect(queryClient.getQueryData(officialMatchQueryKeys.varMonitoring('match-1'))).toEqual({
-      ...empty,
-      scoreEvents: [{ id: 'new-event', type: 'REFEREE_POINT' }],
-    });
-  });
-
-  it('stops polling when the dialog unmounts', async () => {
-    vi.useFakeTimers();
-    api.varMonitoring.mockResolvedValue(empty);
-    const view = renderDialog();
+    api.state.mockResolvedValueOnce({ varMonitoring: empty });
+    renderDialog();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(screen.getByText('Audit logs (0)')).toBeVisible();
-    view.unmount();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3_000);
+      await vi.advanceTimersByTimeAsync(10_000);
     });
-
-    expect(api.varMonitoring).toHaveBeenCalledTimes(1);
+    expect(api.state).toHaveBeenCalledTimes(1);
+    expect(api.state).toHaveBeenCalledWith('match-1', { includeVarMonitoring: true });
   });
 
   it('does not show a prior match response after matchId changes', async () => {
-    let resolveFirst: ((value: typeof empty) => void) | undefined;
-    api.varMonitoring
+    const user = userEvent.setup();
+    let resolveFirst: ((value: { varMonitoring: typeof empty }) => void) | undefined;
+    api.state
       .mockImplementationOnce(
         () =>
-          new Promise<typeof empty>((resolve) => {
+          new Promise<{ varMonitoring: typeof empty }>((resolve) => {
             resolveFirst = resolve;
           }),
       )
       .mockResolvedValueOnce({
-        ...empty,
-        auditLogs: [{ id: 'match-two', eventType: 'MATCH_TWO' }],
+        varMonitoring: { ...empty, auditLogs: [{ id: 'match-two', eventType: 'MATCH_TWO' }] },
       });
     const view = renderDialog();
     view.rerender(
@@ -287,20 +282,22 @@ describe('VarMonitoringDialog', () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText('MATCH_TWO')).toBeVisible();
+    await screen.findByText('MATCH_TWO');
+    await user.click(screen.getByText('Audit logs (1)'));
+    expect(screen.getByText('MATCH_TWO')).toBeVisible();
     await act(async () => {
-      resolveFirst?.(empty);
+      resolveFirst?.({ varMonitoring: empty });
       await Promise.resolve();
     });
     expect(screen.getByText('MATCH_TWO')).toBeVisible();
   });
 
   it('does not update a dialog after an in-flight request is unmounted', async () => {
-    let resolveRequest: ((value: typeof empty) => void) | undefined;
+    let resolveRequest: ((value: { varMonitoring: typeof empty }) => void) | undefined;
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    api.varMonitoring.mockImplementationOnce(
+    api.state.mockImplementationOnce(
       () =>
-        new Promise<typeof empty>((resolve) => {
+        new Promise<{ varMonitoring: typeof empty }>((resolve) => {
           resolveRequest = resolve;
         }),
     );
@@ -308,31 +305,11 @@ describe('VarMonitoringDialog', () => {
     view.unmount();
 
     await act(async () => {
-      resolveRequest?.(empty);
+      resolveRequest?.({ varMonitoring: empty });
       await Promise.resolve();
     });
 
     expect(consoleError).not.toHaveBeenCalled();
   });
 
-  it('keeps the last successful snapshot when a refresh fails', async () => {
-    vi.useFakeTimers();
-    api.varMonitoring.mockResolvedValueOnce(empty).mockRejectedValueOnce(new Error('offline'));
-    const { queryClient } = renderDialog();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(screen.getByText('Audit logs (0)')).toBeVisible();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1_500);
-      await Promise.resolve();
-      await vi.advanceTimersByTimeAsync(0);
-    });
-
-    expect(queryClient.getQueryState(officialMatchQueryKeys.varMonitoring('match-1'))?.status).toBe(
-      'error',
-    );
-    expect(screen.getByText('Audit logs (0)')).toBeVisible();
-  });
 });

@@ -180,7 +180,7 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
   const appealActive =
     snapshot?.match.phase === MatchStatus.REGULATION_APPEAL ||
     snapshot?.match.phase === MatchStatus.OVERTIME_APPEAL;
-  const yellowPresentation = intermission.active || appealActive;
+  const yellowPresentation = paused || intermission.active || appealActive;
 
   return (
     <main

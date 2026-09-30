@@ -85,6 +85,34 @@ describe('SupervisorConsole', () => {
     expect(screen.getByRole('button', { name: 'CHECK VAR' })).toBeDisabled();
   });
 
+  it('hides an expired intermission countdown without starting Round 2', async () => {
+    const user = userEvent.setup();
+    const startRound = vi.fn(() => Promise.resolve());
+    const expiredDeadline = new Date(Date.now() - 1_000).toISOString();
+    render(
+      <SupervisorConsole
+        realtime={createRealtimeState({
+          snapshot: createMatchSnapshot({
+            activeRound: null,
+            generatedAt: new Date().toISOString(),
+            match: {
+              ...snapshotFor(MatchStatus.BREAK).match,
+              intermissionEndsAt: expiredDeadline,
+              phase: MatchStatus.BREAK,
+              status: MatchStatus.BREAK,
+            },
+          }),
+          startRound,
+        })}
+      />,
+    );
+
+    expect(screen.queryByRole('timer', { name: /giải lao còn lại/u })).not.toBeInTheDocument();
+    expect(startRound).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'BẮT ĐẦU HIỆP 2' }));
+    expect(startRound).toHaveBeenCalledOnce();
+  });
+
   it('keeps the appeal presentation after Check VAR closes', async () => {
     const user = userEvent.setup();
     const { container, rerender } = render(

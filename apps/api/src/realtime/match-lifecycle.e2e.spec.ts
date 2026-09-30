@@ -787,6 +787,49 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     });
   });
 
+  it('includes read-only VAR data in match state only for the active assigned supervisor', async () => {
+    const match = await createMatch('var-monitoring-route');
+    const otherMatch = await createMatch('var-monitoring-other-match');
+    const crew = await createOfficialCrew('var-monitoring-route', match.id);
+    const otherCrew = await createOfficialCrew(
+      'var-monitoring-other-match',
+      otherMatch.id,
+    );
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/official/matches/${match.id}?include=var`)
+      .set('Cookie', crew.inspectorCookie)
+      .expect(200);
+
+    expect(Object.keys(response.body.varMonitoring).sort()).toEqual([
+      'auditLogs', 'penalties', 'scoreEvents', 'scoringWindows',
+    ]);
+    expect(response.body.varMonitoring).not.toHaveProperty('snapshot');
+    expect(response.body.varMonitoring).not.toHaveProperty('diagnostics');
+    expect(response.body.varMonitoring).not.toHaveProperty('admin');
+
+    await request(app.getHttpServer())
+      .get(`/api/official/matches/${match.id}?include=var`)
+      .expect(401);
+    await request(app.getHttpServer())
+      .get(`/api/official/matches/${match.id}?include=var`)
+      .set('Cookie', crew.refereeCookies[0]!)
+      .expect(403);
+    await request(app.getHttpServer())
+      .get(`/api/official/matches/${match.id}?include=var`)
+      .set('Cookie', otherCrew.inspectorCookie)
+      .expect(403);
+
+    await prisma.matchOfficialAssignment.updateMany({
+      data: { releasedAt: new Date() },
+      where: { matchId: match.id, officialId: crew.inspector.id },
+    });
+    await request(app.getHttpServer())
+      .get(`/api/official/matches/${match.id}?include=var`)
+      .set('Cookie', crew.inspectorCookie)
+      .expect(403);
+  });
+
   it('requires explicit inspector completion after Round 2 and completes exactly once', async () => {
     // The flow awaits multiple socket broadcasts before the invalid-transition
     // check, so allow real database/socket scheduling margin here.
