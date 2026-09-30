@@ -61,6 +61,7 @@ export interface AdminMatch {
   } | null;
   readonly phase: MatchStatus;
   readonly lifecycle: MatchLifecycle;
+  readonly hasFinalOutcome: boolean;
   readonly displayState: MatchDisplayState;
   readonly currentRound: number | null;
   readonly roundDurationMs: number;
@@ -89,7 +90,7 @@ export interface AdminMatchMonitoring {
     attemptNumber: number;
     completedAt: string;
     invalidatedAt: string | null;
-    adjustments: readonly {
+    adjustments?: readonly {
       color: AthleteColor;
       baseRefereeScore: number;
       bonusPoints: number;
@@ -111,8 +112,9 @@ export interface AdminMatchMonitoring {
     invalidatedByAuditId: string | null;
     winningColor: AthleteColor | null;
     scoreAwarded: boolean;
-    refereeVotes: readonly {
-      judgeSlot: string;
+    judgeVotes?: readonly {
+      judgeSlot: string | null;
+      judgePosition: number | null;
       athleteColor: AthleteColor;
       serverReceivedAt: string;
       invalidatedAt: string | null;

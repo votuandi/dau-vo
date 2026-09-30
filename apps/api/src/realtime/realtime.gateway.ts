@@ -373,7 +373,15 @@ export class RealtimeGateway
         return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
       }
 
-      if (error instanceof MatchParticipantsNotReadyError)
+      if (error instanceof MatchParticipantsNotReadyError) {
+        // Deliberately aggregate-only: this records assignment, match-screen
+        // lease, and scoreboard readiness without session tokens, access
+        // codes, or personal identifiers. Application-online status remains
+        // available in the tournament-official status projection.
+        this.logger.warn(
+          { matchId: command.matchId, readiness: error.details },
+          'Round start rejected because match presence is not ready',
+        );
         return {
           error: {
             ...MATCH_PARTICIPANTS_NOT_READY_ERROR,
@@ -381,6 +389,7 @@ export class RealtimeGateway
           },
           ok: false,
         };
+      }
 
       if (error instanceof InvalidRoundStartStateError) {
         return { error: ROUND_START_INVALID_STATE_ERROR, ok: false };
@@ -410,6 +419,80 @@ export class RealtimeGateway
     }
 
     return { ok: true, round: transition.payload.round };
+  }
+
+  @SubscribeMessage(RealtimeEvent.MATCH_PRESENCE_ENTER)
+  async enterOfficialMatchPresence(
+    @ConnectedSocket() client: RealtimeSocket,
+  ): Promise<void> {
+    const official = await this.revalidateOfficial(client);
+    const assignment = official?.assignment;
+    const identity = client.data.officialIdentity;
+    if (
+      !official ||
+      !assignment ||
+      !identity ||
+      this.isSocketUnavailable(client)
+    )
+      return;
+    const previousMatch = client.data.officialPresenceMatchPublicId;
+    if (previousMatch && previousMatch !== assignment.match.publicId) {
+      await this.sessionRegistry.clearOfficialMatchPresence(
+        identity.sessionId,
+        client.id,
+      );
+      await client.leave(matchRoom(previousMatch));
+      await this.broadcastOfficialPresence(previousMatch);
+    }
+    if (
+      !(await this.sessionRegistry.enterOfficialMatchPresence(
+        identity.sessionId,
+        client.id,
+        assignment.match.publicId,
+      ))
+    )
+      return;
+    client.data.officialPresenceMatchPublicId = assignment.match.publicId;
+    await client.join(matchRoom(assignment.match.publicId));
+    await this.broadcastOfficialPresence(assignment.match.publicId);
+  }
+
+  @SubscribeMessage(RealtimeEvent.MATCH_PRESENCE_HEARTBEAT)
+  async renewOfficialMatchPresence(
+    @ConnectedSocket() client: RealtimeSocket,
+  ): Promise<void> {
+    const official = await this.revalidateOfficial(client);
+    const identity = client.data.officialIdentity;
+    const matchPublicId = client.data.officialPresenceMatchPublicId;
+    if (
+      !official?.assignment ||
+      !identity ||
+      !matchPublicId ||
+      official.assignment.match.publicId !== matchPublicId
+    )
+      return;
+    await this.sessionRegistry.renewOfficialMatchPresence(
+      identity.sessionId,
+      client.id,
+      matchPublicId,
+    );
+  }
+
+  @SubscribeMessage(RealtimeEvent.MATCH_PRESENCE_LEAVE)
+  async leaveOfficialMatchPresence(
+    @ConnectedSocket() client: RealtimeSocket,
+  ): Promise<void> {
+    const identity = client.data.officialIdentity;
+    if (!identity) return;
+    const matchPublicId = await this.sessionRegistry.leaveOfficialMatchPresence(
+      identity.sessionId,
+      client.id,
+    );
+    client.data.officialPresenceMatchPublicId = undefined;
+    if (matchPublicId) {
+      await client.leave(matchRoom(matchPublicId));
+      await this.broadcastOfficialPresence(matchPublicId);
+    }
   }
 
   /** Explicit adapter for overtime clients; lifecycle validation still owns phase. */
@@ -1449,8 +1532,18 @@ export class RealtimeGateway
     }
     if (client.data.connectionKind === 'official') {
       const identity = client.data.officialIdentity;
+      const matchPublicId = client.data.officialPresenceMatchPublicId;
       if (identity)
         await this.sessionRegistry.unregister(identity.sessionId, client.id);
+      if (matchPublicId)
+        await this.broadcastOfficialPresence(matchPublicId).catch(
+          (error: unknown) => {
+            this.logger.error(
+              { error, matchPublicId },
+              'Unable to broadcast official match presence after disconnect',
+            );
+          },
+        );
       return;
     }
     const identity = client.data.identity;
@@ -1647,13 +1740,11 @@ export class RealtimeGateway
       sessionId: identity.sessionId,
       socketId: client.id,
       revoke: () => this.revokeSocket(client),
-      matchPublicId: snapshot.assignment?.match.publicId ?? null,
+      matchPublicId: null,
     });
     await client.join(sessionRoom(identity.sessionId));
     await client.join(officialRoom(identity.officialId));
     await client.join(tournamentRoom(identity.tournamentId));
-    if (snapshot.assignment)
-      await client.join(matchRoom(snapshot.assignment.match.publicId));
     client.emit(RealtimeEvent.OFFICIAL_ASSIGNMENT_SNAPSHOT, snapshot);
   }
 
@@ -1676,17 +1767,22 @@ export class RealtimeGateway
       return null;
     }
     const nextMatch = resolved.activeAssignment?.match.publicId ?? null;
-    const previousMatch = client.data.officialMatchPublicId;
-    if (previousMatch && previousMatch !== nextMatch)
-      await client.leave(matchRoom(previousMatch));
-    if (nextMatch && previousMatch !== nextMatch)
-      await client.join(matchRoom(nextMatch));
     client.data.officialMatchPublicId = nextMatch ?? undefined;
-    await this.sessionRegistry.updateOfficialAssignment(
-      original.sessionId,
-      client.id,
-      nextMatch,
-    );
+    if (
+      client.data.officialPresenceMatchPublicId &&
+      client.data.officialPresenceMatchPublicId !== nextMatch
+    ) {
+      const departedMatch =
+        await this.sessionRegistry.clearOfficialMatchPresence(
+          original.sessionId,
+          client.id,
+        );
+      client.data.officialPresenceMatchPublicId = undefined;
+      if (departedMatch) {
+        await client.leave(matchRoom(departedMatch));
+        await this.broadcastOfficialPresence(departedMatch);
+      }
+    }
     return {
       assignment: resolved.activeAssignment,
       official: resolved.official,
@@ -1772,6 +1868,16 @@ export class RealtimeGateway
     );
     this.server
       .to(matchRoom(identity.publicMatchId))
+      .emit(RealtimeEvent.PRESENCE_UPDATED, payload);
+  }
+
+  private async broadcastOfficialPresence(
+    matchPublicId: string,
+  ): Promise<void> {
+    const payload =
+      await this.matchState.presenceUpdatedForPublicMatch(matchPublicId);
+    this.server
+      .to(matchRoom(matchPublicId))
       .emit(RealtimeEvent.PRESENCE_UPDATED, payload);
   }
 

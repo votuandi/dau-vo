@@ -215,6 +215,19 @@ describe('SupervisorConsole', () => {
     ).toBeVisible();
   });
 
+  it('keeps round start locked while freshness is pending after a presence update', () => {
+    render(
+      <SupervisorConsole
+        realtime={createRealtimeState({
+          readinessFresh: false,
+          snapshot: snapshotFor(MatchStatus.WAITING),
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'BẮT ĐẦU HIỆP 1' })).toBeDisabled();
+  });
+
   it('confirms pause and resume without changing display state before server success', async () => {
     const user = userEvent.setup();
     const pauseRound = vi.fn(() => Promise.resolve(true));

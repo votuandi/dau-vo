@@ -65,6 +65,25 @@ export class RedisService implements OnModuleDestroy {
     return this.client.del(...keys);
   }
 
+  async countKeys(pattern: string, limit = 100): Promise<number> {
+    await this.connectIfNeeded();
+    let cursor = '0';
+    let count = 0;
+    do {
+      const [next, keys] = await this.client.scan(
+        cursor,
+        'MATCH',
+        pattern,
+        'COUNT',
+        '100',
+      );
+      cursor = next;
+      count += keys.length;
+      if (count >= limit) return count;
+    } while (cursor !== '0');
+    return count;
+  }
+
   async incrementWithExpiry(key: string, ttlSeconds: number): Promise<number> {
     await this.connectIfNeeded();
 

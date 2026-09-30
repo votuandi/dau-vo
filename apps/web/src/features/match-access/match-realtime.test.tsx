@@ -134,6 +134,12 @@ describe('useMatchRealtime', () => {
       }),
     );
   }
+  it('declares and releases match-screen presence independently of the socket lifecycle', () => {
+    const { unmount } = renderRealtime();
+    expect(socketHarness.socket.emit).toHaveBeenCalledWith(RealtimeEvent.MATCH_PRESENCE_ENTER);
+    unmount();
+    expect(socketHarness.socket.emit).toHaveBeenCalledWith(RealtimeEvent.MATCH_PRESENCE_LEAVE);
+  });
   it('hydrates an accepted referee vote from the direct recovery snapshot and prevents a duplicate submit', async () => {
     const { result } = renderRealtime();
     const snapshot = createMatchSnapshot({ viewer: { acceptedVote: acceptedRedVote } });
@@ -221,6 +227,29 @@ describe('useMatchRealtime', () => {
     await waitFor(() => {
       expect(result.current.connectionStatus).toBe('connected');
     });
+    expect(socketHarness.socket.emit).toHaveBeenCalledWith(RealtimeEvent.MATCH_STATE_REQUEST);
+    expect(result.current.readinessFresh).toBe(false);
+    act(() => {
+      socketHarness.triggerSocketEvent(RealtimeEvent.MATCH_STATE, createMatchSnapshot());
+    });
+    expect(result.current.readinessFresh).toBe(true);
+  });
+  it('invalidates readiness until a new snapshot follows a presence update', () => {
+    const { result } = renderRealtime();
+    act(() => {
+      socketHarness.triggerSocketEvent(RealtimeEvent.MATCH_STATE, createMatchSnapshot());
+    });
+    expect(result.current.readinessFresh).toBe(true);
+    act(() => {
+      socketHarness.triggerSocketEvent(RealtimeEvent.PRESENCE_UPDATED, {
+        matchPublicId: refereeSession.matchPublicId,
+        presence: createMatchSnapshot().presence,
+        officials: [],
+        scoreboardConnectedCount: 1,
+        updatedAt: '2026-09-30T00:00:00.000Z',
+      });
+    });
+    expect(result.current.readinessFresh).toBe(false);
     expect(socketHarness.socket.emit).toHaveBeenCalledWith(RealtimeEvent.MATCH_STATE_REQUEST);
   });
   it('disconnects and calls the revocation callback immediately when the server revokes the session', async () => {

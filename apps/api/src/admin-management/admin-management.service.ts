@@ -60,6 +60,7 @@ import type {
 } from './dto/tournament.dto';
 import { MatchCredentialGeneratorService } from './match-credential-generator.service';
 import {
+  monitoringAuditJudgeVotes,
   monitoringScoreEvent,
   monitoringScoringWindow,
 } from './monitoring-history';
@@ -112,6 +113,7 @@ const matchSelect = {
   finishedAt: true,
   id: true,
   lifecycle: true,
+  outcome: { select: { id: true } },
   publicId: true,
   requiredJudgeCount: true,
   roundDurationMs: true,
@@ -150,19 +152,21 @@ type StoredMatchView = Prisma.MatchGetPayload<{
   select: typeof matchSelect;
 }>;
 
-export type MatchView = Omit<StoredMatchView, 'status'> & {
+export type MatchView = Omit<StoredMatchView, 'outcome' | 'status'> & {
   displayState: ReturnType<typeof projectMatchDisplayState>;
+  hasFinalOutcome: boolean;
   phase: StoredMatchView['status'];
 };
 
 function matchView(match: StoredMatchView): MatchView {
-  const { status, ...safeMatch } = match;
+  const { outcome, status, ...safeMatch } = match;
   return {
     ...safeMatch,
     displayState: projectMatchDisplayState({
       kind: 'OPERATIONAL_MATCH',
       lifecycle: match.lifecycle,
     }),
+    hasFinalOutcome: outcome !== null,
     phase: status,
   };
 }
@@ -905,6 +909,7 @@ export class AdminManagementService {
           judgeVotes: {
             orderBy: { serverReceivedAt: 'asc' },
             select: {
+              assignment: { select: { judgePosition: true } },
               athleteColor: true,
               invalidatedAt: true,
               judgeSlot: true,
@@ -987,7 +992,20 @@ export class AdminManagementService {
       scoreEvents: scoreEvents.map(({ scoringWindow, ...event }) =>
         monitoringScoreEvent(event, scoringWindow),
       ),
-      scoringWindows: scoringWindows.map(monitoringScoringWindow),
+      scoringWindows: scoringWindows.map(({ judgeVotes, ...window }) => {
+        const persistedVotes = judgeVotes.map(({ assignment, ...vote }) => ({
+          ...vote,
+          judgePosition: assignment?.judgePosition ?? null,
+        }));
+        const auditVotes = auditLogs.flatMap((auditLog) =>
+          monitoringAuditJudgeVotes(auditLog.metadata, window.id),
+        );
+
+        return monitoringScoringWindow({
+          ...window,
+          judgeVotes: persistedVotes.length > 0 ? persistedVotes : auditVotes,
+        });
+      }),
       snapshot,
     };
   }

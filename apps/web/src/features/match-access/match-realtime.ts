@@ -108,6 +108,8 @@ export interface MatchRealtimeState {
   readonly errorMessage: string | null;
   readonly lastAcceptedVote: VoteAcceptedPayload | null;
   readonly presence: readonly MatchPresenceEntry[];
+  /** True only after a server snapshot received on the current connection. */
+  readonly readinessFresh: boolean;
   readonly reconnect: () => void;
   readonly requestSnapshot: () => void;
   readonly submitFault: (athlete: AthleteColor, severity: FaultSeverity) => Promise<void>;
@@ -316,6 +318,7 @@ export function useMatchRealtime({
   const [connectionStatus, setConnectionStatus] = useState<RealtimeConnectionStatus>('connecting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [presence, setPresence] = useState<readonly MatchPresenceEntry[]>([]);
+  const [readinessFresh, setReadinessFresh] = useState(false);
   const [lastAcceptedVote, setLastAcceptedVote] = useState<VoteAcceptedPayload | null>(null);
   const [roundStartErrorMessage, setRoundStartErrorMessage] = useState<string | null>(null);
   const [scoringWindowMessage, setScoringWindowMessage] = useState<string | null>(null);
@@ -1061,10 +1064,17 @@ export function useMatchRealtime({
     function handleConnect(): void {
       setConnectionStatus('connected');
       setErrorMessage(null);
+      // A snapshot from a previous transport can no longer be used to enable
+      // lifecycle commands. Wait for the server to project this connection.
+      setReadinessFresh(false);
+      // The authenticated official socket is application-scoped.  Explicitly
+      // lease presence only while this match console is mounted.
+      socket.emit(RealtimeEvent.MATCH_PRESENCE_ENTER);
       socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
     }
 
     function handleDisconnect(): void {
+      setReadinessFresh(false);
       setConnectionStatus(socket.active ? 'reconnecting' : 'disconnected');
     }
 
@@ -1098,6 +1108,7 @@ export function useMatchRealtime({
 
       setSnapshot(payload);
       setPresence(payload.presence);
+      setReadinessFresh(true);
 
       // `viewer` is intentionally present only on a direct, authenticated
       // snapshot. It restores the local per-referee lock after a refresh or
@@ -1117,6 +1128,9 @@ export function useMatchRealtime({
       }
 
       setPresence(payload.presence);
+      // This event deliberately omits readiness. Do not permit a start based
+      // on the superseded snapshot while its replacement is in flight.
+      setReadinessFresh(false);
       setSnapshot((currentSnapshot) =>
         currentSnapshot
           ? {
@@ -1126,6 +1140,9 @@ export function useMatchRealtime({
             }
           : null,
       );
+      // Presence changes are authoritative but do not carry readiness; fetch
+      // a fresh snapshot before enabling supervisor controls.
+      socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
     }
 
     function handleSessionRevoked(payload: SessionRevokedPayload): void {
@@ -1135,6 +1152,7 @@ export function useMatchRealtime({
       setConnectionStatus('revoked');
       setSnapshot(null);
       setPresence([]);
+      setReadinessFresh(false);
       acceptedVoteRef.current = null;
       setLastAcceptedVote(null);
       voteSubmissionInFlightRef.current = false;
@@ -1315,7 +1333,13 @@ export function useMatchRealtime({
       socket.connect();
     }
 
+    const presenceHeartbeat = globalThis.setInterval(() => {
+      if (socket.connected) socket.emit(RealtimeEvent.MATCH_PRESENCE_HEARTBEAT);
+    }, 15_000);
+
     return () => {
+      globalThis.clearInterval(presenceHeartbeat);
+      if (socket.connected) socket.emit(RealtimeEvent.MATCH_PRESENCE_LEAVE);
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('connect_error', handleConnectError);
@@ -1356,6 +1380,7 @@ export function useMatchRealtime({
     errorMessage,
     lastAcceptedVote,
     presence,
+    readinessFresh,
     pauseRound,
     resumeRound,
     controllingRound,
