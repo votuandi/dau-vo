@@ -36,7 +36,10 @@ export class MatchOfficialAssignmentsController {
     @Req() request: AuthenticatedOfficialRequest,
     @Query('include') include?: string,
   ) {
-    const state = await this.assignments.state(matchId, request.officialSession);
+    const state = await this.assignments.state(
+      matchId,
+      request.officialSession,
+    );
     if (include !== 'var') return state;
 
     await this.assignments.assertActiveSupervisorAssignment(

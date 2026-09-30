@@ -188,32 +188,34 @@ describe('VarMonitoringDialog', () => {
   });
 
   it('uses stable fallbacks for nullable or missing history fields', async () => {
-    api.state.mockResolvedValueOnce({ varMonitoring: {
-      scoringWindows: undefined,
-      penalties: [
-        {
-          id: 'legacy-penalty',
-          roundNumber: null,
-          value: -1,
-          createdAt: undefined,
-          revertedAt: null,
-          athlete: null,
-        },
-      ],
-      scoreEvents: [
-        {
-          id: 'legacy-event',
-          roundNumber: null,
-          occurredAt: undefined,
-          roundElapsedMs: null,
-          type: 'UNKNOWN_EVENT',
-          value: 0,
-          revertedAt: null,
-          athlete: null,
-        },
-      ],
-      auditLogs: undefined,
-    }});
+    api.state.mockResolvedValueOnce({
+      varMonitoring: {
+        scoringWindows: undefined,
+        penalties: [
+          {
+            id: 'legacy-penalty',
+            roundNumber: null,
+            value: -1,
+            createdAt: undefined,
+            revertedAt: null,
+            athlete: null,
+          },
+        ],
+        scoreEvents: [
+          {
+            id: 'legacy-event',
+            roundNumber: null,
+            occurredAt: undefined,
+            roundElapsedMs: null,
+            type: 'UNKNOWN_EVENT',
+            value: 0,
+            revertedAt: null,
+            athlete: null,
+          },
+        ],
+        auditLogs: undefined,
+      },
+    });
     const user = userEvent.setup();
     renderDialog();
 
@@ -234,7 +236,9 @@ describe('VarMonitoringDialog', () => {
 
   it('surfaces fetch failure and retries without any mutation control', async () => {
     const user = userEvent.setup();
-    api.state.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ varMonitoring: empty });
+    api.state
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ varMonitoring: empty });
     renderDialog();
     await screen.findByRole('alert');
     expect(screen.getByText('Không thể tải dữ liệu VAR.')).toBeVisible();
@@ -311,5 +315,4 @@ describe('VarMonitoringDialog', () => {
 
     expect(consoleError).not.toHaveBeenCalled();
   });
-
 });

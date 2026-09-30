@@ -252,9 +252,12 @@ export class BracketPreviewService {
     if (ids.length !== byeCount)
       throw new ConflictException({
         code: 'BRACKET_SEEDED_BYE_SELECTION_INVALID',
-        message: 'Seeded bye selection must contain exactly the required number of athletes',
+        message:
+          'Seeded bye selection must contain exactly the required number of athletes',
       });
-    const seeds = athletes.filter((athlete) => athlete.isSeed).map((athlete) => athlete.id);
+    const seeds = athletes
+      .filter((athlete) => athlete.isSeed)
+      .map((athlete) => athlete.id);
     const selected = new Set(ids);
     if (seeds.length >= byeCount) {
       if (ids.some((id) => !seeds.includes(id)))
@@ -267,7 +270,8 @@ export class BracketPreviewService {
     if (seeds.some((id) => !selected.has(id)))
       throw new ConflictException({
         code: 'BRACKET_SEEDED_BYE_SELECTION_INVALID',
-        message: 'All seeded athletes must be selected before adding other athletes',
+        message:
+          'All seeded athletes must be selected before adding other athletes',
       });
   }
 
