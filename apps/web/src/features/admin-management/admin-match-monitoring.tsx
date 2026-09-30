@@ -125,6 +125,17 @@ function auditEventLabel(eventType: string): string {
 export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) {
   const monitoring = useQuery(matchMonitoringQueryOptions(matchId));
   const snapshot = monitoring.data?.snapshot;
+  // Monitoring data can be served by an API instance that predates a newly
+  // introduced history field. Treat omitted collections as empty so that the
+  // diagnostics panel never prevents an admin from opening a match.
+  const presence = snapshot?.presence ?? [];
+  const diagnostics = monitoring.data?.diagnostics ?? [];
+  const rounds = monitoring.data?.rounds ?? [];
+  const appeals = monitoring.data?.appeals ?? [];
+  const scoringWindows = monitoring.data?.scoringWindows ?? [];
+  const penalties = monitoring.data?.penalties ?? [];
+  const scoreEvents = monitoring.data?.scoreEvents ?? [];
+  const auditLogs = monitoring.data?.auditLogs ?? [];
   const activeRound = snapshot?.activeRound;
   const running = isRunningPhase(snapshot?.match.phase);
   const paused = isPausedPhase(snapshot?.match.phase);
@@ -192,7 +203,7 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
           </div>
           <h3 className="mt-7 font-black">Hiện diện thiết bị</h3>
           <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-            {snapshot.presence.map((entry) => (
+            {presence.map((entry) => (
               <li
                 className="flex items-center justify-between rounded-lg border p-3"
                 key={entry.accessRole}
@@ -217,7 +228,7 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
         <details className="rounded-xl border p-4" open>
           <summary className="cursor-pointer font-black">Diễn biến và kết quả đã lưu</summary>
           <div className="mt-4 space-y-3 text-sm">
-            {monitoring.data?.diagnostics.map((diagnostic) => (
+            {diagnostics.map((diagnostic) => (
               <p
                 className="rounded-lg border border-amber-200 bg-amber-50 p-3 font-semibold text-amber-900"
                 key={diagnostic}
@@ -225,7 +236,7 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                 {diagnostic}
               </p>
             ))}
-            {monitoring.data?.rounds.map((round) => (
+            {rounds.map((round) => (
               <article className="rounded-lg bg-muted/60 p-3" key={round.id}>
                 <strong>{historyRoundLabel(round)}</strong> · bắt đầu{' '}
                 {formatDateTime(round.startedAt)}
@@ -235,7 +246,7 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                 {round.invalidatedAt ? ' · Đã vô hiệu / phát lại' : ''}
               </article>
             ))}
-            {monitoring.data?.appeals.map((appeal) => (
+            {appeals.map((appeal) => (
               <article className="rounded-lg border p-3" key={appeal.id}>
                 <strong>
                   {appeal.scope === 'OVERTIME'
@@ -245,7 +256,7 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                 {' · '}đã chốt {formatDateTime(appeal.completedAt)}
                 {appeal.invalidatedAt ? ' · Đã vô hiệu' : ''}
                 <ul className="mt-2 space-y-1">
-                  {appeal.adjustments.map((adjustment) => (
+                  {(appeal.adjustments ?? []).map((adjustment) => (
                     <li key={adjustment.color}>
                       {colorLabel(adjustment.color)}: giám định {adjustment.baseRefereeScore},
                       thưởng {adjustment.bonusPoints}, phạt {adjustment.penaltyPoints},{' '}
@@ -262,17 +273,17 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                 {formatDateTime(monitoring.data.outcome.publishedAt)}
               </p>
             ) : null}
-            {!monitoring.data?.rounds.length && !monitoring.data?.appeals.length ? (
+            {!rounds.length && !appeals.length ? (
               <p>Chưa có lịch sử trận đấu.</p>
             ) : null}
           </div>
         </details>
         <details className="rounded-xl border p-4" open>
           <summary className="cursor-pointer font-black">
-            Lịch sử cửa sổ chấm điểm ({monitoring.data?.scoringWindows.length ?? 0})
+            Lịch sử cửa sổ chấm điểm ({scoringWindows.length})
           </summary>
           <div className="mt-4 space-y-3">
-            {monitoring.data?.scoringWindows.map((window) => (
+            {scoringWindows.map((window) => (
               <article
                 className={`rounded-lg p-3 ${scoringWindowHistoryClassName(window.scoreAwarded, window.winningColor)}`}
                 data-testid={`scoring-window-${window.id}`}
@@ -294,7 +305,7 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                   </div>
                 </div>
                 <ul className="mt-2 text-sm">
-                  {window.refereeVotes.map((vote) => (
+                  {(window.refereeVotes ?? []).map((vote) => (
                     <li key={vote.judgeSlot}>
                       {roleLabels[vote.judgeSlot as MatchAccessRole]} →{' '}
                       <strong>{colorLabel(vote.athleteColor)}</strong>{' '}
@@ -308,15 +319,16 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                   ))}
                 </ul>
               </article>
-            )) ?? <p>Chưa có cửa sổ chấm điểm.</p>}
+            ))}
+            {!scoringWindows.length ? <p>Chưa có cửa sổ chấm điểm.</p> : null}
           </div>
         </details>
         <details className="rounded-xl border p-4">
           <summary className="cursor-pointer font-black">
-            Lỗi phạt ({monitoring.data?.penalties.length ?? 0})
+            Lỗi phạt ({penalties.length})
           </summary>
           <ul className="mt-4 space-y-2 text-sm">
-            {monitoring.data?.penalties.map((penalty) => (
+            {penalties.map((penalty) => (
               <li className="rounded-lg bg-muted/60 p-3" key={penalty.id}>
                 Hiệp {penalty.roundNumber ?? '—'} · {colorLabel(penalty.athlete.color)} ·{' '}
                 {penalty.athlete.name} · <strong>{penalty.value}</strong> ·{' '}
@@ -325,15 +337,16 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                   <span className="ml-2 font-bold text-amber-700">Đã hoàn tác</span>
                 ) : null}
               </li>
-            )) ?? <li>Chưa có lỗi phạt.</li>}
+            ))}
+            {!penalties.length ? <li>Chưa có lỗi phạt.</li> : null}
           </ul>
         </details>
         <details className="rounded-xl border p-4">
           <summary className="cursor-pointer font-black">
-            Score events ({monitoring.data?.scoreEvents.length ?? 0})
+            Score events ({scoreEvents.length})
           </summary>
           <ul className="mt-4 space-y-2 text-sm">
-            {monitoring.data?.scoreEvents.map((event) => (
+            {scoreEvents.map((event) => (
               <li
                 className={`overflow-x-auto whitespace-nowrap rounded-lg p-3 ${scoreEventHistoryClassName(
                   event.athlete.color,
@@ -356,15 +369,16 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                 </span>
                 {event.revertedAt ? <span className="ml-2 font-bold">Đã hoàn tác</span> : null}
               </li>
-            )) ?? <li>Chưa có score event.</li>}
+            ))}
+            {!scoreEvents.length ? <li>Chưa có score event.</li> : null}
           </ul>
         </details>
         <details className="rounded-xl border p-4">
           <summary className="cursor-pointer font-black">
-            Audit logs ({monitoring.data?.auditLogs.length ?? 0})
+            Audit logs ({auditLogs.length})
           </summary>
           <ul className="mt-4 space-y-2 text-sm">
-            {monitoring.data?.auditLogs.map((event) => (
+            {auditLogs.map((event) => (
               <li className="rounded-lg bg-muted/60 p-3" key={event.id}>
                 <strong>{auditEventLabel(event.eventType)}</strong> ·{' '}
                 {formatDateTime(event.createdAt)}
@@ -372,7 +386,8 @@ export function AdminMatchMonitoring({ matchId }: { readonly matchId: string }) 
                   {metadataText(event.metadata)}
                 </pre>
               </li>
-            )) ?? <li>Chưa có audit log.</li>}
+            ))}
+            {!auditLogs.length ? <li>Chưa có audit log.</li> : null}
           </ul>
         </details>
       </div>

@@ -192,4 +192,25 @@ describe('AdminMatchMonitoring', () => {
     expect(await screen.findByText('Chưa có cửa sổ chấm điểm.')).toBeVisible();
     expect(screen.getByText('Chưa có score event.')).toBeInTheDocument();
   });
+
+  it('renders safely when an older monitoring response omits collection fields', async () => {
+    const response = monitoringFixture();
+    const legacyResponse = {
+      ...response,
+      appeals: undefined,
+      auditLogs: undefined,
+      diagnostics: undefined,
+      penalties: undefined,
+      rounds: undefined,
+      scoreEvents: undefined,
+      scoringWindows: undefined,
+      snapshot: { ...response.snapshot, presence: undefined },
+    } as unknown as AdminMatchMonitoringResponse;
+
+    renderMonitoring(legacyResponse);
+
+    expect(await screen.findByText('Hiện diện thiết bị')).toBeVisible();
+    expect(screen.getByText('Chưa có lịch sử trận đấu.')).toBeVisible();
+    expect(screen.getByText('Chưa có cửa sổ chấm điểm.')).toBeVisible();
+  });
 });
