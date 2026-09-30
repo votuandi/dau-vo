@@ -39,6 +39,7 @@ import {
   UpdateRosterItemDto,
   UpdateWeightClassDto,
   ConfirmAthleteImportDto,
+  PreviewAthleteImportDto,
 } from './dto/roster.dto';
 import { OrganizationService } from './tournament-roster.service';
 import { OrganizationImageService } from './organization-image.service';
@@ -88,7 +89,7 @@ export class TournamentRosterController {
   @Post('athletes/import/preview')
   async previewAthleteImport(
     @Param('tournamentId', uuid) tournamentId: string,
-    @Body() input: ConfirmAthleteImportDto,
+    @Body() input: PreviewAthleteImportDto,
     @Req() req: AuthenticatedUserRequest,
   ) {
     await this.access.assertTournamentAccess(tournamentId, req.user, true);

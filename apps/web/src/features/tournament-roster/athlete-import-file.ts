@@ -9,6 +9,7 @@ const header = [
   'Tên đơn vị tham gia',
   'Địa phương đơn vị tham gia',
 ] as const;
+const noOrganizationName = 'Không đơn vị';
 
 export class AthleteImportFileError extends Error {}
 
@@ -70,7 +71,12 @@ export async function parseAthleteImportFile(file: File): Promise<readonly Athle
       );
     }
     const values = row.map(trimmed);
-    const missingColumn = values.findIndex((value) => value === '');
+    // A blank participating-unit cell represents an unaffiliated athlete.
+    // Its locality is consequently optional as well.
+    const missingColumn = values.findIndex(
+      (value, columnIndex) =>
+        value === '' && columnIndex !== 3 && !(columnIndex === 4 && values[3] === ''),
+    );
     if (missingColumn !== -1) {
       throw new AthleteImportFileError(
         `Tệp không hợp lệ: dòng ${String(rowNumber)}, cột ${String(missingColumn + 1)} (${header[missingColumn] ?? ''}) đang để trống.`,
@@ -87,7 +93,7 @@ export async function parseAthleteImportFile(file: File): Promise<readonly Athle
       name: values[0] ?? '',
       birthYear,
       weightClass: values[2] ?? '',
-      organizationName: values[3] ?? '',
+      organizationName: values[3] || noOrganizationName,
       organizationLocation: values[4] ?? '',
     });
   }

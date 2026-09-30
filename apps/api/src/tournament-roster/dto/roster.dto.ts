@@ -107,11 +107,14 @@ export class AthleteImportRowDto {
   @IsString() @MaxLength(255) organizationLocation!: string;
 }
 
-export class ConfirmAthleteImportDto {
+export class PreviewAthleteImportDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => AthleteImportRowDto)
   rows!: AthleteImportRowDto[];
+}
+
+export class ConfirmAthleteImportDto extends PreviewAthleteImportDto {
   @IsString()
   @MaxLength(255)
   idempotencyKey!: string;

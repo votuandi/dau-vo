@@ -53,6 +53,19 @@ describe('parseAthleteImportFile', () => {
     );
   });
 
+  it('assigns unaffiliated athletes to “Không đơn vị” when their unit cell is blank', async () => {
+    await expect(parseAthleteImportFile(file('A,2000,55 kg,,\n'))).resolves.toEqual([
+      {
+        rowNumber: 1,
+        name: 'A',
+        birthYear: 2000,
+        weightClass: '55 kg',
+        organizationName: 'Không đơn vị',
+        organizationLocation: '',
+      },
+    ]);
+  });
+
   it('rejects unsupported files', async () => {
     await expect(parseAthleteImportFile(file('x', 'athletes.txt'))).rejects.toBeInstanceOf(
       AthleteImportFileError,

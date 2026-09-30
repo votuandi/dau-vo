@@ -927,25 +927,36 @@ export function AthletesPage({
       </div>
       {!readOnly &&
         (activeWeights.length ? (
-          <Button
-            disabled={!activeUnlockedWeights.length}
-            onClick={() => {
-              setDraft({
-                name: '',
-                birthYear: new Date().getFullYear(),
-                weightClassId: activeUnlockedWeights[0]?.id ?? '',
-                organizationId: null,
-                details: null,
-                isSeed: false,
-                file: null,
-                imageError: '',
-              });
-              setEditing(null);
-            }}
-            type="button"
-          >
-            Thêm vận động viên
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              disabled={!activeUnlockedWeights.length}
+              onClick={() => {
+                setDraft({
+                  name: '',
+                  birthYear: new Date().getFullYear(),
+                  weightClassId: activeUnlockedWeights[0]?.id ?? '',
+                  organizationId: null,
+                  details: null,
+                  isSeed: false,
+                  file: null,
+                  imageError: '',
+                });
+                setEditing(null);
+              }}
+              type="button"
+            >
+              Thêm vận động viên
+            </Button>
+            <Button
+              className="bg-emerald-600 text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500 hover:shadow-lg hover:shadow-emerald-600/25"
+              disabled={previewImport.isPending || confirmImport.isPending}
+              onClick={() => importFilePicker.current?.click()}
+              title={`Chấp nhận đúng một tệp .xlsx, .xls hoặc .csv. Tệp có thể không có tiêu đề; chỉ bỏ dòng đầu nếu khớp chính xác: ${athleteImportHeaderHelp}. Thứ tự 5 cột bắt buộc là như trên.`}
+              type="button"
+            >
+              Thêm từ file Excel
+            </Button>
+          </div>
         ) : (
           <Button asChild>
             <Link to={`/admin/tournaments/${tournamentId}/weight-classes`}>Tạo hạng cân trước</Link>
@@ -957,46 +968,31 @@ export function AthletesPage({
         </p>
       ) : null}
       {!readOnly ? (
-        <div className="rounded-xl border p-4">
-          <div className="form-field">
-            <Button
-              disabled={previewImport.isPending || confirmImport.isPending}
-              onClick={() => importFilePicker.current?.click()}
-              type="button"
-            >
-              Thêm từ file Excel
-            </Button>
-            <span className="mb-2 block text-xs text-muted-foreground">
-              Chấp nhận đúng một tệp .xlsx, .xls hoặc .csv. Tệp có thể không có tiêu đề; chỉ bỏ dòng
-              đầu nếu khớp chính xác: {athleteImportHeaderHelp}. Thứ tự 5 cột bắt buộc là như trên.
-            </span>
-            <input
-              accept=".xlsx,.xls,.csv"
-              className="sr-only"
-              disabled={previewImport.isPending || confirmImport.isPending}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                event.currentTarget.value = '';
-                if (!file) return;
-                void parseAthleteImportFile(file)
-                  .then((rows) => {
-                    previewImport.mutate(rows);
-                  })
-                  .catch((error: unknown) => {
-                    toast({
-                      title:
-                        error instanceof AthleteImportFileError
-                          ? error.message
-                          : 'Tệp không hợp lệ: không thể đọc tệp.',
-                      variant: 'destructive',
-                    });
-                  });
-              }}
-              ref={importFilePicker}
-              type="file"
-            />
-          </div>
-        </div>
+        <input
+          accept=".xlsx,.xls,.csv"
+          className="sr-only"
+          disabled={previewImport.isPending || confirmImport.isPending}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.currentTarget.value = '';
+            if (!file) return;
+            void parseAthleteImportFile(file)
+              .then((rows) => {
+                previewImport.mutate(rows);
+              })
+              .catch((error: unknown) => {
+                toast({
+                  title:
+                    error instanceof AthleteImportFileError
+                      ? error.message
+                      : 'Tệp không hợp lệ: không thể đọc tệp.',
+                  variant: 'destructive',
+                });
+              });
+          }}
+          ref={importFilePicker}
+          type="file"
+        />
       ) : null}
       {importPreview ? (
         <Dialog

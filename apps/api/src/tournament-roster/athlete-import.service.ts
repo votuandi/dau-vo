@@ -1,8 +1,10 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -17,6 +19,7 @@ import type { AthleteImportRowDto } from './dto/roster.dto';
 import { ROSTER_TOURNAMENT_ARCHIVED } from './tournament-roster.errors';
 
 type ImportRow = AthleteImportRowDto;
+const NO_ORGANIZATION_NAME = 'Không đơn vị';
 type UnitStatus = 'existing' | 'created' | 'restored' | 'pending' | 'invalid';
 type Result = {
   inputIndex: number;
@@ -38,11 +41,22 @@ type Result = {
 
 @Injectable()
 export class AthleteImportService {
+  private readonly logger = new Logger(AthleteImportService.name);
+
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async preview(tournamentId: string, rows: ImportRow[]) {
-    this.assertUniqueRowNumbers(rows);
-    return { rows, results: await this.validate(tournamentId, rows) };
+    try {
+      this.assertUniqueRowNumbers(rows);
+      return { rows, results: await this.validate(tournamentId, rows) };
+    } catch (error) {
+      if (!(error instanceof HttpException))
+        this.logger.error(
+          `Unable to preview athlete import (tournamentId=${tournamentId}, rowCount=${rows.length})`,
+          error instanceof Error ? error.stack : undefined,
+        );
+      throw error;
+    }
   }
 
   async confirm(
@@ -53,7 +67,7 @@ export class AthleteImportService {
   ) {
     this.assertUniqueRowNumbers(rows);
     const key = idempotencyKey.trim();
-    if (!key) throw new BadRequestException('An idempotency key is required');
+    if (!key) throw new BadRequestException('Cần có khóa chống trùng lặp');
     const fingerprint = createHash('sha256')
       .update(JSON.stringify(rows))
       .digest('hex');
@@ -69,7 +83,7 @@ export class AthleteImportService {
           prior.fingerprint !== fingerprint
         )
           throw new ConflictException(
-            'Idempotency key was used for a different import',
+            'Khóa chống trùng lặp đã được dùng cho một lần nhập khác',
           );
         return { results: prior.results as unknown as Result[] };
       }
@@ -92,6 +106,8 @@ export class AthleteImportService {
           const message = this.errorMessage(error);
           result.status = 'failed';
           result.errors.push(message);
+          result.unit.status = 'invalid';
+          result.unit.errors.push(message);
           result.athlete.status = 'failed';
           result.athlete.errors.push(message);
         }
@@ -116,7 +132,8 @@ export class AthleteImportService {
     actorId: string,
     result: Result,
   ) {
-    const normalizedName = this.normalized(row.organizationName);
+    const organizationName = this.organizationName(row.organizationName);
+    const normalizedName = this.normalized(organizationName);
     const normalizedLocation = this.normalized(row.organizationLocation);
     let unit = await tx.tournamentOrganization.findFirst({
       where: { tournamentId, normalizedName, normalizedLocation },
@@ -126,7 +143,7 @@ export class AthleteImportService {
       unit = await tx.tournamentOrganization.create({
         data: {
           tournamentId,
-          name: row.organizationName.trim(),
+          name: organizationName,
           location: row.organizationLocation.trim() || null,
           normalizedName,
           normalizedLocation,
@@ -167,7 +184,7 @@ export class AthleteImportService {
       },
       select: { id: true },
     });
-    if (!weight) throw new Error('Weight class is no longer active');
+    if (!weight) throw new Error('Hạng cân không còn hoạt động');
     const bracket = await tx.tournamentBracket.findFirst({
       where: {
         tournamentId,
@@ -176,7 +193,7 @@ export class AthleteImportService {
       },
       select: { id: true },
     });
-    if (bracket) throw new Error('Weight class already has a current bracket');
+    if (bracket) throw new Error('Hạng cân đã có nhánh đấu hiện tại');
     const athlete = await tx.tournamentAthlete.create({
       data: {
         tournamentId,
@@ -242,37 +259,36 @@ export class AthleteImportService {
       const athleteErrors: string[] = [];
       const unitErrors: string[] = [];
       const name = row.name?.trim();
-      const unitName = row.organizationName?.trim();
+      const unitName = this.organizationName(row.organizationName);
       const locality = row.organizationLocation?.trim();
       if (!name || name.length > 255)
-        athleteErrors.push('Athlete full name is required');
+        athleteErrors.push('Họ và tên vận động viên là bắt buộc');
       if (
         !Number.isInteger(row.birthYear) ||
         row.birthYear < 1900 ||
         row.birthYear > currentYear
       )
         athleteErrors.push(
-          `Birth year must be between 1900 and ${currentYear}`,
+          `Năm sinh phải trong khoảng từ 1900 đến ${currentYear}`,
         );
-      if (!unitName) unitErrors.push('Participating unit name is required');
-      if (locality === undefined)
-        unitErrors.push('Participating unit locality is required');
-      const normalizedName = this.normalized(row.organizationName);
+      if (!locality && unitName !== NO_ORGANIZATION_NAME)
+        unitErrors.push('Địa phương của đơn vị tham gia là bắt buộc');
+      const normalizedName = this.normalized(unitName);
       const normalizedLocation = this.normalized(row.organizationLocation);
       const weight = weights.find(
         (x) => x.normalizedName === this.normalized(row.weightClass),
       );
       if (!weight)
-        athleteErrors.push('Weight class was not found or is inactive');
+        athleteErrors.push('Không tìm thấy hạng cân hoặc hạng cân đã ngừng hoạt động');
       if (
         weight &&
         brackets.some((bracket) => bracket.weightClassId === weight.id)
       )
-        athleteErrors.push('Weight class already has a current bracket');
+        athleteErrors.push('Hạng cân đã có nhánh đấu hiện tại');
       const unitKey = `${normalizedName}\u0000${normalizedLocation}`;
       const athleteKey = `${this.normalized(row.name)}\u0000${row.birthYear}\u0000${unitKey}`;
       if (seen.has(athleteKey))
-        athleteErrors.push('Duplicate athlete row in import');
+        athleteErrors.push('Trùng dòng vận động viên trong tệp nhập');
       seen.add(athleteKey);
       if (
         athletes.some(
@@ -284,7 +300,7 @@ export class AthleteImportService {
         )
       )
         athleteErrors.push(
-          'Athlete is already registered with this participating unit',
+          'Vận động viên đã đăng ký với đơn vị tham gia này',
         );
       const matchingUnit = units.find(
         (x) =>
@@ -305,7 +321,7 @@ export class AthleteImportService {
         status: errors.length ? 'invalid' : 'eligible',
         errors,
         unit: {
-          name: row.organizationName,
+          name: unitName,
           locality: row.organizationLocation,
           status: unitStatus,
           errors: unitErrors,
@@ -328,7 +344,7 @@ export class AthleteImportService {
     }
     if (duplicates.size)
       throw new BadRequestException(
-        `Duplicate spreadsheet row numbers are not allowed: ${[...duplicates].join(', ')}`,
+        `Số dòng bảng tính bị trùng: ${[...duplicates].join(', ')}`,
       );
   }
   private async withSavepoint(
@@ -371,10 +387,13 @@ export class AthleteImportService {
     });
   }
   private errorMessage(error: unknown) {
-    return error instanceof Error ? error.message : 'Unable to import row';
+    return error instanceof Error ? error.message : 'Không thể nhập dòng dữ liệu';
   }
   private normalized(value: string) {
     return (value ?? '').trim().normalize('NFKC').toLocaleLowerCase('vi');
+  }
+  private organizationName(value: string | undefined) {
+    return value?.trim() || NO_ORGANIZATION_NAME;
   }
   private async lock(tx: Prisma.TransactionClient, tournamentId: string) {
     await tx.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId}::uuid FOR UPDATE`;
