@@ -17,18 +17,22 @@ import type { AthleteImportRowDto } from './dto/roster.dto';
 import { ROSTER_TOURNAMENT_ARCHIVED } from './tournament-roster.errors';
 
 type ImportRow = AthleteImportRowDto;
+type UnitStatus = 'existing' | 'created' | 'restored' | 'pending' | 'invalid';
 type Result = {
+  inputIndex: number;
   rowNumber: number;
   status: 'eligible' | 'invalid' | 'created' | 'failed';
   errors: string[];
   unit: {
     name: string;
     locality: string;
-    status: 'existing' | 'created' | 'pending' | 'invalid';
+    status: UnitStatus;
+    errors: string[];
   };
   athlete: {
     name: string;
     status: 'pending' | 'created' | 'invalid' | 'failed';
+    errors: string[];
   };
 };
 
@@ -37,6 +41,7 @@ export class AthleteImportService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async preview(tournamentId: string, rows: ImportRow[]) {
+    this.assertUniqueRowNumbers(rows);
     return { rows, results: await this.validate(tournamentId, rows) };
   }
 
@@ -46,6 +51,7 @@ export class AthleteImportService {
     actorId: string,
     idempotencyKey: string,
   ) {
+    this.assertUniqueRowNumbers(rows);
     const key = idempotencyKey.trim();
     if (!key) throw new BadRequestException('An idempotency key is required');
     const fingerprint = createHash('sha256')
@@ -70,70 +76,24 @@ export class AthleteImportService {
       const results = await this.validate(tournamentId, rows, tx);
       for (const result of results) {
         if (result.status !== 'eligible') continue;
-        const row = rows.find((x) => x.rowNumber === result.rowNumber)!;
-        try {
-          const normalizedName = this.normalized(row.organizationName);
-          const normalizedLocation = this.normalized(row.organizationLocation);
-          let unit = await tx.tournamentOrganization.findFirst({
-            where: {
+        const error = await this.withSavepoint(
+          tx,
+          `athlete_import_${result.inputIndex}`,
+          () =>
+            this.importRow(
+              tx,
               tournamentId,
-              normalizedName,
-              normalizedLocation,
-              isActive: true,
-            },
-            select: { id: true },
-          });
-          const reused = Boolean(unit);
-          if (!unit)
-            unit = await tx.tournamentOrganization.create({
-              data: {
-                tournamentId,
-                name: row.organizationName,
-                location: row.organizationLocation || null,
-                normalizedName,
-                normalizedLocation,
-              },
-              select: { id: true },
-            });
-          const weight = await tx.tournamentWeightClass.findFirst({
-            where: {
-              tournamentId,
-              normalizedName: this.normalized(row.weightClass),
-              isActive: true,
-            },
-            select: { id: true },
-          });
-          if (!weight) throw new Error('Weight class is no longer active');
-          const athlete = await tx.tournamentAthlete.create({
-            data: {
-              tournamentId,
-              name: row.name,
-              birthYear: row.birthYear,
-              weightClassId: weight.id,
-              organizationId: unit.id,
-            },
-            select: { id: true },
-          });
-          await tx.auditLog.create({
-            data: {
-              adminUserId: actorId,
-              eventType: AuditEventType.ADMIN_ACTION,
-              metadata: {
-                action: 'ATHLETE_IMPORTED',
-                targetId: athlete.id,
-                rowNumber: row.rowNumber,
-              } as Prisma.InputJsonValue,
-            },
-          });
-          result.status = 'created';
-          result.unit.status = reused ? 'existing' : 'created';
-          result.athlete.status = 'created';
-        } catch (error) {
+              rows[result.inputIndex]!,
+              actorId,
+              result,
+            ),
+        );
+        if (error) {
+          const message = this.errorMessage(error);
           result.status = 'failed';
+          result.errors.push(message);
           result.athlete.status = 'failed';
-          result.errors.push(
-            error instanceof Error ? error.message : 'Unable to import row',
-          );
+          result.athlete.errors.push(message);
         }
       }
       await tx.athleteImportConfirmation.create({
@@ -149,6 +109,97 @@ export class AthleteImportService {
     });
   }
 
+  private async importRow(
+    tx: Prisma.TransactionClient,
+    tournamentId: string,
+    row: ImportRow,
+    actorId: string,
+    result: Result,
+  ) {
+    const normalizedName = this.normalized(row.organizationName);
+    const normalizedLocation = this.normalized(row.organizationLocation);
+    let unit = await tx.tournamentOrganization.findFirst({
+      where: { tournamentId, normalizedName, normalizedLocation },
+      select: { id: true, isActive: true, name: true, location: true },
+    });
+    if (!unit) {
+      unit = await tx.tournamentOrganization.create({
+        data: {
+          tournamentId,
+          name: row.organizationName.trim(),
+          location: row.organizationLocation.trim() || null,
+          normalizedName,
+          normalizedLocation,
+        },
+        select: { id: true, isActive: true, name: true, location: true },
+      });
+      result.unit.status = 'created';
+      await this.audit(
+        tx,
+        actorId,
+        'ORGANIZATION_CREATED',
+        unit.id,
+        null,
+        unit,
+      );
+    } else if (!unit.isActive) {
+      const before = unit;
+      unit = await tx.tournamentOrganization.update({
+        where: { id: unit.id },
+        data: { isActive: true, deactivatedAt: null },
+        select: { id: true, isActive: true, name: true, location: true },
+      });
+      result.unit.status = 'restored';
+      await this.audit(
+        tx,
+        actorId,
+        'ORGANIZATION_RESTORED',
+        unit.id,
+        before,
+        unit,
+      );
+    } else result.unit.status = 'existing';
+    const weight = await tx.tournamentWeightClass.findFirst({
+      where: {
+        tournamentId,
+        normalizedName: this.normalized(row.weightClass),
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    if (!weight) throw new Error('Weight class is no longer active');
+    const bracket = await tx.tournamentBracket.findFirst({
+      where: {
+        tournamentId,
+        weightClassId: weight.id,
+        status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
+      },
+      select: { id: true },
+    });
+    if (bracket) throw new Error('Weight class already has a current bracket');
+    const athlete = await tx.tournamentAthlete.create({
+      data: {
+        tournamentId,
+        name: row.name.trim(),
+        birthYear: row.birthYear,
+        weightClassId: weight.id,
+        organizationId: unit.id,
+      },
+      select: { id: true },
+    });
+    await this.audit(
+      tx,
+      actorId,
+      'ATHLETE_CREATED',
+      athlete.id,
+      null,
+      athlete,
+      result.rowNumber,
+    );
+    result.status = 'created';
+    result.athlete.status = 'created';
+  }
+
   private async validate(
     tournamentId: string,
     rows: ImportRow[],
@@ -160,8 +211,12 @@ export class AthleteImportService {
         select: { normalizedName: true, id: true },
       }),
       client.tournamentOrganization.findMany({
-        where: { tournamentId, isActive: true },
-        select: { normalizedName: true, normalizedLocation: true },
+        where: { tournamentId },
+        select: {
+          normalizedName: true,
+          normalizedLocation: true,
+          isActive: true,
+        },
       }),
       client.tournamentBracket.findMany({
         where: {
@@ -183,68 +238,143 @@ export class AthleteImportService {
     ]);
     const currentYear = new Date().getUTCFullYear();
     const seen = new Set<string>();
-    return rows.map((row) => {
-      const errors: string[] = [];
-      if (!row.name || row.name.length > 255)
-        errors.push('Athlete full name is required');
+    return rows.map((row, inputIndex) => {
+      const athleteErrors: string[] = [];
+      const unitErrors: string[] = [];
+      const name = row.name?.trim();
+      const unitName = row.organizationName?.trim();
+      const locality = row.organizationLocation?.trim();
+      if (!name || name.length > 255)
+        athleteErrors.push('Athlete full name is required');
       if (
         !Number.isInteger(row.birthYear) ||
         row.birthYear < 1900 ||
         row.birthYear > currentYear
       )
-        errors.push(`Birth year must be between 1900 and ${currentYear}`);
+        athleteErrors.push(
+          `Birth year must be between 1900 and ${currentYear}`,
+        );
+      if (!unitName) unitErrors.push('Participating unit name is required');
+      if (locality === undefined)
+        unitErrors.push('Participating unit locality is required');
+      const normalizedName = this.normalized(row.organizationName);
+      const normalizedLocation = this.normalized(row.organizationLocation);
       const weight = weights.find(
         (x) => x.normalizedName === this.normalized(row.weightClass),
       );
-      if (!weight) errors.push('Weight class was not found or is inactive');
+      if (!weight)
+        athleteErrors.push('Weight class was not found or is inactive');
       if (
         weight &&
         brackets.some((bracket) => bracket.weightClassId === weight.id)
       )
-        errors.push('Weight class already has a current bracket');
-      if (!row.organizationName)
-        errors.push('Participating unit name is required');
-      const key = `${this.normalized(row.organizationName)}\u0000${this.normalized(row.organizationLocation)}`;
-      const athleteKey = `${this.normalized(row.name)}\u0000${row.birthYear}\u0000${key}`;
-      if (seen.has(athleteKey)) errors.push('Duplicate athlete row in import');
+        athleteErrors.push('Weight class already has a current bracket');
+      const unitKey = `${normalizedName}\u0000${normalizedLocation}`;
+      const athleteKey = `${this.normalized(row.name)}\u0000${row.birthYear}\u0000${unitKey}`;
+      if (seen.has(athleteKey))
+        athleteErrors.push('Duplicate athlete row in import');
       seen.add(athleteKey);
       if (
         athletes.some(
           (athlete) =>
             this.normalized(athlete.name) === this.normalized(row.name) &&
             athlete.birthYear === row.birthYear &&
-            athlete.organization?.normalizedName ===
-              this.normalized(row.organizationName) &&
-            athlete.organization?.normalizedLocation ===
-              this.normalized(row.organizationLocation),
+            athlete.organization?.normalizedName === normalizedName &&
+            athlete.organization?.normalizedLocation === normalizedLocation,
         )
       )
-        errors.push(
+        athleteErrors.push(
           'Athlete is already registered with this participating unit',
         );
-      const existing = units.some(
+      const matchingUnit = units.find(
         (x) =>
-          x.normalizedName === this.normalized(row.organizationName) &&
-          x.normalizedLocation === this.normalized(row.organizationLocation),
+          x.normalizedName === normalizedName &&
+          x.normalizedLocation === normalizedLocation,
       );
+      const unitStatus: UnitStatus = unitErrors.length
+        ? 'invalid'
+        : matchingUnit
+          ? matchingUnit.isActive
+            ? 'existing'
+            : 'restored'
+          : 'pending';
+      const errors = [...unitErrors, ...athleteErrors];
       return {
+        inputIndex,
         rowNumber: row.rowNumber,
         status: errors.length ? 'invalid' : 'eligible',
         errors,
         unit: {
           name: row.organizationName,
           locality: row.organizationLocation,
-          status: errors.length ? 'invalid' : existing ? 'existing' : 'pending',
+          status: unitStatus,
+          errors: unitErrors,
         },
         athlete: {
           name: row.name,
-          status: errors.length ? 'invalid' : 'pending',
+          status: athleteErrors.length ? 'invalid' : 'pending',
+          errors: athleteErrors,
         },
       };
     });
   }
+
+  private assertUniqueRowNumbers(rows: ImportRow[]) {
+    const duplicates = new Set<number>();
+    const seen = new Set<number>();
+    for (const row of rows) {
+      if (seen.has(row.rowNumber)) duplicates.add(row.rowNumber);
+      seen.add(row.rowNumber);
+    }
+    if (duplicates.size)
+      throw new BadRequestException(
+        `Duplicate spreadsheet row numbers are not allowed: ${[...duplicates].join(', ')}`,
+      );
+  }
+  private async withSavepoint(
+    tx: Prisma.TransactionClient,
+    name: string,
+    work: () => Promise<void>,
+  ): Promise<unknown | undefined> {
+    await tx.$executeRawUnsafe(`SAVEPOINT ${name}`);
+    try {
+      await work();
+      await tx.$executeRawUnsafe(`RELEASE SAVEPOINT ${name}`);
+      return undefined;
+    } catch (error) {
+      await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT ${name}`);
+      await tx.$executeRawUnsafe(`RELEASE SAVEPOINT ${name}`);
+      return error;
+    }
+  }
+  private async audit(
+    tx: Prisma.TransactionClient,
+    actorId: string,
+    action: string,
+    targetId: string,
+    before: unknown,
+    after: unknown,
+    rowNumber?: number,
+  ) {
+    await tx.auditLog.create({
+      data: {
+        adminUserId: actorId,
+        eventType: AuditEventType.ADMIN_ACTION,
+        metadata: {
+          action,
+          targetId,
+          before,
+          after,
+          ...(rowNumber === undefined ? {} : { rowNumber }),
+        } as Prisma.InputJsonValue,
+      },
+    });
+  }
+  private errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : 'Unable to import row';
+  }
   private normalized(value: string) {
-    return value.trim().normalize('NFKC').toLocaleLowerCase('vi');
+    return (value ?? '').trim().normalize('NFKC').toLocaleLowerCase('vi');
   }
   private async lock(tx: Prisma.TransactionClient, tournamentId: string) {
     await tx.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId}::uuid FOR UPDATE`;
