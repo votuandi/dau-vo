@@ -100,6 +100,43 @@ function ImportReviewSection({
     </section>
   );
 }
+function ImportCompletionSection({
+  added,
+  notAdded,
+  title,
+}: {
+  readonly title: string;
+  readonly added: readonly { readonly id: number; readonly label: string }[];
+  readonly notAdded: readonly {
+    readonly id: number;
+    readonly label: string;
+    readonly reason: string;
+  }[];
+}) {
+  return (
+    <section aria-label={title} className="space-y-2">
+      <h3 className="font-black">{title}</h3>
+      <div>
+        <p className="font-bold text-emerald-700">Đã thêm ({added.length})</p>
+        <ul className="list-disc space-y-1 pl-5">
+          {added.map((record) => (
+            <li key={record.id}>{record.label}</li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <p className="font-bold text-destructive">Không thêm được ({notAdded.length})</p>
+        <ul className="list-disc space-y-1 pl-5">
+          {notAdded.map((record) => (
+            <li key={record.id}>
+              {record.label} — {record.reason}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
 type Tab = (typeof tabs)[number][0];
 
 export function TournamentTabs({
@@ -626,7 +663,9 @@ export function AthletesPage({
   const [importPreview, setImportPreview] = useState<{
     rows: readonly AthleteImportRow[];
     results: readonly AthleteImportResult[];
+    idempotencyKey: string;
   } | null>(null);
+  const [importResults, setImportResults] = useState<readonly AthleteImportResult[] | null>(null);
   const submitLock = useRef(false);
   const importFilePicker = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
@@ -727,17 +766,18 @@ export function AthletesPage({
     mutationFn: (rows: readonly AthleteImportRow[]) =>
       adminManagementApi.previewAthleteImport(tournamentId, rows),
     onSuccess: (result) => {
-      setImportPreview(result);
+      setImportPreview({ ...result, idempotencyKey: crypto.randomUUID() });
     },
     onError: (error) => {
       notifyMutationError(error, 'Không thể tạo bản xem trước dữ liệu nhập.');
     },
   });
   const confirmImport = useMutation({
-    mutationFn: (rows: readonly AthleteImportRow[]) =>
-      adminManagementApi.confirmAthleteImport(tournamentId, rows),
-    onSuccess: () => {
+    mutationFn: (preview: NonNullable<typeof importPreview>) =>
+      adminManagementApi.confirmAthleteImport(tournamentId, preview.rows, preview.idempotencyKey),
+    onSuccess: (result) => {
       setImportPreview(null);
+      setImportResults(result.results);
       void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId, 'athletes'] });
       notifyMutationSuccess('Đã xử lý dữ liệu nhập.');
     },
@@ -948,7 +988,7 @@ export function AthletesPage({
                 !importPreview.results.some((result) => result.status === 'eligible')
               }
               onClick={() => {
-                if (!confirmImport.isPending) confirmImport.mutate(importPreview.rows);
+                if (!confirmImport.isPending) confirmImport.mutate(importPreview);
               }}
               type="button"
             >
@@ -963,6 +1003,55 @@ export function AthletesPage({
               variant="outline"
             >
               Hủy
+            </Button>
+          </div>
+        </Dialog>
+      ) : null}
+      {importResults ? (
+        <Dialog
+          className="max-w-2xl"
+          description="Kết quả xử lý từng dòng trong tệp nhập."
+          onClose={() => setImportResults(null)}
+          title="Hoàn tất nhập vận động viên"
+        >
+          <div className="mt-4 max-h-[55vh] space-y-5 overflow-y-auto text-sm">
+            <ImportCompletionSection
+              title="Vận động viên"
+              added={importResults
+                .filter((x) => x.athlete.status === 'created')
+                .map((x) => ({
+                  id: x.rowNumber,
+                  label: `Dòng ${String(x.rowNumber)}: ${x.athlete.name}`,
+                }))}
+              notAdded={importResults
+                .filter((x) => x.athlete.status !== 'created')
+                .map((x) => ({
+                  id: x.rowNumber,
+                  label: `Dòng ${String(x.rowNumber)}: ${x.athlete.name}`,
+                  reason: x.errors.join(', ') || 'Không thể thêm vận động viên.',
+                }))}
+            />
+            <ImportCompletionSection
+              title="Đơn vị tham gia"
+              added={importResults
+                .filter((x) => x.unit.status === 'created')
+                .map((x) => ({ id: x.rowNumber, label: `${x.unit.name} — ${x.unit.locality}` }))}
+              notAdded={importResults
+                .filter((x) => x.unit.status !== 'created')
+                .map((x) => ({
+                  id: x.rowNumber,
+                  label: `${x.unit.name} — ${x.unit.locality}`,
+                  reason:
+                    x.errors.join(', ') ||
+                    (x.unit.status === 'existing'
+                      ? 'Đơn vị đã có, đã được dùng lại.'
+                      : 'Không thể thêm đơn vị.'),
+                }))}
+            />
+          </div>
+          <div className="mt-5">
+            <Button onClick={() => setImportResults(null)} type="button">
+              Đóng
             </Button>
           </div>
         </Dialog>

@@ -638,10 +638,14 @@ export const adminManagementApi = {
       readonly results: readonly AthleteImportResult[];
     }>(`admin/tournaments/${encodePathSegment(tournamentId)}/athletes/import/preview`, { rows });
   },
-  confirmAthleteImport: (tournamentId: string, rows: readonly AthleteImportRow[]) =>
+  confirmAthleteImport: (
+    tournamentId: string,
+    rows: readonly AthleteImportRow[],
+    idempotencyKey: string,
+  ) =>
     apiClient.post<{ readonly results: readonly AthleteImportResult[] }>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/athletes/import/confirm`,
-      { rows },
+      { rows, idempotencyKey },
     ),
   updateAthlete: (tournamentId: string, id: string, input: UpdateAthleteInput) =>
     apiClient.patch<AthleteResponse>(

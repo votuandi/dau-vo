@@ -112,4 +112,7 @@ export class ConfirmAthleteImportDto {
   @ValidateNested({ each: true })
   @Type(() => AthleteImportRowDto)
   rows!: AthleteImportRowDto[];
+  @IsString()
+  @MaxLength(255)
+  idempotencyKey!: string;
 }

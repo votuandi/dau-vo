@@ -11,6 +11,7 @@ import {
   TournamentStatus,
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
+import { createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AthleteImportRowDto } from './dto/roster.dto';
 import { ROSTER_TOURNAMENT_ARCHIVED } from './tournament-roster.errors';
@@ -39,9 +40,33 @@ export class AthleteImportService {
     return { rows, results: await this.validate(tournamentId, rows) };
   }
 
-  async confirm(tournamentId: string, rows: ImportRow[], actorId: string) {
+  async confirm(
+    tournamentId: string,
+    rows: ImportRow[],
+    actorId: string,
+    idempotencyKey: string,
+  ) {
+    const key = idempotencyKey.trim();
+    if (!key) throw new BadRequestException('An idempotency key is required');
+    const fingerprint = createHash('sha256')
+      .update(JSON.stringify(rows))
+      .digest('hex');
     return this.prisma.$transaction(async (tx) => {
       await this.lock(tx, tournamentId);
+      const prior = await tx.athleteImportConfirmation.findUnique({
+        where: { key },
+      });
+      if (prior) {
+        if (
+          prior.tournamentId !== tournamentId ||
+          prior.actorId !== actorId ||
+          prior.fingerprint !== fingerprint
+        )
+          throw new ConflictException(
+            'Idempotency key was used for a different import',
+          );
+        return { results: prior.results as unknown as Result[] };
+      }
       const results = await this.validate(tournamentId, rows, tx);
       for (const result of results) {
         if (result.status !== 'eligible') continue;
@@ -58,6 +83,7 @@ export class AthleteImportService {
             },
             select: { id: true },
           });
+          const reused = Boolean(unit);
           if (!unit)
             unit = await tx.tournamentOrganization.create({
               data: {
@@ -100,7 +126,7 @@ export class AthleteImportService {
             },
           });
           result.status = 'created';
-          result.unit.status = 'created';
+          result.unit.status = reused ? 'existing' : 'created';
           result.athlete.status = 'created';
         } catch (error) {
           result.status = 'failed';
@@ -110,6 +136,15 @@ export class AthleteImportService {
           );
         }
       }
+      await tx.athleteImportConfirmation.create({
+        data: {
+          tournamentId,
+          actorId,
+          key,
+          fingerprint,
+          results: results as unknown as Prisma.InputJsonValue,
+        },
+      });
       return { results };
     });
   }
@@ -119,7 +154,7 @@ export class AthleteImportService {
     rows: ImportRow[],
     client: PrismaService | Prisma.TransactionClient = this.prisma,
   ): Promise<Result[]> {
-    const [weights, units, brackets] = await Promise.all([
+    const [weights, units, brackets, athletes] = await Promise.all([
       client.tournamentWeightClass.findMany({
         where: { tournamentId, isActive: true },
         select: { normalizedName: true, id: true },
@@ -134,6 +169,16 @@ export class AthleteImportService {
           status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
         },
         select: { weightClassId: true },
+      }),
+      client.tournamentAthlete.findMany({
+        where: { tournamentId, isActive: true },
+        select: {
+          name: true,
+          birthYear: true,
+          organization: {
+            select: { normalizedName: true, normalizedLocation: true },
+          },
+        },
       }),
     ]);
     const currentYear = new Date().getUTCFullYear();
@@ -160,9 +205,23 @@ export class AthleteImportService {
       if (!row.organizationName)
         errors.push('Participating unit name is required');
       const key = `${this.normalized(row.organizationName)}\u0000${this.normalized(row.organizationLocation)}`;
-      if (seen.has(`${row.name}\u0000${row.birthYear}\u0000${key}`))
-        errors.push('Duplicate athlete row in import');
-      seen.add(`${row.name}\u0000${row.birthYear}\u0000${key}`);
+      const athleteKey = `${this.normalized(row.name)}\u0000${row.birthYear}\u0000${key}`;
+      if (seen.has(athleteKey)) errors.push('Duplicate athlete row in import');
+      seen.add(athleteKey);
+      if (
+        athletes.some(
+          (athlete) =>
+            this.normalized(athlete.name) === this.normalized(row.name) &&
+            athlete.birthYear === row.birthYear &&
+            athlete.organization?.normalizedName ===
+              this.normalized(row.organizationName) &&
+            athlete.organization?.normalizedLocation ===
+              this.normalized(row.organizationLocation),
+        )
+      )
+        errors.push(
+          'Athlete is already registered with this participating unit',
+        );
       const existing = units.some(
         (x) =>
           x.normalizedName === this.normalized(row.organizationName) &&

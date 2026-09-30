@@ -100,7 +100,12 @@ export class TournamentRosterController {
     @Req() req: AuthenticatedUserRequest,
   ) {
     await this.access.assertTournamentAccess(tournamentId, req.user, true);
-    return this.imports.confirm(tournamentId, input.rows, req.user.id);
+    return this.imports.confirm(
+      tournamentId,
+      input.rows,
+      req.user.id,
+      input.idempotencyKey,
+    );
   }
   @Get('athletes/:athleteId') async getAthlete(
     @Param('tournamentId', uuid) tournamentId: string,
