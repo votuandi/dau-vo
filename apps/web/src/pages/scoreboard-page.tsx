@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AthleteColor, MatchLifecycle, MatchStatus } from '@martial-arts-scoring/shared-types';
 import { useScoreboardRealtime } from '@/features/scoreboard/scoreboard-realtime';
-import { IntermissionCountdown } from '@/components/intermission-countdown';
+import { IntermissionCountdown, useIntermissionActive } from '@/components/intermission-countdown';
 import {
   isPausedPhase,
   isRunningPhase,
@@ -173,10 +173,22 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
     : null;
   const outcomeMethod = snapshot?.match.outcome?.method;
   const committedScores = snapshot?.committedScores;
+  const intermission = useIntermissionActive(
+    snapshot?.match.phase === MatchStatus.BREAK ? snapshot.intermissionEndsAt : null,
+    snapshot?.generatedAt,
+  );
+  const appealActive =
+    snapshot?.match.phase === MatchStatus.REGULATION_APPEAL ||
+    snapshot?.match.phase === MatchStatus.OVERTIME_APPEAL;
+  const yellowPresentation = intermission.active || appealActive;
 
   return (
-    <main className="arena-background min-h-dvh p-4 text-white sm:p-8">
-      <header className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-blue-950/25 px-4 py-3 backdrop-blur sm:px-6">
+    <main
+      className={`min-h-dvh p-4 text-white sm:p-8 ${yellowPresentation ? 'bg-gradient-to-br from-amber-950 via-yellow-800 to-amber-950' : 'arena-background'}`}
+    >
+      <header
+        className={`flex items-center justify-between gap-4 rounded-2xl border px-4 py-3 backdrop-blur sm:px-6 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/45' : 'border-white/10 bg-blue-950/25'}`}
+      >
         <p className="font-mono text-2xl font-black tracking-[0.2em] sm:text-4xl">
           {snapshot?.match.publicId ?? matchPublicId}
         </p>
@@ -190,7 +202,9 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
               : 'ĐANG KẾT NỐI'}
         </p>
       </header>
-      <section className="my-4 rounded-[2rem] border border-white/15 bg-white/10 px-6 py-5 text-center shadow-2xl shadow-blue-950/20 backdrop-blur-xl sm:my-7">
+      <section
+        className={`my-4 rounded-[2rem] border px-6 py-5 text-center shadow-2xl backdrop-blur-xl sm:my-7 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/30 shadow-amber-950/30' : 'border-white/15 bg-white/10 shadow-blue-950/20'}`}
+      >
         <p className="text-2xl font-black tracking-[0.2em] text-sky-100 sm:text-4xl">
           {presentation?.label ?? 'ĐANG KẾT NỐI'}
         </p>

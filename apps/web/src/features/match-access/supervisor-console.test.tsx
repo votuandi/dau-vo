@@ -84,6 +84,27 @@ describe('SupervisorConsole', () => {
     expect(screen.getByRole('button', { name: 'CHECK VAR' })).toBeDisabled();
   });
 
+  it('keeps the appeal presentation after Check VAR closes', async () => {
+    const user = userEvent.setup();
+    const { container, rerender } = render(
+      <SupervisorConsole
+        realtime={createRealtimeState({ snapshot: snapshotFor(MatchStatus.REGULATION_APPEAL) })}
+      />,
+    );
+
+    expect(container.firstElementChild).toHaveClass('from-amber-950');
+    await user.click(screen.getByRole('button', { name: 'CHECK VAR' }));
+    expect(screen.getByRole('dialog', { name: 'Check VAR' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Đóng' }));
+
+    rerender(
+      <SupervisorConsole
+        realtime={createRealtimeState({ snapshot: snapshotFor(MatchStatus.REGULATION_APPEAL) })}
+      />,
+    );
+    expect(container.firstElementChild).toHaveClass('from-amber-950');
+  });
+
   it('renders the authoritative WAITING → Round 1 → BREAK → Round 2 → FINISHED workflow', async () => {
     const user = userEvent.setup();
     const startRound = vi.fn(() => Promise.resolve());

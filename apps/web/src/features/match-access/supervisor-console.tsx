@@ -14,7 +14,7 @@ import {
   type RealtimeConnectionStatus,
 } from './match-realtime';
 import { presentPhase } from '@/features/match-presentation';
-import { IntermissionCountdown } from '@/components/intermission-countdown';
+import { IntermissionCountdown, useIntermissionActive } from '@/components/intermission-countdown';
 import { VarMonitoringDialog } from './var-monitoring-dialog';
 
 interface SupervisorConsoleProps {
@@ -293,6 +293,13 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
   const [exitConfirmation, setExitConfirmation] = useState<MatchExitMode | null>(null);
   const [exitAttempted, setExitAttempted] = useState(false);
   const [varOpen, setVarOpen] = useState(false);
+  const intermission = useIntermissionActive(
+    status === MatchStatus.BREAK ? snapshot?.match.intermissionEndsAt : null,
+    snapshot?.generatedAt,
+  );
+  const appealActive =
+    status === MatchStatus.REGULATION_APPEAL || status === MatchStatus.OVERTIME_APPEAL;
+  const yellowPresentation = intermission.active || appealActive || varOpen;
   const exitMenuFirstOptionRef = useRef<HTMLButtonElement>(null);
   const displayedRemaining = roundIsPaused
     ? (snapshot?.activeRound?.remainingDurationMs ?? null)
@@ -302,9 +309,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
     !roundIsRunning ||
     realtime.submittingFault !== null;
   const canStartRound = status === MatchStatus.WAITING || status === MatchStatus.BREAK;
-  const varDisabled =
-    snapshot === null ||
-    roundIsRunning;
+  const varDisabled = snapshot === null || roundIsRunning;
   const judgeReadiness =
     snapshot?.readiness.kind === 'TOURNAMENT_OFFICIALS'
       ? snapshot.readiness.referees.map((referee) => ({
@@ -439,9 +444,17 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
       : snapshot?.result.regulationAppeal;
 
   return (
-    <div className="arena-background min-h-dvh text-white">
+    <div
+      className={`min-h-dvh text-white ${
+        yellowPresentation
+          ? 'bg-gradient-to-br from-amber-950 via-yellow-800 to-amber-950'
+          : 'arena-background'
+      }`}
+    >
       <main className="mx-auto w-full max-w-6xl px-3 py-3 sm:px-5 sm:py-5">
-        <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/15 bg-blue-950/35 px-4 py-3 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5">
+        <header
+          className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/45' : 'border-white/15 bg-blue-950/35'}`}
+        >
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-200/80">
               Giám sát
@@ -462,7 +475,9 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
           </div>
         </header>
 
-        <section className="mt-3 rounded-3xl border border-white/15 bg-white/10 px-5 py-7 text-center shadow-2xl shadow-blue-950/20 backdrop-blur-xl sm:mt-5 sm:px-8 sm:py-9">
+        <section
+          className={`mt-3 rounded-3xl border px-5 py-7 text-center shadow-2xl backdrop-blur-xl sm:mt-5 sm:px-8 sm:py-9 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/30 shadow-amber-950/30' : 'border-white/15 bg-white/10 shadow-blue-950/20'}`}
+        >
           <p className="text-sm font-black tracking-[0.2em] text-sky-200">
             {status ? presentPhase(status).label.toUpperCase() : 'ĐANG ĐỒNG BỘ'}
           </p>
