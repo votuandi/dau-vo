@@ -4,10 +4,10 @@ import { MatchDisplayState, MatchLifecycle, MatchPhase } from '@martial-arts-sco
 import type { ActiveBracket, BracketPreview } from '@/services/api/admin-management';
 import {
   BRACKET_LAYOUT,
-  BracketChart,
   bracketConnectorPath,
   fixtureTopOffsets,
-} from './bracket-chart';
+} from './bracket-chart-layout';
+import { BracketChart } from './bracket-chart';
 
 function activeBracket(
   phase: MatchPhase,
@@ -146,7 +146,7 @@ function previewBracket(): BracketPreview {
 describe('BracketChart', () => {
   it('renders edit buttons for every preview entrant and invokes the selected athlete', () => {
     const edited: string[] = [];
-    render(<BracketChart data={previewBracket()} onEditAthlete={(id) => edited.push(id)} />);
+    render(<BracketChart data={previewBracket()} onEditAthlete={(id: string) => edited.push(id)} />);
 
     const buttons = screen.getAllByRole('button', { name: /Đổi vị trí/ });
     expect(buttons).toHaveLength(3);

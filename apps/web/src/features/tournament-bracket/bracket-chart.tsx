@@ -15,65 +15,16 @@ import {
   presentPhase,
 } from '@/features/match-presentation';
 import { swappablePreviewAthleteIds } from './bracket-preview-swap';
+import {
+  BRACKET_LAYOUT,
+  bracketConnectorPath,
+  fixtureTopOffsets,
+} from './bracket-chart-layout';
 
 type ChartData = Pick<BracketPreview, 'rounds' | 'initialEntrants'> | ActiveBracket;
 interface ConnectorPath {
   readonly key: string;
   readonly d: string;
-}
-
-/**
- * These values deliberately describe both the CSS layout and the logical tree
- * coordinates. Keeping them together means a denser card cannot leave the
- * connector tree using the dimensions of the previous layout.
- */
-export const BRACKET_LAYOUT = {
-  fixtureWidth: 240,
-  roundGap: 32,
-  rowPitch: 176,
-} as const;
-
-interface ConnectorBounds {
-  readonly sourceRight: number;
-  readonly sourceCenterY: number;
-  readonly targetLeft: number;
-  readonly targetCenterY: number;
-  readonly targetSide: 'RED' | 'BLUE';
-}
-
-export function bracketConnectorPath({
-  sourceRight,
-  sourceCenterY,
-  targetLeft,
-  targetCenterY,
-  targetSide,
-}: ConnectorBounds): string {
-  // Use separate lanes for the RED and BLUE target ports. This keeps sibling
-  // advances distinct even when a round has skipped/missing fixture cards.
-  const middleX =
-    sourceRight + Math.max(28, targetLeft - sourceRight) * (targetSide === 'RED' ? 0.38 : 0.62);
-  return `M ${String(sourceRight)} ${String(sourceCenterY)} H ${String(middleX)} V ${String(targetCenterY)} H ${String(targetLeft)}`;
-}
-
-export function fixtureTopOffsets(
-  rounds: readonly {
-    readonly roundNumber: number;
-    readonly fixtures: readonly { readonly id: string; readonly position: number }[];
-  }[],
-): ReadonlyMap<string, number> {
-  const offsets = new Map<string, number>();
-  for (const round of rounds) {
-    const roundIndex = round.roundNumber - 1;
-    round.fixtures.forEach((fixture) => {
-      // `position` is the fixture's durable position in its logical round.
-      // It intentionally includes branches omitted because both entrants had a
-      // bye. Deriving this from the filtered fixtures array would collapse
-      // those branches and move every later fixture onto the wrong tree slot.
-      const logicalSlot = (fixture.position - 0.5) * 2 ** roundIndex - 0.5;
-      offsets.set(fixture.id, logicalSlot * BRACKET_LAYOUT.rowPitch);
-    });
-  }
-  return offsets;
 }
 
 export function BracketChart({

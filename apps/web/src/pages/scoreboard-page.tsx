@@ -127,7 +127,9 @@ function ScoreboardImage({
 }) {
   const [failed, setFailed] = useState(false);
   const src = imagePath ? tournamentImageUrl(imagePath) : null;
-  useEffect(() => setFailed(false), [src]);
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
   const classes =
     kind === 'athlete'
       ? 'size-16 shrink-0 rounded-full sm:size-24 lg:size-[min(18vh,9rem)]'
@@ -136,7 +138,9 @@ function ScoreboardImage({
     <img
       alt={alt}
       className={`${classes} border-2 border-white/40 bg-white/10 object-cover`}
-      onError={() => setFailed(true)}
+      onError={() => {
+        setFailed(true);
+      }}
       src={src}
     />
   ) : (
@@ -328,7 +332,7 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
 
   return (
     <main
-      className={`flex min-h-screen min-h-dvh flex-col overflow-hidden p-3 text-white sm:p-5 ${publishedWinner ? (publishedWinner.color === AthleteColor.RED ? 'bg-gradient-to-br from-red-500 via-red-700 to-red-950' : 'bg-gradient-to-br from-sky-500 via-blue-700 to-blue-950') : yellowPresentation ? 'bg-gradient-to-br from-amber-950 via-yellow-800 to-amber-950' : 'arena-background'}`}
+      className={`flex h-screen h-dvh flex-col overflow-hidden p-3 text-white sm:p-5 ${publishedWinner ? (publishedWinner.color === AthleteColor.RED ? 'bg-gradient-to-br from-red-500 via-red-700 to-red-950' : 'bg-gradient-to-br from-sky-500 via-blue-700 to-blue-950') : yellowPresentation ? 'bg-gradient-to-br from-amber-950 via-yellow-800 to-amber-950' : 'arena-background'}`}
     >
       <header
         className={`flex items-center justify-between gap-4 rounded-2xl border px-4 py-3 backdrop-blur sm:px-6 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/45' : 'border-white/10 bg-blue-950/25'}`}

@@ -55,7 +55,9 @@ export function BracketAthleteSwapDialog({
               checked={selected === entrant.athleteId}
               disabled={pending}
               name="swap-athlete"
-              onChange={() => setSelected(entrant.athleteId)}
+              onChange={() => {
+                setSelected(entrant.athleteId);
+              }}
               ref={index === 0 ? initialFocus : undefined}
               type="radio"
               value={entrant.athleteId ?? ''}
@@ -80,7 +82,9 @@ export function BracketAthleteSwapDialog({
         </Button>
         <Button
           disabled={pending || !selected}
-          onClick={() => selected && onSubmit(selected)}
+          onClick={() => {
+            if (selected) onSubmit(selected);
+          }}
           type="button"
         >
           {pending ? 'Đang đổi…' : 'Đổi vị trí'}

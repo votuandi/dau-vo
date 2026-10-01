@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { BracketDrawSetupDialog, shuffle } from './bracket-draw-setup-dialog';
+import { BracketDrawSetupDialog } from './bracket-draw-setup-dialog';
+import { shuffle } from './shuffle';
 
 type DrawStrategy = 'RANDOM' | 'MANUAL' | 'SEEDED';
 type DrawSubmit = (ids: readonly string[], strategy: DrawStrategy) => void;

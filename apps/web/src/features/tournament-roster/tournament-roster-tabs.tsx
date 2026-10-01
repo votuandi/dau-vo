@@ -1063,7 +1063,9 @@ export function AthletesPage({
         <Dialog
           className="max-w-2xl"
           description="Kết quả xử lý từng dòng trong tệp nhập."
-          onClose={() => setImportResults(null)}
+          onClose={() => {
+            setImportResults(null);
+          }}
           title="Hoàn tất nhập vận động viên"
         >
           <div className="mt-4 max-h-[55vh] space-y-5 overflow-y-auto text-sm">
@@ -1089,7 +1091,12 @@ export function AthletesPage({
             />
           </div>
           <div className="mt-5">
-            <Button onClick={() => setImportResults(null)} type="button">
+            <Button
+              onClick={() => {
+                setImportResults(null);
+              }}
+              type="button"
+            >
               Đóng
             </Button>
           </div>
