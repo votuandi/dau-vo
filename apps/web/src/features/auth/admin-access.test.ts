@@ -24,8 +24,8 @@ describe('effective admin access routing', () => {
     ['SUPER_ADMIN', user('SUPER_ADMIN'), null, '/super-admin'],
     ['ACTIVE_ADMIN', user('ADMIN'), entitlement('ACTIVE_ADMIN'), '/admin'],
     ['EXPIRED_READ_ONLY', user('USER'), entitlement('EXPIRED_READ_ONLY'), '/admin'],
-    ['normal USER', user('USER'), null, '/tournaments'],
-    ['HIDDEN', user('USER'), entitlement('HIDDEN'), '/tournaments'],
+    ['normal USER', user('USER'), null, '/account'],
+    ['HIDDEN', user('USER'), entitlement('HIDDEN'), '/account'],
   ] as const)('lands %s correctly', (_, currentUser, currentEntitlement, path) => {
     expect(getAccessLandingPath(effectiveAdminAccessState(currentUser, currentEntitlement))).toBe(
       path,

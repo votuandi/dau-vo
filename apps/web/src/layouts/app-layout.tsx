@@ -44,7 +44,7 @@ function StandardAppLayout() {
   });
   const navigationItems = user
     ? [
-        { to: '/tournaments', label: 'Giải đấu' },
+        ...(user.role === 'SUPER_ADMIN' ? [{ to: '/tournaments', label: 'Giải đấu' }] : []),
         { to: '/account', label: 'Tài khoản' },
         ...(user.role === 'SUPER_ADMIN' ? [] : [{ to: '/subscription', label: 'Gói đăng ký' }]),
         ...(accessState === 'ACTIVE_ADMIN' || accessState === 'EXPIRED_READ_ONLY'

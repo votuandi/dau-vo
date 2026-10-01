@@ -62,7 +62,7 @@ export function AdminRouteGuard() {
 
   const user = sessionQuery.data.user;
   const accessState = effectiveAdminAccessState(user, entitlementQuery.data);
-  if (accessState === 'HIDDEN') return <Navigate replace to="/tournaments" />;
+  if (accessState === 'HIDDEN') return <Navigate replace to="/account" />;
 
   const context: AdminAccessContext = {
     user,
