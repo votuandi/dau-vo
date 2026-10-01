@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import {
   AthleteColor,
@@ -32,6 +32,8 @@ const snapshot: PublicMatchStatePayload = {
       color: AthleteColor.RED,
       name: 'Võ sĩ Đỏ',
       organization: 'CLB Đỏ',
+      athleteImagePath: 'athletes/red.webp',
+      organizationImagePath: 'organizations/red.webp',
       score: 4,
       violations: 1,
       faultCounts: { minor: 1, major: 0 },
@@ -40,6 +42,8 @@ const snapshot: PublicMatchStatePayload = {
       color: AthleteColor.BLUE,
       name: 'Võ sĩ Xanh',
       organization: 'CLB Xanh',
+      athleteImagePath: 'athletes/blue.webp',
+      organizationImagePath: 'organizations/blue.webp',
       score: 2,
       violations: 3,
       faultCounts: { minor: 2, major: 1 },
@@ -93,6 +97,51 @@ describe('ScoreboardPage', () => {
     expect(screen.getByText('Lỗi nhẹ: 1 · Lỗi nặng: 0')).toBeVisible();
     expect(screen.getByText('Lỗi nhẹ: 2 · Lỗi nặng: 1')).toBeVisible();
     expect(screen.getByText(/Chưa công bố kết quả/u)).toBeVisible();
+    expect(screen.getByRole('img', { name: 'Ảnh của Võ sĩ Đỏ' })).toHaveAttribute(
+      'src',
+      '/api/media/athletes/red.webp',
+    );
+    expect(screen.getByRole('img', { name: 'Logo CLB Xanh' })).toHaveAttribute(
+      'src',
+      '/api/media/organizations/blue.webp',
+    );
+  });
+
+  it('uses stable placeholders when branding is absent or an image cannot load', () => {
+    realtimeMock.mockReturnValue({
+      connectionStatus: 'connected',
+      snapshot: {
+        ...snapshot,
+        athletes: snapshot.athletes.map((athlete) => ({
+          ...athlete,
+          athleteImagePath: null,
+          organizationImagePath: null,
+        })),
+      },
+    });
+    render(
+      <MemoryRouter initialEntries={['/bang-diem?match=A72K9P']}>
+        <Routes>
+          <Route element={<ScoreboardPage />} path="/bang-diem" />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('img', { name: 'Chưa có ảnh của Võ sĩ Đỏ' })).toBeVisible();
+    expect(screen.getByRole('img', { name: 'Chưa có logo clb đỏ' })).toBeVisible();
+  });
+
+  it('replaces a failed branding image with its placeholder without changing the panel', () => {
+    realtimeMock.mockReturnValue({ connectionStatus: 'connected', snapshot });
+    render(
+      <MemoryRouter initialEntries={['/bang-diem?match=A72K9P']}>
+        <Routes>
+          <Route element={<ScoreboardPage />} path="/bang-diem" />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.error(screen.getByRole('img', { name: 'Ảnh của Võ sĩ Đỏ' }));
+    expect(screen.getByRole('img', { name: 'Chưa có ảnh của Võ sĩ Đỏ' })).toBeVisible();
+    expect(screen.getByText('Võ sĩ Đỏ')).toBeVisible();
   });
 
   it('shows the server-projected intermission countdown only while it remains', () => {
@@ -124,35 +173,48 @@ describe('ScoreboardPage', () => {
     expect(screen.getByRole('timer', { name: /giải lao còn lại/u })).toBeVisible();
   });
 
-  it('announces only a published outcome and labels an overtime inspector decision', () => {
-    realtimeMock.mockReturnValue({
-      connectionStatus: 'connected',
-      snapshot: {
-        ...snapshot,
-        activeRound: {
-          ...(() => {
-            if (snapshot.activeRound === null) throw new Error('Expected active round fixture.');
-            return snapshot.activeRound;
-          })(),
-          stage: 'OVERTIME',
-          attemptNumber: 2,
+  it.each([AthleteColor.RED, AthleteColor.BLUE])(
+    'shows only the %s winner after publication with that color background',
+    (winner) => {
+      realtimeMock.mockReturnValue({
+        connectionStatus: 'connected',
+        snapshot: {
+          ...snapshot,
+          activeRound: {
+            ...(() => {
+              if (snapshot.activeRound === null) throw new Error('Expected active round fixture.');
+              return snapshot.activeRound;
+            })(),
+            stage: 'OVERTIME',
+            attemptNumber: 2,
+          },
+          committedScores: { source: 'OVERTIME', attemptNumber: 2, RED: 7, BLUE: 7 },
+          match: {
+            ...snapshot.match,
+            outcome: { winner, method: 'MANUAL_AFTER_OVERTIME_TIE' },
+          },
         },
-        committedScores: { source: 'OVERTIME', attemptNumber: 2, RED: 7, BLUE: 7 },
-        match: {
-          ...snapshot.match,
-          outcome: { winner: AthleteColor.BLUE, method: 'MANUAL_AFTER_OVERTIME_TIE' },
-        },
-      },
-    });
-    render(
-      <MemoryRouter initialEntries={['/bang-diem?match=A72K9P']}>
-        <Routes>
-          <Route element={<ScoreboardPage />} path="/bang-diem" />
-        </Routes>
-      </MemoryRouter>,
-    );
-    expect(screen.getByText('Người chiến thắng')).toBeVisible();
-    expect(screen.getByText('Quyết định giám sát sau hiệp phụ')).toBeVisible();
-    expect(screen.getByText('HIỆP PHỤ LẦN 2')).toBeVisible();
-  });
+      });
+      render(
+        <MemoryRouter initialEntries={['/bang-diem?match=A72K9P']}>
+          <Routes>
+            <Route element={<ScoreboardPage />} path="/bang-diem" />
+          </Routes>
+        </MemoryRouter>,
+      );
+      expect(screen.getByText('Người chiến thắng')).toBeVisible();
+      expect(
+        screen.getByText(winner === AthleteColor.RED ? 'Võ sĩ Đỏ' : 'Võ sĩ Xanh'),
+      ).toBeVisible();
+      expect(
+        screen.queryByText(winner === AthleteColor.RED ? 'Võ sĩ Xanh' : 'Võ sĩ Đỏ'),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText('HIỆP PHỤ LẦN 2')).not.toBeInTheDocument();
+      expect(screen.queryByText('Lỗi nhẹ: 1 · Lỗi nặng: 0')).not.toBeInTheDocument();
+      expect(screen.queryByText('4')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Kết quả đã công bố').parentElement).toHaveClass(
+        winner === AthleteColor.RED ? 'from-red-500' : 'from-sky-500',
+      );
+    },
+  );
 });

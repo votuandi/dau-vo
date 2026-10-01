@@ -624,9 +624,23 @@ describe('Realtime match infrastructure (integration)', () => {
     expect(state).toMatchObject({
       match: { publicId: primaryMatch.publicId, status: 'WAITING' },
     });
+    const publicAthlete = state.athletes[0];
+    if (!publicAthlete) throw new Error('Expected public athlete.');
     expect(state).not.toHaveProperty('presence');
     expect(state.match).not.toHaveProperty('id');
-    expect(state.athletes[0]).not.toHaveProperty('id');
+    expect(publicAthlete).not.toHaveProperty('id');
+    expect(Object.keys(publicAthlete).sort()).toEqual([
+      'athleteImagePath',
+      'color',
+      'faultCounts',
+      'name',
+      'organization',
+      'organizationImagePath',
+      'score',
+      'violations',
+    ]);
+    expect(publicAthlete.athleteImagePath).toBeNull();
+    expect(publicAthlete.organizationImagePath).toBeNull();
     await expect(startRound(socket)).resolves.toMatchObject({
       error: { code: 'REALTIME_AUTHENTICATION_REQUIRED' },
       ok: false,
