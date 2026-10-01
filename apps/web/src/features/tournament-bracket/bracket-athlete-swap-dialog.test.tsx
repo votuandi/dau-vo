@@ -40,7 +40,7 @@ const preview: BracketPreview = {
 };
 
 describe('BracketAthleteSwapDialog', () => {
-  it('offers only backend-legal targets and submits the selected athlete', async () => {
+  it('offers every other preview athlete and submits the selected athlete', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(
@@ -55,10 +55,9 @@ describe('BracketAthleteSwapDialog', () => {
     );
 
     expect(screen.getByLabelText('Vận động viên thay thế')).toHaveTextContent('Bình');
-    expect(screen.queryByLabelText('Vận động viên thay thế')).not.toHaveTextContent('Cường');
-    expect(screen.getByText(/VĐV nhận đặc cách không được liệt kê/)).toBeInTheDocument();
-    await user.click(screen.getByRole('radio', { name: /Bình/ }));
+    expect(screen.getByLabelText('Vận động viên thay thế')).toHaveTextContent('Cường');
+    await user.click(screen.getByRole('radio', { name: /Cường/ }));
     await user.click(screen.getByRole('button', { name: 'Đổi vị trí' }));
-    expect(onSubmit).toHaveBeenCalledWith('b');
+    expect(onSubmit).toHaveBeenCalledWith('c');
   });
 });

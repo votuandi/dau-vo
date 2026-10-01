@@ -293,16 +293,9 @@ export class BracketPreviewService {
         code: 'BRACKET_SWAP_INELIGIBLE',
         message: 'Both athletes must be eligible entrants in this preview',
       });
-    // A swap must never relocate a first-round bye recipient. The null slot and
-    // all downstream winner edges therefore stay exactly where they were.
-    const hasBye = (index: number) =>
-      placements[index % 2 === 0 ? index + 1 : index - 1]?.athleteId === null;
-    if (hasBye(first) || hasBye(second))
-      throw new ConflictException({
-        code: 'BRACKET_SWAP_BYE_CONFLICT',
-        message:
-          'An athlete receiving a bye cannot be swapped; redraw the bracket to change bye assignments',
-      });
+    // A bye belongs to its first-round slot, not permanently to its initial
+    // athlete. Swapping an athlete in that pairing therefore intentionally
+    // transfers the bye while retaining the null slot and fixture graph.
     [placements[first]!.athleteId, placements[second]!.athleteId] = [
       placements[second]!.athleteId,
       placements[first]!.athleteId,

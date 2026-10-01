@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Ban, Check, Pencil, Star, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { Dialog } from '@/components/ui/dialog';
@@ -641,7 +642,7 @@ export function RosterItemsPage({
       </ul>
       {confirm ? (
         <ConfirmationDialog
-          actionLabel={confirm.isActive ? 'Xác nhận ngừng dùng' : 'Khôi phục'}
+          actionLabel={confirm.isActive ? 'Đình chỉ thi đấu' : 'Cho phép thi đấu'}
           busy={deactivate.isPending}
           description={
             kind === 'organizations'
@@ -709,6 +710,7 @@ export function AthletesPage({
   const [draft, setDraft] = useState<AthleteDraft | null>(null);
   const [editing, setEditing] = useState<TournamentAthlete | null>(null);
   const [confirm, setConfirm] = useState<TournamentAthlete | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<TournamentAthlete | null>(null);
   const [importPreview, setImportPreview] = useState<{
     rows: readonly AthleteImportRow[];
     results: readonly AthleteImportResult[];
@@ -787,7 +789,7 @@ export function AthletesPage({
   const deactivate = useMutation({
     mutationFn: (athlete: TournamentAthlete) =>
       athlete.isActive
-        ? adminManagementApi.deleteAthlete(tournamentId, athlete.id)
+        ? adminManagementApi.updateAthlete(tournamentId, athlete.id, { isActive: false })
         : adminManagementApi.updateAthlete(tournamentId, athlete.id, { isActive: true }),
     onSuccess: () => {
       setConfirm(null);
@@ -801,14 +803,26 @@ export function AthletesPage({
       );
     },
   });
-  const removeImage = useMutation({
-    mutationFn: (id: string) => adminManagementApi.removeAthleteImage(tournamentId, id),
+  const toggleSeed = useMutation({
+    mutationFn: (athlete: TournamentAthlete) =>
+      adminManagementApi.updateAthlete(tournamentId, athlete.id, { isSeed: !athlete.isSeed }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId, 'athletes'] });
-      notifyMutationSuccess('Đã xóa ảnh đại diện.');
+      notifyMutationSuccess('Đã cập nhật hạt giống.');
     },
-    onError: (e) => {
-      notifyMutationError(e, 'Không thể xóa ảnh đại diện.');
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể cập nhật hạt giống.');
+    },
+  });
+  const softDelete = useMutation({
+    mutationFn: (athlete: TournamentAthlete) => adminManagementApi.deleteAthlete(tournamentId, athlete.id),
+    onSuccess: () => {
+      setDeleteConfirm(null);
+      void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId, 'athletes'] });
+      notifyMutationSuccess('Đã xóa vận động viên.');
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể xóa vận động viên.');
     },
   });
   const previewImport = useMutation({
@@ -1272,18 +1286,50 @@ export function AthletesPage({
                       {x.name.trim().slice(0, 1).toLocaleUpperCase('vi')}
                     </span>
                   )}
-                  <div>
-                    <b>{x.name}</b> · {x.birthYear} · {x.organization?.name ?? 'Không đơn vị'} ·{' '}
-                    {x.weightClass.name} · {x.isActive ? 'Đang hoạt động' : 'Đã ngừng'}
-                    {x.isSeed ? ' · Hạt giống' : ''}
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <b>{x.name}</b>
+                      <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800">
+                        {x.birthYear}
+                      </span>
+                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-800">
+                        {x.organization?.name ?? 'Không đơn vị'}
+                      </span>
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                        {x.weightClass.name}
+                      </span>
+                    </div>
                     {x.details ? (
-                      <p className="text-sm text-muted-foreground">{x.details}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{x.details}</p>
                     ) : null}
                   </div>
                 </div>
                 {!readOnly ? (
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <Button
+                      aria-label={x.isSeed ? 'Hạt giống' : 'Chọn làm hạt giống'}
+                      className={
+                        x.isSeed
+                          ? 'bg-blue-300 text-white shadow-none hover:bg-blue-400'
+                          : 'border border-blue-200 bg-blue-50 text-white shadow-none hover:bg-blue-100'
+                      }
+                      disabled={toggleSeed.isPending}
+                      onClick={() => {
+                        toggleSeed.mutate(x);
+                      }}
+                      size="icon"
+                      title={x.isSeed ? 'Hạt giống' : 'Chọn làm hạt giống'}
+                      type="button"
+                    >
+                      <Star
+                        aria-hidden="true"
+                        className={`size-4 ${x.isSeed ? '' : 'text-blue-200'}`}
+                        fill={x.isSeed ? 'currentColor' : 'none'}
+                      />
+                    </Button>
+                    <Button
+                      aria-label="Sửa"
+                      className="bg-blue-200 text-white shadow-none hover:bg-blue-300"
                       disabled={save.isPending || deactivate.isPending}
                       onClick={() => {
                         setEditing(x);
@@ -1298,35 +1344,46 @@ export function AthletesPage({
                           imageError: '',
                         });
                       }}
-                      size="sm"
+                      size="icon"
+                      title="Sửa"
                       type="button"
-                      variant="outline"
                     >
-                      Sửa
+                      <Pencil aria-hidden="true" className="size-4" />
                     </Button>
-                    {x.imageUrl ? (
-                      <Button
-                        disabled={removeImage.isPending}
-                        onClick={() => {
-                          removeImage.mutate(x.id);
-                        }}
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        Xóa ảnh
-                      </Button>
-                    ) : null}
                     <Button
-                      disabled={deactivate.isPending}
+                      aria-label={x.isActive ? 'Đình chỉ thi đấu' : 'Cho phép thi đấu'}
+                      className={
+                        x.isActive
+                          ? 'bg-blue-400 text-white shadow-none hover:bg-blue-500'
+                          : 'bg-blue-300 text-white shadow-none hover:bg-blue-400'
+                      }
+                      disabled={deactivate.isPending || softDelete.isPending}
                       onClick={() => {
                         setConfirm(x);
                       }}
-                      size="sm"
+                      size="icon"
+                      title={x.isActive ? 'Đình chỉ thi đấu' : 'Cho phép thi đấu'}
                       type="button"
-                      variant="outline"
                     >
-                      {x.isActive ? 'Ngừng dùng' : 'Khôi phục'}
+                      {x.isActive ? (
+                        <Ban aria-hidden="true" className="size-4" />
+                      ) : (
+                        <Check aria-hidden="true" className="size-4" />
+                      )}
+                    </Button>
+                    <Button
+                      aria-label="Xóa"
+                      disabled={deactivate.isPending || softDelete.isPending}
+                      onClick={() => {
+                        setDeleteConfirm(x);
+                      }}
+                      size="icon"
+                      title="Xóa"
+                      type="button"
+                      variant="destructive"
+                      className="bg-red-500 text-white shadow-none hover:bg-red-600"
+                    >
+                      <Trash2 aria-hidden="true" className="size-4" />
                     </Button>
                   </div>
                 ) : null}
@@ -1375,7 +1432,22 @@ export function AthletesPage({
           onConfirm={() => {
             deactivate.mutate(confirm);
           }}
-          title={`${confirm.isActive ? 'Ngừng dùng' : 'Khôi phục'} vận động viên?`}
+          title={`${confirm.isActive ? 'Đình chỉ thi đấu' : 'Cho phép thi đấu'}?`}
+        />
+      ) : null}
+      {deleteConfirm ? (
+        <ConfirmationDialog
+          actionLabel="Xóa"
+          busy={softDelete.isPending}
+          description={`Vận động viên “${deleteConfirm.name}” sẽ bị xóa mềm và không còn đủ điều kiện thi đấu.`}
+          onCancel={() => {
+            setDeleteConfirm(null);
+          }}
+          onConfirm={() => {
+            if (!softDelete.isPending) softDelete.mutate(deleteConfirm);
+          }}
+          title="Xóa vận động viên?"
+          warning="Bạn vẫn có thể khôi phục dữ liệu theo quy trình quản trị nếu cần."
         />
       ) : null}
     </section>

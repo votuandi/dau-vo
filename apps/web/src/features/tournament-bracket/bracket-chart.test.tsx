@@ -144,13 +144,12 @@ function previewBracket(): BracketPreview {
 }
 
 describe('BracketChart', () => {
-  it('renders edit buttons only for legally swappable preview entrants and invokes the selected athlete', () => {
+  it('renders edit buttons for every preview entrant and invokes the selected athlete', () => {
     const edited: string[] = [];
     render(<BracketChart data={previewBracket()} onEditAthlete={(id) => edited.push(id)} />);
 
     const buttons = screen.getAllByRole('button', { name: /Đổi vị trí/ });
-    expect(buttons).toHaveLength(2);
-    expect(screen.queryByLabelText('Đổi vị trí Cường')).not.toBeInTheDocument();
+    expect(buttons).toHaveLength(3);
     buttons[0]?.click();
     expect(edited).toEqual(['a']);
   });
@@ -166,7 +165,7 @@ describe('BracketChart', () => {
     const { rerender } = render(
       <BracketChart data={previewBracket()} onEditAthlete={onEditAthlete} />,
     );
-    expect(screen.getAllByRole('button', { name: /Đổi vị trí/ })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /Đổi vị trí/ })).toHaveLength(3);
 
     const originalPreview = previewBracket();
     const swappedPreview: BracketPreview = {
@@ -189,7 +188,7 @@ describe('BracketChart', () => {
     };
     rerender(<BracketChart data={swappedPreview} onEditAthlete={onEditAthlete} />);
 
-    expect(screen.getAllByRole('button', { name: /Đổi vị trí/ })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /Đổi vị trí/ })).toHaveLength(3);
   });
 
   it('keeps the reference, status chips, side labels, participant names, and organizations visible', () => {

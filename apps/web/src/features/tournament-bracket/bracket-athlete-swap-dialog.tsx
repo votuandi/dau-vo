@@ -31,14 +31,11 @@ export function BracketAthleteSwapDialog({
       entrant.athleteId !== null &&
       swappableAthleteIds.has(entrant.athleteId),
   );
-  const excludedByeRecipients = preview.initialEntrants.filter(
-    (entrant) => entrant.athlete && !swappableAthleteIds.has(entrant.athleteId!),
-  ).length;
   const [selected, setSelected] = useState<string | null>(null);
   return (
     <Dialog
       className="max-w-xl"
-      description="Chọn vận động viên để hoán đổi vị trí. Các vị trí đặc cách không thể thay đổi ở đây."
+      description="Chọn vận động viên để hoán đổi vị trí. Nếu một VĐV đang đặc cách được đổi, suất đặc cách sẽ chuyển theo vị trí nhánh đấu."
       initialFocusRef={initialFocus}
       onClose={onClose}
       pending={pending}
@@ -72,12 +69,6 @@ export function BracketAthleteSwapDialog({
           </label>
         ))}
       </div>
-      {excludedByeRecipients ? (
-        <p className="mt-3 text-sm text-muted-foreground">
-          {excludedByeRecipients} VĐV nhận đặc cách không được liệt kê vì đổi vị trí sẽ thay đổi
-          suất đặc cách.
-        </p>
-      ) : null}
       {error ? (
         <p className="mt-3 text-sm text-destructive" role="alert">
           {error}

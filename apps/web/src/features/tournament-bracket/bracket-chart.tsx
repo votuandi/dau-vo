@@ -290,12 +290,14 @@ export function BracketChart({
                           : !entrant && isPreview && previewSlot.source.kind === 'FIXTURE_WINNER'
                             ? `Chờ người thắng ${fixtureReferenceById.get(previewSlot.source.fixtureId ?? '') ?? ''}`
                             : 'Đặc cách';
-                      const editable =
-                        Boolean(onEditAthlete) &&
+                      const editableAthleteId =
+                        onEditAthlete &&
                         isPreview &&
                         previewSlot.source.kind === 'ENTRANT' &&
-                        Boolean(previewSlot.resolvedEntrantId) &&
-                        swappableAthleteIds.has(previewSlot.resolvedEntrantId!);
+                        previewSlot.resolvedEntrantId &&
+                        swappableAthleteIds.has(previewSlot.resolvedEntrantId)
+                          ? previewSlot.resolvedEntrantId
+                          : null;
                       return (
                         <div
                           className={`flex min-h-11 items-center gap-1.5 border-l-4 px-2 py-1.5 ${slot.side === 'RED' ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/20' : 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20'}`}
@@ -343,11 +345,13 @@ export function BracketChart({
                               </p>
                             ) : null}
                           </div>
-                          {editable ? (
+                          {editableAthleteId ? (
                             <Button
                               aria-label={`Đổi vị trí ${entrant ? ('name' in entrant ? entrant.name : entrant.snapshotName) : 'vận động viên'}`}
                               className="shrink-0"
-                              onClick={() => onEditAthlete?.(previewSlot.resolvedEntrantId!)}
+                              onClick={() => {
+                                onEditAthlete?.(editableAthleteId);
+                              }}
                               size="icon"
                               type="button"
                               variant="ghost"

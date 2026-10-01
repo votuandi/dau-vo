@@ -180,7 +180,7 @@ describe('BracketPreviewService', () => {
     ).toEqual(['r1-m1', 'r1-m2', 'r2-m1']);
   });
 
-  it('rejects a swap that would change a bye recipient', async () => {
+  it('allows swapping a bye recipient and transfers the bye to the replacement slot', async () => {
     const { prisma, service } = subject(3);
     const roster = Array.from({ length: 3 }, (_, index) => athlete(index + 1));
     prisma.tournamentAthlete.findMany.mockResolvedValue(roster);
@@ -195,15 +195,18 @@ describe('BracketPreviewService', () => {
       ],
       rosterFingerprint: service.rosterFingerprint(roster),
     });
-    await expect(
-      service.swap(tournamentId, weightClassId, {
-        previewToken: 'token',
-        athleteId: roster[0]!.id,
-        swapWithAthleteId: roster[1]!.id,
-      }),
-    ).rejects.toMatchObject({
-      response: { code: 'BRACKET_SWAP_BYE_CONFLICT' },
+    const result = await service.swap(tournamentId, weightClassId, {
+      previewToken: 'token',
+      athleteId: roster[0]!.id,
+      swapWithAthleteId: roster[1]!.id,
     });
+
+    expect(result.initialEntrants.map((entry) => entry.athleteId)).toEqual([
+      roster[1]!.id,
+      null,
+      roster[0]!.id,
+      roster[2]!.id,
+    ]);
   });
 
   it('requires an exact, valid seeded-bye selection', async () => {
