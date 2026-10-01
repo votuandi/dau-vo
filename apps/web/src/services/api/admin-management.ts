@@ -518,6 +518,21 @@ export const adminManagementApi = {
       input,
       options,
     ),
+  swapPreviewAthlete: (
+    tournamentId: string,
+    weightClassId: string,
+    input: {
+      readonly previewToken: string;
+      readonly athleteId: string;
+      readonly swapWithAthleteId: string;
+    },
+    options?: ApiRequestWithoutBody,
+  ) =>
+    apiClient.post<BracketPreview>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/preview/swap`,
+      input,
+      options,
+    ),
   confirmBracket: (
     tournamentId: string,
     weightClassId: string,

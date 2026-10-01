@@ -5,6 +5,8 @@ import type {
 } from '@/services/api/admin-management';
 import { bracketRoundLabel, MatchLifecycle } from '@martial-arts-scoring/shared-types';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Pencil } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { bracketPresentation, isBracketPreview } from './bracket-graph';
 import {
   matchVariantClassName,
@@ -73,7 +75,13 @@ export function fixtureTopOffsets(
   return offsets;
 }
 
-export function BracketChart({ data }: { readonly data: ChartData }) {
+export function BracketChart({
+  data,
+  onEditAthlete,
+}: {
+  readonly data: ChartData;
+  readonly onEditAthlete?: (athleteId: string) => void;
+}) {
   const isPreview = isBracketPreview(data);
   const graph = useMemo(() => bracketPresentation(data), [data]);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -96,6 +104,13 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
               },
             ] as const,
         ),
+  );
+  const previewEntrantById = new Map(
+    isPreview
+      ? data.initialEntrants.flatMap((entrant) =>
+          entrant.athleteId ? [[entrant.athleteId, entrant] as const] : [],
+        )
+      : [],
   );
   const fixtureReferenceById = new Map<string, string>(
     isPreview
@@ -275,6 +290,23 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                           : !entrant && isPreview && previewSlot.source.kind === 'FIXTURE_WINNER'
                             ? `Chờ người thắng ${fixtureReferenceById.get(previewSlot.source.fixtureId ?? '') ?? ''}`
                             : 'Đặc cách';
+                      const previewEntrant = previewSlot.resolvedEntrantId
+                        ? previewEntrantById.get(previewSlot.resolvedEntrantId)
+                        : undefined;
+                      const pairedPreviewEntrant =
+                        previewEntrant && isPreview
+                          ? data.initialEntrants[
+                              previewEntrant.drawPosition % 2 === 0
+                                ? previewEntrant.drawPosition - 2
+                                : previewEntrant.drawPosition
+                            ]
+                          : undefined;
+                      const editable =
+                        Boolean(onEditAthlete) &&
+                        isPreview &&
+                        previewSlot.source.kind === 'ENTRANT' &&
+                        Boolean(previewSlot.resolvedEntrantId) &&
+                        pairedPreviewEntrant?.athleteId !== null;
                       return (
                         <div
                           className={`flex min-h-11 items-center gap-1.5 border-l-4 px-2 py-1.5 ${slot.side === 'RED' ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/20' : 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20'}`}
@@ -293,7 +325,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                               src={entrant.imageUrl}
                             />
                           ) : null}
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <span className="sr-only">
                               {slot.side === 'RED' ? 'Bên đỏ' : 'Bên xanh'}
                             </span>
@@ -312,6 +344,18 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                               </p>
                             ) : null}
                           </div>
+                          {editable ? (
+                            <Button
+                              aria-label={`Đổi vị trí ${entrant ? ('name' in entrant ? entrant.name : entrant.snapshotName) : 'vận động viên'}`}
+                              className="shrink-0"
+                              onClick={() => onEditAthlete?.(previewSlot.resolvedEntrantId!)}
+                              size="icon"
+                              type="button"
+                              variant="ghost"
+                            >
+                              <Pencil aria-hidden="true" className="size-4" />
+                            </Button>
+                          ) : null}
                         </div>
                       );
                     })}

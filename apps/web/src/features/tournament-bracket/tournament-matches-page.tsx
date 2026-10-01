@@ -29,6 +29,7 @@ import { presentDisplayState, presentLifecycle, presentPhase } from '@/features/
 import { BracketChart } from './bracket-chart';
 import { BracketPreviewPanel } from './bracket-preview-dialog';
 import { BracketDrawSetupDialog } from './bracket-draw-setup-dialog';
+import { BracketAthleteSwapDialog } from './bracket-athlete-swap-dialog';
 import { bracketQueryKeys } from './query-keys';
 import { WeightClassMatchTabs } from './weight-class-match-tabs';
 import { ManualMatchCreationForm } from './manual-match-creation-form';
@@ -132,6 +133,8 @@ export function TournamentMatchesPage({
   // A key is created once for each user action and survives mutation retries.
   const [confirmationKey, setConfirmationKey] = useState<string | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
+  const [swapAthleteId, setSwapAthleteId] = useState<string | null>(null);
+  const [swapError, setSwapError] = useState<string | null>(null);
   const [decisionFixture, setDecisionFixture] = useState<ActiveBracket['fixtures'][number] | null>(
     null,
   );
@@ -148,6 +151,7 @@ export function TournamentMatchesPage({
   const drawWeightClassRef = useRef(selectedId);
   const workflowEpochRef = useRef(0);
   const workflowAbortRef = useRef<AbortController | null>(null);
+  const swapVersionRef = useRef(0);
   const winnerReasonRef = useRef<HTMLTextAreaElement>(null);
   const cancelReasonRef = useRef<HTMLTextAreaElement>(null);
   const resetDraw = () => {
@@ -158,6 +162,8 @@ export function TournamentMatchesPage({
     setByeStrategy('RANDOM');
     setConfirmationKey(null);
     setDialogError(null);
+    setSwapAthleteId(null);
+    setSwapError(null);
   };
   const currentWorkflow = (weightClassId: string, epoch: number) =>
     selectedId === weightClassId && workflowEpochRef.current === epoch;
@@ -297,6 +303,40 @@ export function TournamentMatchesPage({
         setDialogError(getApiErrorMessage(error, 'Không thể xác nhận nhánh đấu.'));
         setWorkflow('reviewingPreview');
       }
+    },
+  });
+  const swap = useMutation({
+    mutationFn: (input: {
+      readonly athleteId: string;
+      readonly swapWithAthleteId: string;
+      readonly version: number;
+    }) => {
+      if (!preview || !selectedId) throw new Error('Bracket preview is unavailable');
+      return adminManagementApi.swapPreviewAthlete(tournament.id, selectedId, {
+        previewToken: preview.previewToken,
+        athleteId: input.athleteId,
+        swapWithAthleteId: input.swapWithAthleteId,
+      });
+    },
+    onSuccess: (value, input) => {
+      if (input.version !== swapVersionRef.current) return;
+      setPreview(value);
+      setConfirmationKey(crypto.randomUUID());
+      setSwapAthleteId(null);
+      setSwapError(null);
+    },
+    onError: (error, input) => {
+      if (input.version !== swapVersionRef.current) return;
+      const stale =
+        error instanceof ApiClientError &&
+        ['BRACKET_ROSTER_CHANGED', 'BRACKET_PREVIEW_EXPIRED', 'BRACKET_PREVIEW_INVALID'].includes(
+          error.body.code ?? '',
+        );
+      setSwapError(
+        stale
+          ? 'Bản xem trước đã hết hạn hoặc danh sách vận động viên đã thay đổi. Hãy bốc thăm mới.'
+          : getApiErrorMessage(error, 'Không thể đổi vị trí vận động viên.'),
+      );
     },
   });
   const prepare = useMutation({
@@ -549,6 +589,10 @@ export function TournamentMatchesPage({
                   setDialogError(null);
                   setWorkflow('configuring');
                 }}
+                onEditAthlete={(athleteId) => {
+                  setSwapError(null);
+                  setSwapAthleteId(athleteId);
+                }}
                 onRedraw={() => {
                   // The old randomized result must not remain visible during a redraw.
                   setPreview(null);
@@ -564,7 +608,7 @@ export function TournamentMatchesPage({
                     });
                   }
                 }}
-                pending={draw.isPending || confirm.isPending}
+                pending={draw.isPending || confirm.isPending || swap.isPending}
                 preview={preview}
               />
             ) : workflow === 'generatingPreview' ? (
@@ -862,6 +906,28 @@ export function TournamentMatchesPage({
               >
                 Vẫn xác nhận hủy trận
               </Button>
+            ) : null}
+            {preview && swapAthleteId ? (
+              <BracketAthleteSwapDialog
+                athleteId={swapAthleteId}
+                error={swapError}
+                onClose={() => {
+                  if (!swap.isPending) {
+                    setSwapAthleteId(null);
+                    setSwapError(null);
+                  }
+                }}
+                onSubmit={(swapWithAthleteId) => {
+                  swapVersionRef.current += 1;
+                  swap.mutate({
+                    athleteId: swapAthleteId,
+                    swapWithAthleteId,
+                    version: swapVersionRef.current,
+                  });
+                }}
+                pending={swap.isPending}
+                preview={preview}
+              />
             ) : null}
             <Button
               disabled={cancelBracket.isPending}

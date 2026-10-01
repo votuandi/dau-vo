@@ -11,6 +11,7 @@ export function BracketPreviewPanel({
   onRedraw,
   onCancel,
   onChangeDesignatedAthletes,
+  onEditAthlete,
 }: {
   readonly preview: BracketPreview;
   readonly pending: boolean;
@@ -20,6 +21,7 @@ export function BracketPreviewPanel({
   readonly onRedraw: () => void;
   readonly onCancel: () => void;
   readonly onChangeDesignatedAthletes: () => void;
+  readonly onEditAthlete: (athleteId: string) => void;
 }) {
   return (
     <section
@@ -55,7 +57,7 @@ export function BracketPreviewPanel({
         </dl>
       </div>
       <div className="mt-5">
-        <BracketChart data={preview} />
+        <BracketChart data={preview} {...(pending ? {} : { onEditAthlete })} />
       </div>
       {error ? (
         <p
