@@ -8,6 +8,7 @@ import {
 import { Prisma, type AthleteColor } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
+import type { BracketWinnerDecisionType } from './dto/decide-bracket-winner.dto';
 
 export class BracketProgressionLockedError extends Error {
   constructor() {
@@ -215,11 +216,13 @@ export class BracketOutcomeService {
     actorId: string,
     reason: string,
     idempotencyKey: string,
+    decisionType: BracketWinnerDecisionType,
   ) {
     const requestFingerprint = this.manualDecisionFingerprint(
       fixtureId,
       entrantId,
       reason,
+      decisionType,
     );
     // Serialize decisions for this fixture before checking the idempotency row.
     // Otherwise two same-key calls can both miss it and one can observe the
@@ -240,13 +243,21 @@ export class BracketOutcomeService {
       where: { id: fixtureId },
       include: { match: { select: { id: true, status: true } }, slots: true },
     });
-    if (
-      fixture.match?.status !== MatchStatus.FINISHED ||
-      fixture.status !== BracketFixtureStatus.AWAITING_WINNER
-    )
+    const isTieDecision =
+      decisionType === 'ADMIN_TIEBREAK' &&
+      fixture.match?.status === MatchStatus.FINISHED &&
+      fixture.status === BracketFixtureStatus.AWAITING_WINNER;
+    // A READY fixture has no operational match.  Deciding it is therefore
+    // reversible under the existing bracket-only propagation rules and cannot
+    // affect staffing, scoring snapshots, or unpublished match results.
+    const isWithdrawalDecision =
+      decisionType === 'WITHDRAWAL_OR_INJURY' &&
+      fixture.match === null &&
+      fixture.status === BracketFixtureStatus.READY;
+    if (!isTieDecision && !isWithdrawalDecision)
       throw new ConflictException({
-        code: 'BRACKET_TIE_DECISION_REQUIRED',
-        message: 'Fixture is not awaiting a winner decision',
+        code: 'BRACKET_WINNER_DECISION_INELIGIBLE',
+        message: 'Fixture is not eligible for this winner decision',
       });
     const participantIds = fixture.slots.flatMap((slot) =>
       slot.resolvedEntrantId ? [slot.resolvedEntrantId] : [],
@@ -266,9 +277,11 @@ export class BracketOutcomeService {
     } | null;
     const result = await this.decide(tx, fixtureId, entrantId, {
       actorId,
-      decisionType: 'ADMIN_TIEBREAK',
+      decisionType,
       reason,
-      scoreSnapshot: priorDecision?.scoreSnapshot ?? null,
+      ...(isTieDecision
+        ? { scoreSnapshot: priorDecision?.scoreSnapshot ?? null }
+        : {}),
     });
     await tx.bracketWinnerDecisionIdempotency.create({
       data: {
@@ -286,10 +299,18 @@ export class BracketOutcomeService {
     fixtureId: string,
     entrantId: string,
     reason: string,
+    decisionType: BracketWinnerDecisionType,
   ) {
     // Reasons are normalized before this service and are meaningful audit data.
     return createHash('sha256')
-      .update(JSON.stringify({ fixtureId, entrantId, reason: reason.trim() }))
+      .update(
+        JSON.stringify({
+          fixtureId,
+          entrantId,
+          reason: reason.trim(),
+          decisionType,
+        }),
+      )
       .digest('hex');
   }
 
@@ -375,7 +396,8 @@ export class BracketOutcomeService {
     await tx.auditLog.create({
       data: {
         eventType:
-          decision.decisionType === 'ADMIN_TIEBREAK'
+          decision.decisionType === 'ADMIN_TIEBREAK' ||
+          decision.decisionType === 'WITHDRAWAL_OR_INJURY'
             ? AuditEventType.BRACKET_WINNER_MANUALLY_DECIDED
             : AuditEventType.BRACKET_WINNER_ADVANCED,
         ...(fixture.match ? { matchId: fixture.match.id } : {}),

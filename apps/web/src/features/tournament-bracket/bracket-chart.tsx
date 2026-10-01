@@ -365,9 +365,13 @@ export function BracketChart({
                         Lý do: {activeFixture.winnerDecision.reason}
                       </p>
                     ) : null}
-                    {activeFixture?.status === 'AWAITING_WINNER' ? (
+                    {activeFixture && manualWinnerDecisionType(activeFixture) ? (
                       <div className="border-t px-2 py-1.5">
-                        <p className="text-sm text-muted-foreground">Chờ xác định người thắng</p>
+                        <p className="text-sm text-muted-foreground">
+                          {activeFixture.status === 'AWAITING_WINNER'
+                            ? 'Chờ xác định người thắng'
+                            : 'VĐV rút lui hoặc chấn thương'}
+                        </p>
                         {onDecideWinner && manualWinnerCandidates(activeFixture).length === 2 ? (
                           <Button
                             aria-label={`Chọn VĐV chiến thắng cho ${activeFixture.displayReference}`}
@@ -395,7 +399,13 @@ export function BracketChart({
 }
 
 function manualWinnerCandidates(fixture: ActiveBracket['fixtures'][number]) {
-  return fixture.status === 'AWAITING_WINNER'
+  return manualWinnerDecisionType(fixture)
     ? fixture.slots.flatMap((slot) => (slot.resolvedEntrant ? [slot.resolvedEntrant] : []))
     : [];
+}
+
+function manualWinnerDecisionType(fixture: ActiveBracket['fixtures'][number]) {
+  if (fixture.status === 'AWAITING_WINNER') return 'ADMIN_TIEBREAK';
+  if (fixture.status === 'READY' && fixture.match === null) return 'WITHDRAWAL_OR_INJURY';
+  return null;
 }

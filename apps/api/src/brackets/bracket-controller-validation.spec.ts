@@ -248,6 +248,7 @@ describe('bracket and match-filter controller validation', () => {
   it('rejects invalid manual-winner payloads without a controller trim failure', async () => {
     for (const body of [
       { reason: 'reason', idempotencyKey: 'key' },
+      { entrantId, reason: 'reason', idempotencyKey: 'key' },
       { entrantId, reason: 1, idempotencyKey: 'key' },
       { entrantId: 'not-a-uuid', reason: 'reason', idempotencyKey: 'key' },
       { entrantId, reason: 'x'.repeat(501), idempotencyKey: 'key' },
@@ -270,6 +271,7 @@ describe('bracket and match-filter controller validation', () => {
       )
       .send({
         entrantId,
+        decisionType: 'ADMIN_TIEBREAK',
         reason: '  tiebreak  ',
         idempotencyKey: '  winner-key  ',
       })
@@ -281,6 +283,7 @@ describe('bracket and match-filter controller validation', () => {
       'admin-user',
       'tiebreak',
       'winner-key',
+      'ADMIN_TIEBREAK',
     );
     expect(
       management.assertTournamentMutationAccessInTransaction,

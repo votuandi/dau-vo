@@ -57,7 +57,6 @@ const bracketInclude = {
         select: { id: true, publicId: true, status: true, lifecycle: true },
       },
       winnerEntrant: true,
-      winnerDecision: true,
     },
   },
 } satisfies Prisma.TournamentBracketInclude;
@@ -412,8 +411,10 @@ export class BracketConfirmationService {
           fixture.winnerDecision &&
           typeof fixture.winnerDecision === 'object' &&
           'decisionType' in fixture.winnerDecision &&
-          fixture.winnerDecision.decisionType === 'ADMIN_TIEBREAK'
+          (fixture.winnerDecision.decisionType === 'ADMIN_TIEBREAK' ||
+            fixture.winnerDecision.decisionType === 'WITHDRAWAL_OR_INJURY')
             ? {
+                decisionType: fixture.winnerDecision.decisionType,
                 reason:
                   typeof fixture.winnerDecision.reason === 'string'
                     ? fixture.winnerDecision.reason

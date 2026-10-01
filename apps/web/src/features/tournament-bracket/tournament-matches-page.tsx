@@ -379,6 +379,7 @@ export function TournamentMatchesPage({
         decisionFixture.id,
         {
           entrantId: selectedWinnerId,
+          decisionType: manualWinnerDecisionType(decisionFixture) ?? 'WITHDRAWAL_OR_INJURY',
           reason: decisionReason.trim(),
           idempotencyKey: decisionKey ?? '',
         },
@@ -851,7 +852,11 @@ export function TournamentMatchesPage({
       ) : null}
       {decisionFixture ? (
         <Dialog
-          description="Chọn vận động viên chiến thắng và ghi rõ lý do quyết định."
+          description={
+            manualWinnerDecisionType(decisionFixture) === 'WITHDRAWAL_OR_INJURY'
+              ? 'Ghi nhận VĐV rút lui hoặc chấn thương không thể tiếp tục. Chọn người thắng và nêu rõ lý do.'
+              : 'Chọn vận động viên chiến thắng và ghi rõ lý do quyết định hòa.'
+          }
           initialFocusRef={winnerReasonRef}
           onClose={() => {
             setDecisionFixture(null);
@@ -860,7 +865,11 @@ export function TournamentMatchesPage({
             setDecisionError(null);
           }}
           pending={decide.isPending}
-          title="Chọn VĐV chiến thắng"
+          title={
+            manualWinnerDecisionType(decisionFixture) === 'WITHDRAWAL_OR_INJURY'
+              ? 'Chọn VĐV chiến thắng do rút lui/chấn thương'
+              : 'Chọn VĐV chiến thắng'
+          }
         >
           <form
             noValidate
@@ -1207,8 +1216,12 @@ function FixtureList({
                           Đang chờ kết quả các trận trước.
                         </p>
                       ) : null}
-                      {f.status === 'AWAITING_WINNER' && manualWinnerCandidates(f).length === 2 ? (
-                        <p className="text-sm text-muted-foreground">Chờ xác định người thắng.</p>
+                      {manualWinnerDecisionType(f) && manualWinnerCandidates(f).length === 2 ? (
+                        <p className="text-sm text-muted-foreground">
+                          {manualWinnerDecisionType(f) === 'WITHDRAWAL_OR_INJURY'
+                            ? 'Có thể xác nhận người thắng do rút lui hoặc chấn thương.'
+                            : 'Chờ xác định người thắng.'}
+                        </p>
                       ) : null}
                     </div>
                     <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
@@ -1235,7 +1248,7 @@ function FixtureList({
                           </Link>
                         </Button>
                       ) : null}
-                      {f.status === 'AWAITING_WINNER' && manualWinnerCandidates(f).length === 2 ? (
+                      {manualWinnerDecisionType(f) && manualWinnerCandidates(f).length === 2 ? (
                         <Button
                           disabled={disabled}
                           onClick={() => {
@@ -1260,7 +1273,13 @@ function FixtureList({
 }
 
 function manualWinnerCandidates(fixture: ActiveBracket['fixtures'][number]) {
-  return fixture.status === 'AWAITING_WINNER'
+  return manualWinnerDecisionType(fixture)
     ? fixture.slots.flatMap((slot) => (slot.resolvedEntrant ? [slot.resolvedEntrant] : []))
     : [];
+}
+
+function manualWinnerDecisionType(fixture: ActiveBracket['fixtures'][number]) {
+  if (fixture.status === 'AWAITING_WINNER') return 'ADMIN_TIEBREAK';
+  if (fixture.status === 'READY' && fixture.match === null) return 'WITHDRAWAL_OR_INJURY';
+  return null;
 }

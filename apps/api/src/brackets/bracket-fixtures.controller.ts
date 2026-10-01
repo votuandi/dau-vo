@@ -103,6 +103,7 @@ export class BracketFixturesController {
           request.user.id,
           input.reason,
           input.idempotencyKey,
+          input.decisionType,
         );
       });
     } catch (error) {
@@ -116,6 +117,7 @@ export class BracketFixturesController {
         fixtureId,
         input.entrantId,
         input.reason,
+        input.decisionType,
       );
       if (winner.requestFingerprint !== fingerprint)
         throw new ConflictException({
