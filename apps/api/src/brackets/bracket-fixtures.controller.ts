@@ -82,6 +82,11 @@ export class BracketFixturesController {
     );
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await this.management.assertTournamentMutationAccessInTransaction(
+          tx,
+          tournamentId,
+          request.user.id,
+        );
         const fixture = await tx.bracketFixture.findFirst({
           where: { id: fixtureId, bracketId, bracket: { tournamentId } },
           select: { id: true },

@@ -238,7 +238,7 @@ export class BracketOutcomeService {
     }
     const fixture = await tx.bracketFixture.findUniqueOrThrow({
       where: { id: fixtureId },
-      include: { match: true, slots: true },
+      include: { match: { select: { id: true, status: true } }, slots: true },
     });
     if (
       fixture.match?.status !== MatchStatus.FINISHED ||
@@ -248,7 +248,15 @@ export class BracketOutcomeService {
         code: 'BRACKET_TIE_DECISION_REQUIRED',
         message: 'Fixture is not awaiting a winner decision',
       });
-    if (!fixture.slots.some((s) => s.resolvedEntrantId === entrantId))
+    const participantIds = fixture.slots.flatMap((slot) =>
+      slot.resolvedEntrantId ? [slot.resolvedEntrantId] : [],
+    );
+    if (participantIds.length !== 2 || new Set(participantIds).size !== 2)
+      throw new ConflictException({
+        code: 'BRACKET_FIXTURE_PARTICIPANTS_UNRESOLVED',
+        message: 'Fixture does not have two resolved participants',
+      });
+    if (!participantIds.includes(entrantId))
       throw new ConflictException({
         code: 'BRACKET_WINNER_DECISION_INVALID',
         message: 'Selected entrant is not a fixture participant',
@@ -294,7 +302,7 @@ export class BracketOutcomeService {
     await this.lockFixtureAndDownstream(tx, fixtureId);
     const fixture = await tx.bracketFixture.findUniqueOrThrow({
       where: { id: fixtureId },
-      include: { bracket: true },
+      include: { bracket: true, match: { select: { id: true } } },
     });
     if (fixture.winnerEntrantId) {
       if (fixture.winnerEntrantId !== entrantId)
@@ -370,6 +378,10 @@ export class BracketOutcomeService {
           decision.decisionType === 'ADMIN_TIEBREAK'
             ? AuditEventType.BRACKET_WINNER_MANUALLY_DECIDED
             : AuditEventType.BRACKET_WINNER_ADVANCED,
+        ...(fixture.match ? { matchId: fixture.match.id } : {}),
+        ...(typeof decision.actorId === 'string'
+          ? { adminUserId: decision.actorId }
+          : {}),
         metadata: { fixtureId, entrantId, ...decision },
       },
     });
