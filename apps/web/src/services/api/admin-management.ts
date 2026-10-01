@@ -425,6 +425,7 @@ export interface ActiveBracket {
       readonly status: MatchStatus;
     } | null;
     readonly winnerEntrant: { readonly id: string; readonly snapshotName: string } | null;
+    readonly winnerDecision?: { readonly reason: string | null } | null;
     readonly slots: readonly {
       readonly side: 'RED' | 'BLUE';
       readonly resolvedEntrant: {

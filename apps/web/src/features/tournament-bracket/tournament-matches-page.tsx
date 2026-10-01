@@ -145,8 +145,10 @@ export function TournamentMatchesPage({
   const [decisionFixture, setDecisionFixture] = useState<ActiveBracket['fixtures'][number] | null>(
     null,
   );
+  const [selectedWinnerId, setSelectedWinnerId] = useState<string | null>(null);
   const [decisionReason, setDecisionReason] = useState('');
   const [decisionKey, setDecisionKey] = useState<string | null>(null);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
@@ -368,19 +370,26 @@ export function TournamentMatchesPage({
     },
   });
   const decide = useMutation({
-    mutationFn: async (entrantId: string) => {
+    mutationFn: async () => {
       if (!bracket.data || !decisionFixture) throw new Error('Fixture is unavailable');
+      if (!selectedWinnerId) throw new Error('Chọn vận động viên chiến thắng.');
       return adminManagementApi.decideBracketFixtureWinner(
         tournament.id,
         bracket.data.bracket.id,
         decisionFixture.id,
-        { entrantId, reason: decisionReason.trim(), idempotencyKey: decisionKey ?? '' },
+        {
+          entrantId: selectedWinnerId,
+          reason: decisionReason.trim(),
+          idempotencyKey: decisionKey ?? '',
+        },
       );
     },
     onSuccess: () => {
       setDecisionFixture(null);
       setDecisionReason('');
       setDecisionKey(null);
+      setSelectedWinnerId(null);
+      setDecisionError(null);
       notifyMutationSuccess('Đã xác định người thắng.');
       void Promise.all([
         qc.invalidateQueries({
@@ -390,7 +399,9 @@ export function TournamentMatchesPage({
       ]);
     },
     onError: (error) => {
-      notifyMutationError(error, 'Không thể xác định người thắng. Trạng thái có thể đã thay đổi.');
+      setDecisionError(
+        getApiErrorMessage(error, 'Không thể xác định người thắng. Trạng thái có thể đã thay đổi.'),
+      );
     },
   });
   const cancelBracket = useMutation({
@@ -675,7 +686,17 @@ export function TournamentMatchesPage({
                     </Button>
                   </div>
                   <div hidden={!isBracketExpanded} id="bracket-chart">
-                    <BracketChart data={bracket.data} />
+                    <BracketChart
+                      data={bracket.data}
+                      decisionDisabled={isReadOnly || decide.isPending || cancelBracket.isPending}
+                      onDecideWinner={(fixture) => {
+                        setDecisionFixture(fixture);
+                        setSelectedWinnerId(null);
+                        setDecisionReason('');
+                        setDecisionError(null);
+                        setDecisionKey(crypto.randomUUID());
+                      }}
+                    />
                   </div>
                 </div>
                 <BracketStaffingEditor
@@ -751,6 +772,9 @@ export function TournamentMatchesPage({
                   }}
                   onDecide={(fixture) => {
                     setDecisionFixture(fixture);
+                    setSelectedWinnerId(null);
+                    setDecisionReason('');
+                    setDecisionError(null);
                     setDecisionKey(crypto.randomUUID());
                   }}
                 />
@@ -827,56 +851,100 @@ export function TournamentMatchesPage({
       ) : null}
       {decisionFixture ? (
         <Dialog
-          description="Xác nhận quyết định hòa này và ghi rõ lý do."
+          description="Chọn vận động viên chiến thắng và ghi rõ lý do quyết định."
           initialFocusRef={winnerReasonRef}
           onClose={() => {
             setDecisionFixture(null);
             setDecisionKey(null);
+            setSelectedWinnerId(null);
+            setDecisionError(null);
           }}
           pending={decide.isPending}
-          title="Chọn người thắng"
+          title="Chọn VĐV chiến thắng"
         >
-          <label className="mt-4 block text-sm font-bold" htmlFor="winner-reason">
-            Lý do
-          </label>
-          <textarea
-            className="mt-1 w-full rounded border p-2"
-            id="winner-reason"
-            maxLength={500}
-            onChange={(e) => {
-              setDecisionReason(e.target.value);
+          <form
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!selectedWinnerId) {
+                setDecisionError('Chọn vận động viên chiến thắng.');
+                return;
+              }
+              if (!decisionReason.trim()) {
+                setDecisionError('Nhập lý do quyết định.');
+                winnerReasonRef.current?.focus();
+                return;
+              }
+              setDecisionError(null);
+              decide.mutate();
             }}
-            value={decisionReason}
-            ref={winnerReasonRef}
-          />
-          <div className="mt-4 flex flex-wrap gap-2">
-            {decisionFixture.slots.map((slot) => {
-              const entrant = slot.resolvedEntrant;
-              return entrant ? (
-                <Button
-                  disabled={decide.isPending || !decisionReason.trim()}
-                  key={slot.side}
-                  onClick={() => {
-                    decide.mutate(entrant.id);
-                  }}
-                  type="button"
-                >
-                  Chọn {entrant.snapshotName}
-                </Button>
-              ) : null;
-            })}
-            <Button
+          >
+            <fieldset className="mt-4">
+              <legend className="text-sm font-bold">Vận động viên chiến thắng</legend>
+              <div className="mt-2 space-y-2">
+                {manualWinnerCandidates(decisionFixture).map((entrant) => (
+                  <label
+                    className="flex cursor-pointer items-center gap-2 rounded border p-2"
+                    key={entrant.id}
+                  >
+                    <input
+                      checked={selectedWinnerId === entrant.id}
+                      disabled={decide.isPending}
+                      name="winner"
+                      onChange={() => {
+                        setSelectedWinnerId(entrant.id);
+                        setDecisionError(null);
+                      }}
+                      type="radio"
+                      value={entrant.id}
+                    />
+                    <span>{entrant.snapshotName}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <label className="mt-4 block text-sm font-bold" htmlFor="winner-reason">
+              Lý do
+            </label>
+            <textarea
+              aria-describedby={decisionError ? 'winner-decision-error' : undefined}
+              aria-invalid={Boolean(decisionError)}
+              className="mt-1 w-full rounded border p-2 aria-[invalid=true]:border-destructive"
               disabled={decide.isPending}
-              onClick={() => {
-                setDecisionFixture(null);
-                setDecisionKey(null);
+              id="winner-reason"
+              maxLength={500}
+              onChange={(event) => {
+                setDecisionReason(event.target.value);
+                if (decisionError) setDecisionError(null);
               }}
-              type="button"
-              variant="outline"
-            >
-              Hủy
-            </Button>
-          </div>
+              ref={winnerReasonRef}
+              required
+              value={decisionReason}
+            />
+            {decisionError ? (
+              <p className="mt-2 text-sm text-destructive" id="winner-decision-error" role="alert">
+                {decisionError}
+              </p>
+            ) : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button disabled={decide.isPending} type="submit">
+                {decide.isPending ? 'Đang lưu…' : 'Xác nhận người thắng'}
+              </Button>
+              <Button
+                disabled={decide.isPending}
+                onClick={() => {
+                  setDecisionFixture(null);
+                  setDecisionKey(null);
+                  setSelectedWinnerId(null);
+                  setDecisionError(null);
+                }}
+                type="button"
+                variant="outline"
+              >
+                Hủy
+              </Button>
+            </div>
+          </form>
         </Dialog>
       ) : null}
       {cancelOpen ? (
@@ -1100,10 +1168,7 @@ function FixtureList({
                 );
               };
               return (
-                <li
-                  className={`rounded-xl border p-3 ${fixtureSurfaceClassName}`}
-                  key={f.id}
-                >
+                <li className={`rounded-xl border p-3 ${fixtureSurfaceClassName}`} key={f.id}>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -1124,8 +1189,13 @@ function FixtureList({
                         <span className="px-2 text-muted-foreground">vs</span>
                         <span className="text-blue-700">{person('BLUE')}</span>
                       </p>
-                      {f.winnerEntrant && f.match?.lifecycle === MatchLifecycle.COMPLETED ? (
+                      {f.winnerEntrant ? (
                         <p className="text-sm">Người thắng: {f.winnerEntrant.snapshotName}</p>
+                      ) : null}
+                      {f.winnerDecision?.reason ? (
+                        <p className="text-sm text-muted-foreground">
+                          Lý do: {f.winnerDecision.reason}
+                        </p>
                       ) : null}
                       {f.roundNumber === data.bracket.roundCount && data.bracket.championEntrant ? (
                         <p className="text-sm font-bold">
@@ -1137,7 +1207,7 @@ function FixtureList({
                           Đang chờ kết quả các trận trước.
                         </p>
                       ) : null}
-                      {f.status === 'AWAITING_WINNER' ? (
+                      {f.status === 'AWAITING_WINNER' && manualWinnerCandidates(f).length === 2 ? (
                         <p className="text-sm text-muted-foreground">Chờ xác định người thắng.</p>
                       ) : null}
                     </div>
@@ -1165,7 +1235,7 @@ function FixtureList({
                           </Link>
                         </Button>
                       ) : null}
-                      {f.status === 'AWAITING_WINNER' ? (
+                      {f.status === 'AWAITING_WINNER' && manualWinnerCandidates(f).length === 2 ? (
                         <Button
                           disabled={disabled}
                           onClick={() => {
@@ -1174,7 +1244,7 @@ function FixtureList({
                           size="sm"
                           type="button"
                         >
-                          Chọn người thắng
+                          Chọn VĐV chiến thắng
                         </Button>
                       ) : null}
                     </div>
@@ -1187,4 +1257,10 @@ function FixtureList({
       ))}
     </div>
   );
+}
+
+function manualWinnerCandidates(fixture: ActiveBracket['fixtures'][number]) {
+  return fixture.status === 'AWAITING_WINNER'
+    ? fixture.slots.flatMap((slot) => (slot.resolvedEntrant ? [slot.resolvedEntrant] : []))
+    : [];
 }
