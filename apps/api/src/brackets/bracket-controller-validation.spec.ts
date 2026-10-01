@@ -28,6 +28,7 @@ import { BracketRoundStaffingService } from './bracket-round-staffing.service';
 import { BracketDrawSetupService } from './bracket-draw-setup.service';
 import { CancelBracketDto } from './dto/cancel-bracket.dto';
 import { PreviewBracketDto } from './dto/preview-bracket.dto';
+import { SwapPreviewAthleteDto } from './dto/swap-preview-athlete.dto';
 import { MatchListQueryDto } from '../admin-management/dto/match-list-query.dto';
 
 const tournamentId = '11111111-1111-4111-8111-111111111111';
@@ -67,7 +68,13 @@ describe('bracket and match-filter controller validation', () => {
       providers: [
         { provide: AdminManagementService, useValue: management },
         { provide: TournamentImageService, useValue: {} },
-        { provide: BracketPreviewService, useValue: { preview: jest.fn() } },
+        {
+          provide: BracketPreviewService,
+          useValue: {
+            preview: jest.fn(),
+            swap: jest.fn().mockResolvedValue({}),
+          },
+        },
         { provide: BracketDrawSetupService, useValue: { setup: jest.fn() } },
         { provide: BracketConfirmationService, useValue: confirmations },
         {
@@ -144,6 +151,13 @@ describe('bracket and match-filter controller validation', () => {
     expect(
       Reflect.getMetadata(
         'design:paramtypes',
+        BracketPreviewController.prototype,
+        'swapPreviewAthlete',
+      ),
+    ).toContain(SwapPreviewAthleteDto);
+    expect(
+      Reflect.getMetadata(
+        'design:paramtypes',
         AdminTournamentsController.prototype,
         'listMatches',
       ),
@@ -204,6 +218,29 @@ describe('bracket and match-filter controller validation', () => {
       weightClassId,
       { previewToken: 'token', idempotencyKey: 'confirm-key' },
       'admin-user',
+    );
+  });
+
+  it('registers and forwards the preview swap route', async () => {
+    const previews = app.get(BracketPreviewService);
+    await request(app.getHttpServer())
+      .post(
+        `/api/admin/tournaments/${tournamentId}/weight-classes/${weightClassId}/bracket/preview/swap`,
+      )
+      .send({
+        previewToken: 'preview-token',
+        athleteId: entrantId,
+        swapWithAthleteId: '66666666-6666-4666-8666-666666666666',
+      })
+      .expect(201);
+    expect(previews.swap).toHaveBeenLastCalledWith(
+      tournamentId,
+      weightClassId,
+      {
+        previewToken: 'preview-token',
+        athleteId: entrantId,
+        swapWithAthleteId: '66666666-6666-4666-8666-666666666666',
+      },
     );
   });
 
