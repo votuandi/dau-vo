@@ -38,7 +38,9 @@ interface AthleteResponse {
 
 interface PreviewResponse {
   previewToken: string;
-  initialEntrants: Array<{ athlete: { id: string } | null }>;
+  initialEntrants: Array<{
+    athlete: { id: string; isSeed?: boolean | null } | null;
+  }>;
 }
 
 function configureEnvironment(): void {
@@ -263,6 +265,54 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
         },
       }),
     ).resolves.toBe(0);
+  });
+
+  it('returns stored seed status in preview and confirmed bracket views', async () => {
+    const { athleteIds, tournamentId, weightClassId } = await setup(2);
+    await authenticated(
+      request(app.getHttpServer()).patch(
+        `/api/admin/tournaments/${tournamentId}/athletes/${athleteIds[0]}`,
+      ),
+    )
+      .send({ isSeed: true })
+      .expect(200);
+
+    const previewBody = (await preview(tournamentId, weightClassId))
+      .body as PreviewResponse;
+    expect(previewBody.initialEntrants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          athlete: expect.objectContaining({ id: athleteIds[0], isSeed: true }),
+        }),
+        expect.objectContaining({
+          athlete: expect.objectContaining({
+            id: athleteIds[1],
+            isSeed: false,
+          }),
+        }),
+      ]),
+    );
+
+    const bracketPath = `/api/admin/tournaments/${tournamentId}/weight-classes/${weightClassId}/bracket`;
+    const confirmed = await authenticated(
+      request(app.getHttpServer()).post(`${bracketPath}/confirm`),
+    )
+      .send({
+        idempotencyKey: `${prefix}-seed-view`,
+        previewToken: previewBody.previewToken,
+      })
+      .expect(201);
+    const confirmedEntrants = (
+      confirmed.body as {
+        entrants: Array<{ athleteId: string; isSeed?: boolean | null }>;
+      }
+    ).entrants;
+    expect(confirmedEntrants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ athleteId: athleteIds[0], isSeed: true }),
+        expect.objectContaining({ athleteId: athleteIds[1], isSeed: false }),
+      ]),
+    );
   });
 
   it('persists the immutable graph but no operational match, credentials, or prepare audit', async () => {

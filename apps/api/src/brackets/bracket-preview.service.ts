@@ -421,6 +421,7 @@ export class BracketPreviewService {
     name: string;
     birthYear: number;
     imagePath: string | null;
+    isSeed: boolean;
     organization: { name: string } | null;
   }) {
     return {
@@ -429,6 +430,7 @@ export class BracketPreviewService {
       birthYear: athlete.birthYear,
       organizationName: athlete.organization?.name ?? null,
       imageUrl: athlete.imagePath ? `/api/media/${athlete.imagePath}` : null,
+      isSeed: athlete.isSeed,
     };
   }
 }

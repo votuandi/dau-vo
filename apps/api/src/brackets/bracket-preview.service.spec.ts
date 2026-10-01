@@ -104,6 +104,33 @@ describe('BracketPreviewService', () => {
     );
   });
 
+  it('includes the stored seed indicator in each athlete preview snapshot', async () => {
+    const { prisma, service } = subject(2);
+    prisma.tournamentAthlete.findMany.mockResolvedValue([
+      { ...athlete(1), isSeed: true },
+      { ...athlete(2), isSeed: false },
+    ]);
+
+    const result = await service.preview(tournamentId, weightClassId, {
+      setupToken: 'setup-token',
+      designatedByeAthleteIds: [],
+    });
+
+    expect(result.initialEntrants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          athlete: expect.objectContaining({ id: athlete(1).id, isSeed: true }),
+        }),
+        expect.objectContaining({
+          athlete: expect.objectContaining({
+            id: athlete(2).id,
+            isSeed: false,
+          }),
+        }),
+      ]),
+    );
+  });
+
   it('re-signs a validated swap without changing the fixture graph', async () => {
     const { prisma, service } = subject(4);
     const roster = Array.from({ length: 4 }, (_, index) => athlete(index + 1));

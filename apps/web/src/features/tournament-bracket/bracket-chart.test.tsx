@@ -9,7 +9,11 @@ import {
   fixtureTopOffsets,
 } from './bracket-chart';
 
-function activeBracket(phase: MatchPhase, lifecycle: MatchLifecycle): ActiveBracket {
+function activeBracket(
+  phase: MatchPhase,
+  lifecycle: MatchLifecycle,
+  firstAthleteIsSeed: boolean | null = true,
+): ActiveBracket {
   return {
     bracket: {
       id: 'bracket-1',
@@ -41,6 +45,7 @@ function activeBracket(phase: MatchPhase, lifecycle: MatchLifecycle): ActiveBrac
               snapshotName: 'Nguyễn An',
               snapshotOrganization: 'CLB A',
               snapshotImagePath: null,
+              isSeed: firstAthleteIsSeed,
             },
           },
           {
@@ -52,6 +57,7 @@ function activeBracket(phase: MatchPhase, lifecycle: MatchLifecycle): ActiveBrac
               snapshotName: 'Trần Bình',
               snapshotOrganization: 'CLB B',
               snapshotImagePath: null,
+              isSeed: false,
             },
           },
         ],
@@ -84,6 +90,21 @@ describe('BracketChart', () => {
 
     expect(screen.getByText('Hoàn thành')).toBeInTheDocument();
     expect(screen.getByText('Kết quả cuối cùng')).toBeInTheDocument();
+  });
+
+  it('marks only seeded athletes with an accessible label', () => {
+    render(<BracketChart data={activeBracket(MatchPhase.WAITING, MatchLifecycle.NOT_STARTED)} />);
+
+    expect(screen.getByLabelText('VĐV hạt giống')).toBeInTheDocument();
+    expect(screen.getAllByTitle('VĐV hạt giống')).toHaveLength(1);
+  });
+
+  it('does not mark athletes whose seed metadata is null', () => {
+    render(
+      <BracketChart data={activeBracket(MatchPhase.WAITING, MatchLifecycle.NOT_STARTED, null)} />,
+    );
+
+    expect(screen.queryByLabelText('VĐV hạt giống')).not.toBeInTheDocument();
   });
 
   it.each([

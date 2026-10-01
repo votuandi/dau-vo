@@ -38,6 +38,7 @@ const bracketInclude = {
       { initialFixturePosition: 'asc' },
       { initialSide: 'asc' },
     ],
+    include: { athlete: { select: { isSeed: true } } },
   },
   roundStaffing: { orderBy: { roundNumber: 'asc' } },
   fixtures: {
@@ -45,7 +46,12 @@ const bracketInclude = {
     include: {
       slots: {
         orderBy: { side: 'asc' },
-        include: { directEntrant: true, resolvedEntrant: true },
+        include: {
+          directEntrant: { include: { athlete: { select: { isSeed: true } } } },
+          resolvedEntrant: {
+            include: { athlete: { select: { isSeed: true } } },
+          },
+        },
       },
       match: {
         select: { id: true, publicId: true, status: true, lifecycle: true },
@@ -395,7 +401,10 @@ export class BracketConfirmationService {
         confirmedAt: b.confirmedAt,
         championEntrant: b.championEntrant,
       },
-      entrants: b.entrants,
+      entrants: b.entrants.map(({ athlete, ...entrant }) => ({
+        ...entrant,
+        isSeed: athlete.isSeed,
+      })),
       fixtures: b.fixtures.map((fixture) => ({
         ...fixture,
         displayState: projectMatchDisplayState({
@@ -405,6 +414,21 @@ export class BracketConfirmationService {
             ? {}
             : { lifecycle: fixture.match.lifecycle }),
         }),
+        slots: fixture.slots.map((slot) => ({
+          ...slot,
+          directEntrant: slot.directEntrant
+            ? {
+                ...slot.directEntrant,
+                isSeed: slot.directEntrant.athlete.isSeed,
+              }
+            : null,
+          resolvedEntrant: slot.resolvedEntrant
+            ? {
+                ...slot.resolvedEntrant,
+                isSeed: slot.resolvedEntrant.athlete.isSeed,
+              }
+            : null,
+        })),
         match:
           fixture.match === null
             ? null

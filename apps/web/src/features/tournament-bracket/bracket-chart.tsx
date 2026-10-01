@@ -5,7 +5,7 @@ import type {
 } from '@/services/api/admin-management';
 import { bracketRoundLabel, MatchLifecycle } from '@martial-arts-scoring/shared-types';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { Pencil, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { bracketPresentation, isBracketPreview } from './bracket-graph';
 import {
@@ -98,9 +98,11 @@ export function BracketChart({
             [
               x.id,
               {
+                id: x.athleteId ?? x.id,
                 name: x.snapshotName,
                 organizationName: x.snapshotOrganization,
                 imageUrl: x.snapshotImagePath ? `/api/media/${x.snapshotImagePath}` : null,
+                isSeed: x.isSeed ?? false,
               },
             ] as const,
         ),
@@ -330,11 +332,21 @@ export function BracketChart({
                               {slot.side === 'RED' ? 'Bên đỏ' : 'Bên xanh'}
                             </span>
                             <p className="break-words text-sm font-semibold leading-5">
-                              {entrant
-                                ? 'name' in entrant
-                                  ? entrant.name
-                                  : entrant.snapshotName
-                                : waiting}
+                              {entrant ? (
+                                <span className="inline-flex items-center gap-1">
+                                  {'name' in entrant ? entrant.name : entrant.snapshotName}
+                                  {entrant.isSeed ? (
+                                    <span aria-label="VĐV hạt giống" title="VĐV hạt giống">
+                                      <Star
+                                        aria-hidden="true"
+                                        className="size-4 fill-yellow-400 text-yellow-500"
+                                      />
+                                    </span>
+                                  ) : null}
+                                </span>
+                              ) : (
+                                waiting
+                              )}
                             </p>
                             {entrant ? (
                               <p className="break-words text-[10px] leading-4 text-muted-foreground">
