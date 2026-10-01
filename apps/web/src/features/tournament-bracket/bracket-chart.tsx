@@ -14,6 +14,7 @@ import {
   presentLifecycle,
   presentPhase,
 } from '@/features/match-presentation';
+import { swappablePreviewAthleteIds } from './bracket-preview-swap';
 
 type ChartData = Pick<BracketPreview, 'rounds' | 'initialEntrants'> | ActiveBracket;
 interface ConnectorPath {
@@ -107,12 +108,9 @@ export function BracketChart({
             ] as const,
         ),
   );
-  const previewEntrantById = new Map(
-    isPreview
-      ? data.initialEntrants.flatMap((entrant) =>
-          entrant.athleteId ? [[entrant.athleteId, entrant] as const] : [],
-        )
-      : [],
+  const swappableAthleteIds = useMemo(
+    () => (isPreview ? swappablePreviewAthleteIds(data.initialEntrants) : new Set<string>()),
+    [data, isPreview],
   );
   const fixtureReferenceById = new Map<string, string>(
     isPreview
@@ -292,23 +290,12 @@ export function BracketChart({
                           : !entrant && isPreview && previewSlot.source.kind === 'FIXTURE_WINNER'
                             ? `Chờ người thắng ${fixtureReferenceById.get(previewSlot.source.fixtureId ?? '') ?? ''}`
                             : 'Đặc cách';
-                      const previewEntrant = previewSlot.resolvedEntrantId
-                        ? previewEntrantById.get(previewSlot.resolvedEntrantId)
-                        : undefined;
-                      const pairedPreviewEntrant =
-                        previewEntrant && isPreview
-                          ? data.initialEntrants[
-                              previewEntrant.drawPosition % 2 === 0
-                                ? previewEntrant.drawPosition - 2
-                                : previewEntrant.drawPosition
-                            ]
-                          : undefined;
                       const editable =
                         Boolean(onEditAthlete) &&
                         isPreview &&
                         previewSlot.source.kind === 'ENTRANT' &&
                         Boolean(previewSlot.resolvedEntrantId) &&
-                        pairedPreviewEntrant?.athleteId !== null;
+                        swappableAthleteIds.has(previewSlot.resolvedEntrantId!);
                       return (
                         <div
                           className={`flex min-h-11 items-center gap-1.5 border-l-4 px-2 py-1.5 ${slot.side === 'RED' ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/20' : 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20'}`}

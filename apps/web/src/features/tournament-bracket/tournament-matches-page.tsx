@@ -933,28 +933,6 @@ export function TournamentMatchesPage({
                 Vẫn xác nhận hủy trận
               </Button>
             ) : null}
-            {preview && swapAthleteId ? (
-              <BracketAthleteSwapDialog
-                athleteId={swapAthleteId}
-                error={swapError}
-                onClose={() => {
-                  if (!swap.isPending) {
-                    setSwapAthleteId(null);
-                    setSwapError(null);
-                  }
-                }}
-                onSubmit={(swapWithAthleteId) => {
-                  swapVersionRef.current += 1;
-                  swap.mutate({
-                    athleteId: swapAthleteId,
-                    swapWithAthleteId,
-                    version: swapVersionRef.current,
-                  });
-                }}
-                pending={swap.isPending}
-                preview={preview}
-              />
-            ) : null}
             <Button
               disabled={cancelBracket.isPending}
               onClick={() => {
@@ -967,6 +945,28 @@ export function TournamentMatchesPage({
             </Button>
           </div>
         </Dialog>
+      ) : null}
+      {preview && swapAthleteId ? (
+        <BracketAthleteSwapDialog
+          athleteId={swapAthleteId}
+          error={swapError}
+          onClose={() => {
+            if (!swap.isPending) {
+              setSwapAthleteId(null);
+              setSwapError(null);
+            }
+          }}
+          onSubmit={(swapWithAthleteId) => {
+            swapVersionRef.current += 1;
+            swap.mutate({
+              athleteId: swapAthleteId,
+              swapWithAthleteId,
+              version: swapVersionRef.current,
+            });
+          }}
+          pending={swap.isPending}
+          preview={preview}
+        />
       ) : null}
       <p aria-atomic="true" aria-live="polite" className="sr-only">
         {workflow === 'loadingSetup'

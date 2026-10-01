@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import type { BracketPreview } from '@/services/api/admin-management';
+import { swappablePreviewAthleteIds } from './bracket-preview-swap';
 
 export function BracketAthleteSwapDialog({
   preview,
@@ -22,9 +23,17 @@ export function BracketAthleteSwapDialog({
   const current = preview.initialEntrants.find(
     (entrant) => entrant.athleteId === athleteId,
   )?.athlete;
+  const swappableAthleteIds = swappablePreviewAthleteIds(preview.initialEntrants);
   const choices = preview.initialEntrants.filter(
-    (entrant) => entrant.athlete && entrant.athleteId !== athleteId,
+    (entrant) =>
+      entrant.athlete &&
+      entrant.athleteId !== athleteId &&
+      entrant.athleteId !== null &&
+      swappableAthleteIds.has(entrant.athleteId),
   );
+  const excludedByeRecipients = preview.initialEntrants.filter(
+    (entrant) => entrant.athlete && !swappableAthleteIds.has(entrant.athleteId!),
+  ).length;
   const [selected, setSelected] = useState<string | null>(null);
   return (
     <Dialog
@@ -63,6 +72,12 @@ export function BracketAthleteSwapDialog({
           </label>
         ))}
       </div>
+      {excludedByeRecipients ? (
+        <p className="mt-3 text-sm text-muted-foreground">
+          {excludedByeRecipients} VĐV nhận đặc cách không được liệt kê vì đổi vị trí sẽ thay đổi
+          suất đặc cách.
+        </p>
+      ) : null}
       {error ? (
         <p className="mt-3 text-sm text-destructive" role="alert">
           {error}
