@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
+import { Maximize2, Minimize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import {
@@ -73,6 +74,7 @@ export function TournamentMatchesPage({
   const selectedWeightClass = active.find((weightClass) => weightClass.id === selectedId);
   const [intermissionDurationSeconds, setIntermissionDurationSeconds] = useState('0');
   const [intermissionError, setIntermissionError] = useState<string | null>(null);
+  const [isBracketExpanded, setIsBracketExpanded] = useState(true);
   useEffect(() => {
     setIntermissionDurationSeconds(String(selectedWeightClass?.intermissionDurationSeconds ?? 0));
     setIntermissionError(null);
@@ -183,6 +185,7 @@ export function TournamentMatchesPage({
       setCancelOpen(false);
       setCancelError(null);
       setConfirmedCancelled(false);
+      setIsBracketExpanded(true);
       drawWeightClassRef.current = selectedId;
     }
   }, [selectedId]);
@@ -644,8 +647,31 @@ export function TournamentMatchesPage({
               </p>
             ) : bracket.data ? (
               <>
-                <div className="mt-5">
-                  <BracketChart data={bracket.data} />
+                <div className="mt-5 rounded-xl border border-border bg-muted/10">
+                  <div className="flex items-center justify-between gap-3 p-4">
+                    <h4 className="font-bold">Sơ đồ nhánh đấu</h4>
+                    <Button
+                      aria-controls="bracket-chart"
+                      aria-expanded={isBracketExpanded}
+                      aria-label={isBracketExpanded ? 'Thu gọn sơ đồ' : 'Mở rộng sơ đồ'}
+                      onClick={() => {
+                        setIsBracketExpanded((expanded) => !expanded);
+                      }}
+                      size="icon"
+                      title={isBracketExpanded ? 'Thu gọn sơ đồ' : 'Mở rộng sơ đồ'}
+                      type="button"
+                      variant="outline"
+                    >
+                      {isBracketExpanded ? (
+                        <Minimize2 aria-hidden="true" />
+                      ) : (
+                        <Maximize2 aria-hidden="true" />
+                      )}
+                    </Button>
+                  </div>
+                  <div hidden={!isBracketExpanded} id="bracket-chart">
+                    <BracketChart data={bracket.data} />
+                  </div>
                 </div>
                 <BracketStaffingEditor
                   data={bracket.data}
