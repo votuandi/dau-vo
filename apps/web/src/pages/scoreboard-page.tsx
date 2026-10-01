@@ -94,7 +94,7 @@ function AthletePanel({
                 imagePath={athlete.organizationImagePath}
                 kind="organization"
               />
-              <p className="truncate">{athlete.organization ?? 'Không có tổ chức'}</p>
+              <p className="truncate">{athlete.organization ?? 'VĐV tự do'}</p>
             </div>
           </div>
         </div>
@@ -188,7 +188,7 @@ function WinnerPresentation({
           imagePath={athlete.organizationImagePath}
           kind="organization"
         />
-        <span className="truncate">{athlete.organization ?? 'Không có tổ chức'}</span>
+        <span className="truncate">{athlete.organization ?? 'VĐV tự do'}</span>
       </div>
       <p className="mt-5 rounded-full border border-white/30 bg-black/15 px-4 py-2 text-sm font-black tracking-[0.18em] sm:text-xl">
         {red ? 'ĐỎ · RED' : 'XANH · BLUE'}

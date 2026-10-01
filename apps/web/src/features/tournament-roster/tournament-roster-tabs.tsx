@@ -490,16 +490,6 @@ export function RosterItemsPage({
       );
     },
   });
-  const removeOrganizationImage = useMutation({
-    mutationFn: (id: string) => adminManagementApi.removeOrganizationImage(tournamentId, id),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId] });
-      notifyMutationSuccess('Đã xóa logo đơn vị.');
-    },
-    onError: (e) => {
-      notifyMutationError(e, 'Không thể xóa logo đơn vị.');
-    },
-  });
   const items = query.data ?? [];
   return (
     <section className="space-y-5">
@@ -557,82 +547,111 @@ export function RosterItemsPage({
       ) : null}
       <ul className="grid gap-3">
         {items.map((item) => (
-          <li className="rounded-xl border p-4" key={item.id}>
+          <li
+            className={kind === 'organizations' ? 'rounded-xl border p-3' : 'rounded-xl border p-4'}
+            key={item.id}
+          >
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                {kind === 'organizations' ? (
-                  <div className="mb-2 flex items-center gap-2">
-                    {(item as TournamentOrganization).imagePath ? (
-                      <img
-                        alt={`Logo ${item.name}`}
-                        className="h-12 w-12 rounded object-cover"
-                        loading="lazy"
-                        src={`/api/media/${(item as TournamentOrganization).imagePath ?? ''}`}
-                      />
-                    ) : (
-                      <span
-                        aria-label={`Chưa có logo cho ${item.name}`}
-                        className="flex h-12 w-12 items-center justify-center rounded bg-muted text-xs"
-                        role="img"
-                      >
-                        ĐV
+              {kind === 'organizations' ? (
+                <div className="flex min-w-0 items-center gap-3">
+                  {(item as TournamentOrganization).imagePath ? (
+                    <img
+                      alt={`Logo ${item.name}`}
+                      className="h-12 w-12 shrink-0 rounded-full object-cover"
+                      loading="lazy"
+                      src={`/api/media/${(item as TournamentOrganization).imagePath ?? ''}`}
+                    />
+                  ) : (
+                    <span
+                      aria-label={`Chưa có logo cho ${item.name}`}
+                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted font-bold text-xs"
+                      role="img"
+                    >
+                      {item.name.trim().slice(0, 1).toLocaleUpperCase('vi')}
+                    </span>
+                  )}
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <b>{item.name}</b>
+                      <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-semibold text-teal-800">
+                        {(item as TournamentOrganization).location ?? 'Chưa có địa phương'}
                       </span>
-                    )}
-                    <h3 className="font-bold">{item.name}</h3>
+                    </div>
+                    {item.details ? (
+                      <p className="mt-1 text-sm text-muted-foreground">{item.details}</p>
+                    ) : null}
                   </div>
-                ) : (
+                </div>
+              ) : (
+                <div>
                   <h3 className="font-bold">{item.name}</h3>
-                )}
-                {kind === 'organizations' ? (
                   <p className="text-sm text-muted-foreground">
-                    {(item as TournamentOrganization).location ?? 'Chưa có địa phương'}
+                    {item.details ?? 'Chưa có chi tiết'}
                   </p>
-                ) : null}
-                <p className="text-sm text-muted-foreground">
-                  {item.details ?? 'Chưa có chi tiết'}
-                </p>
-                <p className="mt-1 text-xs font-semibold">
-                  {item.isActive ? 'Đang hoạt động' : 'Đã ngừng'}
-                </p>
-              </div>
+                  <p className="mt-1 text-xs font-semibold">
+                    {item.isActive ? 'Đang hoạt động' : 'Đã ngừng'}
+                  </p>
+                </div>
+              )}
               {!readOnly ? (
-                <div className="flex gap-2">
+                <div className="flex shrink-0 flex-wrap gap-2">
                   <Button
-                    disabled={
-                      mutate.isPending || deactivate.isPending || removeOrganizationImage.isPending
+                    aria-label="Sửa"
+                    className={
+                      kind === 'organizations'
+                        ? 'bg-sky-600 text-white shadow-none hover:bg-sky-800'
+                        : undefined
                     }
+                    disabled={mutate.isPending || deactivate.isPending}
                     onClick={() => {
                       setDraft({ mode: 'edit', item, values: rosterValues(item) });
                     }}
-                    size="sm"
+                    size={kind === 'organizations' ? 'icon' : 'sm'}
+                    title={kind === 'organizations' ? 'Sửa' : undefined}
                     type="button"
-                    variant="outline"
+                    variant={kind === 'organizations' ? undefined : 'outline'}
                   >
-                    Sửa
+                    {kind === 'organizations' ? (
+                      <Pencil aria-hidden="true" className="size-4" />
+                    ) : (
+                      'Sửa'
+                    )}
                   </Button>
-                  {kind === 'organizations' && (item as TournamentOrganization).imagePath ? (
-                    <Button
-                      disabled={removeOrganizationImage.isPending}
-                      onClick={() => {
-                        removeOrganizationImage.mutate(item.id);
-                      }}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      Xóa logo
-                    </Button>
-                  ) : null}
                   <Button
+                    aria-label={item.isActive ? 'Ngừng dùng' : 'Khôi phục'}
+                    className={
+                      kind === 'organizations'
+                        ? item.isActive
+                          ? 'bg-orange-700 text-white shadow-none hover:bg-orange-800'
+                          : 'bg-green-700 text-white shadow-none hover:bg-green-800'
+                        : undefined
+                    }
                     disabled={mutate.isPending || deactivate.isPending}
                     onClick={() => {
                       setConfirm(item);
                     }}
-                    size="sm"
+                    size={kind === 'organizations' ? 'icon' : 'sm'}
+                    title={
+                      kind === 'organizations'
+                        ? item.isActive
+                          ? 'Ngừng dùng'
+                          : 'Khôi phục'
+                        : undefined
+                    }
                     type="button"
-                    variant="outline"
+                    variant={kind === 'organizations' ? undefined : 'outline'}
                   >
-                    {item.isActive ? 'Ngừng dùng' : 'Khôi phục'}
+                    {kind === 'organizations' ? (
+                      item.isActive ? (
+                        <Ban aria-hidden="true" className="size-4" />
+                      ) : (
+                        <Check aria-hidden="true" className="size-4" />
+                      )
+                    ) : item.isActive ? (
+                      'Ngừng dùng'
+                    ) : (
+                      'Khôi phục'
+                    )}
                   </Button>
                 </div>
               ) : null}
@@ -815,7 +834,8 @@ export function AthletesPage({
     },
   });
   const softDelete = useMutation({
-    mutationFn: (athlete: TournamentAthlete) => adminManagementApi.deleteAthlete(tournamentId, athlete.id),
+    mutationFn: (athlete: TournamentAthlete) =>
+      adminManagementApi.deleteAthlete(tournamentId, athlete.id),
     onSuccess: () => {
       setDeleteConfirm(null);
       void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId, 'athletes'] });
@@ -1299,10 +1319,10 @@ export function AthletesPage({
                       <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800">
                         {x.birthYear}
                       </span>
-                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-800">
+                      <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-semibold text-teal-800">
                         {x.organization?.name ?? 'Không đơn vị'}
                       </span>
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">
                         {x.weightClass.name}
                       </span>
                     </div>
@@ -1317,26 +1337,30 @@ export function AthletesPage({
                       aria-label={x.isSeed ? 'Hạt giống' : 'Chọn làm hạt giống'}
                       className={
                         x.isSeed
-                          ? 'bg-blue-300 text-white shadow-none hover:bg-blue-400'
-                          : 'border border-blue-200 bg-blue-50 text-white shadow-none hover:bg-blue-100'
+                          ? 'bg-amber-200 text-amber-500 shadow-none hover:bg-blue-50 hover:text-amber-200'
+                          : 'border border-blue-200 bg-blue-50 text-blue-200 shadow-none hover:bg-amber-100 hover:text-amber-500 hover:border-none'
                       }
                       disabled={toggleSeed.isPending}
                       onClick={() => {
                         toggleSeed.mutate(x);
                       }}
                       size="icon"
-                      title={x.isSeed ? 'Hạt giống' : 'Chọn làm hạt giống'}
+                      title={
+                        x.isSeed
+                          ? 'Đang là Hạt giống. Nhấn vào sẽ hủy tư cách'
+                          : 'Chọn làm hạt giống'
+                      }
                       type="button"
                     >
                       <Star
                         aria-hidden="true"
-                        className={`size-4 ${x.isSeed ? '' : 'text-blue-200'}`}
+                        className={`size-4`}
                         fill={x.isSeed ? 'currentColor' : 'none'}
                       />
                     </Button>
                     <Button
                       aria-label="Sửa"
-                      className="bg-blue-200 text-white shadow-none hover:bg-blue-300"
+                      className="bg-sky-600 text-white shadow-none hover:bg-sky-800"
                       disabled={save.isPending || deactivate.isPending}
                       onClick={() => {
                         setEditing(x);
@@ -1361,8 +1385,8 @@ export function AthletesPage({
                       aria-label={x.isActive ? 'Đình chỉ thi đấu' : 'Cho phép thi đấu'}
                       className={
                         x.isActive
-                          ? 'bg-blue-400 text-white shadow-none hover:bg-blue-500'
-                          : 'bg-blue-300 text-white shadow-none hover:bg-blue-400'
+                          ? 'bg-orange-700 text-white shadow-none hover:bg-orange-800'
+                          : 'bg-green-700 text-white shadow-none hover:bg-green-800'
                       }
                       disabled={deactivate.isPending || softDelete.isPending}
                       onClick={() => {
@@ -1388,7 +1412,7 @@ export function AthletesPage({
                       title="Xóa"
                       type="button"
                       variant="destructive"
-                      className="bg-red-500 text-white shadow-none hover:bg-red-600"
+                      className="bg-red-600 text-white shadow-none hover:bg-red-700"
                     >
                       <Trash2 aria-hidden="true" className="size-4" />
                     </Button>

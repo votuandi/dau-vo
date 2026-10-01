@@ -3,7 +3,7 @@ import type {
   BracketFixture,
   BracketPreview,
 } from '@/services/api/admin-management';
-import { bracketRoundLabel, MatchLifecycle } from '@martial-arts-scoring/shared-types';
+import { bracketRoundLabel } from '@martial-arts-scoring/shared-types';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pencil, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,16 +15,35 @@ import {
   presentPhase,
 } from '@/features/match-presentation';
 import { swappablePreviewAthleteIds } from './bracket-preview-swap';
-import {
-  BRACKET_LAYOUT,
-  bracketConnectorPath,
-  fixtureTopOffsets,
-} from './bracket-chart-layout';
+import { BRACKET_LAYOUT, bracketConnectorPath, fixtureTopOffsets } from './bracket-chart-layout';
 
 type ChartData = Pick<BracketPreview, 'rounds' | 'initialEntrants'> | ActiveBracket;
 interface ConnectorPath {
   readonly key: string;
   readonly d: string;
+  readonly winnerSide: 'RED' | 'BLUE' | null;
+}
+
+function winnerSideOfFixture(fixture: ActiveBracket['fixtures'][number]): 'RED' | 'BLUE' | null {
+  if (!fixture.winnerEntrant) return null;
+
+  return (
+    fixture.slots.find(
+      (slot) => (slot.resolvedEntrant ?? slot.directEntrant)?.id === fixture.winnerEntrant?.id,
+    )?.side ?? null
+  );
+}
+
+function winnerBorderClassName(side: 'RED' | 'BLUE' | null): string {
+  if (side === 'RED') return 'border-red-500';
+  if (side === 'BLUE') return 'border-blue-500';
+  return '';
+}
+
+function winnerSurfaceClassName(side: 'RED' | 'BLUE' | null): string {
+  if (side === 'RED') return 'bg-red-500 text-white dark:bg-red-950/50 dark:text-red-50';
+  if (side === 'BLUE') return 'bg-blue-500 text-white dark:bg-blue-950/50 dark:text-blue-50';
+  return '';
 }
 
 export function BracketChart({
@@ -36,6 +55,15 @@ export function BracketChart({
 }) {
   const isPreview = isBracketPreview(data);
   const graph = useMemo(() => bracketPresentation(data), [data]);
+  const winnerSideByFixtureId = useMemo(
+    () =>
+      new Map(
+        isPreview
+          ? []
+          : data.fixtures.map((fixture) => [fixture.id, winnerSideOfFixture(fixture)] as const),
+      ),
+    [data, isPreview],
+  );
   const contentRef = useRef<HTMLDivElement>(null);
   const fixtureRefs = useRef(new Map<string, HTMLElement>());
   const slotRefs = useRef(new Map<string, HTMLElement>());
@@ -112,6 +140,7 @@ export function BracketChart({
                   targetCenterY: endY,
                   targetSide: edge.targetSide,
                 }),
+                winnerSide: winnerSideByFixtureId.get(edge.sourceFixtureId) ?? null,
               },
             ];
           }),
@@ -138,7 +167,7 @@ export function BracketChart({
       cancelAnimationFrame(frame);
       observer?.disconnect();
     };
-  }, [graph]);
+  }, [graph, winnerSideByFixtureId]);
 
   return (
     <div className="overflow-x-auto rounded-xl border bg-muted/20 p-4" aria-label="Sơ đồ nhánh đấu">
@@ -157,7 +186,13 @@ export function BracketChart({
         >
           {paths.map((path) => (
             <path
-              className="stroke-muted-foreground/50 dark:stroke-muted-foreground/70"
+              className={
+                path.winnerSide === 'RED'
+                  ? 'stroke-red-500'
+                  : path.winnerSide === 'BLUE'
+                    ? 'stroke-blue-500'
+                    : 'stroke-muted-foreground/50 dark:stroke-muted-foreground/70'
+              }
               d={path.d}
               fill="none"
               key={path.key}
@@ -180,9 +215,10 @@ export function BracketChart({
                 const activeFixture = isPreview
                   ? null
                   : (fixture as ActiveBracket['fixtures'][number]);
+                const winnerSide = activeFixture ? winnerSideOfFixture(activeFixture) : null;
                 return (
                   <article
-                    className="absolute left-0 w-full rounded-lg border bg-card shadow-sm"
+                    className={`absolute left-0 w-full overflow-hidden rounded-lg border border-border bg-card shadow-sm ${winnerBorderClassName(winnerSide)}`}
                     data-fixture-id={fixture.id}
                     key={fixture.id}
                     ref={(element) => {
@@ -313,9 +349,10 @@ export function BracketChart({
                         </div>
                       );
                     })}
-                    {activeFixture?.winnerEntrant &&
-                    activeFixture.match?.lifecycle === MatchLifecycle.COMPLETED ? (
-                      <p className="border-t px-2 py-1.5 text-sm font-bold">
+                    {activeFixture?.winnerEntrant ? (
+                      <p
+                        className={`border-t px-2 py-1.5 text-sm font-bold ${winnerSurfaceClassName(winnerSide)}`}
+                      >
                         Thắng: {activeFixture.winnerEntrant.snapshotName}
                       </p>
                     ) : null}

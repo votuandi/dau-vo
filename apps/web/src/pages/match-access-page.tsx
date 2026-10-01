@@ -251,7 +251,13 @@ function SupervisorAssignment({
           <p className="text-sm font-semibold text-primary">{session.tournament.name}</p>
           <h1 className="text-3xl font-black">Khu vực giám sát</h1>
         </div>
-        <Button disabled={pending} onClick={logout} type="button" variant="outline">
+        <Button
+          disabled={pending}
+          onClick={logout}
+          type="button"
+          variant="outline"
+          className="bg-red-800 text-white"
+        >
           {pending ? 'Đang đăng xuất…' : 'Đăng xuất'}
         </Button>
         {logoutError ? (
@@ -273,7 +279,7 @@ function SupervisorAssignment({
         {matches.data?.matches.map((m) => (
           <button
             aria-pressed={selected?.id === m.id}
-            className="min-h-28 rounded-xl border p-4 text-left focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-28 rounded-xl border p-4 text-left focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 bg-white hover:bg-cyan-50"
             disabled={!isEligible(m)}
             key={m.id}
             onClick={() => {
@@ -300,7 +306,7 @@ function SupervisorAssignment({
         </p>
       ) : null}
       {selected ? (
-        <section className="mt-6 rounded-2xl border p-5">
+        <section className="mt-6 rounded-2xl border p-5 bg-white">
           <div className="flex justify-between gap-3">
             <h2 className="text-xl font-black">Chọn giám định · {selected.publicId}</h2>
             <Button

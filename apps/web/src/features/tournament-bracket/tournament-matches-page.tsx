@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Maximize2, Minimize2 } from 'lucide-react';
+import { ClipboardCheck, Eye, Maximize2, Minimize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import {
@@ -26,7 +26,12 @@ import {
 } from '@/services/api/admin-management';
 import { MatchDisplayState, MatchLifecycle, TournamentStatus } from '@/types/shared';
 import { bracketRoundLabel as roundLabel } from '@martial-arts-scoring/shared-types';
-import { presentDisplayState, presentLifecycle, presentPhase } from '@/features/match-presentation';
+import {
+  matchVariantClassName,
+  presentDisplayState,
+  presentLifecycle,
+  presentPhase,
+} from '@/features/match-presentation';
 import { BracketChart } from './bracket-chart';
 import { BracketPreviewPanel } from './bracket-preview-dialog';
 import { BracketDrawSetupDialog } from './bracket-draw-setup-dialog';
@@ -1074,6 +1079,17 @@ function FixtureList({
           <h4 className="text-sm font-bold">{roundLabel(round, data.bracket.roundCount)}</h4>
           <ul className="mt-2 space-y-2">
             {fixtures.map((f) => {
+              const statuses = f.match
+                ? [presentLifecycle(f.match.lifecycle), presentPhase(f.match.phase)]
+                : [presentDisplayState(f.displayState)];
+              const fixtureSurfaceClassName = (() => {
+                if (f.match?.lifecycle === MatchLifecycle.COMPLETED) return 'bg-blue-50/80';
+                if (f.match?.lifecycle === MatchLifecycle.IN_PROGRESS) return 'bg-amber-50/80';
+                if (f.displayState === MatchDisplayState.READY) return 'bg-emerald-50/80';
+                if (f.displayState === MatchDisplayState.IN_PROGRESS) return 'bg-amber-50/80';
+                if (f.displayState === MatchDisplayState.COMPLETED) return 'bg-blue-50/80';
+                return 'bg-white';
+              })();
               const person = (side: 'RED' | 'BLUE') => {
                 const s = f.slots.find((x) => x.side === side);
                 return (
@@ -1084,70 +1100,85 @@ function FixtureList({
                 );
               };
               return (
-                <li className="rounded-xl border p-3" key={f.id}>
-                  <div className="font-bold">
-                    {f.displayReference} ·{' '}
-                    {f.match
-                      ? `${presentLifecycle(f.match.lifecycle).label} · ${presentPhase(f.match.phase).label}`
-                      : presentDisplayState(f.displayState).label}
+                <li
+                  className={`rounded-xl border p-3 ${fixtureSurfaceClassName}`}
+                  key={f.id}
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-bold">{f.displayReference}</p>
+                        <span className="flex flex-wrap gap-1">
+                          {statuses.map((status) => (
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-xs font-bold ${matchVariantClassName[status.variant]}`}
+                              key={status.label}
+                            >
+                              {status.label}
+                            </span>
+                          ))}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm font-medium">
+                        <span className="text-red-700">{person('RED')}</span>
+                        <span className="px-2 text-muted-foreground">vs</span>
+                        <span className="text-blue-700">{person('BLUE')}</span>
+                      </p>
+                      {f.winnerEntrant && f.match?.lifecycle === MatchLifecycle.COMPLETED ? (
+                        <p className="text-sm">Người thắng: {f.winnerEntrant.snapshotName}</p>
+                      ) : null}
+                      {f.roundNumber === data.bracket.roundCount && data.bracket.championEntrant ? (
+                        <p className="text-sm font-bold">
+                          Vô địch: {data.bracket.championEntrant.snapshotName}
+                        </p>
+                      ) : null}
+                      {f.displayState === MatchDisplayState.NOT_READY ? (
+                        <p className="text-sm text-muted-foreground">
+                          Đang chờ kết quả các trận trước.
+                        </p>
+                      ) : null}
+                      {f.status === 'AWAITING_WINNER' ? (
+                        <p className="text-sm text-muted-foreground">Chờ xác định người thắng.</p>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                      {f.status === 'READY' ? (
+                        <Button
+                          disabled={disabled}
+                          onClick={() => {
+                            onPrepare(f.id);
+                          }}
+                          size="sm"
+                          type="button"
+                        >
+                          <ClipboardCheck aria-hidden="true" className="size-4 mr-1" />
+                          Chuẩn bị trận
+                        </Button>
+                      ) : null}
+                      {f.match &&
+                      (f.status === 'MATCH_PREPARED' ||
+                        f.match.lifecycle === MatchLifecycle.COMPLETED) ? (
+                        <Button asChild size="sm" variant="outline">
+                          <Link to={`/admin/matches/${f.match.id}`}>
+                            <Eye aria-hidden="true" className="size-4 mr-1" />
+                            {`Chi tiết trận ${f.match.publicId}`}
+                          </Link>
+                        </Button>
+                      ) : null}
+                      {f.status === 'AWAITING_WINNER' ? (
+                        <Button
+                          disabled={disabled}
+                          onClick={() => {
+                            onDecide(f);
+                          }}
+                          size="sm"
+                          type="button"
+                        >
+                          Chọn người thắng
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
-                  <p className="text-sm">
-                    RED: {person('RED')} — BLUE: {person('BLUE')}
-                  </p>
-                  {f.winnerEntrant && f.match?.lifecycle === MatchLifecycle.COMPLETED ? (
-                    <p className="text-sm">Người thắng: {f.winnerEntrant.snapshotName}</p>
-                  ) : null}
-                  {f.roundNumber === data.bracket.roundCount && data.bracket.championEntrant ? (
-                    <p className="text-sm font-bold">
-                      Vô địch: {data.bracket.championEntrant.snapshotName}
-                    </p>
-                  ) : null}
-                  {f.displayState === MatchDisplayState.NOT_READY ? (
-                    <p className="text-sm text-muted-foreground">
-                      Đang chờ kết quả các trận trước.
-                    </p>
-                  ) : null}
-                  {f.status === 'READY' ? (
-                    <Button
-                      className="mt-2"
-                      disabled={disabled}
-                      onClick={() => {
-                        onPrepare(f.id);
-                      }}
-                      size="sm"
-                      type="button"
-                    >
-                      Chuẩn bị trận
-                    </Button>
-                  ) : null}
-                  {f.match &&
-                  (f.status === 'MATCH_PREPARED' ||
-                    f.match.lifecycle === MatchLifecycle.COMPLETED) ? (
-                    <Link
-                      className="mt-2 inline-block text-sm font-bold underline"
-                      to={`/admin/matches/${f.match.id}`}
-                    >
-                      {f.match.lifecycle === MatchLifecycle.COMPLETED
-                        ? `Xem trận ${f.match.publicId}`
-                        : `Mở trận ${f.match.publicId}`}
-                    </Link>
-                  ) : null}
-                  {f.status === 'AWAITING_WINNER' ? (
-                    <>
-                      <p className="text-sm text-muted-foreground">Chờ xác định người thắng.</p>
-                      <Button
-                        className="mt-2"
-                        disabled={disabled}
-                        onClick={() => {
-                          onDecide(f);
-                        }}
-                        size="sm"
-                        type="button"
-                      >
-                        Chọn người thắng
-                      </Button>
-                    </>
-                  ) : null}
                 </li>
               );
             })}

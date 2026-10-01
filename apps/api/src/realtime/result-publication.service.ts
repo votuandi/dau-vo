@@ -109,6 +109,7 @@ export class ResultPublicationService {
             matchId: input.matchId,
             status: 'COMPLETED',
             invalidatedAt: null,
+            sourceRound: { invalidatedAt: null },
           },
           orderBy: { completedAt: 'desc' },
           include: {

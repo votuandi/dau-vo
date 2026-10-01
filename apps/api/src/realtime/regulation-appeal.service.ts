@@ -77,6 +77,43 @@ export class RegulationAppealService {
             status: true,
           },
         });
+        // A full result reset invalidates an appeal together with its source
+        // rounds. Older records can predate that cleanup, though, and still
+        // occupy the partial unique key for this scope/attempt. Reconcile
+        // only those orphaned appeals before checking idempotency or creating
+        // the new appeal.
+        const staleAppeals = await tx.matchAppeal.findMany({
+          where: {
+            matchId: input.matchId,
+            status: 'COMPLETED',
+            invalidatedAt: null,
+            sourceRound: { invalidatedAt: { not: null } },
+          },
+          select: { id: true },
+        });
+        if (staleAppeals.length > 0) {
+          const invalidationAudit = await tx.auditLog.create({
+            data: {
+              eventType: AuditEventType.MATCH_ACTION,
+              matchId: input.matchId,
+              ...auditActor(input.identity),
+              metadata: {
+                action: 'STALE_APPEALS_INVALIDATED',
+                appealIds: staleAppeals.map((appeal) => appeal.id),
+                reason: 'SOURCE_ROUND_INVALIDATED',
+              },
+            },
+            select: { id: true },
+          });
+          await tx.matchAppeal.updateMany({
+            data: {
+              status: 'INVALIDATED',
+              invalidatedAt: new Date(),
+              invalidatedByAuditId: invalidationAudit.id,
+            },
+            where: { id: { in: staleAppeals.map((appeal) => appeal.id) } },
+          });
+        }
         const existing = await tx.matchAppeal.findFirst({
           where: { idempotencyKey: input.payload.idempotencyKey },
           include: {
@@ -130,6 +167,7 @@ export class RegulationAppealService {
               attemptNumber: 0,
               status: 'COMPLETED',
               invalidatedAt: null,
+              sourceRound: { invalidatedAt: null },
             },
             select: { id: true },
           }),

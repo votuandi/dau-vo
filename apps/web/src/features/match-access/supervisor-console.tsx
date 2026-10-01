@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { CirclePause, CirclePlay, LogOut, Monitor, Save } from 'lucide-react';
+import { CirclePause, CirclePlay, LogOut, Monitor, Save, Trophy } from 'lucide-react';
 import {
   AthleteColor,
   FaultSeverity,
   MatchExitMode,
   MatchStatus,
   type MatchCompletionBlockedReason,
+  type ResultCapabilityBlockedReason,
 } from '@martial-arts-scoring/shared-types';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
@@ -87,6 +88,17 @@ const completionBlockedReasonLabels: Record<MatchCompletionBlockedReason, string
   RESULT_DECISION_REQUIRED: 'Cần xác định kết quả trận đấu trước khi lưu.',
   ROUND_1_NOT_ENDED: 'Hiệp 1 chưa kết thúc.',
   ROUND_2_NOT_ENDED: 'Hiệp 2 chưa kết thúc.',
+  UNRESOLVED_SCORING_WINDOW: 'Đang chờ hoàn tất chấm điểm.',
+};
+
+const appealBlockedReasonLabels: Record<ResultCapabilityBlockedReason, string> = {
+  APPEAL_ALREADY_COMPLETED: 'Phúc khảo đã hoàn thành.',
+  MATCH_COMPLETED: 'Trận đấu đã hoàn thành.',
+  MATCH_SUSPENDED: 'Trận đấu đang tạm hoãn.',
+  NOT_AWAITING_PUBLICATION: 'Trận đấu chưa ở bước công bố kết quả.',
+  NOT_OVERTIME_READY: 'Trận đấu chưa sẵn sàng cho phúc khảo hiệp phụ.',
+  NOT_REGULATION_APPEAL: 'Trận đấu chưa ở bước phúc khảo sau hiệp 2.',
+  ROUND_SUMMARIES_MISSING: 'Thiếu dữ liệu chấm điểm đã chốt của các hiệp.',
   UNRESOLVED_SCORING_WINDOW: 'Đang chờ hoàn tất chấm điểm.',
 };
 
@@ -434,7 +446,12 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
     blueBonus: appealNumber(appealDraft.blueBonus),
     bluePenalty: appealNumber(appealDraft.bluePenalty),
   };
-  const appealValid = Object.values(appealValues).every((value) => value !== null);
+  // Do not use truthiness here: zero is a valid appeal adjustment.
+  const appealValid =
+    appealValues.redBonus !== null &&
+    appealValues.redPenalty !== null &&
+    appealValues.blueBonus !== null &&
+    appealValues.bluePenalty !== null;
   const appealTitle =
     status === MatchStatus.REGULATION_APPEAL
       ? 'Phúc khảo sau hiệp 2'
@@ -568,6 +585,21 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
               <Monitor aria-hidden="true" className="size-7" strokeWidth={2.5} />
               <span>CHECK VAR</span>
             </Button>
+            {snapshot?.result.publication.canPublish ? (
+              <Button
+                className="h-24 flex-col gap-2 border border-emerald-200/50 bg-emerald-600 text-center font-black text-white shadow-lg shadow-emerald-950/25 hover:bg-emerald-500"
+                disabled={
+                  realtime.connectionStatus !== 'connected' || realtime.submittingResultAction
+                }
+                onClick={() => {
+                  setConfirmation('publish-result');
+                }}
+                type="button"
+              >
+                <Trophy aria-hidden="true" className="size-7" strokeWidth={2.5} />
+                <span>CÔNG BỐ KẾT QUẢ</span>
+              </Button>
+            ) : null}
             {roundIsRunning ? (
               <Button
                 className="h-24 flex-col gap-2 border border-amber-200/60 bg-amber-500 text-center font-black text-amber-950 shadow-lg shadow-amber-950/25 hover:bg-amber-400"
@@ -799,6 +831,13 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
             >
               {realtime.submittingResultAction ? 'ĐANG HOÀN THÀNH…' : 'HOÀN THÀNH PHÚC KHẢO'}
             </Button>
+            {appealContext?.canComplete === false ? (
+              <p className="mt-3 text-sm text-amber-100/85" role="status">
+                {appealContext.blockedReasons
+                  .map((reason) => appealBlockedReasonLabels[reason])
+                  .join(' ')}
+              </p>
+            ) : null}
             {realtime.resultActionErrorMessage ? (
               <p
                 className="mt-3 rounded-xl bg-red-400/15 p-3 text-sm font-semibold text-red-100"
@@ -832,20 +871,6 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
               type="button"
             >
               BẮT ĐẦU HIỆP PHỤ
-            </Button>
-          ) : null}
-          {snapshot?.result.publication.canPublish ? (
-            <Button
-              className="min-h-14 text-lg font-black"
-              disabled={
-                realtime.connectionStatus !== 'connected' || realtime.submittingResultAction
-              }
-              onClick={() => {
-                setConfirmation('publish-result');
-              }}
-              type="button"
-            >
-              CÔNG BỐ KẾT QUẢ
             </Button>
           ) : null}
           {snapshot?.result.tieBreak.canRestartOvertime ? (

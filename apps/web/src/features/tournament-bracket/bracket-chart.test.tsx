@@ -2,11 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { MatchDisplayState, MatchLifecycle, MatchPhase } from '@martial-arts-scoring/shared-types';
 import type { ActiveBracket, BracketPreview } from '@/services/api/admin-management';
-import {
-  BRACKET_LAYOUT,
-  bracketConnectorPath,
-  fixtureTopOffsets,
-} from './bracket-chart-layout';
+import { BRACKET_LAYOUT, bracketConnectorPath, fixtureTopOffsets } from './bracket-chart-layout';
 import { BracketChart } from './bracket-chart';
 
 function activeBracket(
@@ -146,7 +142,9 @@ function previewBracket(): BracketPreview {
 describe('BracketChart', () => {
   it('renders edit buttons for every preview entrant and invokes the selected athlete', () => {
     const edited: string[] = [];
-    render(<BracketChart data={previewBracket()} onEditAthlete={(id: string) => edited.push(id)} />);
+    render(
+      <BracketChart data={previewBracket()} onEditAthlete={(id: string) => edited.push(id)} />,
+    );
 
     const buttons = screen.getAllByRole('button', { name: /Đổi vị trí/ });
     expect(buttons).toHaveLength(3);
@@ -214,6 +212,21 @@ describe('BracketChart', () => {
 
     expect(screen.getByText('Hoàn thành')).toBeInTheDocument();
     expect(screen.getByText('Kết quả cuối cùng')).toBeInTheDocument();
+  });
+
+  it('highlights a resolved fixture with its winner side color', () => {
+    const bracket = activeBracket(MatchPhase.FINISHED, MatchLifecycle.COMPLETED);
+    const fixture = bracket.fixtures[0]!;
+    const resolvedBracket: ActiveBracket = {
+      ...bracket,
+      fixtures: [{ ...fixture, winnerEntrant: { id: 'a', snapshotName: 'Nguyễn An' } }],
+    };
+
+    render(<BracketChart data={resolvedBracket} />);
+
+    const card = document.querySelector('[data-fixture-id="fixture-1"]');
+    expect(card).toHaveClass('border-red-500');
+    expect(screen.getByText('Thắng: Nguyễn An')).toHaveClass('bg-red-500');
   });
 
   it('marks only seeded athletes with an accessible label', () => {

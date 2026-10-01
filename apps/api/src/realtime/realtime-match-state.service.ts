@@ -184,6 +184,7 @@ export class RealtimeMatchStateService {
           attemptNumber: 0,
           status: 'COMPLETED',
           invalidatedAt: null,
+          sourceRound: { invalidatedAt: null },
         },
         include: {
           adjustments: { include: { athlete: { select: { color: true } } } },

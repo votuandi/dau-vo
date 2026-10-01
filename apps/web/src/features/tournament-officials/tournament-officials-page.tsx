@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Ban, Check, KeyRound, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ClipboardCopyButton } from '@/components/ui/clipboard-copy-button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
@@ -242,38 +243,52 @@ export function TournamentOfficialsPage({
               {!readOnly ? (
                 <div className="flex flex-wrap gap-2">
                   <Button
+                    aria-label="Sửa"
+                    className="bg-sky-600 text-white shadow-none hover:bg-sky-800"
                     disabled={save.isPending || state.isPending || regenerate.isPending}
                     onClick={() => {
                       setEditing(official);
                       setName(official.name);
                     }}
-                    size="sm"
+                    size="icon"
+                    title="Sửa"
                     type="button"
-                    variant="outline"
                   >
-                    Sửa
+                    <Pencil aria-hidden="true" className="size-4" />
                   </Button>
                   <Button
+                    aria-label={official.isActive ? 'Ngừng dùng' : 'Kích hoạt'}
+                    className={
+                      official.isActive
+                        ? 'bg-orange-600 text-white shadow-none hover:bg-orange-800'
+                        : 'bg-green-700 text-white shadow-none hover:bg-green-800'
+                    }
                     disabled={state.isPending || regenerate.isPending}
                     onClick={() => {
                       setConfirm({ official, regenerate: false });
                     }}
-                    size="sm"
+                    size="icon"
+                    title={official.isActive ? 'Đình chỉ' : 'Kích hoạt'}
                     type="button"
-                    variant="outline"
                   >
-                    {official.isActive ? 'Ngừng dùng' : 'Kích hoạt'}
+                    {official.isActive ? (
+                      <Ban aria-hidden="true" className="size-4" />
+                    ) : (
+                      <Check aria-hidden="true" className="size-4" />
+                    )}
                   </Button>
                   <Button
+                    aria-label="Tạo mã mới"
+                    className="bg-amber-500 text-white shadow-none hover:bg-amber-600"
                     disabled={state.isPending || regenerate.isPending}
                     onClick={() => {
                       setConfirm({ official, regenerate: true });
                     }}
-                    size="sm"
+                    size="icon"
+                    title="Tạo mã mới"
                     type="button"
-                    variant="outline"
                   >
-                    Tạo mã mới
+                    <KeyRound aria-hidden="true" className="size-4" />
                   </Button>
                 </div>
               ) : null}

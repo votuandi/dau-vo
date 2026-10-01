@@ -142,6 +142,29 @@ describe('SupervisorConsole', () => {
     expect(container.firstElementChild).toHaveClass('from-amber-950');
   });
 
+  it('enables completing an appeal when every adjustment is zero', () => {
+    const base = snapshotFor(MatchStatus.REGULATION_APPEAL);
+    render(
+      <SupervisorConsole
+        realtime={createRealtimeState({
+          snapshot: {
+            ...base,
+            result: {
+              ...base.result,
+              regulationAppeal: {
+                ...base.result.regulationAppeal,
+                canComplete: true,
+                blockedReasons: [],
+              },
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'HOÀN THÀNH PHÚC KHẢO' })).toBeEnabled();
+  });
+
   it('renders the authoritative WAITING → Round 1 → BREAK → Round 2 → FINISHED workflow', async () => {
     const user = userEvent.setup();
     const startRound = vi.fn(() => Promise.resolve());

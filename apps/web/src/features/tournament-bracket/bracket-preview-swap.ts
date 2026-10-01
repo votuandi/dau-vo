@@ -12,7 +12,5 @@ type PreviewEntrant = BracketPreview['initialEntrants'][number];
 export function swappablePreviewAthleteIds(
   entrants: readonly PreviewEntrant[],
 ): ReadonlySet<string> {
-  return new Set(
-    entrants.flatMap((entrant) => (entrant.athleteId ? [entrant.athleteId] : [])),
-  );
+  return new Set(entrants.flatMap((entrant) => (entrant.athleteId ? [entrant.athleteId] : [])));
 }
