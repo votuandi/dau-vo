@@ -79,6 +79,12 @@ export class RealtimeMatchStateService {
             id: true,
             name: true,
             organization: true,
+            athlete: {
+              select: {
+                imagePath: true,
+                organization: { select: { imagePath: true } },
+              },
+            },
           },
         },
         currentRound: true,
@@ -178,6 +184,7 @@ export class RealtimeMatchStateService {
           attemptNumber: 0,
           status: 'COMPLETED',
           invalidatedAt: null,
+          sourceRound: { invalidatedAt: null },
         },
         include: {
           adjustments: { include: { athlete: { select: { color: true } } } },
@@ -253,6 +260,8 @@ export class RealtimeMatchStateService {
         id: athlete.id,
         name: athlete.name,
         organization: athlete.organization,
+        athleteImagePath: athlete.athlete?.imagePath ?? null,
+        organizationImagePath: athlete.athlete?.organization?.imagePath ?? null,
         score:
           match.rulesVersion === MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2
             ? (scoresByAthlete.get(athlete.id) ?? 0)
@@ -646,10 +655,21 @@ export class RealtimeMatchStateService {
         : null,
       intermissionEndsAt: snapshot.match.intermissionEndsAt,
       athletes: snapshot.athletes.map(
-        ({ color, name, organization, score, violations, faultCounts }) => ({
+        ({
           color,
           name,
           organization,
+          athleteImagePath,
+          organizationImagePath,
+          score,
+          violations,
+          faultCounts,
+        }) => ({
+          color,
+          name,
+          organization,
+          athleteImagePath,
+          organizationImagePath,
           score,
           violations,
           faultCounts,

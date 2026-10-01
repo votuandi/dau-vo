@@ -11,12 +11,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
 import { SportGroupRulesNotImplementedError } from '../sport-rules/sport-rules.errors';
 import {
+  buildSingleEliminationBracket,
   cryptoRandomSource,
   generateSingleEliminationBracket,
 } from './single-elimination-bracket.generator';
 import { BracketPreviewTokenService } from './bracket-preview-token.service';
 import { BracketDrawSetupTokenService } from './bracket-draw-setup-token.service';
 import type { PreviewBracketDto } from './dto/preview-bracket.dto';
+import type { SwapPreviewAthleteDto } from './dto/swap-preview-athlete.dto';
 import { MAX_BRACKET_ATHLETES, summarizeBracket } from './bracket-summary';
 
 const TOURNAMENT_NOT_FOUND = {
@@ -201,6 +203,138 @@ export class BracketPreviewService {
     };
   }
 
+  /** Re-signs only a validated exchange of two existing opening entrants. */
+  async swap(
+    tournamentId: string,
+    weightClassId: string,
+    input: SwapPreviewAthleteDto,
+  ) {
+    let claims;
+    try {
+      claims = this.tokens.verify(input.previewToken, {
+        tournamentId,
+        weightClassId,
+      });
+    } catch (error) {
+      const code =
+        error instanceof Error && error.message === 'BRACKET_PREVIEW_EXPIRED'
+          ? error.message
+          : 'BRACKET_PREVIEW_INVALID';
+      throw new ConflictException({
+        code,
+        message:
+          code === 'BRACKET_PREVIEW_EXPIRED'
+            ? 'Bracket preview has expired; redraw the bracket'
+            : 'Bracket preview is invalid',
+      });
+    }
+    if (input.athleteId === input.swapWithAthleteId)
+      throw new ConflictException({
+        code: 'BRACKET_SWAP_INVALID',
+        message: 'Select two distinct athletes to swap',
+      });
+    const activeBracket = await this.prisma.tournamentBracket.findFirst({
+      where: {
+        tournamentId,
+        weightClassId,
+        status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
+      },
+      select: { id: true },
+    });
+    if (activeBracket)
+      throw new ConflictException({
+        code: 'BRACKET_ALREADY_EXISTS',
+        message: 'A current bracket already exists for this weight class',
+      });
+    const athletes = await this.prisma.tournamentAthlete.findMany({
+      where: {
+        tournamentId,
+        weightClassId,
+        isActive: true,
+        weightClass: { isActive: true },
+        OR: [{ organizationId: null }, { organization: { isActive: true } }],
+      },
+      orderBy: { id: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        birthYear: true,
+        imagePath: true,
+        isSeed: true,
+        isActive: true,
+        weightClassId: true,
+        updatedAt: true,
+        organizationId: true,
+        organization: {
+          select: { id: true, name: true, isActive: true, updatedAt: true },
+        },
+      },
+    });
+    if (this.rosterFingerprint(athletes) !== claims.rosterFingerprint)
+      throw new ConflictException({
+        code: 'BRACKET_ROSTER_CHANGED',
+        message: 'The eligible roster changed; redraw the bracket',
+      });
+    const eligible = new Set(athletes.map((athlete) => athlete.id));
+    const placements = claims.placements.map((placement) => ({ ...placement }));
+    const first = placements.findIndex(
+      (placement) => placement.athleteId === input.athleteId,
+    );
+    const second = placements.findIndex(
+      (placement) => placement.athleteId === input.swapWithAthleteId,
+    );
+    if (
+      first < 0 ||
+      second < 0 ||
+      !eligible.has(input.athleteId) ||
+      !eligible.has(input.swapWithAthleteId)
+    )
+      throw new ConflictException({
+        code: 'BRACKET_SWAP_INELIGIBLE',
+        message: 'Both athletes must be eligible entrants in this preview',
+      });
+    // A bye belongs to its first-round slot, not permanently to its initial
+    // athlete. Swapping an athlete in that pairing therefore intentionally
+    // transfers the bye while retaining the null slot and fixture graph.
+    [placements[first]!.athleteId, placements[second]!.athleteId] = [
+      placements[second]!.athleteId,
+      placements[first]!.athleteId,
+    ];
+    let generated;
+    try {
+      generated = buildSingleEliminationBracket(placements);
+    } catch {
+      throw new ConflictException({
+        code: 'BRACKET_GRAPH_INVALID',
+        message: 'Bracket preview graph is invalid',
+      });
+    }
+    const byId = new Map(athletes.map((athlete) => [athlete.id, athlete]));
+    const token = this.tokens.issue({
+      tournamentId,
+      weightClassId,
+      placements,
+      rosterFingerprint: claims.rosterFingerprint,
+      designatedByeAthleteIds: claims.designatedByeAthleteIds,
+      byeStrategy: claims.byeStrategy,
+    });
+    return {
+      previewToken: token.previewToken,
+      expiresAt: token.expiresAt,
+      rosterFingerprint: claims.rosterFingerprint,
+      summary: summarizeBracket(generated.athleteCount),
+      initialEntrants: generated.initialEntrants.map((placement) => ({
+        ...placement,
+        athlete: placement.athleteId
+          ? this.snapshot(byId.get(placement.athleteId)!)
+          : null,
+        isBye: placement.athleteId === null,
+      })),
+      rounds: generated.rounds,
+      fixtures: generated.fixtures,
+    };
+  }
+
   rosterFingerprint(
     athletes: readonly {
       id: string;
@@ -280,6 +414,7 @@ export class BracketPreviewService {
     name: string;
     birthYear: number;
     imagePath: string | null;
+    isSeed: boolean;
     organization: { name: string } | null;
   }) {
     return {
@@ -288,6 +423,7 @@ export class BracketPreviewService {
       birthYear: athlete.birthYear,
       organizationName: athlete.organization?.name ?? null,
       imageUrl: athlete.imagePath ? `/api/media/${athlete.imagePath}` : null,
+      isSeed: athlete.isSeed,
     };
   }
 }

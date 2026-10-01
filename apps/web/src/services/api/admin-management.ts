@@ -355,6 +355,7 @@ export interface BracketPreview {
       readonly name: string;
       readonly organizationName: string | null;
       readonly imageUrl: string | null;
+      readonly isSeed?: boolean | null;
     } | null;
     readonly isBye: boolean;
   }[];
@@ -407,6 +408,7 @@ export interface ActiveBracket {
     readonly snapshotName: string;
     readonly snapshotOrganization: string | null;
     readonly snapshotImagePath: string | null;
+    readonly isSeed?: boolean | null;
   }[];
   readonly fixtures: readonly {
     readonly id: string;
@@ -430,12 +432,14 @@ export interface ActiveBracket {
         readonly snapshotName: string;
         readonly snapshotOrganization: string | null;
         readonly snapshotImagePath: string | null;
+        readonly isSeed?: boolean | null;
       } | null;
       readonly directEntrant: {
         readonly id: string;
         readonly snapshotName: string;
         readonly snapshotOrganization: string | null;
         readonly snapshotImagePath: string | null;
+        readonly isSeed?: boolean | null;
       } | null;
       readonly sourceFixtureId: string | null;
     }[];
@@ -515,6 +519,21 @@ export const adminManagementApi = {
   ) =>
     apiClient.post<BracketPreview>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/preview`,
+      input,
+      options,
+    ),
+  swapPreviewAthlete: (
+    tournamentId: string,
+    weightClassId: string,
+    input: {
+      readonly previewToken: string;
+      readonly athleteId: string;
+      readonly swapWithAthleteId: string;
+    },
+    options?: ApiRequestWithoutBody,
+  ) =>
+    apiClient.post<BracketPreview>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/preview/swap`,
       input,
       options,
     ),

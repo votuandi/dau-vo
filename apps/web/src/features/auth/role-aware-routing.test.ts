@@ -5,7 +5,7 @@ describe('role-aware routing', () => {
   it.each([
     ['SUPER_ADMIN', '/super-admin'],
     ['ADMIN', '/admin'],
-    ['USER', '/tournaments'],
+    ['USER', '/account'],
   ] as const)('uses %s landing path', (role, path) => {
     expect(getRoleLandingPath(role)).toBe(path);
   });

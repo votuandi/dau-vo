@@ -32,6 +32,9 @@ import { BracketDrawSetupService } from './bracket-draw-setup.service';
 // Nest reads this class from decorator metadata at runtime.
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { PreviewBracketDto } from './dto/preview-bracket.dto';
+// Nest reads this class from decorator metadata at runtime.
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+import { SwapPreviewAthleteDto } from './dto/swap-preview-athlete.dto';
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { UpdateBracketRoundStaffingDto } from './dto/update-bracket-round-staffing.dto';
 import { BracketRoundStaffingService } from './bracket-round-staffing.service';
@@ -82,6 +85,18 @@ export class BracketPreviewController {
   ) {
     await this.access.assertTournamentAccess(tournamentId, request.user, true);
     return this.previews.preview(tournamentId, weightClassId, input);
+  }
+
+  @Post('preview/swap')
+  @Header('Cache-Control', 'no-store')
+  async swapPreviewAthlete(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Param('weightClassId', uuid) weightClassId: string,
+    @Body() input: SwapPreviewAthleteDto,
+    @Req() request: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, request.user, true);
+    return this.previews.swap(tournamentId, weightClassId, input);
   }
 
   @Post('confirm')

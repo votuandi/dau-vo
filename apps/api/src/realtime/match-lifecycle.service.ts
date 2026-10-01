@@ -1199,10 +1199,17 @@ export class MatchLifecycleService implements OnModuleDestroy {
           where: {
             invalidatedAt: null,
             matchId: input.matchId,
-            OR: [
-              { sourceRoundId: { in: roundIds } },
-              { sourceRounds: { some: { roundId: { in: roundIds } } } },
-            ],
+            // A full reset invalidates every result artifact for this match.
+            // Do not rely on the round relation here: a previously persisted
+            // appeal must never survive and block a newly replayed match.
+            ...(entireMatch
+              ? {}
+              : {
+                  OR: [
+                    { sourceRoundId: { in: roundIds } },
+                    { sourceRounds: { some: { roundId: { in: roundIds } } } },
+                  ],
+                }),
           },
           select: { id: true },
         });

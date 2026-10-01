@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
+import { ClipboardCheck, Eye, Maximize2, Minimize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import {
@@ -25,10 +26,16 @@ import {
 } from '@/services/api/admin-management';
 import { MatchDisplayState, MatchLifecycle, TournamentStatus } from '@/types/shared';
 import { bracketRoundLabel as roundLabel } from '@martial-arts-scoring/shared-types';
-import { presentDisplayState, presentLifecycle, presentPhase } from '@/features/match-presentation';
+import {
+  matchVariantClassName,
+  presentDisplayState,
+  presentLifecycle,
+  presentPhase,
+} from '@/features/match-presentation';
 import { BracketChart } from './bracket-chart';
 import { BracketPreviewPanel } from './bracket-preview-dialog';
 import { BracketDrawSetupDialog } from './bracket-draw-setup-dialog';
+import { BracketAthleteSwapDialog } from './bracket-athlete-swap-dialog';
 import { bracketQueryKeys } from './query-keys';
 import { WeightClassMatchTabs } from './weight-class-match-tabs';
 import { ManualMatchCreationForm } from './manual-match-creation-form';
@@ -72,6 +79,7 @@ export function TournamentMatchesPage({
   const selectedWeightClass = active.find((weightClass) => weightClass.id === selectedId);
   const [intermissionDurationSeconds, setIntermissionDurationSeconds] = useState('0');
   const [intermissionError, setIntermissionError] = useState<string | null>(null);
+  const [isBracketExpanded, setIsBracketExpanded] = useState(true);
   useEffect(() => {
     setIntermissionDurationSeconds(String(selectedWeightClass?.intermissionDurationSeconds ?? 0));
     setIntermissionError(null);
@@ -132,6 +140,8 @@ export function TournamentMatchesPage({
   // A key is created once for each user action and survives mutation retries.
   const [confirmationKey, setConfirmationKey] = useState<string | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
+  const [swapAthleteId, setSwapAthleteId] = useState<string | null>(null);
+  const [swapError, setSwapError] = useState<string | null>(null);
   const [decisionFixture, setDecisionFixture] = useState<ActiveBracket['fixtures'][number] | null>(
     null,
   );
@@ -148,6 +158,7 @@ export function TournamentMatchesPage({
   const drawWeightClassRef = useRef(selectedId);
   const workflowEpochRef = useRef(0);
   const workflowAbortRef = useRef<AbortController | null>(null);
+  const swapVersionRef = useRef(0);
   const winnerReasonRef = useRef<HTMLTextAreaElement>(null);
   const cancelReasonRef = useRef<HTMLTextAreaElement>(null);
   const resetDraw = () => {
@@ -158,6 +169,8 @@ export function TournamentMatchesPage({
     setByeStrategy('RANDOM');
     setConfirmationKey(null);
     setDialogError(null);
+    setSwapAthleteId(null);
+    setSwapError(null);
   };
   const currentWorkflow = (weightClassId: string, epoch: number) =>
     selectedId === weightClassId && workflowEpochRef.current === epoch;
@@ -177,6 +190,7 @@ export function TournamentMatchesPage({
       setCancelOpen(false);
       setCancelError(null);
       setConfirmedCancelled(false);
+      setIsBracketExpanded(true);
       drawWeightClassRef.current = selectedId;
     }
   }, [selectedId]);
@@ -297,6 +311,40 @@ export function TournamentMatchesPage({
         setDialogError(getApiErrorMessage(error, 'Không thể xác nhận nhánh đấu.'));
         setWorkflow('reviewingPreview');
       }
+    },
+  });
+  const swap = useMutation({
+    mutationFn: (input: {
+      readonly athleteId: string;
+      readonly swapWithAthleteId: string;
+      readonly version: number;
+    }) => {
+      if (!preview || !selectedId) throw new Error('Bracket preview is unavailable');
+      return adminManagementApi.swapPreviewAthlete(tournament.id, selectedId, {
+        previewToken: preview.previewToken,
+        athleteId: input.athleteId,
+        swapWithAthleteId: input.swapWithAthleteId,
+      });
+    },
+    onSuccess: (value, input) => {
+      if (input.version !== swapVersionRef.current) return;
+      setPreview(value);
+      setConfirmationKey(crypto.randomUUID());
+      setSwapAthleteId(null);
+      setSwapError(null);
+    },
+    onError: (error, input) => {
+      if (input.version !== swapVersionRef.current) return;
+      const stale =
+        error instanceof ApiClientError &&
+        ['BRACKET_ROSTER_CHANGED', 'BRACKET_PREVIEW_EXPIRED', 'BRACKET_PREVIEW_INVALID'].includes(
+          error.body.code ?? '',
+        );
+      setSwapError(
+        stale
+          ? 'Bản xem trước đã hết hạn hoặc danh sách vận động viên đã thay đổi. Hãy bốc thăm mới.'
+          : getApiErrorMessage(error, 'Không thể đổi vị trí vận động viên.'),
+      );
     },
   });
   const prepare = useMutation({
@@ -549,6 +597,10 @@ export function TournamentMatchesPage({
                   setDialogError(null);
                   setWorkflow('configuring');
                 }}
+                onEditAthlete={(athleteId) => {
+                  setSwapError(null);
+                  setSwapAthleteId(athleteId);
+                }}
                 onRedraw={() => {
                   // The old randomized result must not remain visible during a redraw.
                   setPreview(null);
@@ -564,7 +616,7 @@ export function TournamentMatchesPage({
                     });
                   }
                 }}
-                pending={draw.isPending || confirm.isPending}
+                pending={draw.isPending || confirm.isPending || swap.isPending}
                 preview={preview}
               />
             ) : workflow === 'generatingPreview' ? (
@@ -600,8 +652,31 @@ export function TournamentMatchesPage({
               </p>
             ) : bracket.data ? (
               <>
-                <div className="mt-5">
-                  <BracketChart data={bracket.data} />
+                <div className="mt-5 rounded-xl border border-border bg-muted/10">
+                  <div className="flex items-center justify-between gap-3 p-4">
+                    <h4 className="font-bold">Sơ đồ nhánh đấu</h4>
+                    <Button
+                      aria-controls="bracket-chart"
+                      aria-expanded={isBracketExpanded}
+                      aria-label={isBracketExpanded ? 'Thu gọn sơ đồ' : 'Mở rộng sơ đồ'}
+                      onClick={() => {
+                        setIsBracketExpanded((expanded) => !expanded);
+                      }}
+                      size="icon"
+                      title={isBracketExpanded ? 'Thu gọn sơ đồ' : 'Mở rộng sơ đồ'}
+                      type="button"
+                      variant="outline"
+                    >
+                      {isBracketExpanded ? (
+                        <Minimize2 aria-hidden="true" />
+                      ) : (
+                        <Maximize2 aria-hidden="true" />
+                      )}
+                    </Button>
+                  </div>
+                  <div hidden={!isBracketExpanded} id="bracket-chart">
+                    <BracketChart data={bracket.data} />
+                  </div>
                 </div>
                 <BracketStaffingEditor
                   data={bracket.data}
@@ -876,6 +951,28 @@ export function TournamentMatchesPage({
           </div>
         </Dialog>
       ) : null}
+      {preview && swapAthleteId ? (
+        <BracketAthleteSwapDialog
+          athleteId={swapAthleteId}
+          error={swapError}
+          onClose={() => {
+            if (!swap.isPending) {
+              setSwapAthleteId(null);
+              setSwapError(null);
+            }
+          }}
+          onSubmit={(swapWithAthleteId) => {
+            swapVersionRef.current += 1;
+            swap.mutate({
+              athleteId: swapAthleteId,
+              swapWithAthleteId,
+              version: swapVersionRef.current,
+            });
+          }}
+          pending={swap.isPending}
+          preview={preview}
+        />
+      ) : null}
       <p aria-atomic="true" aria-live="polite" className="sr-only">
         {workflow === 'loadingSetup'
           ? 'Đang chuẩn bị bốc thăm.'
@@ -982,6 +1079,17 @@ function FixtureList({
           <h4 className="text-sm font-bold">{roundLabel(round, data.bracket.roundCount)}</h4>
           <ul className="mt-2 space-y-2">
             {fixtures.map((f) => {
+              const statuses = f.match
+                ? [presentLifecycle(f.match.lifecycle), presentPhase(f.match.phase)]
+                : [presentDisplayState(f.displayState)];
+              const fixtureSurfaceClassName = (() => {
+                if (f.match?.lifecycle === MatchLifecycle.COMPLETED) return 'bg-blue-50/80';
+                if (f.match?.lifecycle === MatchLifecycle.IN_PROGRESS) return 'bg-amber-50/80';
+                if (f.displayState === MatchDisplayState.READY) return 'bg-emerald-50/80';
+                if (f.displayState === MatchDisplayState.IN_PROGRESS) return 'bg-amber-50/80';
+                if (f.displayState === MatchDisplayState.COMPLETED) return 'bg-blue-50/80';
+                return 'bg-white';
+              })();
               const person = (side: 'RED' | 'BLUE') => {
                 const s = f.slots.find((x) => x.side === side);
                 return (
@@ -992,70 +1100,85 @@ function FixtureList({
                 );
               };
               return (
-                <li className="rounded-xl border p-3" key={f.id}>
-                  <div className="font-bold">
-                    {f.displayReference} ·{' '}
-                    {f.match
-                      ? `${presentLifecycle(f.match.lifecycle).label} · ${presentPhase(f.match.phase).label}`
-                      : presentDisplayState(f.displayState).label}
+                <li
+                  className={`rounded-xl border p-3 ${fixtureSurfaceClassName}`}
+                  key={f.id}
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-bold">{f.displayReference}</p>
+                        <span className="flex flex-wrap gap-1">
+                          {statuses.map((status) => (
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-xs font-bold ${matchVariantClassName[status.variant]}`}
+                              key={status.label}
+                            >
+                              {status.label}
+                            </span>
+                          ))}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm font-medium">
+                        <span className="text-red-700">{person('RED')}</span>
+                        <span className="px-2 text-muted-foreground">vs</span>
+                        <span className="text-blue-700">{person('BLUE')}</span>
+                      </p>
+                      {f.winnerEntrant && f.match?.lifecycle === MatchLifecycle.COMPLETED ? (
+                        <p className="text-sm">Người thắng: {f.winnerEntrant.snapshotName}</p>
+                      ) : null}
+                      {f.roundNumber === data.bracket.roundCount && data.bracket.championEntrant ? (
+                        <p className="text-sm font-bold">
+                          Vô địch: {data.bracket.championEntrant.snapshotName}
+                        </p>
+                      ) : null}
+                      {f.displayState === MatchDisplayState.NOT_READY ? (
+                        <p className="text-sm text-muted-foreground">
+                          Đang chờ kết quả các trận trước.
+                        </p>
+                      ) : null}
+                      {f.status === 'AWAITING_WINNER' ? (
+                        <p className="text-sm text-muted-foreground">Chờ xác định người thắng.</p>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                      {f.status === 'READY' ? (
+                        <Button
+                          disabled={disabled}
+                          onClick={() => {
+                            onPrepare(f.id);
+                          }}
+                          size="sm"
+                          type="button"
+                        >
+                          <ClipboardCheck aria-hidden="true" className="size-4 mr-1" />
+                          Chuẩn bị trận
+                        </Button>
+                      ) : null}
+                      {f.match &&
+                      (f.status === 'MATCH_PREPARED' ||
+                        f.match.lifecycle === MatchLifecycle.COMPLETED) ? (
+                        <Button asChild size="sm" variant="outline">
+                          <Link to={`/admin/matches/${f.match.id}`}>
+                            <Eye aria-hidden="true" className="size-4 mr-1" />
+                            {`Chi tiết trận ${f.match.publicId}`}
+                          </Link>
+                        </Button>
+                      ) : null}
+                      {f.status === 'AWAITING_WINNER' ? (
+                        <Button
+                          disabled={disabled}
+                          onClick={() => {
+                            onDecide(f);
+                          }}
+                          size="sm"
+                          type="button"
+                        >
+                          Chọn người thắng
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
-                  <p className="text-sm">
-                    RED: {person('RED')} — BLUE: {person('BLUE')}
-                  </p>
-                  {f.winnerEntrant && f.match?.lifecycle === MatchLifecycle.COMPLETED ? (
-                    <p className="text-sm">Người thắng: {f.winnerEntrant.snapshotName}</p>
-                  ) : null}
-                  {f.roundNumber === data.bracket.roundCount && data.bracket.championEntrant ? (
-                    <p className="text-sm font-bold">
-                      Vô địch: {data.bracket.championEntrant.snapshotName}
-                    </p>
-                  ) : null}
-                  {f.displayState === MatchDisplayState.NOT_READY ? (
-                    <p className="text-sm text-muted-foreground">
-                      Đang chờ kết quả các trận trước.
-                    </p>
-                  ) : null}
-                  {f.status === 'READY' ? (
-                    <Button
-                      className="mt-2"
-                      disabled={disabled}
-                      onClick={() => {
-                        onPrepare(f.id);
-                      }}
-                      size="sm"
-                      type="button"
-                    >
-                      Chuẩn bị trận
-                    </Button>
-                  ) : null}
-                  {f.match &&
-                  (f.status === 'MATCH_PREPARED' ||
-                    f.match.lifecycle === MatchLifecycle.COMPLETED) ? (
-                    <Link
-                      className="mt-2 inline-block text-sm font-bold underline"
-                      to={`/admin/matches/${f.match.id}`}
-                    >
-                      {f.match.lifecycle === MatchLifecycle.COMPLETED
-                        ? `Xem trận ${f.match.publicId}`
-                        : `Mở trận ${f.match.publicId}`}
-                    </Link>
-                  ) : null}
-                  {f.status === 'AWAITING_WINNER' ? (
-                    <>
-                      <p className="text-sm text-muted-foreground">Chờ xác định người thắng.</p>
-                      <Button
-                        className="mt-2"
-                        disabled={disabled}
-                        onClick={() => {
-                          onDecide(f);
-                        }}
-                        size="sm"
-                        type="button"
-                      >
-                        Chọn người thắng
-                      </Button>
-                    </>
-                  ) : null}
                 </li>
               );
             })}

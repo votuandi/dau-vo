@@ -3,8 +3,10 @@ import type {
   BracketFixture,
   BracketPreview,
 } from '@/services/api/admin-management';
-import { bracketRoundLabel, MatchLifecycle } from '@martial-arts-scoring/shared-types';
+import { bracketRoundLabel } from '@martial-arts-scoring/shared-types';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Pencil, Star } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { bracketPresentation, isBracketPreview } from './bracket-graph';
 import {
   matchVariantClassName,
@@ -12,70 +14,56 @@ import {
   presentLifecycle,
   presentPhase,
 } from '@/features/match-presentation';
+import { swappablePreviewAthleteIds } from './bracket-preview-swap';
+import { BRACKET_LAYOUT, bracketConnectorPath, fixtureTopOffsets } from './bracket-chart-layout';
 
 type ChartData = Pick<BracketPreview, 'rounds' | 'initialEntrants'> | ActiveBracket;
 interface ConnectorPath {
   readonly key: string;
   readonly d: string;
+  readonly winnerSide: 'RED' | 'BLUE' | null;
 }
 
-/**
- * These values deliberately describe both the CSS layout and the logical tree
- * coordinates. Keeping them together means a denser card cannot leave the
- * connector tree using the dimensions of the previous layout.
- */
-export const BRACKET_LAYOUT = {
-  fixtureWidth: 240,
-  roundGap: 32,
-  rowPitch: 176,
-} as const;
+function winnerSideOfFixture(fixture: ActiveBracket['fixtures'][number]): 'RED' | 'BLUE' | null {
+  if (!fixture.winnerEntrant) return null;
 
-interface ConnectorBounds {
-  readonly sourceRight: number;
-  readonly sourceCenterY: number;
-  readonly targetLeft: number;
-  readonly targetCenterY: number;
-  readonly targetSide: 'RED' | 'BLUE';
+  return (
+    fixture.slots.find(
+      (slot) => (slot.resolvedEntrant ?? slot.directEntrant)?.id === fixture.winnerEntrant?.id,
+    )?.side ?? null
+  );
 }
 
-export function bracketConnectorPath({
-  sourceRight,
-  sourceCenterY,
-  targetLeft,
-  targetCenterY,
-  targetSide,
-}: ConnectorBounds): string {
-  // Use separate lanes for the RED and BLUE target ports. This keeps sibling
-  // advances distinct even when a round has skipped/missing fixture cards.
-  const middleX =
-    sourceRight + Math.max(28, targetLeft - sourceRight) * (targetSide === 'RED' ? 0.38 : 0.62);
-  return `M ${String(sourceRight)} ${String(sourceCenterY)} H ${String(middleX)} V ${String(targetCenterY)} H ${String(targetLeft)}`;
+function winnerBorderClassName(side: 'RED' | 'BLUE' | null): string {
+  if (side === 'RED') return 'border-red-500';
+  if (side === 'BLUE') return 'border-blue-500';
+  return '';
 }
 
-export function fixtureTopOffsets(
-  rounds: readonly {
-    readonly roundNumber: number;
-    readonly fixtures: readonly { readonly id: string; readonly position: number }[];
-  }[],
-): ReadonlyMap<string, number> {
-  const offsets = new Map<string, number>();
-  for (const round of rounds) {
-    const roundIndex = round.roundNumber - 1;
-    round.fixtures.forEach((fixture) => {
-      // `position` is the fixture's durable position in its logical round.
-      // It intentionally includes branches omitted because both entrants had a
-      // bye. Deriving this from the filtered fixtures array would collapse
-      // those branches and move every later fixture onto the wrong tree slot.
-      const logicalSlot = (fixture.position - 0.5) * 2 ** roundIndex - 0.5;
-      offsets.set(fixture.id, logicalSlot * BRACKET_LAYOUT.rowPitch);
-    });
-  }
-  return offsets;
+function winnerSurfaceClassName(side: 'RED' | 'BLUE' | null): string {
+  if (side === 'RED') return 'bg-red-500 text-white dark:bg-red-950/50 dark:text-red-50';
+  if (side === 'BLUE') return 'bg-blue-500 text-white dark:bg-blue-950/50 dark:text-blue-50';
+  return '';
 }
 
-export function BracketChart({ data }: { readonly data: ChartData }) {
+export function BracketChart({
+  data,
+  onEditAthlete,
+}: {
+  readonly data: ChartData;
+  readonly onEditAthlete?: (athleteId: string) => void;
+}) {
   const isPreview = isBracketPreview(data);
   const graph = useMemo(() => bracketPresentation(data), [data]);
+  const winnerSideByFixtureId = useMemo(
+    () =>
+      new Map(
+        isPreview
+          ? []
+          : data.fixtures.map((fixture) => [fixture.id, winnerSideOfFixture(fixture)] as const),
+      ),
+    [data, isPreview],
+  );
   const contentRef = useRef<HTMLDivElement>(null);
   const fixtureRefs = useRef(new Map<string, HTMLElement>());
   const slotRefs = useRef(new Map<string, HTMLElement>());
@@ -90,12 +78,18 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
             [
               x.id,
               {
+                id: x.athleteId ?? x.id,
                 name: x.snapshotName,
                 organizationName: x.snapshotOrganization,
                 imageUrl: x.snapshotImagePath ? `/api/media/${x.snapshotImagePath}` : null,
+                isSeed: x.isSeed ?? false,
               },
             ] as const,
         ),
+  );
+  const swappableAthleteIds = useMemo(
+    () => (isPreview ? swappablePreviewAthleteIds(data.initialEntrants) : new Set<string>()),
+    [data, isPreview],
   );
   const fixtureReferenceById = new Map<string, string>(
     isPreview
@@ -146,6 +140,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                   targetCenterY: endY,
                   targetSide: edge.targetSide,
                 }),
+                winnerSide: winnerSideByFixtureId.get(edge.sourceFixtureId) ?? null,
               },
             ];
           }),
@@ -172,7 +167,7 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
       cancelAnimationFrame(frame);
       observer?.disconnect();
     };
-  }, [graph]);
+  }, [graph, winnerSideByFixtureId]);
 
   return (
     <div className="overflow-x-auto rounded-xl border bg-muted/20 p-4" aria-label="Sơ đồ nhánh đấu">
@@ -191,7 +186,13 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
         >
           {paths.map((path) => (
             <path
-              className="stroke-muted-foreground/50 dark:stroke-muted-foreground/70"
+              className={
+                path.winnerSide === 'RED'
+                  ? 'stroke-red-500'
+                  : path.winnerSide === 'BLUE'
+                    ? 'stroke-blue-500'
+                    : 'stroke-muted-foreground/50 dark:stroke-muted-foreground/70'
+              }
               d={path.d}
               fill="none"
               key={path.key}
@@ -214,9 +215,10 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                 const activeFixture = isPreview
                   ? null
                   : (fixture as ActiveBracket['fixtures'][number]);
+                const winnerSide = activeFixture ? winnerSideOfFixture(activeFixture) : null;
                 return (
                   <article
-                    className="absolute left-0 w-full rounded-lg border bg-card shadow-sm"
+                    className={`absolute left-0 w-full overflow-hidden rounded-lg border border-border bg-card shadow-sm ${winnerBorderClassName(winnerSide)}`}
                     data-fixture-id={fixture.id}
                     key={fixture.id}
                     ref={(element) => {
@@ -275,6 +277,14 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                           : !entrant && isPreview && previewSlot.source.kind === 'FIXTURE_WINNER'
                             ? `Chờ người thắng ${fixtureReferenceById.get(previewSlot.source.fixtureId ?? '') ?? ''}`
                             : 'Đặc cách';
+                      const editableAthleteId =
+                        onEditAthlete &&
+                        isPreview &&
+                        previewSlot.source.kind === 'ENTRANT' &&
+                        previewSlot.resolvedEntrantId &&
+                        swappableAthleteIds.has(previewSlot.resolvedEntrantId)
+                          ? previewSlot.resolvedEntrantId
+                          : null;
                       return (
                         <div
                           className={`flex min-h-11 items-center gap-1.5 border-l-4 px-2 py-1.5 ${slot.side === 'RED' ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/20' : 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20'}`}
@@ -293,16 +303,26 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                               src={entrant.imageUrl}
                             />
                           ) : null}
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <span className="sr-only">
                               {slot.side === 'RED' ? 'Bên đỏ' : 'Bên xanh'}
                             </span>
                             <p className="break-words text-sm font-semibold leading-5">
-                              {entrant
-                                ? 'name' in entrant
-                                  ? entrant.name
-                                  : entrant.snapshotName
-                                : waiting}
+                              {entrant ? (
+                                <span className="inline-flex items-center gap-1">
+                                  {'name' in entrant ? entrant.name : entrant.snapshotName}
+                                  {entrant.isSeed ? (
+                                    <span aria-label="VĐV hạt giống" title="VĐV hạt giống">
+                                      <Star
+                                        aria-hidden="true"
+                                        className="size-4 fill-yellow-400 text-yellow-500"
+                                      />
+                                    </span>
+                                  ) : null}
+                                </span>
+                              ) : (
+                                waiting
+                              )}
                             </p>
                             {entrant ? (
                               <p className="break-words text-[10px] leading-4 text-muted-foreground">
@@ -312,12 +332,27 @@ export function BracketChart({ data }: { readonly data: ChartData }) {
                               </p>
                             ) : null}
                           </div>
+                          {editableAthleteId ? (
+                            <Button
+                              aria-label={`Đổi vị trí ${entrant ? ('name' in entrant ? entrant.name : entrant.snapshotName) : 'vận động viên'}`}
+                              className="shrink-0"
+                              onClick={() => {
+                                onEditAthlete?.(editableAthleteId);
+                              }}
+                              size="icon"
+                              type="button"
+                              variant="ghost"
+                            >
+                              <Pencil aria-hidden="true" className="size-4" />
+                            </Button>
+                          ) : null}
                         </div>
                       );
                     })}
-                    {activeFixture?.winnerEntrant &&
-                    activeFixture.match?.lifecycle === MatchLifecycle.COMPLETED ? (
-                      <p className="border-t px-2 py-1.5 text-sm font-bold">
+                    {activeFixture?.winnerEntrant ? (
+                      <p
+                        className={`border-t px-2 py-1.5 text-sm font-bold ${winnerSurfaceClassName(winnerSide)}`}
+                      >
                         Thắng: {activeFixture.winnerEntrant.snapshotName}
                       </p>
                     ) : null}

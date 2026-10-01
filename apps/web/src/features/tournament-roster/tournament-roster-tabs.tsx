@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Ban, Check, Pencil, Star, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { Dialog } from '@/components/ui/dialog';
@@ -489,16 +490,6 @@ export function RosterItemsPage({
       );
     },
   });
-  const removeOrganizationImage = useMutation({
-    mutationFn: (id: string) => adminManagementApi.removeOrganizationImage(tournamentId, id),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId] });
-      notifyMutationSuccess('Đã xóa logo đơn vị.');
-    },
-    onError: (e) => {
-      notifyMutationError(e, 'Không thể xóa logo đơn vị.');
-    },
-  });
   const items = query.data ?? [];
   return (
     <section className="space-y-5">
@@ -556,82 +547,111 @@ export function RosterItemsPage({
       ) : null}
       <ul className="grid gap-3">
         {items.map((item) => (
-          <li className="rounded-xl border p-4" key={item.id}>
+          <li
+            className={kind === 'organizations' ? 'rounded-xl border p-3' : 'rounded-xl border p-4'}
+            key={item.id}
+          >
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                {kind === 'organizations' ? (
-                  <div className="mb-2 flex items-center gap-2">
-                    {(item as TournamentOrganization).imagePath ? (
-                      <img
-                        alt={`Logo ${item.name}`}
-                        className="h-12 w-12 rounded object-cover"
-                        loading="lazy"
-                        src={`/api/media/${(item as TournamentOrganization).imagePath ?? ''}`}
-                      />
-                    ) : (
-                      <span
-                        aria-label={`Chưa có logo cho ${item.name}`}
-                        className="flex h-12 w-12 items-center justify-center rounded bg-muted text-xs"
-                        role="img"
-                      >
-                        ĐV
+              {kind === 'organizations' ? (
+                <div className="flex min-w-0 items-center gap-3">
+                  {(item as TournamentOrganization).imagePath ? (
+                    <img
+                      alt={`Logo ${item.name}`}
+                      className="h-12 w-12 shrink-0 rounded-full object-cover"
+                      loading="lazy"
+                      src={`/api/media/${(item as TournamentOrganization).imagePath ?? ''}`}
+                    />
+                  ) : (
+                    <span
+                      aria-label={`Chưa có logo cho ${item.name}`}
+                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted font-bold text-xs"
+                      role="img"
+                    >
+                      {item.name.trim().slice(0, 1).toLocaleUpperCase('vi')}
+                    </span>
+                  )}
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <b>{item.name}</b>
+                      <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-semibold text-teal-800">
+                        {(item as TournamentOrganization).location ?? 'Chưa có địa phương'}
                       </span>
-                    )}
-                    <h3 className="font-bold">{item.name}</h3>
+                    </div>
+                    {item.details ? (
+                      <p className="mt-1 text-sm text-muted-foreground">{item.details}</p>
+                    ) : null}
                   </div>
-                ) : (
+                </div>
+              ) : (
+                <div>
                   <h3 className="font-bold">{item.name}</h3>
-                )}
-                {kind === 'organizations' ? (
                   <p className="text-sm text-muted-foreground">
-                    {(item as TournamentOrganization).location ?? 'Chưa có địa phương'}
+                    {item.details ?? 'Chưa có chi tiết'}
                   </p>
-                ) : null}
-                <p className="text-sm text-muted-foreground">
-                  {item.details ?? 'Chưa có chi tiết'}
-                </p>
-                <p className="mt-1 text-xs font-semibold">
-                  {item.isActive ? 'Đang hoạt động' : 'Đã ngừng'}
-                </p>
-              </div>
+                  <p className="mt-1 text-xs font-semibold">
+                    {item.isActive ? 'Đang hoạt động' : 'Đã ngừng'}
+                  </p>
+                </div>
+              )}
               {!readOnly ? (
-                <div className="flex gap-2">
+                <div className="flex shrink-0 flex-wrap gap-2">
                   <Button
-                    disabled={
-                      mutate.isPending || deactivate.isPending || removeOrganizationImage.isPending
+                    aria-label="Sửa"
+                    className={
+                      kind === 'organizations'
+                        ? 'bg-sky-600 text-white shadow-none hover:bg-sky-800'
+                        : undefined
                     }
+                    disabled={mutate.isPending || deactivate.isPending}
                     onClick={() => {
                       setDraft({ mode: 'edit', item, values: rosterValues(item) });
                     }}
-                    size="sm"
+                    size={kind === 'organizations' ? 'icon' : 'sm'}
+                    title={kind === 'organizations' ? 'Sửa' : undefined}
                     type="button"
-                    variant="outline"
+                    variant={kind === 'organizations' ? undefined : 'outline'}
                   >
-                    Sửa
+                    {kind === 'organizations' ? (
+                      <Pencil aria-hidden="true" className="size-4" />
+                    ) : (
+                      'Sửa'
+                    )}
                   </Button>
-                  {kind === 'organizations' && (item as TournamentOrganization).imagePath ? (
-                    <Button
-                      disabled={removeOrganizationImage.isPending}
-                      onClick={() => {
-                        removeOrganizationImage.mutate(item.id);
-                      }}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      Xóa logo
-                    </Button>
-                  ) : null}
                   <Button
+                    aria-label={item.isActive ? 'Ngừng dùng' : 'Khôi phục'}
+                    className={
+                      kind === 'organizations'
+                        ? item.isActive
+                          ? 'bg-orange-700 text-white shadow-none hover:bg-orange-800'
+                          : 'bg-green-700 text-white shadow-none hover:bg-green-800'
+                        : undefined
+                    }
                     disabled={mutate.isPending || deactivate.isPending}
                     onClick={() => {
                       setConfirm(item);
                     }}
-                    size="sm"
+                    size={kind === 'organizations' ? 'icon' : 'sm'}
+                    title={
+                      kind === 'organizations'
+                        ? item.isActive
+                          ? 'Ngừng dùng'
+                          : 'Khôi phục'
+                        : undefined
+                    }
                     type="button"
-                    variant="outline"
+                    variant={kind === 'organizations' ? undefined : 'outline'}
                   >
-                    {item.isActive ? 'Ngừng dùng' : 'Khôi phục'}
+                    {kind === 'organizations' ? (
+                      item.isActive ? (
+                        <Ban aria-hidden="true" className="size-4" />
+                      ) : (
+                        <Check aria-hidden="true" className="size-4" />
+                      )
+                    ) : item.isActive ? (
+                      'Ngừng dùng'
+                    ) : (
+                      'Khôi phục'
+                    )}
                   </Button>
                 </div>
               ) : null}
@@ -641,7 +661,7 @@ export function RosterItemsPage({
       </ul>
       {confirm ? (
         <ConfirmationDialog
-          actionLabel={confirm.isActive ? 'Xác nhận ngừng dùng' : 'Khôi phục'}
+          actionLabel={confirm.isActive ? 'Đình chỉ thi đấu' : 'Cho phép thi đấu'}
           busy={deactivate.isPending}
           description={
             kind === 'organizations'
@@ -709,6 +729,7 @@ export function AthletesPage({
   const [draft, setDraft] = useState<AthleteDraft | null>(null);
   const [editing, setEditing] = useState<TournamentAthlete | null>(null);
   const [confirm, setConfirm] = useState<TournamentAthlete | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<TournamentAthlete | null>(null);
   const [importPreview, setImportPreview] = useState<{
     rows: readonly AthleteImportRow[];
     results: readonly AthleteImportResult[];
@@ -787,7 +808,7 @@ export function AthletesPage({
   const deactivate = useMutation({
     mutationFn: (athlete: TournamentAthlete) =>
       athlete.isActive
-        ? adminManagementApi.deleteAthlete(tournamentId, athlete.id)
+        ? adminManagementApi.updateAthlete(tournamentId, athlete.id, { isActive: false })
         : adminManagementApi.updateAthlete(tournamentId, athlete.id, { isActive: true }),
     onSuccess: () => {
       setConfirm(null);
@@ -801,14 +822,27 @@ export function AthletesPage({
       );
     },
   });
-  const removeImage = useMutation({
-    mutationFn: (id: string) => adminManagementApi.removeAthleteImage(tournamentId, id),
+  const toggleSeed = useMutation({
+    mutationFn: (athlete: TournamentAthlete) =>
+      adminManagementApi.updateAthlete(tournamentId, athlete.id, { isSeed: !athlete.isSeed }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId, 'athletes'] });
-      notifyMutationSuccess('Đã xóa ảnh đại diện.');
+      notifyMutationSuccess('Đã cập nhật hạt giống.');
     },
-    onError: (e) => {
-      notifyMutationError(e, 'Không thể xóa ảnh đại diện.');
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể cập nhật hạt giống.');
+    },
+  });
+  const softDelete = useMutation({
+    mutationFn: (athlete: TournamentAthlete) =>
+      adminManagementApi.deleteAthlete(tournamentId, athlete.id),
+    onSuccess: () => {
+      setDeleteConfirm(null);
+      void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId, 'athletes'] });
+      notifyMutationSuccess('Đã xóa vận động viên.');
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể xóa vận động viên.');
     },
   });
   const previewImport = useMutation({
@@ -1049,7 +1083,9 @@ export function AthletesPage({
         <Dialog
           className="max-w-2xl"
           description="Kết quả xử lý từng dòng trong tệp nhập."
-          onClose={() => setImportResults(null)}
+          onClose={() => {
+            setImportResults(null);
+          }}
           title="Hoàn tất nhập vận động viên"
         >
           <div className="mt-4 max-h-[55vh] space-y-5 overflow-y-auto text-sm">
@@ -1075,7 +1111,12 @@ export function AthletesPage({
             />
           </div>
           <div className="mt-5">
-            <Button onClick={() => setImportResults(null)} type="button">
+            <Button
+              onClick={() => {
+                setImportResults(null);
+              }}
+              type="button"
+            >
               Đóng
             </Button>
           </div>
@@ -1272,18 +1313,54 @@ export function AthletesPage({
                       {x.name.trim().slice(0, 1).toLocaleUpperCase('vi')}
                     </span>
                   )}
-                  <div>
-                    <b>{x.name}</b> · {x.birthYear} · {x.organization?.name ?? 'Không đơn vị'} ·{' '}
-                    {x.weightClass.name} · {x.isActive ? 'Đang hoạt động' : 'Đã ngừng'}
-                    {x.isSeed ? ' · Hạt giống' : ''}
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <b>{x.name}</b>
+                      <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800">
+                        {x.birthYear}
+                      </span>
+                      <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-semibold text-teal-800">
+                        {x.organization?.name ?? 'Không đơn vị'}
+                      </span>
+                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">
+                        {x.weightClass.name}
+                      </span>
+                    </div>
                     {x.details ? (
-                      <p className="text-sm text-muted-foreground">{x.details}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{x.details}</p>
                     ) : null}
                   </div>
                 </div>
                 {!readOnly ? (
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <Button
+                      aria-label={x.isSeed ? 'Hạt giống' : 'Chọn làm hạt giống'}
+                      className={
+                        x.isSeed
+                          ? 'bg-amber-200 text-amber-500 shadow-none hover:bg-blue-50 hover:text-amber-200'
+                          : 'border border-blue-200 bg-blue-50 text-blue-200 shadow-none hover:bg-amber-100 hover:text-amber-500 hover:border-none'
+                      }
+                      disabled={toggleSeed.isPending}
+                      onClick={() => {
+                        toggleSeed.mutate(x);
+                      }}
+                      size="icon"
+                      title={
+                        x.isSeed
+                          ? 'Đang là Hạt giống. Nhấn vào sẽ hủy tư cách'
+                          : 'Chọn làm hạt giống'
+                      }
+                      type="button"
+                    >
+                      <Star
+                        aria-hidden="true"
+                        className={`size-4`}
+                        fill={x.isSeed ? 'currentColor' : 'none'}
+                      />
+                    </Button>
+                    <Button
+                      aria-label="Sửa"
+                      className="bg-sky-600 text-white shadow-none hover:bg-sky-800"
                       disabled={save.isPending || deactivate.isPending}
                       onClick={() => {
                         setEditing(x);
@@ -1298,35 +1375,46 @@ export function AthletesPage({
                           imageError: '',
                         });
                       }}
-                      size="sm"
+                      size="icon"
+                      title="Sửa"
                       type="button"
-                      variant="outline"
                     >
-                      Sửa
+                      <Pencil aria-hidden="true" className="size-4" />
                     </Button>
-                    {x.imageUrl ? (
-                      <Button
-                        disabled={removeImage.isPending}
-                        onClick={() => {
-                          removeImage.mutate(x.id);
-                        }}
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        Xóa ảnh
-                      </Button>
-                    ) : null}
                     <Button
-                      disabled={deactivate.isPending}
+                      aria-label={x.isActive ? 'Đình chỉ thi đấu' : 'Cho phép thi đấu'}
+                      className={
+                        x.isActive
+                          ? 'bg-orange-700 text-white shadow-none hover:bg-orange-800'
+                          : 'bg-green-700 text-white shadow-none hover:bg-green-800'
+                      }
+                      disabled={deactivate.isPending || softDelete.isPending}
                       onClick={() => {
                         setConfirm(x);
                       }}
-                      size="sm"
+                      size="icon"
+                      title={x.isActive ? 'Đình chỉ thi đấu' : 'Cho phép thi đấu'}
                       type="button"
-                      variant="outline"
                     >
-                      {x.isActive ? 'Ngừng dùng' : 'Khôi phục'}
+                      {x.isActive ? (
+                        <Ban aria-hidden="true" className="size-4" />
+                      ) : (
+                        <Check aria-hidden="true" className="size-4" />
+                      )}
+                    </Button>
+                    <Button
+                      aria-label="Xóa"
+                      disabled={deactivate.isPending || softDelete.isPending}
+                      onClick={() => {
+                        setDeleteConfirm(x);
+                      }}
+                      size="icon"
+                      title="Xóa"
+                      type="button"
+                      variant="destructive"
+                      className="bg-red-600 text-white shadow-none hover:bg-red-700"
+                    >
+                      <Trash2 aria-hidden="true" className="size-4" />
                     </Button>
                   </div>
                 ) : null}
@@ -1375,7 +1463,22 @@ export function AthletesPage({
           onConfirm={() => {
             deactivate.mutate(confirm);
           }}
-          title={`${confirm.isActive ? 'Ngừng dùng' : 'Khôi phục'} vận động viên?`}
+          title={`${confirm.isActive ? 'Đình chỉ thi đấu' : 'Cho phép thi đấu'}?`}
+        />
+      ) : null}
+      {deleteConfirm ? (
+        <ConfirmationDialog
+          actionLabel="Xóa"
+          busy={softDelete.isPending}
+          description={`Vận động viên “${deleteConfirm.name}” sẽ bị xóa mềm và không còn đủ điều kiện thi đấu.`}
+          onCancel={() => {
+            setDeleteConfirm(null);
+          }}
+          onConfirm={() => {
+            if (!softDelete.isPending) softDelete.mutate(deleteConfirm);
+          }}
+          title="Xóa vận động viên?"
+          warning="Bạn vẫn có thể khôi phục dữ liệu theo quy trình quản trị nếu cần."
         />
       ) : null}
     </section>

@@ -44,8 +44,13 @@ export const routes: RouteObject[] = [
       {
         element: <AuthenticatedRouteGuard />,
         children: [
-          { path: 'tournaments', element: <TournamentsPage /> },
-          { path: 'tournaments/:id', element: <TournamentPage /> },
+          {
+            element: <SuperAdminRouteGuard />,
+            children: [
+              { path: 'tournaments', element: <TournamentsPage /> },
+              { path: 'tournaments/:id', element: <TournamentPage /> },
+            ],
+          },
           { path: 'matches/:id', element: <MatchPage /> },
           { path: 'account', element: <AccountPage /> },
           {

@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { ArrowRightLeft, Save, X } from 'lucide-react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { AthleteColor, MatchLifecycle, MatchStatus } from '@martial-arts-scoring/shared-types';
+import {
+  AthleteColor,
+  MatchLifecycle,
+  MatchStatus,
+  type PublicMatchStatePayload,
+} from '@martial-arts-scoring/shared-types';
 import { useScoreboardRealtime } from '@/features/scoreboard/scoreboard-realtime';
 import { IntermissionCountdown, useIntermissionActive } from '@/components/intermission-countdown';
+import { tournamentImageUrl } from '@/components/tournament-image';
 import { toast } from '@/components/ui/toast';
 import {
   isPausedPhase,
@@ -50,6 +56,8 @@ function AthletePanel({
     color: AthleteColor;
     name: string;
     organization: string | null;
+    athleteImagePath: string | null;
+    organizationImagePath: string | null;
     score: number;
     violations: number;
     faultCounts: { minor: number; major: number };
@@ -58,36 +66,133 @@ function AthletePanel({
   const red = athlete.color === AthleteColor.RED;
   return (
     <section
-      className={`flex min-h-0 flex-1 flex-col justify-between rounded-[2rem] border-4 p-6 shadow-2xl sm:p-10 ${
+      className={`flex min-h-0 flex-1 flex-col justify-between overflow-hidden rounded-[1.5rem] border-4 p-4 shadow-2xl sm:rounded-[2rem] sm:p-6 ${
         red
           ? 'border-red-300/80 bg-gradient-to-br from-red-600 via-red-700 to-red-950 shadow-red-950/30'
           : 'border-sky-300/80 bg-gradient-to-br from-sky-700 via-blue-800 to-blue-950 shadow-blue-950/30'
       }`}
     >
-      <div>
+      <div className="min-w-0">
         <p
-          className={`text-lg font-black tracking-[0.28em] ${red ? 'text-red-100' : 'text-sky-100'}`}
+          className={`text-xs font-black tracking-[0.2em] sm:text-lg sm:tracking-[0.28em] ${red ? 'text-red-100' : 'text-sky-100'}`}
         >
           {red ? 'ĐỎ · RED' : 'XANH · BLUE'}
         </p>
-        <h2 className="mt-5 break-words text-4xl font-black leading-tight sm:text-6xl">
-          {athlete.name}
-        </h2>
-        <p className="mt-3 text-xl text-white/90 sm:text-3xl">{athlete.organization}</p>
+        <div className="mt-3 flex min-w-0 items-center gap-3 sm:mt-5 sm:gap-5">
+          <ScoreboardImage
+            alt={`Ảnh của ${athlete.name}`}
+            imagePath={athlete.athleteImagePath}
+            kind="athlete"
+          />
+          <div className="min-w-0">
+            <h2 className="break-words text-2xl font-black leading-tight sm:text-5xl lg:text-6xl">
+              {athlete.name}
+            </h2>
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-sm text-white/90 sm:mt-3 sm:text-2xl">
+              <ScoreboardImage
+                alt={`Logo ${athlete.organization ?? 'tổ chức'}`}
+                imagePath={athlete.organizationImagePath}
+                kind="organization"
+              />
+              <p className="truncate">{athlete.organization ?? 'VĐV tự do'}</p>
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="mt-8 flex items-end justify-between gap-4">
+      <div className="mt-4 flex items-end justify-between gap-3 sm:mt-8 sm:gap-4">
         <div>
-          <p className="text-sm font-bold uppercase tracking-wider text-white/90 sm:text-lg">
+          <p className="text-xs font-bold uppercase tracking-wider text-white/90 sm:text-lg">
             Điểm
           </p>
-          <p className="mt-1 font-mono text-8xl font-black leading-none tabular-nums sm:text-[11rem]">
+          <p className="mt-1 font-mono text-6xl font-black leading-none tabular-nums sm:text-8xl lg:text-[min(22vh,11rem)]">
             {athlete.score}
           </p>
         </div>
-        <p className="rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-lg font-bold backdrop-blur sm:text-2xl">
+        <p className="rounded-xl border border-white/15 bg-white/10 px-2 py-2 text-xs font-bold backdrop-blur sm:px-4 sm:py-3 sm:text-lg lg:text-2xl">
           Lỗi nhẹ: {athlete.faultCounts.minor} · Lỗi nặng: {athlete.faultCounts.major}
         </p>
       </div>
+    </section>
+  );
+}
+
+function ScoreboardImage({
+  alt,
+  imagePath,
+  kind,
+}: {
+  readonly alt: string;
+  readonly imagePath: string | null;
+  readonly kind: 'athlete' | 'organization';
+}) {
+  const [failed, setFailed] = useState(false);
+  const src = imagePath ? tournamentImageUrl(imagePath) : null;
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+  const classes =
+    kind === 'athlete'
+      ? 'size-16 shrink-0 rounded-full sm:size-24 lg:size-[min(18vh,9rem)]'
+      : 'size-7 shrink-0 rounded-md sm:size-10';
+  return src && !failed ? (
+    <img
+      alt={alt}
+      className={`${classes} border-2 border-white/40 bg-white/10 object-cover`}
+      onError={() => {
+        setFailed(true);
+      }}
+      src={src}
+    />
+  ) : (
+    <div
+      aria-label={
+        kind === 'athlete'
+          ? `Chưa có ảnh của ${alt.replace('Ảnh của ', '')}`
+          : `Chưa có ${alt.toLowerCase()}`
+      }
+      className={`${classes} grid place-items-center border border-dashed border-white/50 bg-white/10 text-xs font-black`}
+      role="img"
+    >
+      {kind === 'athlete' ? 'VÕ' : 'CLB'}
+    </div>
+  );
+}
+
+function WinnerPresentation({
+  athlete,
+}: {
+  readonly athlete: PublicMatchStatePayload['athletes'][number];
+}) {
+  const red = athlete.color === AthleteColor.RED;
+  return (
+    <section
+      aria-label="Kết quả đã công bố"
+      className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-4 text-center sm:px-8"
+    >
+      <p className="text-sm font-black uppercase tracking-[0.24em] text-white/80 sm:text-xl">
+        Người chiến thắng
+      </p>
+      <div className="mt-4">
+        <ScoreboardImage
+          alt={`Ảnh của ${athlete.name}`}
+          imagePath={athlete.athleteImagePath}
+          kind="athlete"
+        />
+      </div>
+      <h1 className="mt-4 max-w-5xl break-words text-4xl font-black leading-tight sm:text-6xl lg:text-[min(11vw,8rem)]">
+        {athlete.name}
+      </h1>
+      <div className="mt-4 flex min-w-0 items-center gap-3 text-lg text-white/90 sm:text-3xl">
+        <ScoreboardImage
+          alt={`Logo ${athlete.organization ?? 'tổ chức'}`}
+          imagePath={athlete.organizationImagePath}
+          kind="organization"
+        />
+        <span className="truncate">{athlete.organization ?? 'VĐV tự do'}</span>
+      </div>
+      <p className="mt-5 rounded-full border border-white/30 bg-black/15 px-4 py-2 text-sm font-black tracking-[0.18em] sm:text-xl">
+        {red ? 'ĐỎ · RED' : 'XANH · BLUE'}
+      </p>
     </section>
   );
 }
@@ -223,10 +328,11 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
     snapshot?.match.phase === MatchStatus.REGULATION_APPEAL ||
     snapshot?.match.phase === MatchStatus.OVERTIME_APPEAL;
   const yellowPresentation = paused || intermission.active || appealActive;
+  const publishedWinner = winnerAthlete ?? null;
 
   return (
     <main
-      className={`min-h-dvh p-4 text-white sm:p-8 ${yellowPresentation ? 'bg-gradient-to-br from-amber-950 via-yellow-800 to-amber-950' : 'arena-background'}`}
+      className={`flex h-screen h-dvh flex-col overflow-hidden p-3 text-white sm:p-5 ${publishedWinner ? (publishedWinner.color === AthleteColor.RED ? 'bg-gradient-to-br from-red-500 via-red-700 to-red-950' : 'bg-gradient-to-br from-sky-500 via-blue-700 to-blue-950') : yellowPresentation ? 'bg-gradient-to-br from-amber-950 via-yellow-800 to-amber-950' : 'arena-background'}`}
     >
       <header
         className={`flex items-center justify-between gap-4 rounded-2xl border px-4 py-3 backdrop-blur sm:px-6 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/45' : 'border-white/10 bg-blue-950/25'}`}
@@ -289,82 +395,96 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
               : 'ĐANG KẾT NỐI'}
         </p>
       </header>
-      <section
-        className={`my-4 rounded-[2rem] border px-6 py-5 text-center shadow-2xl backdrop-blur-xl sm:my-7 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/30 shadow-amber-950/30' : 'border-white/15 bg-white/10 shadow-blue-950/20'}`}
-      >
-        <p className="text-2xl font-black tracking-[0.2em] text-sky-100 sm:text-4xl">
-          {presentation?.label ?? 'ĐANG KẾT NỐI'}
-        </p>
-        {roundLabel(activeRound) ? (
-          <p className="mt-2 text-base font-black tracking-[0.12em] text-amber-200 sm:text-xl">
-            {roundLabel(activeRound)}
-          </p>
-        ) : null}
-        {presentation ? <p className="mt-2 text-sm text-sky-100/85">{presentation.help}</p> : null}
-        <p className="mt-2 font-mono text-7xl font-black tabular-nums sm:text-9xl">
-          {running && remaining !== null
-            ? formatRemaining(remaining)
-            : paused && activeRound?.remainingDurationMs != null
-              ? formatRemaining(activeRound.remainingDurationMs)
-              : '--:--'}
-        </p>
-        <IntermissionCountdown
-          endsAt={snapshot?.match.phase === MatchStatus.BREAK ? snapshot.intermissionEndsAt : null}
-          generatedAt={snapshot?.generatedAt}
-        />
-      </section>
-      <section
-        className={`mb-4 rounded-2xl border px-6 py-4 text-center font-bold backdrop-blur sm:mb-7 ${
-          winnerAthlete
-            ? 'border-emerald-300/50 bg-emerald-500/15 text-emerald-100'
-            : 'border-amber-200/30 bg-amber-100/10 text-amber-100'
-        }`}
-      >
-        {winnerAthlete ? (
-          <>
-            <p className="text-sm uppercase tracking-[0.18em]">Người chiến thắng</p>
-            <p className="mt-1 text-2xl font-black sm:text-4xl">{winnerAthlete.name}</p>
-            {outcomeMethod === 'MANUAL_AFTER_OVERTIME_TIE' ? (
-              <p className="mt-2 text-sm">Quyết định giám sát sau hiệp phụ</p>
+      {publishedWinner ? (
+        <WinnerPresentation athlete={publishedWinner} />
+      ) : (
+        <>
+          <section
+            className={`my-4 rounded-[2rem] border px-6 py-5 text-center shadow-2xl backdrop-blur-xl sm:my-7 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/30 shadow-amber-950/30' : 'border-white/15 bg-white/10 shadow-blue-950/20'}`}
+          >
+            <p className="text-2xl font-black tracking-[0.2em] text-sky-100 sm:text-4xl">
+              {presentation?.label ?? 'ĐANG KẾT NỐI'}
+            </p>
+            {roundLabel(activeRound) ? (
+              <p className="mt-2 text-base font-black tracking-[0.12em] text-amber-200 sm:text-xl">
+                {roundLabel(activeRound)}
+              </p>
             ) : null}
-          </>
-        ) : (
-          <p>Chưa công bố kết quả — chưa có người chiến thắng được xác nhận.</p>
-        )}
-        {committedScores?.RED != null && committedScores.BLUE != null ? (
-          <p className="mt-2 text-sm opacity-90">
-            {committedScores.source === 'OVERTIME'
-              ? `Điểm hiệp phụ lần ${String(committedScores.attemptNumber)}: Đỏ ${String(committedScores.RED)} · Xanh ${String(committedScores.BLUE)}`
-              : `Điểm chung cuộc sau 2 hiệp: Đỏ ${String(committedScores.RED)} · Xanh ${String(committedScores.BLUE)}`}
-          </p>
-        ) : null}
-      </section>
-      <section className="grid min-h-[58vh] gap-4 sm:gap-7 md:grid-cols-2">
-        <AthletePanel
-          athlete={
-            red ?? {
-              color: AthleteColor.RED,
-              name: 'Võ sĩ Đỏ',
-              organization: 'Đang tải…',
-              score: 0,
-              violations: 0,
-              faultCounts: { minor: 0, major: 0 },
-            }
-          }
-        />
-        <AthletePanel
-          athlete={
-            blue ?? {
-              color: AthleteColor.BLUE,
-              name: 'Võ sĩ Xanh',
-              organization: 'Đang tải…',
-              score: 0,
-              violations: 0,
-              faultCounts: { minor: 0, major: 0 },
-            }
-          }
-        />
-      </section>
+            {presentation ? (
+              <p className="mt-2 text-sm text-sky-100/85">{presentation.help}</p>
+            ) : null}
+            <p className="mt-2 font-mono text-7xl font-black tabular-nums sm:text-9xl">
+              {running && remaining !== null
+                ? formatRemaining(remaining)
+                : paused && activeRound?.remainingDurationMs != null
+                  ? formatRemaining(activeRound.remainingDurationMs)
+                  : '--:--'}
+            </p>
+            <IntermissionCountdown
+              endsAt={
+                snapshot?.match.phase === MatchStatus.BREAK ? snapshot.intermissionEndsAt : null
+              }
+              generatedAt={snapshot?.generatedAt}
+            />
+          </section>
+          <section
+            className={`mb-4 rounded-2xl border px-6 py-4 text-center font-bold backdrop-blur sm:mb-7 ${
+              winnerAthlete
+                ? 'border-emerald-300/50 bg-emerald-500/15 text-emerald-100'
+                : 'border-amber-200/30 bg-amber-100/10 text-amber-100'
+            }`}
+          >
+            {winnerAthlete ? (
+              <>
+                <p className="text-sm uppercase tracking-[0.18em]">Người chiến thắng</p>
+                <p className="mt-1 text-2xl font-black sm:text-4xl">{winnerAthlete.name}</p>
+                {outcomeMethod === 'MANUAL_AFTER_OVERTIME_TIE' ? (
+                  <p className="mt-2 text-sm">Quyết định giám sát sau hiệp phụ</p>
+                ) : null}
+              </>
+            ) : (
+              <p>Chưa công bố kết quả — chưa có người chiến thắng được xác nhận.</p>
+            )}
+            {committedScores?.RED != null && committedScores.BLUE != null ? (
+              <p className="mt-2 text-sm opacity-90">
+                {committedScores.source === 'OVERTIME'
+                  ? `Điểm hiệp phụ lần ${String(committedScores.attemptNumber)}: Đỏ ${String(committedScores.RED)} · Xanh ${String(committedScores.BLUE)}`
+                  : `Điểm chung cuộc sau 2 hiệp: Đỏ ${String(committedScores.RED)} · Xanh ${String(committedScores.BLUE)}`}
+              </p>
+            ) : null}
+          </section>
+          <section className="grid min-h-0 flex-1 gap-3 sm:gap-5 md:grid-cols-2">
+            <AthletePanel
+              athlete={
+                red ?? {
+                  color: AthleteColor.RED,
+                  name: 'Võ sĩ Đỏ',
+                  organization: 'Đang tải…',
+                  athleteImagePath: null,
+                  organizationImagePath: null,
+                  score: 0,
+                  violations: 0,
+                  faultCounts: { minor: 0, major: 0 },
+                }
+              }
+            />
+            <AthletePanel
+              athlete={
+                blue ?? {
+                  color: AthleteColor.BLUE,
+                  name: 'Võ sĩ Xanh',
+                  organization: 'Đang tải…',
+                  athleteImagePath: null,
+                  organizationImagePath: null,
+                  score: 0,
+                  violations: 0,
+                  faultCounts: { minor: 0, major: 0 },
+                }
+              }
+            />
+          </section>
+        </>
+      )}
     </main>
   );
 }

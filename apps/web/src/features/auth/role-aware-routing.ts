@@ -19,14 +19,14 @@ export function getRoleLandingPath(role: UserRole): string {
     case 'ADMIN':
       return '/admin';
     case 'USER':
-      return '/tournaments';
+      return '/account';
   }
 }
 
 export function getAccessLandingPath(accessState: EffectiveAdminAccessState): string {
   if (accessState === 'SUPER_ADMIN') return '/super-admin';
   if (accessState === 'ACTIVE_ADMIN' || accessState === 'EXPIRED_READ_ONLY') return '/admin';
-  return '/tournaments';
+  return '/account';
 }
 
 function isAllowedApplicationPathname(pathname: string): boolean {

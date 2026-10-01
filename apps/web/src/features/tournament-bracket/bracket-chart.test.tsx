@@ -1,15 +1,15 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { MatchDisplayState, MatchLifecycle, MatchPhase } from '@martial-arts-scoring/shared-types';
-import type { ActiveBracket } from '@/services/api/admin-management';
-import {
-  BRACKET_LAYOUT,
-  BracketChart,
-  bracketConnectorPath,
-  fixtureTopOffsets,
-} from './bracket-chart';
+import type { ActiveBracket, BracketPreview } from '@/services/api/admin-management';
+import { BRACKET_LAYOUT, bracketConnectorPath, fixtureTopOffsets } from './bracket-chart-layout';
+import { BracketChart } from './bracket-chart';
 
-function activeBracket(phase: MatchPhase, lifecycle: MatchLifecycle): ActiveBracket {
+function activeBracket(
+  phase: MatchPhase,
+  lifecycle: MatchLifecycle,
+  firstAthleteIsSeed: boolean | null = true,
+): ActiveBracket {
   return {
     bracket: {
       id: 'bracket-1',
@@ -41,6 +41,7 @@ function activeBracket(phase: MatchPhase, lifecycle: MatchLifecycle): ActiveBrac
               snapshotName: 'Nguyễn An',
               snapshotOrganization: 'CLB A',
               snapshotImagePath: null,
+              isSeed: firstAthleteIsSeed,
             },
           },
           {
@@ -52,6 +53,7 @@ function activeBracket(phase: MatchPhase, lifecycle: MatchLifecycle): ActiveBrac
               snapshotName: 'Trần Bình',
               snapshotOrganization: 'CLB B',
               snapshotImagePath: null,
+              isSeed: false,
             },
           },
         ],
@@ -60,7 +62,133 @@ function activeBracket(phase: MatchPhase, lifecycle: MatchLifecycle): ActiveBrac
   };
 }
 
+function previewBracket(): BracketPreview {
+  const athlete = (id: string, name: string) => ({
+    id,
+    name,
+    organizationName: 'CLB A',
+    imageUrl: null,
+  });
+  return {
+    previewToken: 'preview-token',
+    expiresAt: '',
+    summary: {
+      athleteCount: 3,
+      bracketSize: 4,
+      byeCount: 1,
+      roundCount: 2,
+      totalFixtureCount: 2,
+      firstRoundFixtureCount: 1,
+    },
+    // Deliberately not draw-position order: eligibility must use identifiers.
+    initialEntrants: [
+      { drawPosition: 3, athleteId: 'c', athlete: athlete('c', 'Cường'), isBye: false },
+      { drawPosition: 1, athleteId: 'a', athlete: athlete('a', 'An'), isBye: false },
+      { drawPosition: 4, athleteId: null, athlete: null, isBye: true },
+      { drawPosition: 2, athleteId: 'b', athlete: athlete('b', 'Bình'), isBye: false },
+    ],
+    rounds: [
+      {
+        roundNumber: 1,
+        label: 'Tứ kết',
+        fixtures: [
+          {
+            id: 'r1-m1',
+            displayReference: 'R1-M01',
+            position: 1,
+            slots: [
+              { side: 'RED', source: { kind: 'ENTRANT', entrantId: 'a' }, resolvedEntrantId: 'a' },
+              { side: 'BLUE', source: { kind: 'ENTRANT', entrantId: 'b' }, resolvedEntrantId: 'b' },
+            ],
+          },
+          {
+            id: 'r1-m2',
+            displayReference: 'R1-M02',
+            position: 2,
+            slots: [
+              { side: 'RED', source: { kind: 'ENTRANT', entrantId: 'c' }, resolvedEntrantId: 'c' },
+              { side: 'BLUE', source: { kind: 'ENTRANT' }, resolvedEntrantId: null },
+            ],
+          },
+        ],
+      },
+      {
+        roundNumber: 2,
+        label: 'Chung kết',
+        fixtures: [
+          {
+            id: 'r2-m1',
+            displayReference: 'R2-M01',
+            position: 1,
+            slots: [
+              {
+                side: 'RED',
+                source: { kind: 'FIXTURE_WINNER', fixtureId: 'r1-m1' },
+                resolvedEntrantId: null,
+              },
+              {
+                side: 'BLUE',
+                source: { kind: 'FIXTURE_WINNER', fixtureId: 'r1-m2' },
+                resolvedEntrantId: null,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
 describe('BracketChart', () => {
+  it('renders edit buttons for every preview entrant and invokes the selected athlete', () => {
+    const edited: string[] = [];
+    render(
+      <BracketChart data={previewBracket()} onEditAthlete={(id: string) => edited.push(id)} />,
+    );
+
+    const buttons = screen.getAllByRole('button', { name: /Đổi vị trí/ });
+    expect(buttons).toHaveLength(3);
+    buttons[0]?.click();
+    expect(edited).toEqual(['a']);
+  });
+
+  it('hides preview edit buttons while the callback is withheld for a pending mutation', () => {
+    render(<BracketChart data={previewBracket()} />);
+
+    expect(screen.queryByRole('button', { name: /Đổi vị trí/ })).not.toBeInTheDocument();
+  });
+
+  it('keeps edit buttons available after a successful swap supplies a replacement preview', () => {
+    const onEditAthlete = () => undefined;
+    const { rerender } = render(
+      <BracketChart data={previewBracket()} onEditAthlete={onEditAthlete} />,
+    );
+    expect(screen.getAllByRole('button', { name: /Đổi vị trí/ })).toHaveLength(3);
+
+    const originalPreview = previewBracket();
+    const swappedPreview: BracketPreview = {
+      ...originalPreview,
+      initialEntrants: originalPreview.initialEntrants.map((entrant) =>
+        entrant.drawPosition === 1
+          ? {
+              ...entrant,
+              athleteId: 'b',
+              athlete: { id: 'b', name: 'Bình', organizationName: 'CLB A', imageUrl: null },
+            }
+          : entrant.drawPosition === 2
+            ? {
+                ...entrant,
+                athleteId: 'a',
+                athlete: { id: 'a', name: 'An', organizationName: 'CLB A', imageUrl: null },
+              }
+            : entrant,
+      ),
+    };
+    rerender(<BracketChart data={swappedPreview} onEditAthlete={onEditAthlete} />);
+
+    expect(screen.getAllByRole('button', { name: /Đổi vị trí/ })).toHaveLength(3);
+  });
+
   it('keeps the reference, status chips, side labels, participant names, and organizations visible', () => {
     render(
       <BracketChart data={activeBracket(MatchPhase.ROUND_1_PAUSED, MatchLifecycle.SUSPENDED)} />,
@@ -84,6 +212,36 @@ describe('BracketChart', () => {
 
     expect(screen.getByText('Hoàn thành')).toBeInTheDocument();
     expect(screen.getByText('Kết quả cuối cùng')).toBeInTheDocument();
+  });
+
+  it('highlights a resolved fixture with its winner side color', () => {
+    const bracket = activeBracket(MatchPhase.FINISHED, MatchLifecycle.COMPLETED);
+    const fixture = bracket.fixtures[0]!;
+    const resolvedBracket: ActiveBracket = {
+      ...bracket,
+      fixtures: [{ ...fixture, winnerEntrant: { id: 'a', snapshotName: 'Nguyễn An' } }],
+    };
+
+    render(<BracketChart data={resolvedBracket} />);
+
+    const card = document.querySelector('[data-fixture-id="fixture-1"]');
+    expect(card).toHaveClass('border-red-500');
+    expect(screen.getByText('Thắng: Nguyễn An')).toHaveClass('bg-red-500');
+  });
+
+  it('marks only seeded athletes with an accessible label', () => {
+    render(<BracketChart data={activeBracket(MatchPhase.WAITING, MatchLifecycle.NOT_STARTED)} />);
+
+    expect(screen.getByLabelText('VĐV hạt giống')).toBeInTheDocument();
+    expect(screen.getAllByTitle('VĐV hạt giống')).toHaveLength(1);
+  });
+
+  it('does not mark athletes whose seed metadata is null', () => {
+    render(
+      <BracketChart data={activeBracket(MatchPhase.WAITING, MatchLifecycle.NOT_STARTED, null)} />,
+    );
+
+    expect(screen.queryByLabelText('VĐV hạt giống')).not.toBeInTheDocument();
   });
 
   it.each([

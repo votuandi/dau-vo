@@ -49,6 +49,7 @@ function subject(count: number) {
       previewToken: 'opaque-token',
       expiresAt: '2026-09-12T00:05:00.000Z',
     }),
+    verify: jest.fn(),
   };
   const setupTokens = { verify: jest.fn() };
   return {
@@ -101,6 +102,111 @@ describe('BracketPreviewService', () => {
     expect(service.rosterFingerprint(entrants)).toBe(
       service.rosterFingerprint([...entrants].reverse()),
     );
+  });
+
+  it('includes the stored seed indicator in each athlete preview snapshot', async () => {
+    const { prisma, service } = subject(2);
+    prisma.tournamentAthlete.findMany.mockResolvedValue([
+      { ...athlete(1), isSeed: true },
+      { ...athlete(2), isSeed: false },
+    ]);
+
+    const result = await service.preview(tournamentId, weightClassId, {
+      setupToken: 'setup-token',
+      designatedByeAthleteIds: [],
+    });
+
+    expect(result.initialEntrants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          athlete: expect.objectContaining({ id: athlete(1).id, isSeed: true }),
+        }),
+        expect.objectContaining({
+          athlete: expect.objectContaining({
+            id: athlete(2).id,
+            isSeed: false,
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it('re-signs a validated swap without changing the fixture graph', async () => {
+    const { prisma, service } = subject(4);
+    const roster = Array.from({ length: 4 }, (_, index) => athlete(index + 1));
+    prisma.tournamentAthlete.findMany.mockResolvedValue(roster);
+    const placements = roster.map((entry, index) => ({
+      drawPosition: index + 1,
+      athleteId: entry.id,
+    }));
+    const tokens = (
+      service as unknown as { tokens: { verify: jest.Mock; issue: jest.Mock } }
+    ).tokens;
+    tokens.verify.mockReturnValue({
+      tournamentId,
+      weightClassId,
+      placements,
+      rosterFingerprint: service.rosterFingerprint(roster),
+      designatedByeAthleteIds: [],
+      byeStrategy: 'RANDOM',
+    });
+
+    const result = await service.swap(tournamentId, weightClassId, {
+      previewToken: 'old-token',
+      athleteId: roster[0]!.id,
+      swapWithAthleteId: roster[2]!.id,
+    });
+
+    expect(result.initialEntrants.map((entry) => entry.athleteId)).toEqual([
+      roster[2]!.id,
+      roster[1]!.id,
+      roster[0]!.id,
+      roster[3]!.id,
+    ]);
+    expect(tokens.issue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        placements: expect.arrayContaining([
+          expect.objectContaining({
+            drawPosition: 1,
+            athleteId: roster[2]!.id,
+          }),
+        ]),
+      }),
+    );
+    expect(
+      result.rounds
+        .flatMap((round) => round.fixtures)
+        .map((fixture) => fixture.id),
+    ).toEqual(['r1-m1', 'r1-m2', 'r2-m1']);
+  });
+
+  it('allows swapping a bye recipient and transfers the bye to the replacement slot', async () => {
+    const { prisma, service } = subject(3);
+    const roster = Array.from({ length: 3 }, (_, index) => athlete(index + 1));
+    prisma.tournamentAthlete.findMany.mockResolvedValue(roster);
+    const tokens = (service as unknown as { tokens: { verify: jest.Mock } })
+      .tokens;
+    tokens.verify.mockReturnValue({
+      placements: [
+        { drawPosition: 1, athleteId: roster[0]!.id },
+        { drawPosition: 2, athleteId: null },
+        { drawPosition: 3, athleteId: roster[1]!.id },
+        { drawPosition: 4, athleteId: roster[2]!.id },
+      ],
+      rosterFingerprint: service.rosterFingerprint(roster),
+    });
+    const result = await service.swap(tournamentId, weightClassId, {
+      previewToken: 'token',
+      athleteId: roster[0]!.id,
+      swapWithAthleteId: roster[1]!.id,
+    });
+
+    expect(result.initialEntrants.map((entry) => entry.athleteId)).toEqual([
+      roster[1]!.id,
+      null,
+      roster[0]!.id,
+      roster[2]!.id,
+    ]);
   });
 
   it('requires an exact, valid seeded-bye selection', async () => {

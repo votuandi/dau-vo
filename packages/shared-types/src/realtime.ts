@@ -275,6 +275,8 @@ export interface MatchStateAthlete {
   id: string;
   name: string;
   organization: string | null;
+  athleteImagePath: string | null;
+  organizationImagePath: string | null;
   score: number;
   violations: number;
   faultCounts: { minor: number; major: number };
@@ -341,6 +343,9 @@ export interface PublicMatchStatePayload {
     color: AthleteColor;
     name: string;
     organization: string | null;
+    /** Public media storage paths; clients resolve them through the internal media route. */
+    athleteImagePath: string | null;
+    organizationImagePath: string | null;
     score: number;
     violations: number;
     faultCounts: { minor: number; major: number };
