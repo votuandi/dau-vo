@@ -1,8 +1,18 @@
 import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsIn, IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
+
+export const bracketWinnerDecisionTypes = [
+  'ADMIN_TIEBREAK',
+  'WITHDRAWAL_OR_INJURY',
+] as const;
+export type BracketWinnerDecisionType =
+  (typeof bracketWinnerDecisionTypes)[number];
 
 export class DecideBracketWinnerDto {
   @IsUUID() entrantId!: string;
+
+  @IsIn(bracketWinnerDecisionTypes)
+  decisionType!: BracketWinnerDecisionType;
 
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim() : value,

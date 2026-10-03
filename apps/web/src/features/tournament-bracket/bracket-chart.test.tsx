@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { MatchDisplayState, MatchLifecycle, MatchPhase } from '@martial-arts-scoring/shared-types';
 import type { ActiveBracket, BracketPreview } from '@/services/api/admin-management';
 import { BRACKET_LAYOUT, bracketConnectorPath, fixtureTopOffsets } from './bracket-chart-layout';
@@ -227,6 +227,37 @@ describe('BracketChart', () => {
     const card = document.querySelector('[data-fixture-id="fixture-1"]');
     expect(card).toHaveClass('border-red-500');
     expect(screen.getByText('Thắng: Nguyễn An')).toHaveClass('bg-red-500');
+  });
+
+  it('offers manual winner selection only for an awaiting fixture with two resolved participants', () => {
+    const bracket = activeBracket(MatchPhase.FINISHED, MatchLifecycle.COMPLETED);
+    const fixture = bracket.fixtures[0]!;
+    const eligible: ActiveBracket = {
+      ...bracket,
+      fixtures: [
+        {
+          ...fixture,
+          status: 'AWAITING_WINNER',
+          slots: fixture.slots.map((slot) => ({
+            ...slot,
+            resolvedEntrant: slot.directEntrant,
+          })),
+        },
+      ],
+    };
+    const decide = vi.fn();
+    const { rerender } = render(<BracketChart data={eligible} onDecideWinner={decide} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Chọn VĐV chiến thắng cho TK-01/ }));
+    expect(decide).toHaveBeenCalledWith(eligible.fixtures[0]);
+
+    rerender(
+      <BracketChart
+        data={{ ...eligible, fixtures: [{ ...eligible.fixtures[0]!, status: 'MATCH_PREPARED' }] }}
+        onDecideWinner={decide}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /Chọn VĐV chiến thắng/ })).not.toBeInTheDocument();
   });
 
   it('marks only seeded athletes with an accessible label', () => {

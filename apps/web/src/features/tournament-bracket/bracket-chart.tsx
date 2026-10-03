@@ -49,9 +49,13 @@ function winnerSurfaceClassName(side: 'RED' | 'BLUE' | null): string {
 export function BracketChart({
   data,
   onEditAthlete,
+  onDecideWinner,
+  decisionDisabled = false,
 }: {
   readonly data: ChartData;
   readonly onEditAthlete?: (athleteId: string) => void;
+  readonly onDecideWinner?: (fixture: ActiveBracket['fixtures'][number]) => void;
+  readonly decisionDisabled?: boolean;
 }) {
   const isPreview = isBracketPreview(data);
   const graph = useMemo(() => bracketPresentation(data), [data]);
@@ -356,10 +360,32 @@ export function BracketChart({
                         Thắng: {activeFixture.winnerEntrant.snapshotName}
                       </p>
                     ) : null}
-                    {activeFixture?.status === 'AWAITING_WINNER' ? (
-                      <p className="border-t px-2 py-1.5 text-sm text-muted-foreground">
-                        Chờ xác định người thắng
+                    {activeFixture?.winnerDecision?.reason ? (
+                      <p className="border-t px-2 py-1.5 text-xs text-muted-foreground">
+                        Lý do: {activeFixture.winnerDecision.reason}
                       </p>
+                    ) : null}
+                    {activeFixture && manualWinnerDecisionType(activeFixture) ? (
+                      <div className="border-t px-2 py-1.5">
+                        <p className="text-sm text-muted-foreground">
+                          {activeFixture.status === 'AWAITING_WINNER'
+                            ? 'Chờ xác định người thắng'
+                            : 'VĐV rút lui hoặc chấn thương'}
+                        </p>
+                        {onDecideWinner && manualWinnerCandidates(activeFixture).length === 2 ? (
+                          <Button
+                            aria-label={`Chọn VĐV chiến thắng cho ${activeFixture.displayReference}`}
+                            className="mt-1 w-full"
+                            disabled={decisionDisabled}
+                            onClick={() => onDecideWinner(activeFixture)}
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            Chọn VĐV chiến thắng
+                          </Button>
+                        ) : null}
+                      </div>
                     ) : null}
                   </article>
                 );
@@ -370,4 +396,16 @@ export function BracketChart({
       </div>
     </div>
   );
+}
+
+function manualWinnerCandidates(fixture: ActiveBracket['fixtures'][number]) {
+  return manualWinnerDecisionType(fixture)
+    ? fixture.slots.flatMap((slot) => (slot.resolvedEntrant ? [slot.resolvedEntrant] : []))
+    : [];
+}
+
+function manualWinnerDecisionType(fixture: ActiveBracket['fixtures'][number]) {
+  if (fixture.status === 'AWAITING_WINNER') return 'ADMIN_TIEBREAK';
+  if (fixture.status === 'READY' && fixture.match === null) return 'WITHDRAWAL_OR_INJURY';
+  return null;
 }
