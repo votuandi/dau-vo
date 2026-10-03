@@ -183,9 +183,10 @@ describe('AdminMatchMonitoring', () => {
 
     const redAthlete = await screen.findByText('+1 VĐV đỏ');
     expect(redAthlete).toHaveClass('text-red-700');
-    expect(redAthlete.closest('li')).toHaveTextContent(
-      'Giám định 1: +1 VĐV đỏ [10/09/2026 17:05:08]',
-    );
+    // The UI displays browser-local time; CI and developer machines can use different zones.
+    const serverTime = new Date(occurredAt);
+    const expectedTime = `${serverTime.toLocaleDateString('en-GB')} ${serverTime.toLocaleTimeString('en-GB', { hour12: false })}`;
+    expect(redAthlete.closest('li')).toHaveTextContent(`Giám định 1: +1 VĐV đỏ [${expectedTime}]`);
     expect(screen.getByText('+1 VĐV xanh')).toHaveClass('text-blue-700');
   });
 

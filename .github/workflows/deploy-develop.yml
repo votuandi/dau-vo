@@ -18,8 +18,33 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: ci
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
     env:
       DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+      REDIS_URL: redis://localhost:6379/12
 
     steps:
       - name: Checkout
@@ -47,6 +72,9 @@ jobs:
 
       - name: Typecheck
         run: pnpm run typecheck
+
+      - name: Apply test database migrations
+        run: pnpm --filter @martial-arts-scoring/api exec prisma migrate deploy
 
       - name: Test
         run: pnpm run test
