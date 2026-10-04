@@ -122,12 +122,14 @@ export function BracketChart({
       frame = requestAnimationFrame(() => {
         const content = contentRef.current;
         if (!content) return;
-        const measuredPitch = measuredFixtureRowPitch(
-          Array.from(fixtureRefs.current.values(), (element) => ({
+        const fixtureMeasurements = Array.from(
+          fixtureRefs.current.values(),
+          (element: HTMLElement): { roundNumber: number; height: number } => ({
             roundNumber: Number(element.dataset.roundNumber),
             height: Math.ceil(element.getBoundingClientRect().height),
-          })),
+          }),
         );
+        const measuredPitch: number = measuredFixtureRowPitch(fixtureMeasurements);
         if (measuredPitch !== rowPitch) {
           setRowPitch(measuredPitch);
           return;
