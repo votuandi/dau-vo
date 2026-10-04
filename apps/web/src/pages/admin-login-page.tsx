@@ -89,7 +89,7 @@ export function AdminLoginPage() {
   }
 
   if (sessionQuery.isSuccess && sessionQuery.data) {
-    return <Navigate replace to="/" />;
+    return <Navigate replace to="/workspace" />;
   }
 
   return (

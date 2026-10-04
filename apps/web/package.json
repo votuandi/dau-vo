@@ -5,14 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/finalize-build.mjs",
     "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "tsc -b --pretty false",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:build": "node --test scripts/finalize-build.test.mjs"
   },
   "dependencies": {
     "@martial-arts-scoring/shared-types": "workspace:*",

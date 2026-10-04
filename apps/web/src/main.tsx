@@ -1,5 +1,5 @@
 import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
+import { createRoot, hydrateRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router-dom';
 import { AppProviders } from '@/app/providers/app-providers';
 import { router } from '@/app/router/router';
@@ -11,10 +11,16 @@ if (!rootElement) {
   throw new Error('Unable to find the application root element.');
 }
 
-createRoot(rootElement).render(
+const app = (
   <StrictMode>
     <AppProviders>
       <RouterProvider router={router} />
     </AppProviders>
-  </StrictMode>,
+  </StrictMode>
 );
+
+if (rootElement.dataset.prerendered === 'true' && window.location.pathname === '/') {
+  hydrateRoot(rootElement, app);
+} else {
+  createRoot(rootElement).render(app);
+}

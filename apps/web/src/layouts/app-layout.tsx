@@ -1,19 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { SiteFooter } from '@/components/site-footer';
+import { updatePageMetadata } from '@/features/seo/metadata';
 import { Button } from '@/components/ui/button';
 import {
   authenticatedUserQueryKey,
   authenticatedUserQueryOptions,
 } from '@/features/auth/authenticated-user-session';
-import { getAccessLandingPath } from '@/features/auth/role-aware-routing';
 import { effectiveAdminAccessState, entitlementQueryOptions } from '@/features/auth/admin-access';
 import { cn } from '@/lib/utils';
 import { authApi } from '@/services/api/auth';
 
 export function AppLayout() {
   const location = useLocation();
+  useEffect(() => {
+    updatePageMetadata(location.pathname);
+  }, [location.pathname]);
 
   if (
+    location.pathname === '/' ||
     location.pathname === '/trong-tai' ||
     location.pathname === '/giam-dinh' ||
     location.pathname === '/giam-sat' ||
@@ -66,10 +72,7 @@ function StandardAppLayout() {
     <div className="flex min-h-dvh flex-col bg-transparent text-foreground">
       <header className="sticky top-0 z-20 border-b border-white/70 bg-white/75 shadow-sm shadow-blue-950/5 backdrop-blur-xl">
         <div className="container flex min-h-16 flex-col justify-center gap-3 py-3 md:flex-row md:items-center md:justify-between">
-          <NavLink
-            className="flex items-center gap-3"
-            to={accessState ? getAccessLandingPath(accessState) : '/login'}
-          >
+          <NavLink className="flex items-center gap-3" to="/">
             <img
               src={`${import.meta.env.BASE_URL}logo.webp`}
               alt="Logo Đấu Võ Minwy"
@@ -123,39 +126,7 @@ function StandardAppLayout() {
         <Outlet />
       </main>
 
-      <footer className="border-t border-white/70 bg-white/40 py-6 text-sm text-muted-foreground backdrop-blur">
-        <div className="container flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <img
-              src={`${import.meta.env.BASE_URL}logo.webp`}
-              alt="Logo Đấu Võ Minwy"
-              width={56}
-              height={56}
-              className="size-14 shrink-0 object-contain"
-              loading="lazy"
-            />
-            <p className="font-semibold text-foreground">Nền tảng chấm điểm võ thuật</p>
-          </div>
-          <address className="space-y-1 not-italic">
-            <p>Thực hiện: Võ Tuấn Dĩ</p>
-            <p>
-              E-mail:{' '}
-              <a
-                className="rounded hover:text-primary hover:underline"
-                href="mailto:divt.it97@gmail.com"
-              >
-                divt.it97@gmail.com
-              </a>
-            </p>
-            <p>
-              SĐT:{' '}
-              <a className="rounded hover:text-primary hover:underline" href="tel:0708699808">
-                0708.699.808
-              </a>
-            </p>
-          </address>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

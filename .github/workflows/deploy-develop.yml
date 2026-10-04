@@ -82,6 +82,9 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      - name: Verify public HTML and static asset permissions
+        run: pnpm --filter @martial-arts-scoring/web run test:build
+
   deploy:
     needs: ci
     if: github.ref == 'refs/heads/develop'

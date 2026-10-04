@@ -3,6 +3,7 @@ import { AdminRouteGuard } from '@/features/admin-auth/admin-route-guard';
 import { AuthenticatedRouteGuard } from '@/features/auth/authenticated-route-guard';
 import { SuperAdminRouteGuard } from '@/features/auth/super-admin-route-guard';
 import { SubscriptionRouteGuard } from '@/features/auth/subscription-route-guard';
+import { HomePage } from '@/pages/home-page';
 import { AppLayout } from '@/layouts/app-layout';
 import { SuperAdminLayout } from '@/layouts/super-admin-layout';
 import { AdminDashboardPage } from '@/pages/admin-dashboard-page';
@@ -34,6 +35,10 @@ export const routes: RouteObject[] = [
     children: [
       {
         index: true,
+        element: <HomePage />,
+      },
+      {
+        path: 'workspace',
         element: <RoleAwareIndexRedirect />,
       },
       {
