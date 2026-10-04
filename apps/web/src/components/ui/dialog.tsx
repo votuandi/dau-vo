@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { X } from 'lucide-react';
+import { Button } from './button';
 
 /** A small, dependency-free modal primitive used where a form dialog is needed. */
 export function Dialog({
@@ -10,6 +12,7 @@ export function Dialog({
   title,
   initialFocusRef,
   className = '',
+  showCloseButton = false,
 }: {
   readonly children: React.ReactNode;
   readonly description: string;
@@ -18,6 +21,7 @@ export function Dialog({
   readonly title: string;
   readonly initialFocusRef?: React.RefObject<HTMLElement | null>;
   readonly className?: string;
+  readonly showCloseButton?: boolean;
 }) {
   const titleId = useId();
   const descriptionId = useId();
@@ -67,9 +71,25 @@ export function Dialog({
           className={`w-full max-w-md rounded-2xl bg-card p-5 shadow-2xl sm:p-7 ${className}`}
           ref={panel}
         >
-          <h2 className="text-xl font-black" id={titleId}>
-            {title}
-          </h2>
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="text-xl font-black" id={titleId}>
+              {title}
+            </h2>
+            {showCloseButton ? (
+              <Button
+                aria-label="Đóng hộp thoại"
+                className="shrink-0"
+                disabled={pending}
+                onClick={onClose}
+                size="icon"
+                title="Đóng"
+                type="button"
+                variant="ghost"
+              >
+                <X aria-hidden="true" className="size-5" />
+              </Button>
+            ) : null}
+          </div>
           <p className="mt-1 text-sm text-muted-foreground" id={descriptionId}>
             {description}
           </p>

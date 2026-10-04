@@ -1,8 +1,8 @@
 export const BRACKET_LAYOUT = {
   fixtureWidth: 240,
-  roundGap: 32,
-  rowPitch: 128,
-  fixtureGap: 16,
+  roundGap: 24,
+  rowPitch: 104,
+  fixtureGap: 12,
 } as const;
 
 export function measuredFixtureRowPitch(
@@ -24,6 +24,33 @@ interface ConnectorBounds {
   readonly targetSide: 'RED' | 'BLUE';
 }
 
+/** Layout coordinates stay stable under CSS zoom, scrolling and ancestor transforms. */
+export function bracketElementBounds(element: HTMLElement, chart: HTMLElement) {
+  let left = 0;
+  let top = 0;
+  let current: HTMLElement | null = element;
+  while (current && current !== chart) {
+    left += current.offsetLeft;
+    top += current.offsetTop;
+    const parent: Element | null = current.offsetParent;
+    if (parent instanceof HTMLElement && parent !== chart) {
+      left += parent.clientLeft;
+      top += parent.clientTop;
+    }
+    current = parent instanceof HTMLElement ? parent : null;
+  }
+  return { left, top, right: left + element.offsetWidth, centerY: top + element.offsetHeight / 2 };
+}
+
+export function connectorPointInSvg(
+  x: number,
+  y: number,
+  inverseScreenMatrix: Pick<DOMMatrix, 'a' | 'b' | 'c' | 'd' | 'e' | 'f'>,
+): { x: number; y: number } {
+  const { a, b, c, d, e, f } = inverseScreenMatrix;
+  return { x: a * x + c * y + e, y: b * x + d * y + f };
+}
+
 export function bracketConnectorPath({
   sourceRight,
   sourceCenterY,
@@ -31,8 +58,7 @@ export function bracketConnectorPath({
   targetCenterY,
   targetSide,
 }: ConnectorBounds): string {
-  const middleX =
-    sourceRight + Math.max(28, targetLeft - sourceRight) * (targetSide === 'RED' ? 0.38 : 0.62);
+  const middleX = sourceRight + (targetLeft - sourceRight) * (targetSide === 'RED' ? 0.38 : 0.62);
   return `M ${String(sourceRight)} ${String(sourceCenterY)} H ${String(middleX)} V ${String(targetCenterY)} H ${String(targetLeft)}`;
 }
 

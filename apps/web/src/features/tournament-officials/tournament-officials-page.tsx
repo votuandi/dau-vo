@@ -526,6 +526,7 @@ export function TournamentOfficialsPage({
       ) : null}
       {loginLink ? (
         <Dialog
+          showCloseButton
           title={`Link đăng nhập — ${loginLink.name}`}
           description="Link có hiệu lực trong 7 ngày. Tạo mã bảo mật mới sẽ vô hiệu hóa link này."
           onClose={() => {
