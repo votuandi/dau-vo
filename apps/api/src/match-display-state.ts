@@ -21,9 +21,14 @@ export function projectMatchDisplayState(
       return MatchDisplayState.NOT_READY;
     case BracketFixtureStatus.READY:
       return MatchDisplayState.READY;
+    case BracketFixtureStatus.COMPLETED:
+      // Withdrawal/injury decisions can complete a fixture before a match exists.
+      // Existing matches still own their lifecycle (including resumed matches).
+      return source.lifecycle === undefined
+        ? MatchDisplayState.COMPLETED
+        : lifecycleDisplayState(source.lifecycle);
     case BracketFixtureStatus.MATCH_PREPARED:
-    case BracketFixtureStatus.AWAITING_WINNER:
-    case BracketFixtureStatus.COMPLETED: {
+    case BracketFixtureStatus.AWAITING_WINNER: {
       if (source.lifecycle === undefined) {
         throw new Error(
           `Fixture ${source.fixtureStatus} requires an operational match lifecycle`,
