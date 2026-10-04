@@ -123,6 +123,146 @@ export class OfficialAccessService {
     this.dummyHash = hash(randomBytes(TOKEN_BYTES).toString('base64url'), 12);
   }
 
+  async createLoginToken(tournamentId: string, officialId: string) {
+    const official = await this.prisma.tournamentOfficial.findFirst({
+      where: {
+        id: officialId,
+        tournamentId,
+        isActive: true,
+        tournament: {
+          softDeletedAt: null,
+          status: { not: TournamentStatus.ARCHIVED },
+        },
+      },
+      select: { passcodeHash: true, role: true },
+    });
+    if (!official)
+      throw new UnauthorizedException(INVALID_OFFICIAL_CREDENTIALS_ERROR);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const encoded = Buffer.from(
+      JSON.stringify({
+        officialId,
+        tournamentId,
+        expiresAt: expiresAt.getTime(),
+        credential: this.linkSignature(official.passcodeHash),
+        nonce: randomBytes(16).toString('base64url'),
+      }),
+    ).toString('base64url');
+    return {
+      token: `${encoded}.${this.linkSignature(encoded)}`,
+      role: official.role,
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  async loginWithToken(
+    token: string,
+    deviceId: string,
+    expectedRole: TournamentOfficialRole | undefined,
+    clientIp: string,
+    takeoverToken?: string,
+  ) {
+    await this.rateLimit({ code: 'login-link', passcode: token }, clientIp);
+    const [encoded, signature, extra] = token.split('.');
+    const invalid = () =>
+      new UnauthorizedException(INVALID_OFFICIAL_CREDENTIALS_ERROR);
+    if (!encoded || !signature || extra || token.length > 2048) throw invalid();
+    const expected = Buffer.from(this.linkSignature(encoded), 'base64url');
+    const actual = Buffer.from(signature, 'base64url');
+    if (actual.length !== expected.length || !timingSafeEqual(actual, expected))
+      throw invalid();
+    let payload: {
+      officialId: string;
+      tournamentId: string;
+      expiresAt: number;
+      credential: string;
+    };
+    try {
+      payload = JSON.parse(Buffer.from(encoded, 'base64url').toString());
+      if (
+        !payload ||
+        typeof payload.officialId !== 'string' ||
+        !UUID.test(payload.officialId) ||
+        typeof payload.tournamentId !== 'string' ||
+        !UUID.test(payload.tournamentId) ||
+        typeof payload.expiresAt !== 'number' ||
+        payload.expiresAt <= Date.now() ||
+        typeof payload.credential !== 'string'
+      )
+        throw invalid();
+    } catch {
+      throw invalid();
+    }
+    const official = await this.prisma.tournamentOfficial.findFirst({
+      where: {
+        id: payload.officialId,
+        tournamentId: payload.tournamentId,
+        isActive: true,
+        tournament: {
+          softDeletedAt: null,
+          status: { not: TournamentStatus.ARCHIVED },
+        },
+      },
+      select: {
+        passcodeHash: true,
+        role: true,
+        tournament: { select: { publicCode: true } },
+      },
+    });
+    if (
+      !official ||
+      this.linkSignature(official.passcodeHash) !== payload.credential ||
+      (expectedRole && official.role !== expectedRole) ||
+      !deviceId.trim()
+    )
+      throw invalid();
+    const credential: Credentials = {
+      officialId: payload.officialId,
+      tournamentId: payload.tournamentId,
+      passcodeHash: official.passcodeHash,
+      role: official.role,
+      tournamentCode: official.tournament.publicCode,
+    };
+    const challenge = takeoverToken
+      ? this.verifyChallenge(takeoverToken)
+      : undefined;
+    if (
+      challenge &&
+      (challenge.officialId !== credential.officialId ||
+        challenge.deviceId !== deviceId.trim())
+    )
+      throw new UnauthorizedException(INVALID_OFFICIAL_TAKEOVER_ERROR);
+    const result = await this.acquire(
+      credential,
+      undefined,
+      deviceId.trim(),
+      challenge?.observedSessionId,
+    );
+    if (result.kind === 'conflict')
+      throw new HttpException(
+        {
+          ...OFFICIAL_SESSION_ALREADY_ACTIVE,
+          takeoverToken: this.challenge(
+            result.conflict,
+            credential.officialId,
+            deviceId.trim(),
+          ),
+        },
+        HttpStatus.CONFLICT,
+      );
+    if (result.revokedSessionId)
+      this.realtimeSessions.revokeSessions([result.revokedSessionId]);
+    return result;
+  }
+
+  private linkSignature(value: string) {
+    return createHmac('sha256', this.sessionSecret)
+      .update('official-login-link')
+      .update('\0')
+      .update(value)
+      .digest('base64url');
+  }
+
   async login(
     tournamentCode: string,
     privatePasscode: string,
@@ -265,7 +405,7 @@ export class OfficialAccessService {
 
   private async acquire(
     credential: Credentials,
-    passcode: string,
+    passcode: string | undefined,
     deviceId: string,
     observed: string | undefined,
   ): Promise<Acquisition> {
@@ -287,7 +427,12 @@ export class OfficialAccessService {
           },
           select: { passcodeHash: true },
         });
-        if (!current || !(await this.compare(passcode, current.passcodeHash)))
+        if (
+          !current ||
+          (passcode === undefined
+            ? current.passcodeHash !== credential.passcodeHash
+            : !(await this.compare(passcode, current.passcodeHash)))
+        )
           throw new UnauthorizedException(INVALID_OFFICIAL_CREDENTIALS_ERROR);
         await tx.tournamentOfficialSession.updateMany({
           where: {

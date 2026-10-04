@@ -5,6 +5,8 @@ import type { ActiveBracket, BracketPreview } from '@/services/api/admin-managem
 import {
   BRACKET_LAYOUT,
   bracketConnectorPath,
+  connectorPointInSvg,
+  bracketElementBounds,
   fixtureTopOffsets,
   measuredFixtureRowPitch,
 } from './bracket-chart-layout';
@@ -152,6 +154,27 @@ function previewBracket(): BracketPreview {
 }
 
 describe('BracketChart', () => {
+  it('scales the bracket with icon controls and clamps zoom at its limits', () => {
+    render(<BracketChart data={previewBracket()} />);
+    const content = required(document.querySelector<HTMLElement>('[data-bracket-content]'));
+    const zoomIn = screen.getByRole('button', { name: 'Phóng to' });
+    const zoomOut = screen.getByRole('button', { name: 'Thu nhỏ' });
+    expect(zoomIn).toHaveAttribute('title', 'Phóng to');
+    expect(zoomOut).toHaveAttribute('title', 'Thu nhỏ');
+    expect(zoomIn).toHaveTextContent('');
+    expect(zoomOut).toHaveTextContent('');
+    fireEvent.click(zoomIn);
+    expect(content.style.zoom).toBe('1.1');
+    fireEvent.click(zoomOut);
+    expect(content.style.zoom).toBe('1');
+    for (let index = 0; index < 10; index += 1) fireEvent.click(zoomOut);
+    expect(content.style.zoom).toBe('0.5');
+    expect(zoomOut).toBeDisabled();
+    for (let index = 0; index < 20; index += 1) fireEvent.click(zoomIn);
+    expect(content.style.zoom).toBe('2');
+    expect(zoomIn).toBeDisabled();
+  });
+
   it('fills an omitted preview bye branch with one athlete and no match reference', () => {
     const original = previewBracket();
     const first = required(original.rounds[0]);
@@ -437,6 +460,83 @@ describe('BracketChart', () => {
     },
   );
 
+  it.each([0.5, 1, 1.2, 2])(
+    'keeps connector endpoints in chart layout coordinates at zoom %s',
+    (scale) => {
+      const chart = document.createElement('div');
+      chart.style.zoom = String(scale);
+      const round = document.createElement('section');
+      const fixture = document.createElement('article');
+      const slot = document.createElement('div');
+      Object.defineProperties(round, {
+        offsetParent: { value: chart },
+        offsetLeft: { value: 264 },
+        offsetTop: { value: 0 },
+      });
+      Object.defineProperties(fixture, {
+        offsetParent: { value: round },
+        offsetLeft: { value: 0 },
+        offsetTop: { value: 88 },
+        offsetWidth: { value: 240 },
+        offsetHeight: { value: 100 },
+        clientLeft: { value: 1 },
+        clientTop: { value: 1 },
+      });
+      Object.defineProperties(slot, {
+        offsetParent: { value: fixture },
+        offsetLeft: { value: 0 },
+        offsetTop: { value: 40 },
+        offsetWidth: { value: 238 },
+        offsetHeight: { value: 32 },
+      });
+      expect(bracketElementBounds(fixture, chart)).toEqual({
+        left: 264,
+        top: 88,
+        right: 504,
+        centerY: 138,
+      });
+      expect(bracketElementBounds(slot, chart)).toEqual({
+        left: 265,
+        top: 129,
+        right: 503,
+        centerY: 145,
+      });
+    },
+  );
+
+  it.each([0.5, 1, 1.2, 2])('maps viewport endpoints into SVG coordinates at scale %s', (scale) => {
+    const inverseScreenMatrix = {
+      a: 1 / scale,
+      b: 0,
+      c: 0,
+      d: 1 / scale,
+      e: -100 / scale,
+      f: -60 / scale,
+    };
+    const start = connectorPointInSvg(100 + 240 * scale, 60 + 88 * scale, inverseScreenMatrix);
+    const end = connectorPointInSvg(100 + 264 * scale, 60 + 132 * scale, inverseScreenMatrix);
+    expect(start.x).toBeCloseTo(240);
+    expect(start.y).toBeCloseTo(88);
+    expect(end.x).toBeCloseTo(264);
+    expect(end.y).toBeCloseTo(132);
+  });
+
+  it.each(['RED', 'BLUE'] as const)(
+    'keeps the %s connector lane inside a narrow round gap',
+    (targetSide) => {
+      const path = bracketConnectorPath({
+        sourceRight: 240,
+        sourceCenterY: 88,
+        targetLeft: 248,
+        targetCenterY: 132,
+        targetSide,
+      });
+      const middleX = Number(path.split(' ')[4]);
+      expect(middleX).toBeGreaterThan(240);
+      expect(middleX).toBeLessThan(248);
+    },
+  );
+
   it('uses distinct connector lanes for RED and BLUE target ports', () => {
     const sharedBounds = {
       sourceRight: 240,
@@ -453,15 +553,15 @@ describe('BracketChart', () => {
     );
   });
 
-  it('keeps a 16 px gap for 112 px cards even with a tall card in the next round', () => {
+  it('keeps a 12 px gap for 112 px cards even with a tall card in the next round', () => {
     expect(
       measuredFixtureRowPitch([
         { roundNumber: 1, height: 112 },
         { roundNumber: 1, height: 112 },
         { roundNumber: 2, height: 220 },
       ]),
-    ).toBe(128);
-    expect(measuredFixtureRowPitch([{ roundNumber: 1, height: 180 }])).toBe(196);
+    ).toBe(124);
+    expect(measuredFixtureRowPitch([{ roundNumber: 1, height: 180 }])).toBe(192);
   });
 
   it.each([128, 236])('keeps connector pairs separated with a %i px row pitch', (rowPitch) => {

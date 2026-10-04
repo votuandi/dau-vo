@@ -581,7 +581,11 @@ export function RosterItemsPage({
       <ul className="grid gap-3">
         {items.map((item) => (
           <li
-            className={kind === 'organizations' ? 'rounded-xl border p-3' : 'rounded-xl border p-4'}
+            className={
+              kind === 'organizations'
+                ? 'rounded-xl border p-3 bg-white/30'
+                : 'rounded-xl border p-4 bg-white/30'
+            }
             key={item.id}
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1346,7 +1350,7 @@ export function AthletesPage({
       ) : (
         <ul className="grid gap-2">
           {query.data?.items.map((x) => (
-            <li className="rounded-xl border p-3" key={x.id}>
+            <li className="rounded-xl border p-3 bg-white/30" key={x.id}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
                   {x.imageUrl ? (

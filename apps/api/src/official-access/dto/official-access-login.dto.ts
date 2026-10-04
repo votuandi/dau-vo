@@ -19,3 +19,16 @@ export class OfficialAccessLoginDto {
 export class OfficialAccessTakeoverDto extends OfficialAccessLoginDto {
   @IsString() @MinLength(1) @MaxLength(2048) takeoverToken!: string;
 }
+
+export class OfficialAccessTokenLoginDto {
+  @IsString() @MinLength(1) @MaxLength(2048) token!: string;
+  @IsString() @MinLength(1) @MaxLength(255) deviceId!: string;
+  @IsOptional()
+  @IsEnum(TournamentOfficialRole)
+  expectedRole?: TournamentOfficialRole;
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(2048)
+  takeoverToken?: string;
+}

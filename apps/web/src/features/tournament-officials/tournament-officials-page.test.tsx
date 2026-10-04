@@ -4,7 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TournamentOfficialRole } from '@/types/shared';
 import { TournamentOfficialsPage } from './tournament-officials-page';
 
-const api = vi.hoisted(() => ({ createOfficial: vi.fn(), listOfficials: vi.fn() }));
+const api = vi.hoisted(() => ({
+  createOfficial: vi.fn(),
+  listOfficials: vi.fn(),
+  createOfficialLoginLink: vi.fn(),
+}));
 vi.mock('@/services/api/admin-management', () => ({ adminManagementApi: api }));
 
 function renderPage(role = TournamentOfficialRole.JUDGE, readOnly = false): void {
@@ -61,6 +65,31 @@ describe('TournamentOfficialsPage credentials', () => {
     expect(await screen.findByRole('button', { name: 'Đã lưu mã' })).toBeEnabled();
     expect(screen.getAllByText('PRIVATE-123')).toHaveLength(2);
   });
+
+  it.each([TournamentOfficialRole.JUDGE, TournamentOfficialRole.SUPERVISOR])(
+    'creates a copyable token link for %s',
+    async (role) => {
+      api.listOfficials.mockResolvedValue({
+        officials: [{ id: 'official-1', name: 'Cán bộ', role, isActive: true, status: 'READY' }],
+      });
+      api.createOfficialLoginLink.mockResolvedValue({
+        token: 'signed-token',
+        role,
+        expiresAt: '2026-10-11T00:00:00Z',
+      });
+      renderPage(role);
+      const button = await screen.findByRole('button', { name: 'Tạo link đăng nhập' });
+      expect(button).toHaveAttribute('title', 'Tạo link đăng nhập');
+      expect(button).toHaveClass('bg-amber-500');
+      expect(button.textContent).toBe('');
+      fireEvent.click(button);
+      const input = await screen.findByRole('textbox', { name: 'Link đăng nhập' });
+      const path = role === TournamentOfficialRole.JUDGE ? '/giam-dinh' : '/giam-sat';
+      expect(input).toHaveValue(`${window.location.origin}${path}#token=signed-token`);
+      expect(api.createOfficialLoginLink).toHaveBeenCalledWith('tournament-1', 'official-1');
+      expect(screen.getByRole('button', { name: 'Sao chép link đăng nhập' })).toBeVisible();
+    },
+  );
 
   it('rejects invalid quantities and allows cancelling', async () => {
     renderPage();

@@ -1,3 +1,4 @@
+import { OfficialAccessService } from '../official-access/official-access.service';
 import {
   BadRequestException,
   Body,
@@ -39,6 +40,8 @@ const uuid = new ParseUUIDPipe({
 @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
 export class TournamentOfficialsController {
   constructor(
+    @Inject(OfficialAccessService)
+    private readonly officialAccess: OfficialAccessService,
     @Inject(AdminManagementService)
     private readonly access: AdminManagementService,
     @Inject(TournamentOfficialsService)
@@ -108,6 +111,17 @@ export class TournamentOfficialsController {
         req.user.id,
       ),
     };
+  }
+
+  @Post(':officialId/login-link')
+  @Header('Cache-Control', 'no-store')
+  async createLoginLink(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Param('officialId', uuid) officialId: string,
+    @Req() req: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, req.user, true);
+    return this.officialAccess.createLoginToken(tournamentId, officialId);
   }
 
   @Post(':officialId/passcode/regenerate')

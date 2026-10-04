@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ClipboardCheck, Crown, Eye, Maximize2, Minimize2 } from 'lucide-react';
+import { ClipboardCheck, Crown, Download, Eye, Loader2, Maximize2, Minimize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import {
@@ -33,6 +33,7 @@ import {
   presentPhase,
 } from '@/features/match-presentation';
 import { BracketChart } from './bracket-chart';
+import { downloadBracketPdf } from './download-bracket-pdf';
 import { BracketPreviewPanel } from './bracket-preview-dialog';
 import { BracketDrawSetupDialog } from './bracket-draw-setup-dialog';
 import { BracketAthleteSwapDialog } from './bracket-athlete-swap-dialog';
@@ -80,6 +81,8 @@ export function TournamentMatchesPage({
   const [intermissionDurationSeconds, setIntermissionDurationSeconds] = useState('0');
   const [intermissionError, setIntermissionError] = useState<string | null>(null);
   const [isBracketExpanded, setIsBracketExpanded] = useState(true);
+  const bracketChartRef = useRef<HTMLDivElement>(null);
+  const [isDownloadingBracket, setIsDownloadingBracket] = useState(false);
   useEffect(() => {
     setIntermissionDurationSeconds(String(selectedWeightClass?.intermissionDurationSeconds ?? 0));
     setIntermissionError(null);
@@ -667,26 +670,74 @@ export function TournamentMatchesPage({
                 <div className="mt-5 rounded-xl border border-border bg-muted/10">
                   <div className="flex items-center justify-between gap-3 p-4">
                     <h4 className="font-bold">Sơ đồ nhánh đấu</h4>
-                    <Button
-                      aria-controls="bracket-chart"
-                      aria-expanded={isBracketExpanded}
-                      aria-label={isBracketExpanded ? 'Thu gọn sơ đồ' : 'Mở rộng sơ đồ'}
-                      onClick={() => {
-                        setIsBracketExpanded((expanded) => !expanded);
-                      }}
-                      size="icon"
-                      title={isBracketExpanded ? 'Thu gọn sơ đồ' : 'Mở rộng sơ đồ'}
-                      type="button"
-                      variant="outline"
-                    >
-                      {isBracketExpanded ? (
-                        <Minimize2 aria-hidden="true" />
-                      ) : (
-                        <Maximize2 aria-hidden="true" />
-                      )}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        aria-label="Tải sơ đồ nhánh đấu PDF"
+                        aria-busy={isDownloadingBracket}
+                        disabled={isDownloadingBracket}
+                        onClick={() => {
+                          void (async () => {
+                            if (!bracketChartRef.current) return;
+                            setIsDownloadingBracket(true);
+                            try {
+                              await downloadBracketPdf(
+                                bracketChartRef.current,
+                                `So-do-nhanh-dau_${tournament.name}_${tournament.sport.name}_${selectedWeightClass?.name ?? selectedId}_${new Intl.DateTimeFormat(
+                                  'sv-SE',
+                                  {
+                                    timeZone: 'Asia/Ho_Chi_Minh',
+                                    year: 'numeric',
+                                    month: '2-digit',
+                                    day: '2-digit',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit',
+                                    hourCycle: 'h23',
+                                  },
+                                )
+                                  .format(new Date())
+                                  .replace(' ', '_')
+                                  .replaceAll(':', '-')}`,
+                              );
+                            } catch (error) {
+                              notifyMutationError(
+                                error,
+                                'Không thể tải sơ đồ PDF. Vui lòng thử lại.',
+                              );
+                            } finally {
+                              setIsDownloadingBracket(false);
+                            }
+                          })();
+                        }}
+                        size="icon"
+                        title="Tải sơ đồ nhánh đấu PDF"
+                        type="button"
+                        variant="outline"
+                      >
+                        <Download aria-hidden="true" />
+                      </Button>
+                      <Button
+                        disabled={isDownloadingBracket}
+                        aria-controls="bracket-chart"
+                        aria-expanded={isBracketExpanded}
+                        aria-label={isBracketExpanded ? 'Thu gọn sơ đồ' : 'Mở rộng sơ đồ'}
+                        onClick={() => {
+                          setIsBracketExpanded((expanded) => !expanded);
+                        }}
+                        size="icon"
+                        title={isBracketExpanded ? 'Thu gọn sơ đồ' : 'Mở rộng sơ đồ'}
+                        type="button"
+                        variant="outline"
+                      >
+                        {isBracketExpanded ? (
+                          <Minimize2 aria-hidden="true" />
+                        ) : (
+                          <Maximize2 aria-hidden="true" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
-                  <div hidden={!isBracketExpanded} id="bracket-chart">
+                  <div hidden={!isBracketExpanded} id="bracket-chart" ref={bracketChartRef}>
                     <BracketChart
                       data={bracket.data}
                       decisionDisabled={isReadOnly || decide.isPending || cancelBracket.isPending}
@@ -849,6 +900,24 @@ export function TournamentMatchesPage({
           selectedIds={designatedByeAthleteIds}
           setup={drawSetup}
         />
+      ) : null}
+      {isDownloadingBracket ? (
+        <Dialog
+          title="Đang tạo file PDF nhánh đấu"
+          description="Vui lòng chờ trong khi tạo và tải file PDF."
+          pending
+          onClose={() => {
+            // This progress dialog closes when the PDF operation finishes.
+          }}
+        >
+          <div
+            className="mt-5 flex justify-center"
+            role="status"
+            aria-label="Đang tạo file PDF nhánh đấu"
+          >
+            <Loader2 aria-hidden="true" className="size-8 animate-spin text-primary" />
+          </div>
+        </Dialog>
       ) : null}
       {decisionFixture ? (
         <Dialog

@@ -31,6 +31,7 @@ import {
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import {
   OfficialAccessLoginDto,
+  OfficialAccessTokenLoginDto,
   OfficialAccessTakeoverDto,
 } from './dto/official-access-login.dto';
 import { OfficialSessionGuard } from './official-session.guard';
@@ -70,6 +71,27 @@ export class OfficialAccessController {
     this.setCookie(response, created.sessionToken, created.session.expiresAt);
     return { session: created.session };
   }
+  @Post('token/login')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  async tokenLogin(
+    @Body() body: OfficialAccessTokenLoginDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ session: OfficialSessionIdentity }> {
+    await this.requireBrowserSessionReleased(request);
+    const created = await this.access.loginWithToken(
+      body.token,
+      body.deviceId,
+      body.expectedRole,
+      getClientAddress(request),
+      body.takeoverToken,
+    );
+    await this.revokeBrowser(request, created.sessionToken);
+    this.setCookie(response, created.sessionToken, created.session.expiresAt);
+    return { session: created.session };
+  }
+
   @Post('takeover')
   @HttpCode(200)
   @Header('Cache-Control', 'no-store')
