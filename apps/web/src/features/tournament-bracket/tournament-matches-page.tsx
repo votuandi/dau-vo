@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ClipboardCheck, Eye, Maximize2, Minimize2 } from 'lucide-react';
+import { ClipboardCheck, Crown, Eye, Maximize2, Minimize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import {
@@ -690,9 +690,9 @@ export function TournamentMatchesPage({
                     <BracketChart
                       data={bracket.data}
                       decisionDisabled={isReadOnly || decide.isPending || cancelBracket.isPending}
-                      onDecideWinner={(fixture) => {
+                      onDecideWinner={(fixture, entrantId) => {
                         setDecisionFixture(fixture);
-                        setSelectedWinnerId(null);
+                        setSelectedWinnerId(entrantId);
                         setDecisionReason('');
                         setDecisionError(null);
                         setDecisionKey(crypto.randomUUID());
@@ -1250,14 +1250,18 @@ function FixtureList({
                       ) : null}
                       {manualWinnerDecisionType(f) && manualWinnerCandidates(f).length === 2 ? (
                         <Button
+                          aria-label="Chỉ định VĐV chiến thắng"
+                          title="Chỉ định VĐV chiến thắng"
+                          className="w-9 border-0 bg-amber-600 px-0 text-yellow-300 hover:bg-amber-300 hover:text-yellow-800 hover:shadow-lg"
                           disabled={disabled}
                           onClick={() => {
                             onDecide(f);
                           }}
                           size="sm"
                           type="button"
+                          variant="ghost"
                         >
-                          Chọn VĐV chiến thắng
+                          <Crown aria-hidden="true" className="size-4" />
                         </Button>
                       ) : null}
                     </div>

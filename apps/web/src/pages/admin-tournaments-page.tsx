@@ -358,7 +358,7 @@ export function AdminTournamentsPage() {
                 disabled={createMutation.isPending}
                 imagePath={null}
                 name={name}
-                onUpload={(file) => {
+                onSelect={(file) => {
                   setLogoFile(file);
                 }}
               />

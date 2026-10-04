@@ -1,9 +1,21 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { MatchDisplayState, MatchLifecycle, MatchPhase } from '@martial-arts-scoring/shared-types';
 import type { ActiveBracket, BracketPreview } from '@/services/api/admin-management';
-import { BRACKET_LAYOUT, bracketConnectorPath, fixtureTopOffsets } from './bracket-chart-layout';
+import {
+  BRACKET_LAYOUT,
+  bracketConnectorPath,
+  fixtureTopOffsets,
+  measuredFixtureRowPitch,
+} from './bracket-chart-layout';
 import { BracketChart } from './bracket-chart';
+
+function required<T>(value: T | null | undefined): T {
+  if (value === null || value === undefined) {
+    throw new Error('Expected test fixture value to exist');
+  }
+  return value;
+}
 
 function activeBracket(
   phase: MatchPhase,
@@ -140,6 +152,68 @@ function previewBracket(): BracketPreview {
 }
 
 describe('BracketChart', () => {
+  it('fills an omitted preview bye branch with one athlete and no match reference', () => {
+    const original = previewBracket();
+    const first = required(original.rounds[0]);
+    const final = required(original.rounds[1]);
+    const data: BracketPreview = {
+      ...original,
+      rounds: [
+        { ...first, fixtures: [required(first.fixtures[0])] },
+        {
+          ...final,
+          fixtures: [
+            {
+              ...required(final.fixtures[0]),
+              slots: [
+                required(required(final.fixtures[0]).slots[0]),
+                {
+                  side: 'BLUE',
+                  source: { kind: 'ENTRANT', entrantId: 'c' },
+                  resolvedEntrantId: 'c',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    render(<BracketChart data={data} onEditAthlete={() => undefined} />);
+    const card = required(document.querySelector<HTMLElement>('[data-fixture-id="bye-r1-p2"]'));
+    expect(card).toBeInTheDocument();
+    expect(within(card).getByText('Cường')).toBeInTheDocument();
+    expect(within(card).getByText('Đặc cách')).toHaveClass('rounded-full');
+    expect(card.querySelectorAll('[data-fixture-slot]')).toHaveLength(1);
+    expect(within(card).queryByText(/R\d-M/)).not.toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Đổi vị trí Cường' })).toBeInTheDocument();
+  });
+
+  it('fills a confirmed bye branch without offering a winner decision', () => {
+    const original = activeBracket(MatchPhase.WAITING, MatchLifecycle.NOT_STARTED);
+    const fixture = required(original.fixtures[0]);
+    const data: ActiveBracket = {
+      ...original,
+      bracket: { ...original.bracket, roundCount: 2, bracketSize: 4, athleteCount: 3 },
+      fixtures: [
+        {
+          ...fixture,
+          roundNumber: 2,
+          slots: [
+            { ...required(fixture.slots[0]), sourceFixtureId: 'upstream', directEntrant: null },
+            required(fixture.slots[1]),
+          ],
+        },
+      ],
+    };
+    render(<BracketChart data={data} onDecideWinner={() => undefined} />);
+    const card = required(document.querySelector<HTMLElement>('[data-fixture-id="bye-r1-p2"]'));
+    expect(within(card).getByText('Trần Bình')).toBeInTheDocument();
+    expect(within(card).getByText('Đặc cách')).toBeInTheDocument();
+    expect(card.querySelectorAll('[data-fixture-slot]')).toHaveLength(1);
+    expect(within(card).queryByText('TK-01')).not.toBeInTheDocument();
+    expect(within(card).queryByRole('button')).not.toBeInTheDocument();
+  });
+
   it('renders edit buttons for every preview entrant and invokes the selected athlete', () => {
     const edited: string[] = [];
     render(
@@ -214,7 +288,10 @@ describe('BracketChart', () => {
     expect(screen.getByText('Kết quả cuối cùng')).toBeInTheDocument();
   });
 
-  it('highlights a resolved fixture with its winner side color', () => {
+  it.each([
+    ['a', 'Nguyễn An', 'CLB A', 'red'],
+    ['b', 'Trần Bình', 'CLB B', 'blue'],
+  ])('highlights winner %s with its fixture side color', (id, name, organization, color) => {
     const bracket = activeBracket(MatchPhase.FINISHED, MatchLifecycle.COMPLETED);
     const fixture = bracket.fixtures[0];
 
@@ -223,19 +300,28 @@ describe('BracketChart', () => {
     }
     const resolvedBracket: ActiveBracket = {
       ...bracket,
-      fixtures: [{ ...fixture, winnerEntrant: { id: 'a', snapshotName: 'Nguyễn An' } }],
+      fixtures: [{ ...fixture, winnerEntrant: { id, snapshotName: name } }],
     };
 
     render(<BracketChart data={resolvedBracket} />);
 
     const card = document.querySelector('[data-fixture-id="fixture-1"]');
-    expect(card).toHaveClass('border-red-500');
-    expect(screen.getByText('Thắng: Nguyễn An')).toHaveClass('bg-red-500');
+    expect(card).toHaveClass(`border-${color}-500`);
+    expect(card).not.toHaveClass('border-border');
+    const winnerDetails = screen.getByText(organization).parentElement;
+    expect(winnerDetails?.parentElement).toHaveClass(`bg-${color}-500`, 'text-white');
+    expect(winnerDetails?.parentElement).toHaveAttribute(
+      'data-fixture-slot',
+      `fixture-1:${color === 'red' ? 'RED' : 'BLUE'}`,
+    );
+    expect(winnerDetails).toContainElement(screen.getByText(name));
+    expect(screen.getByText(organization)).toHaveClass('text-white');
+    expect(screen.queryByText(`Thắng: ${name}`)).not.toBeInTheDocument();
   });
 
   it('offers manual winner selection only for an awaiting fixture with two resolved participants', () => {
     const bracket = activeBracket(MatchPhase.FINISHED, MatchLifecycle.COMPLETED);
-    const fixture = bracket.fixtures[0]!;
+    const fixture = required(bracket.fixtures[0]);
     const eligible: ActiveBracket = {
       ...bracket,
       fixtures: [
@@ -252,16 +338,31 @@ describe('BracketChart', () => {
     const decide = vi.fn();
     const { rerender } = render(<BracketChart data={eligible} onDecideWinner={decide} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Chọn VĐV chiến thắng cho TK-01/ }));
-    expect(decide).toHaveBeenCalledWith(eligible.fixtures[0]);
+    expect(screen.getAllByRole('button', { name: /Chỉ định VĐV chiến thắng trận:/ })).toHaveLength(
+      2,
+    );
+    expect(screen.queryByText('VĐV rút lui hoặc chấn thương')).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: /Chỉ định VĐV chiến thắng trận: Nguyễn An/ }),
+    );
+    expect(decide).toHaveBeenCalledWith(eligible.fixtures[0], 'a');
+    fireEvent.click(
+      screen.getByRole('button', { name: /Chỉ định VĐV chiến thắng trận: Trần Bình/ }),
+    );
+    expect(decide).toHaveBeenLastCalledWith(eligible.fixtures[0], 'b');
 
     rerender(
       <BracketChart
-        data={{ ...eligible, fixtures: [{ ...eligible.fixtures[0]!, status: 'MATCH_PREPARED' }] }}
+        data={{
+          ...eligible,
+          fixtures: [{ ...required(eligible.fixtures[0]), status: 'MATCH_PREPARED' }],
+        }}
         onDecideWinner={decide}
       />,
     );
-    expect(screen.queryByRole('button', { name: /Chọn VĐV chiến thắng/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Chỉ định VĐV chiến thắng trận:/ }),
+    ).not.toBeInTheDocument();
   });
 
   it('marks only seeded athletes with an accessible label', () => {
@@ -350,5 +451,54 @@ describe('BracketChart', () => {
     expect(bracketConnectorPath({ ...sharedBounds, targetSide: 'BLUE' })).toBe(
       'M 240 88 H 274.72 V 132 H 296',
     );
+  });
+
+  it('keeps a 16 px gap for 112 px cards even with a tall card in the next round', () => {
+    expect(
+      measuredFixtureRowPitch([
+        { roundNumber: 1, height: 112 },
+        { roundNumber: 1, height: 112 },
+        { roundNumber: 2, height: 220 },
+      ]),
+    ).toBe(128);
+    expect(measuredFixtureRowPitch([{ roundNumber: 1, height: 180 }])).toBe(196);
+  });
+
+  it.each([128, 236])('keeps connector pairs separated with a %i px row pitch', (rowPitch) => {
+    const offsets = fixtureTopOffsets(
+      [
+        {
+          roundNumber: 1,
+          fixtures: [1, 2, 3, 4].map((position) => ({
+            id: `source-${String(position)}`,
+            position,
+          })),
+        },
+        {
+          roundNumber: 2,
+          fixtures: [1, 2].map((position) => ({ id: `target-${String(position)}`, position })),
+        },
+      ],
+      rowPitch,
+    );
+
+    let previousPairBottom = -Infinity;
+    for (const position of [1, 2]) {
+      const redTop = required(offsets.get(`source-${String(position * 2 - 1)}`));
+      const blueTop = required(offsets.get(`source-${String(position * 2)}`));
+      const targetTop = required(offsets.get(`target-${String(position)}`));
+      // Include tall source cards and the compact card's two athlete ports.
+      const redCenter = redTop + (rowPitch - BRACKET_LAYOUT.fixtureGap) / 2;
+      const blueCenter = blueTop + 56;
+      const redPort = targetTop + 45;
+      const bluePort = targetTop + 85;
+      expect(blueTop - redTop).toBe(rowPitch);
+      expect(targetTop).toBe((redTop + blueTop) / 2);
+      expect(redCenter).toBeLessThan(redPort);
+      expect(redPort).toBeLessThan(bluePort);
+      expect(bluePort).toBeLessThan(blueCenter);
+      expect(redCenter).toBeGreaterThan(previousPairBottom);
+      previousPairBottom = blueCenter;
+    }
   });
 });

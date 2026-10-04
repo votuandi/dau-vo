@@ -97,6 +97,8 @@ function configureTestEnvironment(): void {
       'lifecycle-match-session-secret-with-at-least-thirty-two-characters',
     MATCH_SESSION_TTL_SECONDS: '3600',
     NODE_ENV: 'test',
+    OFFICIAL_PASSCODE_SECRET:
+      'test-only-official-passcode-secret-not-for-production',
     REDIS_URL: TEST_REDIS_URL,
     ROUND_DURATION_MS: '120000',
     WEB_ORIGIN: 'http://localhost:5173',
