@@ -733,6 +733,11 @@ export const adminManagementApi = {
       `admin/tournaments/${encodePathSegment(tournamentId)}/officials/${encodePathSegment(officialId)}`,
       input,
     ),
+  createOfficialLoginLink: (tournamentId: string, officialId: string) =>
+    apiClient.post<{ token: string; role: TournamentOfficialRole; expiresAt: string }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/officials/${encodePathSegment(officialId)}/login-link`,
+      {},
+    ),
   regenerateOfficialPasscode: (tournamentId: string, officialId: string) =>
     apiClient.post<{ readonly official: TournamentOfficial; readonly passcode: string }>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/officials/${encodePathSegment(officialId)}/passcode/regenerate`,

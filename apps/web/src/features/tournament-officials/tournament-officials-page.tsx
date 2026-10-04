@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Check, KeyRound, Pencil } from 'lucide-react';
+import { Ban, Check, KeyRound, Link, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ClipboardCopyButton } from '@/components/ui/clipboard-copy-button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
@@ -64,6 +64,7 @@ export function TournamentOfficialsPage({
 }) {
   const queryClient = useQueryClient();
   const query = useQuery(tournamentOfficialsQueryOptions(tournamentId, role));
+  const [loginLink, setLoginLink] = useState<{ url: string; name: string } | null>(null);
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<TournamentOfficial | null>(null);
   const [name, setName] = useState('');
@@ -86,6 +87,7 @@ export function TournamentOfficialsPage({
       queryKey: tournamentQueryKeys.officials(tournamentId, role),
     });
   useEffect(() => {
+    setLoginLink(null);
     setEditing(null);
     setName('');
     setPasscode(null);
@@ -161,6 +163,19 @@ export function TournamentOfficialsPage({
       invalidate();
       setConfirm(null);
       setPasscode(data.passcode);
+    },
+    onError: (error) => {
+      notifyMutationError(error, errorText(error));
+    },
+  });
+  const createLink = useMutation({
+    mutationFn: (official: TournamentOfficial) =>
+      adminManagementApi.createOfficialLoginLink(tournamentId, official.id),
+    onSuccess: (data, official) => {
+      const path = data.role === TournamentOfficialRole.JUDGE ? '/giam-dinh' : '/giam-sat';
+      const url = new URL(path, window.location.origin);
+      url.hash = new URLSearchParams({ token: data.token }).toString();
+      setLoginLink({ url: url.toString(), name: official.name });
     },
     onError: (error) => {
       notifyMutationError(error, errorText(error));
@@ -347,6 +362,24 @@ export function TournamentOfficialsPage({
                   >
                     <KeyRound aria-hidden="true" className="size-4" />
                   </Button>
+                  <Button
+                    aria-label="Tạo link đăng nhập"
+                    className="bg-amber-500 text-white shadow-none hover:bg-amber-600"
+                    disabled={
+                      !official.isActive ||
+                      createLink.isPending ||
+                      state.isPending ||
+                      regenerate.isPending
+                    }
+                    onClick={() => {
+                      createLink.mutate(official);
+                    }}
+                    size="icon"
+                    title="Tạo link đăng nhập"
+                    type="button"
+                  >
+                    <Link aria-hidden="true" className="size-4" />
+                  </Button>
                 </div>
               ) : null}
             </div>
@@ -490,6 +523,42 @@ export function TournamentOfficialsPage({
           }}
           title="Xác nhận thao tác"
         />
+      ) : null}
+      {loginLink ? (
+        <Dialog
+          title={`Link đăng nhập — ${loginLink.name}`}
+          description="Link có hiệu lực trong 7 ngày. Tạo mã bảo mật mới sẽ vô hiệu hóa link này."
+          onClose={() => {
+            setLoginLink(null);
+          }}
+        >
+          <div className="mt-4 flex items-center gap-2">
+            <input
+              aria-label="Link đăng nhập"
+              className={`${inputClassName} min-w-0 flex-1`}
+              readOnly
+              value={loginLink.url}
+              onFocus={(event) => {
+                event.target.select();
+              }}
+            />
+            <ClipboardCopyButton
+              accessibleLabel="Sao chép link đăng nhập"
+              className="mt-1.5 h-11"
+              value={loginLink.url}
+            />
+          </div>
+          <div className="mt-4 flex justify-end">
+            <Button
+              onClick={() => {
+                setLoginLink(null);
+              }}
+              type="button"
+            >
+              Đóng
+            </Button>
+          </div>
+        </Dialog>
       ) : null}
       {passcode ? (
         <Dialog
