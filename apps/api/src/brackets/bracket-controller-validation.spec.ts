@@ -40,6 +40,7 @@ const entrantId = '55555555-5555-4555-8555-555555555555';
 describe('bracket and match-filter controller validation', () => {
   const management = {
     assertTournamentAccess: jest.fn(),
+    assertTournamentMutationAccessInTransaction: jest.fn(),
     listMatches: jest.fn().mockImplementation((_id, query) => {
       if (query.weightClassId && query.unassigned === 'true')
         throw new BadRequestException({
@@ -247,6 +248,7 @@ describe('bracket and match-filter controller validation', () => {
   it('rejects invalid manual-winner payloads without a controller trim failure', async () => {
     for (const body of [
       { reason: 'reason', idempotencyKey: 'key' },
+      { entrantId, reason: 'reason', idempotencyKey: 'key' },
       { entrantId, reason: 1, idempotencyKey: 'key' },
       { entrantId: 'not-a-uuid', reason: 'reason', idempotencyKey: 'key' },
       { entrantId, reason: 'x'.repeat(501), idempotencyKey: 'key' },
@@ -269,6 +271,7 @@ describe('bracket and match-filter controller validation', () => {
       )
       .send({
         entrantId,
+        decisionType: 'ADMIN_TIEBREAK',
         reason: '  tiebreak  ',
         idempotencyKey: '  winner-key  ',
       })
@@ -280,7 +283,11 @@ describe('bracket and match-filter controller validation', () => {
       'admin-user',
       'tiebreak',
       'winner-key',
+      'ADMIN_TIEBREAK',
     );
+    expect(
+      management.assertTournamentMutationAccessInTransaction,
+    ).toHaveBeenLastCalledWith(expect.anything(), tournamentId, 'admin-user');
   });
 
   it.each([

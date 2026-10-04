@@ -3,11 +3,11 @@ import type {
   BracketFixture,
   BracketPreview,
 } from '@/services/api/admin-management';
-import { bracketRoundLabel } from '@martial-arts-scoring/shared-types';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pencil, Star } from 'lucide-react';
+import { Crown, Pencil, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { bracketPresentation, isBracketPreview } from './bracket-graph';
+import { isBracketPreview } from './bracket-graph';
+import { bracketChartPresentation } from './bracket-chart-presentation';
 import {
   matchVariantClassName,
   presentDisplayState,
@@ -15,7 +15,12 @@ import {
   presentPhase,
 } from '@/features/match-presentation';
 import { swappablePreviewAthleteIds } from './bracket-preview-swap';
-import { BRACKET_LAYOUT, bracketConnectorPath, fixtureTopOffsets } from './bracket-chart-layout';
+import {
+  BRACKET_LAYOUT,
+  bracketConnectorPath,
+  fixtureTopOffsets,
+  measuredFixtureRowPitch,
+} from './bracket-chart-layout';
 
 type ChartData = Pick<BracketPreview, 'rounds' | 'initialEntrants'> | ActiveBracket;
 interface ConnectorPath {
@@ -37,24 +42,28 @@ function winnerSideOfFixture(fixture: ActiveBracket['fixtures'][number]): 'RED' 
 function winnerBorderClassName(side: 'RED' | 'BLUE' | null): string {
   if (side === 'RED') return 'border-red-500';
   if (side === 'BLUE') return 'border-blue-500';
-  return '';
+  return 'border-border';
 }
 
 function winnerSurfaceClassName(side: 'RED' | 'BLUE' | null): string {
-  if (side === 'RED') return 'bg-red-500 text-white dark:bg-red-950/50 dark:text-red-50';
-  if (side === 'BLUE') return 'bg-blue-500 text-white dark:bg-blue-950/50 dark:text-blue-50';
+  if (side === 'RED') return 'bg-red-500 text-white';
+  if (side === 'BLUE') return 'bg-blue-500 text-white';
   return '';
 }
 
 export function BracketChart({
   data,
   onEditAthlete,
+  onDecideWinner,
+  decisionDisabled = false,
 }: {
   readonly data: ChartData;
   readonly onEditAthlete?: (athleteId: string) => void;
+  readonly onDecideWinner?: (fixture: ActiveBracket['fixtures'][number], entrantId: string) => void;
+  readonly decisionDisabled?: boolean;
 }) {
   const isPreview = isBracketPreview(data);
-  const graph = useMemo(() => bracketPresentation(data), [data]);
+  const graph = useMemo(() => bracketChartPresentation(data), [data]);
   const winnerSideByFixtureId = useMemo(
     () =>
       new Map(
@@ -68,6 +77,7 @@ export function BracketChart({
   const fixtureRefs = useRef(new Map<string, HTMLElement>());
   const slotRefs = useRef(new Map<string, HTMLElement>());
   const [paths, setPaths] = useState<readonly ConnectorPath[]>([]);
+  const [rowPitch, setRowPitch] = useState<number>(BRACKET_LAYOUT.rowPitch);
   const entrantById = new Map(
     isPreview
       ? data.initialEntrants.flatMap((x) =>
@@ -98,17 +108,11 @@ export function BracketChart({
         )
       : data.fixtures.map((fixture) => [fixture.id, fixture.displayReference] as const),
   );
-  const rounds = isPreview
-    ? data.rounds
-    : Array.from({ length: data.bracket.roundCount }, (_, index) => ({
-        roundNumber: index + 1,
-        label: bracketRoundLabel(index + 1, data.bracket.roundCount),
-        fixtures: data.fixtures.filter((fixture) => fixture.roundNumber === index + 1),
-      }));
-  const fixtureOffsets = useMemo(() => fixtureTopOffsets(rounds), [rounds]);
+  const rounds = graph.rounds;
+  const fixtureOffsets = useMemo(() => fixtureTopOffsets(rounds, rowPitch), [rounds, rowPitch]);
   const chartHeight = Math.max(
     280,
-    ...Array.from(fixtureOffsets.values(), (offset) => offset + BRACKET_LAYOUT.rowPitch),
+    ...Array.from(fixtureOffsets.values(), (offset) => offset + rowPitch),
   );
 
   useEffect(() => {
@@ -118,6 +122,16 @@ export function BracketChart({
       frame = requestAnimationFrame(() => {
         const content = contentRef.current;
         if (!content) return;
+        const measuredPitch = measuredFixtureRowPitch(
+          Array.from(fixtureRefs.current.values(), (element) => ({
+            roundNumber: Number(element.dataset.roundNumber),
+            height: Math.ceil(element.getBoundingClientRect().height),
+          })),
+        );
+        if (measuredPitch !== rowPitch) {
+          setRowPitch(measuredPitch);
+          return;
+        }
         const contentBounds = content.getBoundingClientRect();
         setPaths(
           graph.edges.flatMap((edge) => {
@@ -167,7 +181,7 @@ export function BracketChart({
       cancelAnimationFrame(frame);
       observer?.disconnect();
     };
-  }, [graph, winnerSideByFixtureId]);
+  }, [graph, winnerSideByFixtureId, rowPitch]);
 
   return (
     <div className="overflow-x-auto rounded-xl border bg-muted/20 p-4" aria-label="Sơ đồ nhánh đấu">
@@ -212,14 +226,15 @@ export function BracketChart({
             </h4>
             <div className="relative pt-8" style={{ minHeight: `${String(chartHeight)}px` }}>
               {round.fixtures.map((fixture) => {
-                const activeFixture = isPreview
-                  ? null
-                  : (fixture as ActiveBracket['fixtures'][number]);
+                const isBye = graph.byeIds.has(fixture.id);
+                const activeFixture =
+                  isPreview || isBye ? null : (fixture as ActiveBracket['fixtures'][number]);
                 const winnerSide = activeFixture ? winnerSideOfFixture(activeFixture) : null;
                 return (
                   <article
-                    className={`absolute left-0 w-full overflow-hidden rounded-lg border border-border bg-card shadow-sm ${winnerBorderClassName(winnerSide)}`}
+                    className={`absolute left-0 w-full overflow-hidden rounded-lg border bg-card shadow-sm ${winnerBorderClassName(winnerSide)}`}
                     data-fixture-id={fixture.id}
+                    data-round-number={round.roundNumber}
                     key={fixture.id}
                     ref={(element) => {
                       if (element) fixtureRefs.current.set(fixture.id, element);
@@ -227,7 +242,13 @@ export function BracketChart({
                     }}
                     style={{ top: `${String(fixtureOffsets.get(fixture.id) ?? 0)}px` }}
                   >
-                    {activeFixture ? (
+                    {isBye ? (
+                      <header className="flex justify-end border-b px-2 py-1">
+                        <span className="rounded-full border border-yellow-300 bg-yellow-100 px-1 py-0.5 text-[10px] font-bold text-yellow-800 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-300">
+                          Đặc cách
+                        </span>
+                      </header>
+                    ) : activeFixture ? (
                       (() => {
                         const statuses = activeFixture.match
                           ? [
@@ -236,7 +257,7 @@ export function BracketChart({
                             ]
                           : [presentDisplayState(activeFixture.displayState)];
                         return (
-                          <header className="flex flex-wrap items-center justify-between gap-1 border-b px-2 py-1.5">
+                          <header className="flex flex-wrap items-center justify-between gap-1 border-b px-2 py-1">
                             <p className="text-xs font-bold text-muted-foreground">
                               {fixture.displayReference}
                             </p>
@@ -271,6 +292,9 @@ export function BracketChart({
                           ? entrantById.get(previewSlot.resolvedEntrantId)
                           : undefined
                         : (activeSlot.resolvedEntrant ?? activeSlot.directEntrant);
+                      const isWinner = Boolean(
+                        entrant && activeFixture?.winnerEntrant?.id === entrant.id,
+                      );
                       const waiting =
                         !entrant && !isPreview && activeSlot.sourceFixtureId
                           ? `Chờ người thắng ${fixtureReferenceById.get(activeSlot.sourceFixtureId) ?? ''}`
@@ -287,7 +311,7 @@ export function BracketChart({
                           : null;
                       return (
                         <div
-                          className={`flex min-h-11 items-center gap-1.5 border-l-4 px-2 py-1.5 ${slot.side === 'RED' ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/20' : 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20'}`}
+                          className={`group/athlete relative flex min-h-10 items-center gap-1.5 border-l-4 px-1.5 py-0.5 ${isBye ? 'border-l-green-500 bg-green-50 dark:bg-green-950/20' : `${slot.side === 'RED' ? 'border-l-red-500' : 'border-l-blue-500'} ${isWinner ? winnerSurfaceClassName(winnerSide) : slot.side === 'RED' ? 'bg-red-50/50 dark:bg-red-950/20' : 'bg-blue-50/50 dark:bg-blue-950/20'}`}`}
                           data-fixture-slot={`${fixture.id}:${slot.side}`}
                           key={slot.side}
                           ref={(element) => {
@@ -305,9 +329,9 @@ export function BracketChart({
                           ) : null}
                           <div className="min-w-0 flex-1">
                             <span className="sr-only">
-                              {slot.side === 'RED' ? 'Bên đỏ' : 'Bên xanh'}
+                              {isBye ? 'VĐV đặc cách' : slot.side === 'RED' ? 'Bên đỏ' : 'Bên xanh'}
                             </span>
-                            <p className="break-words text-sm font-semibold leading-5">
+                            <p className="break-words text-sm font-semibold leading-4">
                               {entrant ? (
                                 <span className="inline-flex items-center gap-1">
                                   {'name' in entrant ? entrant.name : entrant.snapshotName}
@@ -325,13 +349,34 @@ export function BracketChart({
                               )}
                             </p>
                             {entrant ? (
-                              <p className="break-words text-[10px] leading-4 text-muted-foreground">
+                              <p
+                                className={`break-words text-[10px] ${isWinner ? 'text-white' : 'text-muted-foreground'}`}
+                              >
                                 {'organizationName' in entrant
                                   ? entrant.organizationName
                                   : (entrant.snapshotOrganization ?? 'Không đơn vị')}
                               </p>
                             ) : null}
                           </div>
+                          {activeFixture &&
+                          entrant &&
+                          onDecideWinner &&
+                          manualWinnerCandidates(activeFixture).length === 2 ? (
+                            <Button
+                              aria-label={`Chỉ định VĐV chiến thắng trận: ${'name' in entrant ? entrant.name : entrant.snapshotName} (${activeFixture.displayReference})`}
+                              title="Chỉ định VĐV chiến thắng trận"
+                              className="absolute right-1.5 z-10 size-8 border border-yellow-400 bg-yellow-100 text-yellow-700 hover:border-yellow-500 hover:bg-yellow-200 hover:text-yellow-800 opacity-0 pointer-events-none group-hover/athlete:opacity-100 group-hover/athlete:pointer-events-auto group-focus-within/athlete:opacity-100 group-focus-within/athlete:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto"
+                              disabled={decisionDisabled}
+                              onClick={() => {
+                                onDecideWinner(activeFixture, entrant.id);
+                              }}
+                              size="icon"
+                              type="button"
+                              variant="ghost"
+                            >
+                              <Crown aria-hidden="true" className="size-4" />
+                            </Button>
+                          ) : null}
                           {editableAthleteId ? (
                             <Button
                               aria-label={`Đổi vị trí ${entrant ? ('name' in entrant ? entrant.name : entrant.snapshotName) : 'vận động viên'}`}
@@ -349,16 +394,9 @@ export function BracketChart({
                         </div>
                       );
                     })}
-                    {activeFixture?.winnerEntrant ? (
-                      <p
-                        className={`border-t px-2 py-1.5 text-sm font-bold ${winnerSurfaceClassName(winnerSide)}`}
-                      >
-                        Thắng: {activeFixture.winnerEntrant.snapshotName}
-                      </p>
-                    ) : null}
-                    {activeFixture?.status === 'AWAITING_WINNER' ? (
-                      <p className="border-t px-2 py-1.5 text-sm text-muted-foreground">
-                        Chờ xác định người thắng
+                    {activeFixture?.winnerDecision?.reason ? (
+                      <p className="border-t px-2 py-1.5 text-xs text-muted-foreground">
+                        Lý do: {activeFixture.winnerDecision.reason}
                       </p>
                     ) : null}
                   </article>
@@ -370,4 +408,16 @@ export function BracketChart({
       </div>
     </div>
   );
+}
+
+function manualWinnerCandidates(fixture: ActiveBracket['fixtures'][number]) {
+  return manualWinnerDecisionType(fixture)
+    ? fixture.slots.flatMap((slot) => (slot.resolvedEntrant ? [slot.resolvedEntrant] : []))
+    : [];
+}
+
+function manualWinnerDecisionType(fixture: ActiveBracket['fixtures'][number]) {
+  if (fixture.status === 'AWAITING_WINNER') return 'ADMIN_TIEBREAK';
+  if (fixture.status === 'READY' && fixture.match === null) return 'WITHDRAWAL_OR_INJURY';
+  return null;
 }

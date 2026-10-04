@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Check, Pencil, Star, Trash2 } from 'lucide-react';
+import { Ban, Check, Image, Pencil, Star, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Pagination } from '@/components/ui/pagination';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { Dialog } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/toast';
@@ -247,9 +248,7 @@ function RosterForm({
   return (
     <form
       aria-label={mode === 'edit' ? 'Chỉnh sửa danh mục' : 'Tạo danh mục mới'}
-      className={`grid gap-4 rounded-xl border bg-muted/30 p-4 ${
-        organization ? 'grid-cols-1' : 'sm:grid-cols-[1fr_2fr_auto]'
-      }`}
+      className="grid grid-cols-1 gap-4 rounded-xl border bg-muted/30 p-4"
       onSubmit={(e) => {
         e.preventDefault();
         if (!busy && values.name.trim()) {
@@ -262,10 +261,7 @@ function RosterForm({
         }
       }}
     >
-      <p
-        aria-live="polite"
-        className={`text-sm font-semibold ${organization ? '' : 'sm:col-span-3'}`}
-      >
+      <p aria-live="polite" className="text-sm font-semibold">
         {mode === 'edit' ? 'Đang chỉnh sửa danh mục' : 'Tạo danh mục mới'}
       </p>
       <label className="form-field">
@@ -406,6 +402,19 @@ export function RosterItemsPage({
   });
   const [draft, setDraft] = useState<RosterDraft>(null);
   const [confirm, setConfirm] = useState<TournamentRosterItem | null>(null);
+  const logoInput = useRef<HTMLInputElement>(null);
+  const logoOrganizationId = useRef<string | null>(null);
+  const updateLogo = useMutation({
+    mutationFn: ({ organizationId, file }: { organizationId: string; file: File }) =>
+      adminManagementApi.replaceOrganizationImage(tournamentId, organizationId, file),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId] });
+      notifyMutationSuccess('Đã cập nhật logo.');
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể cập nhật logo.');
+    },
+  });
   const noun = kind === 'organizations' ? 'đơn vị' : 'hạng cân';
   const mutate = useMutation({
     mutationFn: async ({
@@ -493,6 +502,30 @@ export function RosterItemsPage({
   const items = query.data ?? [];
   return (
     <section className="space-y-5">
+      {kind === 'organizations' && !readOnly ? (
+        <input
+          accept="image/jpeg,image/png,image/webp"
+          aria-label="Chọn logo đơn vị"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            const organizationId = logoOrganizationId.current;
+            event.target.value = '';
+            if (!file || !organizationId || updateLogo.isPending) return;
+            if (!organizationImageTypes.includes(file.type)) {
+              toast({ title: 'Logo phải là ảnh JPEG, PNG hoặc WebP.', variant: 'destructive' });
+              return;
+            }
+            if (file.size > organizationImageMaxBytes) {
+              toast({ title: 'Logo không được vượt quá 2 MiB.', variant: 'destructive' });
+              return;
+            }
+            updateLogo.mutate({ organizationId, file });
+          }}
+          ref={logoInput}
+          type="file"
+        />
+      ) : null}
       <div>
         <h2 className="text-xl font-black">
           {kind === 'organizations' ? 'Đơn vị tham gia' : 'Hạng cân'}
@@ -595,6 +628,23 @@ export function RosterItemsPage({
               )}
               {!readOnly ? (
                 <div className="flex shrink-0 flex-wrap gap-2">
+                  {kind === 'organizations' ? (
+                    <Button
+                      aria-label="Cập nhật logo"
+                      className="border-sky-200 bg-sky-100 text-sky-700 shadow-none hover:bg-sky-200 hover:text-sky-800"
+                      disabled={mutate.isPending || deactivate.isPending || updateLogo.isPending}
+                      onClick={() => {
+                        logoOrganizationId.current = item.id;
+                        logoInput.current?.click();
+                      }}
+                      size="icon"
+                      title="Cập nhật logo"
+                      type="button"
+                      variant="outline"
+                    >
+                      <Image aria-hidden="true" className="size-4" />
+                    </Button>
+                  ) : null}
                   <Button
                     aria-label="Sửa"
                     className={
@@ -690,7 +740,9 @@ export function AthletesPage({
 }) {
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState(params.get('search') ?? '');
+  const appliedSearch = params.get('search') ?? '';
   useEffect(() => {
+    if (search === appliedSearch) return;
     const timer = window.setTimeout(() => {
       setParams(
         (old) => {
@@ -706,7 +758,7 @@ export function AthletesPage({
     return () => {
       window.clearTimeout(timer);
     };
-  }, [search, setParams]);
+  }, [search, appliedSearch, setParams]);
   const searchParam = params.get('search');
   const weightClassIdParam = params.get('weightClassId');
   const organizationIdParam = params.get('organizationId');
@@ -879,7 +931,7 @@ export function AthletesPage({
       const n = new URLSearchParams(old);
       if (value) n.set(key, value);
       else n.delete(key);
-      n.set('page', '1');
+      if (key !== 'page') n.set('page', '1');
       return n;
     });
   }
@@ -1424,29 +1476,13 @@ export function AthletesPage({
         </ul>
       )}
       {query.data && query.data.totalPages > 1 ? (
-        <div className="flex gap-2">
-          <Button
-            disabled={filters.page <= 1}
-            onClick={() => {
-              updateParam('page', String(filters.page - 1));
-            }}
-            type="button"
-          >
-            Trước
-          </Button>
-          <span className="py-2 text-sm">
-            Trang {filters.page}/{query.data.totalPages}
-          </span>
-          <Button
-            disabled={filters.page >= query.data.totalPages}
-            onClick={() => {
-              updateParam('page', String(filters.page + 1));
-            }}
-            type="button"
-          >
-            Sau
-          </Button>
-        </div>
+        <Pagination
+          onPageChange={(page) => {
+            updateParam('page', String(page));
+          }}
+          page={filters.page}
+          totalPages={query.data.totalPages}
+        />
       ) : null}
       {confirm ? (
         <ConfirmationDialog

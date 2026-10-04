@@ -82,6 +82,11 @@ export class BracketFixturesController {
     );
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await this.management.assertTournamentMutationAccessInTransaction(
+          tx,
+          tournamentId,
+          request.user.id,
+        );
         const fixture = await tx.bracketFixture.findFirst({
           where: { id: fixtureId, bracketId, bracket: { tournamentId } },
           select: { id: true },
@@ -98,6 +103,7 @@ export class BracketFixturesController {
           request.user.id,
           input.reason,
           input.idempotencyKey,
+          input.decisionType,
         );
       });
     } catch (error) {
@@ -111,6 +117,7 @@ export class BracketFixturesController {
         fixtureId,
         input.entrantId,
         input.reason,
+        input.decisionType,
       );
       if (winner.requestFingerprint !== fingerprint)
         throw new ConflictException({

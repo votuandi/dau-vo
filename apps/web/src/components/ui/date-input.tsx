@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState, type ComponentPropsWithoutRef } fro
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/style.css';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 export function formatDateOnly(value: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
@@ -69,12 +70,12 @@ export function DateInput({
     setDisplayValue(formatDateOnly(parsed));
   }
   return (
-    <div className="relative mt-2 items-end">
-      <div className="flex gap-2">
+    <div className="relative mt-1.5">
+      <div className="flex items-center gap-2">
         <input
           aria-describedby={error ? errorId : undefined}
           aria-invalid={Boolean(error)}
-          className={`${className ?? ''} mt-0`}
+          className={cn(className, 'mt-0 min-w-0 flex-1')}
           disabled={disabled}
           id={id}
           inputMode="numeric"
@@ -99,6 +100,7 @@ export function DateInput({
           aria-expanded={open}
           aria-haspopup="dialog"
           aria-label="Mở lịch"
+          className="size-11 shrink-0"
           disabled={disabled}
           onClick={() => {
             setOpen((current) => !current);
