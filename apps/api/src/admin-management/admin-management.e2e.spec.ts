@@ -5,12 +5,11 @@ import {
   AdminEntitlementStatus,
   AthleteColor,
   AuditEventType,
-  MatchAccessRole,
-  MatchRole,
   MatchLifecycle,
   MatchStatus,
-  JudgeSlot,
+  MatchRulesVersion,
   TournamentStatus,
+  TournamentOfficialRole,
 } from '@prisma/client';
 import { compare, hash } from 'bcryptjs';
 import Redis from 'ioredis';
@@ -29,13 +28,6 @@ const TEST_RUN_ID = `${process.pid}-${Date.now().toString(36)}`;
 const TEST_PREFIX = `admin-management-e2e-${TEST_RUN_ID}`;
 const TEST_ADMIN_USERNAME = `${TEST_PREFIX}-admin`;
 const TEST_ADMIN_PASSWORD = 'Aa1!'.repeat(15);
-
-const requiredAccessRoles = [
-  MatchAccessRole.JUDGE_1,
-  MatchAccessRole.JUDGE_2,
-  MatchAccessRole.JUDGE_3,
-  MatchAccessRole.SUPERVISOR,
-] as const;
 
 interface TournamentView {
   id: string;
@@ -80,18 +72,12 @@ interface MatchView {
   id: string;
   tournamentId: string;
   publicId: string;
-  status: MatchStatus;
   phase: MatchStatus;
   lifecycle: MatchLifecycle;
   displayState: string;
   roundDurationMs: number;
   breakDurationMs: number;
   athletes: AthleteView[];
-}
-
-interface RawAccessCode {
-  role: MatchAccessRole;
-  code: string;
 }
 
 interface TournamentResponseBody {
@@ -110,14 +96,7 @@ interface MatchListResponseBody {
   matches: MatchView[];
 }
 
-interface MatchCreationResponseBody extends MatchResponseBody {
-  accessCodes: RawAccessCode[];
-}
-
-interface AccessCodeRegenerationResponseBody {
-  matchId: string;
-  accessCodes: RawAccessCode[];
-}
+type MatchCreationResponseBody = MatchResponseBody;
 
 interface TriggerFixture {
   functionName: string;
@@ -163,22 +142,6 @@ function expectExactlyOneAthletePerColor(athletes: AthleteView[]): void {
   expect(athletes.map(({ color }) => color).sort()).toEqual(
     [AthleteColor.BLUE, AthleteColor.RED].sort(),
   );
-}
-
-function sessionRoleForAccessRole(role: MatchAccessRole): {
-  role: MatchRole;
-  judgeSlot?: JudgeSlot;
-} {
-  switch (role) {
-    case MatchAccessRole.JUDGE_1:
-      return { judgeSlot: JudgeSlot.JUDGE_1, role: MatchRole.JUDGE };
-    case MatchAccessRole.JUDGE_2:
-      return { judgeSlot: JudgeSlot.JUDGE_2, role: MatchRole.JUDGE };
-    case MatchAccessRole.JUDGE_3:
-      return { judgeSlot: JudgeSlot.JUDGE_3, role: MatchRole.JUDGE };
-    case MatchAccessRole.SUPERVISOR:
-      return { role: MatchRole.SUPERVISOR };
-  }
 }
 
 describe('Admin tournament and match management (integration)', () => {
@@ -314,7 +277,7 @@ describe('Admin tournament and match management (integration)', () => {
 
   async function dropTrigger(fixture: TriggerFixture): Promise<void> {
     await prisma.$executeRawUnsafe(
-      `DROP TRIGGER IF EXISTS "${fixture.triggerName}" ON "match_access_codes"`,
+      `DROP TRIGGER IF EXISTS "${fixture.triggerName}" ON "match_athletes"`,
     );
     await prisma.$executeRawUnsafe(
       `DROP FUNCTION IF EXISTS "${fixture.functionName}"()`,
@@ -851,14 +814,19 @@ describe('Admin tournament and match management (integration)', () => {
     const creation = await createMatch(tournament.id, 'match-create', {
       breakDurationMs: 45_000,
       roundDurationMs: 90_000,
-      requiredJudgeCount: 3,
     });
 
     expect(creation.match).toMatchObject({
       breakDurationMs: 45_000,
       roundDurationMs: 90_000,
-      status: MatchStatus.WAITING,
+      phase: MatchStatus.WAITING,
       tournamentId: tournament.id,
+    });
+    await expect(
+      prisma.match.findUniqueOrThrow({ where: { id: creation.match.id } }),
+    ).resolves.toMatchObject({
+      rulesVersion: MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2,
+      requiredJudgeCount: 3,
     });
     expect(creation.match.publicId).toHaveLength(6);
     expect(creation.match.publicId).toMatch(
@@ -879,7 +847,7 @@ describe('Admin tournament and match management (integration)', () => {
       ]),
     );
 
-    expect(creation.accessCodes).toEqual([]);
+    expect(Object.hasOwn(creation, 'accessCodes')).toBe(false);
 
     const storedCodes = await prisma.matchAccessCode.findMany({
       where: { matchId: creation.match.id },
@@ -896,9 +864,7 @@ describe('Admin tournament and match management (integration)', () => {
         ({ id }) => id === creation.match.id,
       ),
     ).toBe(true);
-    for (const { code } of creation.accessCodes) {
-      expect(JSON.stringify(listResponse.body)).not.toContain(code);
-    }
+    expect(Object.hasOwn(listResponse.body, 'accessCodes')).toBe(false);
 
     const getResponse = await authenticated(
       request(app.getHttpServer()).get(
@@ -910,13 +876,10 @@ describe('Admin tournament and match management (integration)', () => {
     expect(fetchedMatch).toMatchObject({
       lifecycle: MatchLifecycle.NOT_STARTED,
       phase: MatchStatus.WAITING,
-      status: MatchStatus.WAITING,
       displayState: 'NOT_STARTED',
     });
     expectExactlyOneAthletePerColor(fetchedMatch.athletes);
-    for (const { code } of creation.accessCodes) {
-      expect(JSON.stringify(getResponse.body)).not.toContain(code);
-    }
+    expect(Object.hasOwn(getResponse.body, 'accessCodes')).toBe(false);
 
     const audit = await prisma.auditLog.findFirst({
       where: {
@@ -1188,7 +1151,7 @@ describe('Admin tournament and match management (integration)', () => {
       const creation = await createMatch(tournament.id, 'collision-retry');
 
       expect(creation.match.publicId).toBe(retryPublicId);
-      expect(creation.accessCodes).toEqual([]);
+      expect(Object.hasOwn(creation, 'accessCodes')).toBe(false);
       expect(generatorSpy).toHaveBeenCalledTimes(2);
     } finally {
       generatorSpy.mockRestore();
@@ -1337,167 +1300,124 @@ describe('Admin tournament and match management (integration)', () => {
     ).toEqual(before);
   });
 
-  it('regenerates individual or all codes and revokes dependent sessions', async () => {
-    const tournament = await createTournament('code-regeneration');
-    const creation = await createMatch(tournament.id, 'code-regeneration');
-    const originalCodes = await prisma.matchAccessCode.findMany({
-      where: { matchId: creation.match.id },
+  it("regenerates official passcodes and revokes only that official's sessions", async () => {
+    const tournament = await createTournament('official-passcode-regeneration');
+    const officials = await Promise.all(
+      ['dependent', 'independent'].map(async (label) => {
+        const response = await authenticated(
+          request(app.getHttpServer()).post(
+            `/api/admin/tournaments/${tournament.id}/officials`,
+          ),
+        )
+          .send({
+            name: `${TEST_PREFIX}-${label}`,
+            role: TournamentOfficialRole.JUDGE,
+          })
+          .expect(201);
+        return response.body as { official: { id: string }; passcode: string };
+      }),
+    );
+    const dependent = officials[0];
+    const independent = officials[1];
+    if (dependent === undefined || independent === undefined)
+      throw new Error('Missing official fixtures');
+    const sessions = await Promise.all(
+      officials.map(async ({ official }, index) =>
+        prisma.tournamentOfficialSession.create({
+          data: {
+            officialId: official.id,
+            deviceId: `${TEST_PREFIX}-official-device-${index}`,
+            tokenHash: `${TEST_PREFIX}-official-token-${index}`,
+            expiresAt: new Date(Date.now() + 60_000),
+          },
+        }),
+      ),
+    );
+    const before = await prisma.tournamentOfficial.findUniqueOrThrow({
+      where: { id: dependent.official.id },
     });
-    const originalHashByRole = new Map(
-      originalCodes.map(({ codeHash, role }) => [role, codeHash]),
-    );
-    const refereeOneCode = originalCodes.find(
-      ({ role }) => role === MatchAccessRole.JUDGE_1,
-    );
-    const inspectorCode = originalCodes.find(
-      ({ role }) => role === MatchAccessRole.SUPERVISOR,
-    );
-
-    expect(refereeOneCode).toBeDefined();
-    expect(inspectorCode).toBeDefined();
-    const [dependentSession, independentSession] = await Promise.all([
-      prisma.matchSession.create({
-        data: {
-          accessCodeId: refereeOneCode?.id ?? '',
-          deviceId: `${TEST_PREFIX}-individual-referee-device`,
-          matchId: creation.match.id,
-          judgeSlot: JudgeSlot.JUDGE_1,
-          role: MatchRole.JUDGE,
-          tokenHash: `${TEST_PREFIX}-individual-referee-token`,
-        },
-      }),
-      prisma.matchSession.create({
-        data: {
-          accessCodeId: inspectorCode?.id ?? '',
-          deviceId: `${TEST_PREFIX}-individual-inspector-device`,
-          matchId: creation.match.id,
-          role: MatchRole.SUPERVISOR,
-          tokenHash: `${TEST_PREFIX}-individual-inspector-token`,
-        },
-      }),
-    ]);
-
-    const individualResponse = await authenticated(
+    const response = await authenticated(
       request(app.getHttpServer()).post(
-        `/api/admin/matches/${creation.match.id}/access-codes/${MatchAccessRole.JUDGE_1}/regenerate`,
+        `/api/admin/tournaments/${tournament.id}/officials/${dependent.official.id}/passcode/regenerate`,
       ),
-    ).expect(200);
-    const individualResult =
-      individualResponse.body as AccessCodeRegenerationResponseBody;
-
-    expect(individualResult.matchId).toBe(creation.match.id);
-    expect(individualResult.accessCodes).toHaveLength(1);
-    expect(individualResult.accessCodes[0]?.role).toBe(MatchAccessRole.JUDGE_1);
-    const afterIndividual = await prisma.matchAccessCode.findMany({
-      where: { matchId: creation.match.id },
+    ).expect(201);
+    const result = response.body as {
+      official: { id: string };
+      passcode: string;
+    };
+    const after = await prisma.tournamentOfficial.findUniqueOrThrow({
+      where: { id: dependent.official.id },
     });
-    const changedRefereeCode = afterIndividual.find(
-      ({ role }) => role === MatchAccessRole.JUDGE_1,
+    expect(result.official.id).toBe(dependent.official.id);
+    expect(after.passcodeHash).not.toBe(before.passcodeHash);
+    expect(after.passcodeLookupDigest).not.toBe(before.passcodeLookupDigest);
+    expect(after.passcodeHash).not.toBe(result.passcode);
+    await expect(compare(result.passcode, after.passcodeHash)).resolves.toBe(
+      true,
     );
-    expect(changedRefereeCode?.codeHash).not.toBe(
-      originalHashByRole.get(MatchAccessRole.JUDGE_1),
+    await expect(compare(dependent.passcode, after.passcodeHash)).resolves.toBe(
+      false,
     );
-    await expect(
-      compare(
-        individualResult.accessCodes[0]?.code ?? '',
-        changedRefereeCode?.codeHash ?? '',
+    const persistedSessions = await Promise.all(
+      sessions.map(async ({ id }) =>
+        prisma.tournamentOfficialSession.findUniqueOrThrow({ where: { id } }),
       ),
-    ).resolves.toBe(true);
-    expect(
-      afterIndividual.find(({ role }) => role === MatchAccessRole.SUPERVISOR)
-        ?.codeHash,
-    ).toBe(originalHashByRole.get(MatchAccessRole.SUPERVISOR));
-
-    const [revokedDependent, stillActiveIndependent] = await Promise.all([
-      prisma.matchSession.findUniqueOrThrow({
-        where: { id: dependentSession.id },
-      }),
-      prisma.matchSession.findUniqueOrThrow({
-        where: { id: independentSession.id },
-      }),
-    ]);
-    expect(revokedDependent).toMatchObject({ active: false });
-    expect(revokedDependent.revokedAt).not.toBeNull();
-    expect(stillActiveIndependent).toMatchObject({
+    );
+    expect(persistedSessions[0]).toMatchObject({
+      active: false,
+      revokedAt: expect.any(Date),
+    });
+    expect(persistedSessions[1]).toMatchObject({
       active: true,
       revokedAt: null,
     });
-
-    const sessionsForAll = await Promise.all(
-      afterIndividual.map(async ({ id, role }, index) => {
-        if (role === MatchAccessRole.SUPERVISOR) {
-          return independentSession;
-        }
-
-        const sessionRole = sessionRoleForAccessRole(role);
-
-        return prisma.matchSession.create({
-          data: {
-            accessCodeId: id,
-            deviceId: `${TEST_PREFIX}-all-device-${index}`,
-            matchId: creation.match.id,
-            judgeSlot: sessionRole.judgeSlot,
-            role: sessionRole.role,
-            tokenHash: `${TEST_PREFIX}-all-token-${index}`,
-          },
-        });
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          metadata: { path: ['officialId'], equals: dependent.official.id },
+          eventType: AuditEventType.TOURNAMENT_OFFICIAL_PASSCODE_REGENERATED,
+          adminUserId: testAdminId,
+        },
       }),
-    );
-    const hashesBeforeAll = new Map(
-      afterIndividual.map(({ codeHash, role }) => [role, codeHash]),
-    );
-
-    const allResponse = await authenticated(
-      request(app.getHttpServer()).post(
-        `/api/admin/matches/${creation.match.id}/access-codes/regenerate`,
+    ).toBe(1);
+    const getResponse = await authenticated(
+      request(app.getHttpServer()).get(
+        `/api/admin/tournaments/${tournament.id}/officials/${dependent.official.id}`,
       ),
     ).expect(200);
-    const allResult = allResponse.body as AccessCodeRegenerationResponseBody;
-
-    expect(allResult.matchId).toBe(creation.match.id);
-    expect(allResult.accessCodes).toHaveLength(4);
-    expect(allResult.accessCodes.map(({ role }) => role).sort()).toEqual(
-      [...requiredAccessRoles].sort(),
-    );
-
-    const afterAllCodes = await prisma.matchAccessCode.findMany({
-      where: { matchId: creation.match.id },
-    });
-    await Promise.all(
-      allResult.accessCodes.map(async ({ code, role }) => {
-        const persisted = afterAllCodes.find(
-          (candidate) => candidate.role === role,
-        );
-
-        expect(persisted?.codeHash).not.toBe(hashesBeforeAll.get(role));
-        expect(persisted?.codeHash).not.toBe(code);
-        await expect(compare(code, persisted?.codeHash ?? '')).resolves.toBe(
-          true,
-        );
-      }),
-    );
-
-    const sessionsAfterAll = await prisma.matchSession.findMany({
-      where: { id: { in: sessionsForAll.map(({ id }) => id) } },
-    });
-    expect(sessionsAfterAll).toHaveLength(4);
-    expect(
-      sessionsAfterAll.every(
-        ({ active, revokedAt }) => !active && revokedAt !== null,
-      ),
-    ).toBe(true);
-
-    const regenerationAuditCount = await prisma.auditLog.count({
-      where: {
-        adminUserId: testAdminId,
-        eventType: AuditEventType.MATCH_CODE_REGENERATED,
-        matchId: creation.match.id,
-      },
-    });
-    expect(regenerationAuditCount).toBe(2);
+    expect(JSON.stringify(getResponse.body)).not.toContain(result.passcode);
+    expect(JSON.stringify(getResponse.body)).not.toContain(after.passcodeHash);
   });
 
-  it('rolls back match, athletes, codes, and audit when credential insertion fails', async () => {
+  it('rejects retired match-code regeneration endpoints without creating credentials', async () => {
+    const tournament = await createTournament('retired-code-regeneration');
+    const creation = await createMatch(
+      tournament.id,
+      'retired-code-regeneration',
+    );
+    for (const suffix of ['JUDGE_1/regenerate', 'regenerate']) {
+      await authenticated(
+        request(app.getHttpServer()).post(
+          `/api/admin/matches/${creation.match.id}/access-codes/${suffix}`,
+        ),
+      ).expect(404);
+    }
+    expect(
+      await prisma.matchAccessCode.count({
+        where: { matchId: creation.match.id },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          matchId: creation.match.id,
+          eventType: AuditEventType.MATCH_CODE_REGENERATED,
+        },
+      }),
+    ).toBe(0);
+  });
+
+  it('rolls back match, athlete snapshots, and audit when athlete snapshot insertion fails', async () => {
     const tournament = await createTournament('transaction-rollback');
     const safeSuffix = `${process.pid}_${Date.now().toString(36)}`;
     const trigger: TriggerFixture = {
@@ -1527,7 +1447,7 @@ describe('Admin tournament and match management (integration)', () => {
           WHERE "id" = NEW."match_id"
             AND "tournament_id" = '${tournament.id}'::uuid
         ) THEN
-          RAISE EXCEPTION 'forced match access code insertion failure';
+          RAISE EXCEPTION 'forced match athlete snapshot insertion failure';
         END IF;
         RETURN NEW;
       END;
@@ -1535,7 +1455,7 @@ describe('Admin tournament and match management (integration)', () => {
     `);
     await prisma.$executeRawUnsafe(`
       CREATE TRIGGER "${trigger.triggerName}"
-      BEFORE INSERT ON "match_access_codes"
+      BEFORE INSERT ON "match_athletes"
       FOR EACH ROW EXECUTE FUNCTION "${trigger.functionName}"()
     `);
     installedTriggers.add(trigger);

@@ -45,6 +45,12 @@ export type VarMonitoring = Pick<
 >;
 
 export const officialAccessApi = {
+  tokenLogin: (input: {
+    token: string;
+    deviceId: string;
+    expectedRole: TournamentOfficialRole;
+    takeoverToken?: string;
+  }) => apiClient.post<{ session: OfficialSession }>('official-access/token/login', input),
   login: (input: {
     tournamentCode: string;
     privatePasscode: string;

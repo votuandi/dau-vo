@@ -39,6 +39,7 @@ export function TournamentImagePicker({
   imagePath,
   name,
   onRemove,
+  onSelect,
   onUpload,
   pending,
 }: {
@@ -46,7 +47,8 @@ export function TournamentImagePicker({
   readonly imagePath: string | null;
   readonly name: string;
   readonly onRemove?: () => void;
-  readonly onUpload: (file: File) => void;
+  readonly onSelect?: (file: File) => void;
+  readonly onUpload?: (file: File) => void;
   readonly pending?: boolean;
 }) {
   const [file, setFile] = useState<File | null>(null);
@@ -72,6 +74,7 @@ export function TournamentImagePicker({
     if (preview) URL.revokeObjectURL(preview);
     setFile(next);
     setPreview(URL.createObjectURL(next));
+    onSelect?.(next);
   }
   const display = preview ?? tournamentImageUrl(imagePath);
   return (
@@ -114,7 +117,7 @@ export function TournamentImagePicker({
             </p>
           ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
-            {file ? (
+            {file && onUpload ? (
               <Button
                 disabled={(disabled ?? false) || (pending ?? false)}
                 onClick={() => {

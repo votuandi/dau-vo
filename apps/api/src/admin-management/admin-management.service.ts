@@ -242,6 +242,56 @@ export class AdminManagementService {
       throw new NotFoundException(TOURNAMENT_NOT_FOUND_ERROR);
   }
 
+  /**
+   * Mutation commands which also change bracket or result state must repeat
+   * their access check on the transaction that commits that state.  The
+   * request principal is only an authentication hint; entitlement and
+   * ownership are read authoritatively here.
+   */
+  async assertTournamentMutationAccessInTransaction(
+    tx: Prisma.TransactionClient,
+    tournamentId: string,
+    actorId: string,
+  ): Promise<void> {
+    const actor = await tx.user.findUnique({
+      where: { id: actorId },
+      select: { role: true, isActive: true, deletedAt: true },
+    });
+    if (actor === null || !actor.isActive || actor.deletedAt !== null)
+      throw new ForbiddenException();
+
+    const isSuperAdmin = actor.role === UserRole.SUPER_ADMIN;
+    if (!isSuperAdmin) {
+      await tx.$queryRaw`SELECT id FROM admin_entitlements WHERE user_id = ${actorId}::uuid FOR UPDATE`;
+      const entitlement = await tx.adminEntitlement.findUnique({
+        where: { userId: actorId },
+      });
+      if (
+        entitlement === null ||
+        !isActiveAdminState(
+          calculateAdminAccessState(actor.role, entitlement, new Date()),
+        )
+      ) {
+        throw new ConflictException({
+          code:
+            entitlement === null
+              ? 'ADMIN_SUBSCRIPTION_REQUIRED'
+              : 'ADMIN_SUBSCRIPTION_EXPIRED',
+        });
+      }
+    }
+
+    await tx.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId}::uuid FOR UPDATE`;
+    const tournament = await tx.tournament.findFirst({
+      where: isSuperAdmin
+        ? { id: tournamentId, softDeletedAt: null }
+        : { id: tournamentId, ownerUserId: actorId, softDeletedAt: null },
+      select: { id: true },
+    });
+    if (tournament === null)
+      throw new NotFoundException(TOURNAMENT_NOT_FOUND_ERROR);
+  }
+
   async assertMatchAccess(
     id: string,
     actor: AuthenticatedUser,

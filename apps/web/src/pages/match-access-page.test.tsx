@@ -14,6 +14,7 @@ const officialAccessApiMock = vi.hoisted(() => ({
   state: vi.fn(),
   take: vi.fn(),
   login: vi.fn(),
+  tokenLogin: vi.fn(),
   logout: vi.fn(),
   session: vi.fn(),
   takeover: vi.fn(),
@@ -176,6 +177,7 @@ function storedDeviceId(): string {
 
 describe('MatchAccessPage official login', () => {
   beforeEach(() => {
+    window.history.replaceState(null, '', '/');
     vi.useRealTimers();
     officialAccessApiMock.login.mockReset();
     officialAccessApiMock.logout.mockReset();
@@ -189,6 +191,25 @@ describe('MatchAccessPage official login', () => {
     officialAccessApiMock.matches.mockResolvedValue({ matches: [] });
     officialAccessApiMock.session.mockRejectedValue(new ApiClientError(401, {}));
     window.localStorage.clear();
+  });
+
+  it('logs in automatically using a link token and clears the address', async () => {
+    window.history.replaceState(null, '', '/giam-dinh#token=signed-token');
+    officialAccessApiMock.tokenLogin.mockImplementation(() => {
+      officialAccessApiMock.session.mockResolvedValue({ session: refereeSession });
+      return Promise.resolve({ session: refereeSession });
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(officialAccessApiMock.tokenLogin).toHaveBeenCalledWith({
+        token: 'signed-token',
+        deviceId: expect.any(String) as string,
+        expectedRole: TournamentOfficialRole.JUDGE,
+      });
+    });
+    expect(window.location.hash).toBe('');
+    expect(officialAccessApiMock.login).not.toHaveBeenCalled();
+    expect(await screen.findByText(refereeSession.official.name)).toBeVisible();
   });
 
   it('logs in with tournament code and private passcode, then shows the referee waiting state', async () => {

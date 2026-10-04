@@ -4,15 +4,19 @@ import { Test } from '@nestjs/testing';
 import {
   AthleteColor,
   MatchAccessRole,
+  MatchRulesVersion,
   MatchLifecycle,
   MatchStatus,
   PrismaClient,
   TournamentOfficialRole,
+  MatchOfficialAssignmentReleaseReason,
 } from '@prisma/client';
 import {
   RealtimeEvent,
   type MatchCompletionResponse,
-  type MatchFinishedPayload,
+  type ResultPublishedPayload,
+  type ResultPublishResponse,
+  type AppealCompleteResponse,
   type MatchStatePayload,
   type RoundEndedPayload,
   type RoundStartedPayload,
@@ -93,6 +97,8 @@ function configureTestEnvironment(): void {
       'lifecycle-match-session-secret-with-at-least-thirty-two-characters',
     MATCH_SESSION_TTL_SECONDS: '3600',
     NODE_ENV: 'test',
+    OFFICIAL_PASSCODE_SECRET:
+      'test-only-official-passcode-secret-not-for-production',
     REDIS_URL: TEST_REDIS_URL,
     ROUND_DURATION_MS: '120000',
     WEB_ORIGIN: 'http://localhost:5173',
@@ -170,6 +176,23 @@ function startRound(socket: Socket): Promise<RoundStartResponse> {
     );
 
     socket.emit(RealtimeEvent.ROUND_START, (response: RoundStartResponse) => {
+      clearTimeout(timer);
+      resolve(response);
+    });
+  });
+}
+
+function emitCommand<T>(
+  socket: Socket,
+  event: string,
+  payload: unknown,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Timed out waiting for ${event}`)),
+      EVENT_TIMEOUT_MS,
+    );
+    socket.emit(event, payload, (response: T) => {
       clearTimeout(timer);
       resolve(response);
     });
@@ -303,6 +326,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
   async function createMatch(
     label: string,
     roundDurationMs = 300,
+    rulesVersion: MatchRulesVersion = MatchRulesVersion.LEGACY_SCORE_PENALTY_V1,
   ): Promise<TestMatch> {
     const rawCodes = Object.fromEntries(
       ALL_ACCESS_ROLES.map((role) => [
@@ -335,6 +359,8 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
             },
           ],
         },
+        // Legacy lifecycle fixtures opt in; modern publication uses V2.
+        rulesVersion,
         breakDurationMs: 60_000,
         publicId: randomBytes(6).toString('hex').slice(0, 8).toUpperCase(),
         roundDurationMs,
@@ -584,6 +610,8 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       const roundOneEndsAt = new Date(now - 1_500);
       const recoveredRoundOne = await setupPrisma.match.create({
         data: {
+          // This fixture exercises the legacy score/penalty contract explicitly.
+          rulesVersion: MatchRulesVersion.LEGACY_SCORE_PENALTY_V1,
           breakDurationMs: 60_000,
           currentRound: 1,
           lifecycle: MatchLifecycle.IN_PROGRESS,
@@ -607,6 +635,8 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       const roundTwoEndsAt = new Date(now - 1_000);
       const recoveredRoundTwo = await setupPrisma.match.create({
         data: {
+          // This fixture exercises the legacy score/penalty contract explicitly.
+          rulesVersion: MatchRulesVersion.LEGACY_SCORE_PENALTY_V1,
           breakDurationMs: 60_000,
           currentRound: 2,
           lifecycle: MatchLifecycle.IN_PROGRESS,
@@ -655,6 +685,18 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     prisma = app.get(PrismaService);
   });
 
+  async function deleteTestMatches(ids: string[]): Promise<void> {
+    const matchId = { in: ids };
+    await prisma.auditLog.deleteMany({ where: { matchId } });
+    // Published V2 results deliberately restrict deletion of their source records.
+    await prisma.matchResultPublication.deleteMany({ where: { matchId } });
+    await prisma.matchOutcome.deleteMany({ where: { matchId } });
+    await prisma.matchResultDecision.deleteMany({ where: { matchId } });
+    await prisma.matchAppeal.deleteMany({ where: { matchId } });
+    await prisma.roundAthleteResult.deleteMany({ where: { matchId } });
+    await prisma.match.deleteMany({ where: { id: matchId } });
+  }
+
   beforeEach(async () => {
     await redis.flushdb();
   });
@@ -669,16 +711,18 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     const ids = [...testMatchIds];
 
     if (ids.length > 0) {
-      await prisma.auditLog.deleteMany({ where: { matchId: { in: ids } } });
-      await prisma.match.deleteMany({ where: { id: { in: ids } } });
+      await deleteTestMatches(ids);
       testMatchIds.clear();
     }
   });
 
   afterAll(async () => {
     if (prisma !== undefined && tournamentId !== undefined) {
-      await prisma.auditLog.deleteMany({ where: { match: { tournamentId } } });
-      await prisma.match.deleteMany({ where: { tournamentId } });
+      const matches = await prisma.match.findMany({
+        where: { tournamentId },
+        select: { id: true },
+      });
+      await deleteTestMatches(matches.map(({ id }) => id));
       await prisma.tournament.deleteMany({ where: { id: tournamentId } });
     }
     if (app !== undefined) {
@@ -824,7 +868,10 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       .expect(403);
 
     await prisma.matchOfficialAssignment.updateMany({
-      data: { releasedAt: new Date() },
+      data: {
+        releasedAt: new Date(),
+        releaseReason: MatchOfficialAssignmentReleaseReason.SUPERVISOR_RELEASED,
+      },
       where: { matchId: match.id, officialId: crew.inspector.id },
     });
     await request(app.getHttpServer())
@@ -833,10 +880,14 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       .expect(403);
   });
 
-  it('requires explicit inspector completion after Round 2 and completes exactly once', async () => {
+  it('requires a V2 appeal before publishing the result and publishes exactly once', async () => {
     // The flow awaits multiple socket broadcasts before the invalid-transition
     // check, so allow real database/socket scheduling margin here.
-    const match = await createMatch('complete-flow', 2_000);
+    const match = await createMatch(
+      'complete-flow',
+      2_000,
+      MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2,
+    );
     const inspector = await login(
       match,
       MatchAccessRole.SUPERVISOR,
@@ -914,7 +965,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     expect(roundTwoStarted.status).toBe(MatchStatus.ROUND_2_RUNNING);
 
     const roundTwoEnded = await roundTwoEndedEvent;
-    expect(roundTwoEnded.status).toBe(MatchStatus.AWAITING_RESULT_SAVE);
+    expect(roundTwoEnded.status).toBe(MatchStatus.REGULATION_APPEAL);
 
     const beforeCompletion = await prisma.match.findUniqueOrThrow({
       where: { id: match.id },
@@ -922,18 +973,59 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     expect(beforeCompletion).toMatchObject({
       finishedAt: null,
       lifecycle: MatchLifecycle.IN_PROGRESS,
-      status: MatchStatus.AWAITING_RESULT_SAVE,
+      status: MatchStatus.REGULATION_APPEAL,
     });
 
-    const matchCompletedEvent = waitForEvent<MatchFinishedPayload>(
+    await expect(completeMatch(socket)).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'MATCH_COMPLETION_NOT_READY' },
+    });
+    const publishPayload = {
+      idempotencyKey: `${TEST_PREFIX}-${match.id}-publication`,
+    };
+    await expect(
+      emitCommand<ResultPublishResponse>(
+        socket,
+        RealtimeEvent.RESULT_PUBLISH,
+        publishPayload,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'RESULT_PUBLISH_INVALID_STATE' },
+    });
+    await expect(
+      emitCommand<AppealCompleteResponse>(
+        socket,
+        RealtimeEvent.APPEAL_COMPLETE,
+        {
+          RED: { bonusPoints: 1, penaltyPoints: 0 },
+          BLUE: { bonusPoints: 0, penaltyPoints: 0 },
+          idempotencyKey: `${TEST_PREFIX}-${match.id}-appeal`,
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      appeal: { phase: 'RESULT_PUBLICATION_READY', isTie: false },
+    });
+    const matchPublishedEvent = waitForEvent<ResultPublishedPayload>(
       socket,
-      RealtimeEvent.MATCH_COMPLETED,
+      RealtimeEvent.RESULT_PUBLISHED,
       (payload) => payload.matchPublicId === match.publicId,
     );
-    const completion = await completeMatch(socket);
-    expect(completion).toMatchObject({ ok: true });
-    const matchCompleted = await matchCompletedEvent;
-    expect(matchCompleted.matchPublicId).toBe(match.publicId);
+    const completion = await emitCommand<ResultPublishResponse>(
+      socket,
+      RealtimeEvent.RESULT_PUBLISH,
+      publishPayload,
+    );
+    expect(completion).toMatchObject({
+      ok: true,
+      publication: {
+        outcome: { winner: 'RED', method: 'REGULATION_SCORE' },
+        phase: 'FINISHED',
+      },
+    });
+    const matchPublished = await matchPublishedEvent;
+    expect(matchPublished.matchPublicId).toBe(match.publicId);
 
     const persisted = await prisma.match.findUniqueOrThrow({
       include: { rounds: { orderBy: { roundNumber: 'asc' } } },
@@ -960,14 +1052,23 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     expect(auditEvents.filter((event) => event === 'ROUND_ENDED')).toHaveLength(
       2,
     );
-    expect(
-      auditEvents.filter((event) => event === 'MATCH_FINISHED'),
-    ).toHaveLength(1);
-
-    await expect(completeMatch(socket)).resolves.toMatchObject({ ok: true });
+    await expect(
+      emitCommand<ResultPublishResponse>(
+        socket,
+        RealtimeEvent.RESULT_PUBLISH,
+        publishPayload,
+      ),
+    ).resolves.toEqual(completion);
+    await expect(
+      prisma.matchOutcome.count({ where: { matchId: match.id } }),
+    ).resolves.toBe(1);
     await expect(
       prisma.auditLog.count({
-        where: { eventType: 'MATCH_FINISHED', matchId: match.id },
+        where: {
+          eventType: 'MATCH_ACTION',
+          matchId: match.id,
+          metadata: { path: ['action'], equals: 'RESULT_PUBLISHED' },
+        },
       }),
     ).resolves.toBe(1);
   });
@@ -1217,6 +1318,11 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       data: {
         athleteId: athlete.id,
         matchId: match.id,
+        roundId: (
+          await prisma.round.findFirstOrThrow({
+            where: { matchId: match.id, roundNumber: 1, invalidatedAt: null },
+          })
+        ).id,
         roundNumber: 1,
         type: 'JUDGE_POINT',
         value: 3,
@@ -1309,6 +1415,11 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
         {
           athleteId: red.id,
           matchId: match.id,
+          roundId: (
+            await prisma.round.findFirstOrThrow({
+              where: { matchId: match.id, roundNumber: 1, invalidatedAt: null },
+            })
+          ).id,
           roundNumber: 1,
           type: 'JUDGE_POINT',
           value: 5,
@@ -1317,6 +1428,11 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
           athleteId: red.id,
           matchId: match.id,
           penaltyId: penalty.id,
+          roundId: (
+            await prisma.round.findFirstOrThrow({
+              where: { matchId: match.id, roundNumber: 2, invalidatedAt: null },
+            })
+          ).id,
           roundNumber: 2,
           type: 'PENALTY',
           value: -1,
@@ -1456,6 +1572,11 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
         {
           athleteId: red.id,
           matchId: match.id,
+          roundId: (
+            await prisma.round.findFirstOrThrow({
+              where: { matchId: match.id, roundNumber: 1, invalidatedAt: null },
+            })
+          ).id,
           roundNumber: 1,
           type: 'JUDGE_POINT',
           value: 3,
@@ -1463,6 +1584,11 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
         {
           athleteId: blue.id,
           matchId: match.id,
+          roundId: (
+            await prisma.round.findFirstOrThrow({
+              where: { matchId: match.id, roundNumber: 1, invalidatedAt: null },
+            })
+          ).id,
           roundNumber: 1,
           type: 'JUDGE_POINT',
           value: 2,
@@ -1471,6 +1597,11 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
           athleteId: red.id,
           matchId: match.id,
           penaltyId: penalty.id,
+          roundId: (
+            await prisma.round.findFirstOrThrow({
+              where: { matchId: match.id, roundNumber: 1, invalidatedAt: null },
+            })
+          ).id,
           roundNumber: 1,
           type: 'PENALTY',
           value: -1,
@@ -1619,6 +1750,11 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
         {
           athleteId: red.id,
           matchId: match.id,
+          roundId: (
+            await prisma.round.findFirstOrThrow({
+              where: { matchId: match.id, roundNumber: 1, invalidatedAt: null },
+            })
+          ).id,
           roundNumber: 1,
           type: 'JUDGE_POINT',
           value: 5,
@@ -1626,6 +1762,11 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
         {
           athleteId: red.id,
           matchId: match.id,
+          roundId: (
+            await prisma.round.findFirstOrThrow({
+              where: { matchId: match.id, roundNumber: 2, invalidatedAt: null },
+            })
+          ).id,
           roundNumber: 2,
           type: 'JUDGE_POINT',
           value: 3,
@@ -1780,6 +1921,11 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       data: {
         endsAt: new Date(now.getTime() + 1_000),
         matchId: match.id,
+        roundId: (
+          await prisma.round.findFirstOrThrow({
+            where: { matchId: match.id, roundNumber: 1, invalidatedAt: null },
+          })
+        ).id,
         roundNumber: 1,
         startedAt: now,
       },

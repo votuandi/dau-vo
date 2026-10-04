@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Check, KeyRound, Pencil } from 'lucide-react';
+import { Ban, Check, KeyRound, Link, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ClipboardCopyButton } from '@/components/ui/clipboard-copy-button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
@@ -64,6 +64,7 @@ export function TournamentOfficialsPage({
 }) {
   const queryClient = useQueryClient();
   const query = useQuery(tournamentOfficialsQueryOptions(tournamentId, role));
+  const [loginLink, setLoginLink] = useState<{ url: string; name: string } | null>(null);
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<TournamentOfficial | null>(null);
   const [name, setName] = useState('');
@@ -72,16 +73,59 @@ export function TournamentOfficialsPage({
     regenerate: boolean;
   } | null>(null);
   const [passcode, setPasscode] = useState<string | null>(null);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quantity, setQuantity] = useState('1');
+  const [quickCredentials, setQuickCredentials] = useState<{ name: string; passcode: string }[]>(
+    [],
+  );
+  const [quickError, setQuickError] = useState<string | null>(null);
+  const quantityInput = useRef<HTMLInputElement>(null);
+  const validQuantity = Number.isSafeInteger(Number(quantity)) && Number(quantity) > 0;
   const input = useRef<HTMLInputElement>(null);
   const invalidate = () =>
     void queryClient.invalidateQueries({
       queryKey: tournamentQueryKeys.officials(tournamentId, role),
     });
   useEffect(() => {
+    setLoginLink(null);
     setEditing(null);
     setName('');
     setPasscode(null);
+    setQuickOpen(false);
+    setQuickCredentials([]);
+    setQuickError(null);
   }, [role, tournamentId]);
+  const quickAdd = useMutation({
+    mutationFn: async (count: number) => {
+      const latest = await adminManagementApi.listOfficials(tournamentId, { role });
+      const names = new Set(latest.officials.map((official) => official.name));
+      let next = 1;
+      for (let index = 0; index < count; index += 1) {
+        let generatedName = `${labels[role]} ${String(next).padStart(3, '0')}`;
+        while (names.has(generatedName)) {
+          next += 1;
+          generatedName = `${labels[role]} ${String(next).padStart(3, '0')}`;
+        }
+        const data = await adminManagementApi.createOfficial(tournamentId, {
+          role,
+          name: generatedName,
+        });
+        names.add(generatedName);
+        next += 1;
+        setQuickCredentials((previous) => [
+          ...previous,
+          { name: generatedName, passcode: data.passcode },
+        ]);
+      }
+    },
+    onSuccess: () => {
+      notifyMutationSuccess('Đã thêm nhanh cán bộ.');
+    },
+    onError: (error) => {
+      setQuickError(errorText(error));
+    },
+    onSettled: invalidate,
+  });
   const save = useMutation({
     mutationFn: () =>
       editing
@@ -124,6 +168,19 @@ export function TournamentOfficialsPage({
       notifyMutationError(error, errorText(error));
     },
   });
+  const createLink = useMutation({
+    mutationFn: (official: TournamentOfficial) =>
+      adminManagementApi.createOfficialLoginLink(tournamentId, official.id),
+    onSuccess: (data, official) => {
+      const path = data.role === TournamentOfficialRole.JUDGE ? '/giam-dinh' : '/giam-sat';
+      const url = new URL(path, window.location.origin);
+      url.hash = new URLSearchParams({ token: data.token }).toString();
+      setLoginLink({ url: url.toString(), name: official.name });
+    },
+    onError: (error) => {
+      notifyMutationError(error, errorText(error));
+    },
+  });
   const visible =
     query.data?.officials.filter((x) =>
       x.name.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi')),
@@ -140,15 +197,30 @@ export function TournamentOfficialsPage({
           <p className="text-sm text-muted-foreground">Quản lý cán bộ của giải đấu.</p>
         </div>
         {!readOnly ? (
-          <Button
-            onClick={() => {
-              setEditing(null);
-              setName('');
-            }}
-            type="button"
-          >
-            Thêm {labels[role].toLocaleLowerCase('vi')}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => {
+                setEditing(null);
+                setName('');
+              }}
+              type="button"
+            >
+              Thêm {labels[role].toLocaleLowerCase('vi')}
+            </Button>
+            <Button
+              disabled={query.isPending || query.isError || save.isPending || quickAdd.isPending}
+              onClick={() => {
+                setQuantity('1');
+                setQuickCredentials([]);
+                setQuickError(null);
+                setQuickOpen(true);
+              }}
+              type="button"
+              variant="outline"
+            >
+              Thêm nhanh
+            </Button>
+          </div>
         ) : null}
       </div>
       <label className="block max-w-md text-sm font-semibold">
@@ -290,12 +362,143 @@ export function TournamentOfficialsPage({
                   >
                     <KeyRound aria-hidden="true" className="size-4" />
                   </Button>
+                  <Button
+                    aria-label="Tạo link đăng nhập"
+                    className="bg-amber-500 text-white shadow-none hover:bg-amber-600"
+                    disabled={
+                      !official.isActive ||
+                      createLink.isPending ||
+                      state.isPending ||
+                      regenerate.isPending
+                    }
+                    onClick={() => {
+                      createLink.mutate(official);
+                    }}
+                    size="icon"
+                    title="Tạo link đăng nhập"
+                    type="button"
+                  >
+                    <Link aria-hidden="true" className="size-4" />
+                  </Button>
                 </div>
               ) : null}
             </div>
           </li>
         ))}
       </ul>
+      {quickOpen ? (
+        <Dialog
+          title={`Thêm nhanh ${labels[role].toLocaleLowerCase('vi')}`}
+          description={
+            quickCredentials.length
+              ? 'Hãy sao chép và lưu các mã bảo mật riêng; các mã này sẽ không hiển thị lại.'
+              : `Nhập số lượng ${labels[role].toLocaleLowerCase('vi')} muốn thêm. Tên tự động có dạng ${labels[role]} 001, ${labels[role]} 002,…`
+          }
+          initialFocusRef={quantityInput}
+          pending={quickAdd.isPending}
+          onClose={() => {
+            setQuickOpen(false);
+          }}
+        >
+          {quickCredentials.length === 0 ? (
+            <form
+              className="mt-4 space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (validQuantity && !quickAdd.isPending) {
+                  setQuickError(null);
+                  quickAdd.mutate(Number(quantity));
+                }
+              }}
+            >
+              <label className="block text-sm font-semibold">
+                Số lượng
+                <input
+                  className={`${inputClassName} mt-1`}
+                  ref={quantityInput}
+                  type="number"
+                  min={1}
+                  step={1}
+                  required
+                  value={quantity}
+                  disabled={quickAdd.isPending}
+                  onChange={(event) => {
+                    setQuantity(event.target.value);
+                  }}
+                />
+              </label>
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={quickAdd.isPending}
+                  onClick={() => {
+                    setQuickOpen(false);
+                  }}
+                >
+                  Hủy
+                </Button>
+                <Button type="submit" disabled={!validQuantity || quickAdd.isPending}>
+                  {quickAdd.isPending ? 'Đang thêm…' : 'Thêm'}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <div className="mt-4 space-y-3">
+              <p className="text-sm">
+                Đã thêm {quickCredentials.length} / {quantity}{' '}
+                {labels[role].toLocaleLowerCase('vi')}
+                {quickAdd.isPending ? ' — đang thêm…' : '.'}
+              </p>
+              {tournamentPublicCode ? (
+                <p className="text-sm">
+                  Mã giải đấu: <strong>{tournamentPublicCode}</strong>
+                </p>
+              ) : null}
+              <ClipboardCopyButton
+                accessibleLabel="Sao chép tất cả mã"
+                value={[
+                  ...(tournamentPublicCode ? [`Mã giải đấu: ${tournamentPublicCode}`] : []),
+                  ...quickCredentials.map(
+                    (credential) => `${credential.name}: ${credential.passcode}`,
+                  ),
+                ].join('\n')}
+              />
+              <ul className="max-h-72 space-y-2 overflow-y-auto">
+                {quickCredentials.map((credential) => (
+                  <li
+                    key={credential.name}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded border p-2"
+                  >
+                    <span>{credential.name}</span>
+                    <code className="select-all font-bold">{credential.passcode}</code>
+                    <ClipboardCopyButton
+                      accessibleLabel={`Sao chép mã ${credential.name}`}
+                      value={credential.passcode}
+                    />
+                  </li>
+                ))}
+              </ul>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  disabled={quickAdd.isPending}
+                  onClick={() => {
+                    setQuickOpen(false);
+                  }}
+                >
+                  Đã lưu mã
+                </Button>
+              </div>
+            </div>
+          )}
+          {quickError ? (
+            <p className="mt-3 text-sm text-destructive" role="alert">
+              {quickError}
+            </p>
+          ) : null}
+        </Dialog>
+      ) : null}
       {confirm ? (
         <ConfirmationDialog
           actionLabel={
@@ -320,6 +523,43 @@ export function TournamentOfficialsPage({
           }}
           title="Xác nhận thao tác"
         />
+      ) : null}
+      {loginLink ? (
+        <Dialog
+          showCloseButton
+          title={`Link đăng nhập — ${loginLink.name}`}
+          description="Link có hiệu lực trong 7 ngày. Tạo mã bảo mật mới sẽ vô hiệu hóa link này."
+          onClose={() => {
+            setLoginLink(null);
+          }}
+        >
+          <div className="mt-4 flex items-center gap-2">
+            <input
+              aria-label="Link đăng nhập"
+              className={`${inputClassName} min-w-0 flex-1`}
+              readOnly
+              value={loginLink.url}
+              onFocus={(event) => {
+                event.target.select();
+              }}
+            />
+            <ClipboardCopyButton
+              accessibleLabel="Sao chép link đăng nhập"
+              className="mt-1.5 h-11"
+              value={loginLink.url}
+            />
+          </div>
+          <div className="mt-4 flex justify-end">
+            <Button
+              onClick={() => {
+                setLoginLink(null);
+              }}
+              type="button"
+            >
+              Đóng
+            </Button>
+          </div>
+        </Dialog>
       ) : null}
       {passcode ? (
         <Dialog

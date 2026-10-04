@@ -425,6 +425,10 @@ export interface ActiveBracket {
       readonly status: MatchStatus;
     } | null;
     readonly winnerEntrant: { readonly id: string; readonly snapshotName: string } | null;
+    readonly winnerDecision?: {
+      readonly decisionType: 'ADMIN_TIEBREAK' | 'WITHDRAWAL_OR_INJURY';
+      readonly reason: string | null;
+    } | null;
     readonly slots: readonly {
       readonly side: 'RED' | 'BLUE';
       readonly resolvedEntrant: {
@@ -588,7 +592,12 @@ export const adminManagementApi = {
     tournamentId: string,
     bracketId: string,
     fixtureId: string,
-    input: { readonly entrantId: string; readonly reason: string; readonly idempotencyKey: string },
+    input: {
+      readonly entrantId: string;
+      readonly decisionType: 'ADMIN_TIEBREAK' | 'WITHDRAWAL_OR_INJURY';
+      readonly reason: string;
+      readonly idempotencyKey: string;
+    },
   ) =>
     apiClient.post<{ readonly fixtureId: string; readonly winnerEntrantId: string }>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/brackets/${encodePathSegment(bracketId)}/fixtures/${encodePathSegment(fixtureId)}/decide-winner`,
@@ -723,6 +732,11 @@ export const adminManagementApi = {
     apiClient.patch<{ readonly official: TournamentOfficial }>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/officials/${encodePathSegment(officialId)}`,
       input,
+    ),
+  createOfficialLoginLink: (tournamentId: string, officialId: string) =>
+    apiClient.post<{ token: string; role: TournamentOfficialRole; expiresAt: string }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/officials/${encodePathSegment(officialId)}/login-link`,
+      {},
     ),
   regenerateOfficialPasscode: (tournamentId: string, officialId: string) =>
     apiClient.post<{ readonly official: TournamentOfficial; readonly passcode: string }>(

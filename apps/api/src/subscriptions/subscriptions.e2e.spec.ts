@@ -45,6 +45,8 @@ describe('Subscriptions (integration)', () => {
   let redis: Redis;
   let superAdminId: string;
   let userId: string;
+  let pricingPlanId: string | undefined;
+  let ownsPricingPlan = false;
 
   beforeAll(async () => {
     configureTestEnvironment();
@@ -91,6 +93,25 @@ describe('Subscriptions (integration)', () => {
     });
     superAdminId = superAdmin.id;
     userId = user.id;
+    // Migrations do not seed pricing; activation must have an active plan.
+    const existingPlan = await prisma.pricingPlanVersion.findFirst({
+      where: { active: true },
+    });
+    ownsPricingPlan = existingPlan === null;
+    const pricingPlan =
+      existingPlan ??
+      (await prisma.pricingPlanVersion.create({
+        data: {
+          active: true,
+          activatedAt: new Date(),
+          baseAmountVnd: 100_000,
+          baseDurationMonths: 1,
+          baseTournamentLimit: 1,
+          durationAddonUnitAmountVnd: 100_000,
+          tournamentAddonUnitAmountVnd: 50_000,
+        },
+      }));
+    pricingPlanId = pricingPlan.id;
   });
 
   beforeEach(async () => {
@@ -125,6 +146,11 @@ describe('Subscriptions (integration)', () => {
       await prisma.adminEntitlement.deleteMany({
         where: { userId: { in: [superAdminId, userId] } },
       });
+      if (ownsPricingPlan && pricingPlanId) {
+        await prisma.pricingPlanVersion.deleteMany({
+          where: { id: pricingPlanId },
+        });
+      }
       await prisma.user.deleteMany({
         where: { username: { in: [...usernames] } },
       });

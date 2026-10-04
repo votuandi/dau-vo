@@ -153,7 +153,7 @@ describe('RosterItemsPage', () => {
     if (!deactivateButton) throw new Error('Missing deactivate button.');
     await user.click(deactivateButton);
     expect(api.deleteOrganization).not.toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: 'Xác nhận ngừng dùng' }));
+    await user.click(screen.getByRole('button', { name: 'Đình chỉ thi đấu' }));
     await waitFor(() => {
       expect(api.deleteOrganization).toHaveBeenCalledWith('t1', 'one');
     });
@@ -184,7 +184,7 @@ describe('RosterItemsPage', () => {
       </QueryClientProvider>,
     );
     await user.click(await screen.findByRole('button', { name: 'Ngừng dùng' }));
-    await user.click(screen.getByRole('button', { name: 'Xác nhận ngừng dùng' }));
+    await user.click(screen.getByRole('button', { name: 'Đình chỉ thi đấu' }));
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent(
         'Hãy chuyển các vận động viên hoặc trận liên quan trước khi ngừng dùng.',

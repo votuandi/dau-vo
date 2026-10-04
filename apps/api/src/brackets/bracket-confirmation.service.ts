@@ -407,6 +407,20 @@ export class BracketConfirmationService {
       })),
       fixtures: b.fixtures.map((fixture) => ({
         ...fixture,
+        winnerDecision:
+          fixture.winnerDecision &&
+          typeof fixture.winnerDecision === 'object' &&
+          'decisionType' in fixture.winnerDecision &&
+          (fixture.winnerDecision.decisionType === 'ADMIN_TIEBREAK' ||
+            fixture.winnerDecision.decisionType === 'WITHDRAWAL_OR_INJURY')
+            ? {
+                decisionType: fixture.winnerDecision.decisionType,
+                reason:
+                  typeof fixture.winnerDecision.reason === 'string'
+                    ? fixture.winnerDecision.reason
+                    : null,
+              }
+            : null,
         displayState: projectMatchDisplayState({
           kind: 'BRACKET_FIXTURE',
           fixtureStatus: fixture.status,

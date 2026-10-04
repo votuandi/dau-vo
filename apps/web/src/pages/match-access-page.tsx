@@ -1,4 +1,4 @@
-import { useEffect, useState, type SyntheticEvent } from 'react';
+import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { MatchLifecycle, TournamentOfficialRole } from '@/types/shared';
@@ -477,6 +477,11 @@ function RoleMismatch({
 export function MatchAccessPage({ expectedRole }: Props) {
   const nav = useNavigate();
   const qc = useQueryClient();
+  const [linkToken, setLinkToken] = useState(() => {
+    const token = new URLSearchParams(window.location.hash.slice(1)).get('token');
+    return token;
+  });
+  const linkAttempted = useRef(false);
   const [deviceId] = useState(getOrCreateDeviceId);
   const [code, setCode] = useState('');
   const [passcode, setPasscode] = useState('');
@@ -504,18 +509,21 @@ export function MatchAccessPage({ expectedRole }: Props) {
   const { acknowledgeAssignmentRelease, assignment, connected } = officialRealtime;
   const login = useMutation({
     mutationFn: () =>
-      officialAccessApi.login({
-        tournamentCode: code.trim().toUpperCase(),
-        privatePasscode: passcode.trim(),
-        deviceId,
-        expectedRole,
-      }),
+      linkToken
+        ? officialAccessApi.tokenLogin({ token: linkToken, deviceId, expectedRole })
+        : officialAccessApi.login({
+            tournamentCode: code.trim().toUpperCase(),
+            privatePasscode: passcode.trim(),
+            deviceId,
+            expectedRole,
+          }),
     onSuccess: (x) => {
+      setLinkToken(null);
+      void nav(pathFor(x.session.official.role), { replace: true });
       qc.removeQueries({ queryKey: ['official-matches'] });
       qc.removeQueries({ queryKey: ['official-match'] });
       qc.setQueryData(sessionKey, x);
       setRevoked(false);
-      void nav(pathFor(x.session.official.role), { replace: true });
     },
     onError: (e) => {
       if (
@@ -524,22 +532,38 @@ export function MatchAccessPage({ expectedRole }: Props) {
         typeof e.body.takeoverToken === 'string'
       )
         setChallenge(e.body.takeoverToken);
-      else setError(errorMessage(e));
+      else {
+        setLinkToken(null);
+        setError(errorMessage(e));
+      }
     },
   });
   const takeover = useMutation({
     mutationFn: () =>
-      officialAccessApi.takeover({
-        tournamentCode: code.trim().toUpperCase(),
-        privatePasscode: passcode.trim(),
-        deviceId,
-        expectedRole,
-        takeoverToken: (() => {
-          if (challenge === null) throw new Error('A takeover challenge is required.');
-          return challenge;
-        })(),
-      }),
+      linkToken
+        ? officialAccessApi.tokenLogin({
+            token: linkToken,
+            deviceId,
+            expectedRole,
+            takeoverToken:
+              challenge ??
+              (() => {
+                throw new Error('A takeover challenge is required.');
+              })(),
+          })
+        : officialAccessApi.takeover({
+            tournamentCode: code.trim().toUpperCase(),
+            privatePasscode: passcode.trim(),
+            deviceId,
+            expectedRole,
+            takeoverToken: (() => {
+              if (challenge === null) throw new Error('A takeover challenge is required.');
+              return challenge;
+            })(),
+          }),
     onSuccess: (x) => {
+      setLinkToken(null);
+      void nav(pathFor(x.session.official.role), { replace: true });
       qc.removeQueries({ queryKey: ['official-matches'] });
       qc.removeQueries({ queryKey: ['official-match'] });
       qc.setQueryData(sessionKey, x);
@@ -582,7 +606,26 @@ export function MatchAccessPage({ expectedRole }: Props) {
       setLogoutError(errorMessage(logoutFailure));
     },
   });
-  if (session.isPending)
+  const loginFromLink = login.mutate;
+  useEffect(() => {
+    if (linkToken)
+      window.history.replaceState(
+        window.history.state,
+        '',
+        window.location.pathname + window.location.search,
+      );
+    if (
+      linkToken &&
+      !session.isPending &&
+      !session.isError &&
+      !identity &&
+      !linkAttempted.current
+    ) {
+      linkAttempted.current = true;
+      loginFromLink();
+    }
+  }, [linkToken, session.isPending, session.isError, identity, loginFromLink]);
+  if (session.isPending || (linkToken && login.isPending))
     return (
       <p className="p-8" aria-live="polite">
         Đang khôi phục phiên đăng nhập…
@@ -644,7 +687,7 @@ export function MatchAccessPage({ expectedRole }: Props) {
   const submit = (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
-    if (!code.trim() || !passcode.trim()) {
+    if (!linkToken && (!code.trim() || !passcode.trim())) {
       setError('Vui lòng nhập mã giải đấu và mã bảo mật riêng.');
       return;
     }
@@ -704,6 +747,7 @@ export function MatchAccessPage({ expectedRole }: Props) {
           description="Mã này đang được sử dụng trên thiết bị khác."
           onCancel={() => {
             setChallenge(null);
+            setLinkToken(null);
           }}
           onConfirm={() => {
             takeover.mutate();

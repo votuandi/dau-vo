@@ -33,6 +33,34 @@ describe('projectMatchDisplayState', () => {
   });
 
   it.each([
+    [undefined, MatchDisplayState.COMPLETED],
+    [MatchLifecycle.IN_PROGRESS, MatchDisplayState.IN_PROGRESS],
+    [MatchLifecycle.SUSPENDED, MatchDisplayState.SUSPENDED],
+  ])(
+    'projects a completed fixture with lifecycle %s',
+    (lifecycle, expected) => {
+      expect(
+        projectMatchDisplayState({
+          kind: 'BRACKET_FIXTURE',
+          fixtureStatus: BracketFixtureStatus.COMPLETED,
+          ...(lifecycle === undefined ? {} : { lifecycle }),
+        }),
+      ).toBe(expected);
+    },
+  );
+
+  it.each([
+    BracketFixtureStatus.MATCH_PREPARED,
+    BracketFixtureStatus.AWAITING_WINNER,
+  ])('requires an operational match for fixture %s', (fixtureStatus) => {
+    expect(() =>
+      projectMatchDisplayState({ kind: 'BRACKET_FIXTURE', fixtureStatus }),
+    ).toThrow(
+      `Fixture ${fixtureStatus} requires an operational match lifecycle`,
+    );
+  });
+
+  it.each([
     BracketFixtureStatus.MATCH_PREPARED,
     BracketFixtureStatus.AWAITING_WINNER,
     BracketFixtureStatus.COMPLETED,

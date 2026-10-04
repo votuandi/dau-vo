@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Pagination } from '@/components/ui/pagination';
 import { formatDate } from '@/features/admin-management/presentation';
 import {
   superAdminApi,
@@ -200,27 +201,15 @@ export function SuperAdminUsersPage() {
               Không có người dùng phù hợp.
             </p>
           ) : null}
-          <div className="mt-5 flex items-center gap-3">
-            <Button
-              disabled={input.page <= 1}
-              onClick={() => update({ page: String(input.page - 1) })}
-              type="button"
-              variant="outline"
-            >
-              Trước
-            </Button>
-            <span aria-live="polite">
-              Trang {users.data.page} / {Math.max(users.data.totalPages, 1)} · {users.data.total}{' '}
-              người dùng
+          <div className="mt-5 flex flex-col items-center gap-3">
+            <Pagination
+              onPageChange={(page) => update({ page: String(page) })}
+              page={users.data.page}
+              totalPages={users.data.totalPages}
+            />
+            <span aria-live="polite" className="text-sm text-muted-foreground">
+              {users.data.total} người dùng
             </span>
-            <Button
-              disabled={users.data.page >= users.data.totalPages || users.data.totalPages === 0}
-              onClick={() => update({ page: String(input.page + 1) })}
-              type="button"
-              variant="outline"
-            >
-              Sau
-            </Button>
           </div>
         </>
       ) : null}

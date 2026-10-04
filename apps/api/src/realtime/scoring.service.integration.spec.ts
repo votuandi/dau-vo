@@ -1,4 +1,4 @@
-import { Test } from '@nestjs/testing';
+import { Test, type TestingModule } from '@nestjs/testing';
 import {
   AthleteColor,
   MatchAccessRole,
@@ -41,6 +41,7 @@ describe('ScoringService (PostgreSQL integration)', () => {
   jest.setTimeout(90_000);
 
   let prisma: PrismaService;
+  let module: TestingModule;
   let scoring: ScoringService;
   const tournamentIds = new Set<string>();
 
@@ -147,8 +148,11 @@ describe('ScoringService (PostgreSQL integration)', () => {
     });
   }
 
-  async function waitForResolution(matchId: string) {
-    const deadline = Date.now() + WINDOW_WAIT_MS;
+  async function waitForResolution(
+    matchId: string,
+    timeoutMs = WINDOW_WAIT_MS,
+  ) {
+    const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const window = await prisma.scoringWindow.findFirst({
         include: { scoreEvents: true },
@@ -188,7 +192,7 @@ describe('ScoringService (PostgreSQL integration)', () => {
       WEB_ORIGIN: 'http://localhost:5173',
     });
     const { AppModule } = await import('../app.module');
-    const module = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
     prisma = module.get(PrismaService);
@@ -211,11 +215,8 @@ describe('ScoringService (PostgreSQL integration)', () => {
       await prisma.match.deleteMany({ where: { tournamentId } });
       await prisma.tournament.deleteMany({ where: { id: tournamentId } });
     }
-    if (scoring !== undefined) {
-      scoring.onModuleDestroy();
-    }
-    if (prisma !== undefined) {
-      await prisma.$disconnect();
+    if (module !== undefined) {
+      await module.close();
     }
   });
 
@@ -340,7 +341,18 @@ describe('ScoringService (PostgreSQL integration)', () => {
       });
       officialSessions.push(session.id);
     }
-    await Promise.all(
+    // This case verifies assignment provenance and majority, not the one-second
+    // boundary covered above. Allow slow integration databases to accept all votes.
+    const windowStartedAt = new Date();
+    await prisma.scoringWindow.create({
+      data: {
+        matchId: dynamic.matchId,
+        roundNumber: 1,
+        startedAt: windowStartedAt,
+        endsAt: new Date(windowStartedAt.getTime() + 10_000),
+      },
+    });
+    const submissions = await Promise.all(
       officialSessions.slice(0, 3).map((officialSessionId) =>
         scoring.submitVote({
           athlete: AthleteColor.BLUE,
@@ -349,7 +361,10 @@ describe('ScoringService (PostgreSQL integration)', () => {
         }),
       ),
     );
-    const resolved = await waitForResolution(dynamic.matchId);
+    expect(
+      new Set(submissions.map(({ accepted }) => accepted.scoringWindowId)).size,
+    ).toBe(1);
+    const resolved = await waitForResolution(dynamic.matchId, 15_000);
     expect(resolved.winningColor).toBe(AthleteColor.BLUE);
     expect(resolved.scoreEvents).toHaveLength(1);
     const dynamicVotes = await prisma.judgeVote.findMany({

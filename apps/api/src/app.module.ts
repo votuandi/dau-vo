@@ -59,6 +59,7 @@ import { MatchOfficialAssignmentsModule } from './match-official-assignments/mat
               'req.body.password',
               'req.body.securityCode',
               'req.body.privatePasscode',
+              'req.body.token',
               'req.body.takeoverToken',
               'req.body.setupToken',
               'req.body.previewToken',

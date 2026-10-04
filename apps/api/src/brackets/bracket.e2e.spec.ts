@@ -256,7 +256,9 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
     await expect(prisma.match.count({ where: { tournamentId } })).resolves.toBe(
       0,
     );
-    await expect(prisma.matchAccessCode.count()).resolves.toBe(0);
+    await expect(
+      prisma.matchAccessCode.count({ where: { match: { tournamentId } } }),
+    ).resolves.toBe(0);
     await expect(
       prisma.auditLog.count({
         where: {
@@ -350,10 +352,15 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
     await expect(prisma.match.count({ where: { tournamentId } })).resolves.toBe(
       0,
     );
-    await expect(prisma.matchAccessCode.count()).resolves.toBe(0);
+    await expect(
+      prisma.matchAccessCode.count({ where: { match: { tournamentId } } }),
+    ).resolves.toBe(0);
     await expect(
       prisma.auditLog.count({
-        where: { eventType: AuditEventType.BRACKET_MATCH_PREPARED },
+        where: {
+          adminUserId: adminId,
+          eventType: AuditEventType.BRACKET_MATCH_PREPARED,
+        },
       }),
     ).resolves.toBe(0);
   });
@@ -620,7 +627,7 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
       .expect({
         code: 'BRACKET_CANCELLATION_UNSAFE',
         message:
-          'Linked operational matches require explicit cancellation confirmation',
+          'Linked bracket matches require explicit cancellation confirmation',
         unsafeMatches: [{ id: matchId, publicId }],
       });
     await authenticated(

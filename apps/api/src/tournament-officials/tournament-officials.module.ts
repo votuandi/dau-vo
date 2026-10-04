@@ -1,3 +1,4 @@
+import { OfficialAccessModule } from '../official-access/official-access.module';
 import { Module } from '@nestjs/common';
 import { AdminManagementModule } from '../admin-management/admin-management.module';
 import { AuthModule } from '../auth/admin-auth.module';
@@ -8,6 +9,7 @@ import { TournamentOfficialsService } from './tournament-officials.service';
 
 @Module({
   imports: [
+    OfficialAccessModule,
     AdminManagementModule,
     AuthModule,
     PrismaModule,

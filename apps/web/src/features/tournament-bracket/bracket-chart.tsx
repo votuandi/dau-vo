@@ -3,11 +3,11 @@ import type {
   BracketFixture,
   BracketPreview,
 } from '@/services/api/admin-management';
-import { bracketRoundLabel } from '@martial-arts-scoring/shared-types';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pencil, Star } from 'lucide-react';
+import { Crown, Pencil, Star, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { bracketPresentation, isBracketPreview } from './bracket-graph';
+import { isBracketPreview } from './bracket-graph';
+import { bracketChartPresentation } from './bracket-chart-presentation';
 import {
   matchVariantClassName,
   presentDisplayState,
@@ -15,7 +15,13 @@ import {
   presentPhase,
 } from '@/features/match-presentation';
 import { swappablePreviewAthleteIds } from './bracket-preview-swap';
-import { BRACKET_LAYOUT, bracketConnectorPath, fixtureTopOffsets } from './bracket-chart-layout';
+import {
+  BRACKET_LAYOUT,
+  bracketConnectorPath,
+  bracketElementBounds,
+  fixtureTopOffsets,
+  measuredFixtureRowPitch,
+} from './bracket-chart-layout';
 
 type ChartData = Pick<BracketPreview, 'rounds' | 'initialEntrants'> | ActiveBracket;
 interface ConnectorPath {
@@ -37,24 +43,28 @@ function winnerSideOfFixture(fixture: ActiveBracket['fixtures'][number]): 'RED' 
 function winnerBorderClassName(side: 'RED' | 'BLUE' | null): string {
   if (side === 'RED') return 'border-red-500';
   if (side === 'BLUE') return 'border-blue-500';
-  return '';
+  return 'border-border';
 }
 
 function winnerSurfaceClassName(side: 'RED' | 'BLUE' | null): string {
-  if (side === 'RED') return 'bg-red-500 text-white dark:bg-red-950/50 dark:text-red-50';
-  if (side === 'BLUE') return 'bg-blue-500 text-white dark:bg-blue-950/50 dark:text-blue-50';
+  if (side === 'RED') return 'bg-red-500 text-white';
+  if (side === 'BLUE') return 'bg-blue-500 text-white';
   return '';
 }
 
 export function BracketChart({
   data,
   onEditAthlete,
+  onDecideWinner,
+  decisionDisabled = false,
 }: {
   readonly data: ChartData;
   readonly onEditAthlete?: (athleteId: string) => void;
+  readonly onDecideWinner?: (fixture: ActiveBracket['fixtures'][number], entrantId: string) => void;
+  readonly decisionDisabled?: boolean;
 }) {
   const isPreview = isBracketPreview(data);
-  const graph = useMemo(() => bracketPresentation(data), [data]);
+  const graph = useMemo(() => bracketChartPresentation(data), [data]);
   const winnerSideByFixtureId = useMemo(
     () =>
       new Map(
@@ -68,6 +78,9 @@ export function BracketChart({
   const fixtureRefs = useRef(new Map<string, HTMLElement>());
   const slotRefs = useRef(new Map<string, HTMLElement>());
   const [paths, setPaths] = useState<readonly ConnectorPath[]>([]);
+  const [rowPitch, setRowPitch] = useState<number>(BRACKET_LAYOUT.rowPitch);
+  const [zoomPercent, setZoomPercent] = useState(100);
+  const scale = zoomPercent / 100;
   const entrantById = new Map(
     isPreview
       ? data.initialEntrants.flatMap((x) =>
@@ -98,17 +111,11 @@ export function BracketChart({
         )
       : data.fixtures.map((fixture) => [fixture.id, fixture.displayReference] as const),
   );
-  const rounds = isPreview
-    ? data.rounds
-    : Array.from({ length: data.bracket.roundCount }, (_, index) => ({
-        roundNumber: index + 1,
-        label: bracketRoundLabel(index + 1, data.bracket.roundCount),
-        fixtures: data.fixtures.filter((fixture) => fixture.roundNumber === index + 1),
-      }));
-  const fixtureOffsets = useMemo(() => fixtureTopOffsets(rounds), [rounds]);
+  const rounds = graph.rounds;
+  const fixtureOffsets = useMemo(() => fixtureTopOffsets(rounds, rowPitch), [rounds, rowPitch]);
   const chartHeight = Math.max(
     280,
-    ...Array.from(fixtureOffsets.values(), (offset) => offset + BRACKET_LAYOUT.rowPitch),
+    ...Array.from(fixtureOffsets.values(), (offset) => offset + rowPitch),
   );
 
   useEffect(() => {
@@ -118,26 +125,33 @@ export function BracketChart({
       frame = requestAnimationFrame(() => {
         const content = contentRef.current;
         if (!content) return;
-        const contentBounds = content.getBoundingClientRect();
+        const fixtureMeasurements = Array.from(
+          fixtureRefs.current.values(),
+          (element: HTMLElement): { roundNumber: number; height: number } => ({
+            roundNumber: Number(element.dataset.roundNumber),
+            height: element.offsetHeight,
+          }),
+        );
+        const measuredPitch: number = measuredFixtureRowPitch(fixtureMeasurements);
+        if (measuredPitch !== rowPitch) {
+          setRowPitch(measuredPitch);
+          return;
+        }
         setPaths(
           graph.edges.flatMap((edge) => {
             const source = fixtureRefs.current.get(edge.sourceFixtureId);
             const target = slotRefs.current.get(`${edge.targetFixtureId}:${edge.targetSide}`);
             if (!source || !target) return [];
-            const sourceBounds = source.getBoundingClientRect();
-            const targetBounds = target.getBoundingClientRect();
-            const startX = sourceBounds.right - contentBounds.left;
-            const startY = sourceBounds.top + sourceBounds.height / 2 - contentBounds.top;
-            const endX = targetBounds.left - contentBounds.left;
-            const endY = targetBounds.top + targetBounds.height / 2 - contentBounds.top;
+            const sourceBounds = bracketElementBounds(source, content);
+            const targetBounds = bracketElementBounds(target, content);
             return [
               {
                 key: `${edge.sourceFixtureId}:${edge.targetFixtureId}:${edge.targetSide}`,
                 d: bracketConnectorPath({
-                  sourceRight: startX,
-                  sourceCenterY: startY,
-                  targetLeft: endX,
-                  targetCenterY: endY,
+                  sourceRight: sourceBounds.right,
+                  sourceCenterY: sourceBounds.centerY,
+                  targetLeft: targetBounds.left,
+                  targetCenterY: targetBounds.centerY,
                   targetSide: edge.targetSide,
                 }),
                 winnerSide: winnerSideByFixtureId.get(edge.sourceFixtureId) ?? null,
@@ -167,207 +181,288 @@ export function BracketChart({
       cancelAnimationFrame(frame);
       observer?.disconnect();
     };
-  }, [graph, winnerSideByFixtureId]);
+  }, [graph, winnerSideByFixtureId, rowPitch, scale]);
 
   return (
-    <div className="overflow-x-auto rounded-xl border bg-muted/20 p-4" aria-label="Sơ đồ nhánh đấu">
-      <div
-        className="relative flex min-w-max items-stretch"
-        ref={contentRef}
-        style={{
-          columnGap: `${String(BRACKET_LAYOUT.roundGap)}px`,
-          minHeight: `${String(chartHeight)}px`,
-        }}
-      >
-        <svg
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-0 size-full overflow-visible"
-          preserveAspectRatio="none"
+    <div className="rounded-xl border bg-muted/20 p-3" aria-label="Sơ đồ nhánh đấu">
+      <div className="mb-2 flex justify-end gap-1">
+        <Button
+          aria-label="Thu nhỏ"
+          title="Thu nhỏ"
+          disabled={zoomPercent <= 50}
+          onClick={() => {
+            setZoomPercent((value) => Math.max(50, value - 10));
+          }}
+          size="icon"
+          type="button"
+          variant="outline"
         >
-          {paths.map((path) => (
-            <path
-              className={
-                path.winnerSide === 'RED'
-                  ? 'stroke-red-500'
-                  : path.winnerSide === 'BLUE'
-                    ? 'stroke-blue-500'
-                    : 'stroke-muted-foreground/50 dark:stroke-muted-foreground/70'
-              }
-              d={path.d}
-              fill="none"
-              key={path.key}
-              strokeWidth="2"
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
-        </svg>
-        {rounds.map((round) => (
-          <section
-            className="relative z-10 shrink-0"
-            key={round.roundNumber}
-            style={{ width: `${String(BRACKET_LAYOUT.fixtureWidth)}px` }}
+          <ZoomOut aria-hidden="true" className="size-4" />
+        </Button>
+        <Button
+          aria-label="Phóng to"
+          title="Phóng to"
+          disabled={zoomPercent >= 200}
+          onClick={() => {
+            setZoomPercent((value) => Math.min(200, value + 10));
+          }}
+          size="icon"
+          type="button"
+          variant="outline"
+        >
+          <ZoomIn aria-hidden="true" className="size-4" />
+        </Button>
+      </div>
+      <div className="overflow-x-auto">
+        <div
+          className="relative flex min-w-max items-stretch"
+          data-bracket-content
+          ref={contentRef}
+          style={{
+            zoom: scale,
+            columnGap: `${String(BRACKET_LAYOUT.roundGap)}px`,
+            minHeight: `${String(chartHeight)}px`,
+          }}
+        >
+          <svg
+            data-bracket-connectors
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 z-0 size-full overflow-visible"
+            preserveAspectRatio="none"
           >
-            <h4 className="sticky left-0 top-0 z-10 mb-2 bg-muted/95 py-1 text-sm font-black">
-              {round.label}
-            </h4>
-            <div className="relative pt-8" style={{ minHeight: `${String(chartHeight)}px` }}>
-              {round.fixtures.map((fixture) => {
-                const activeFixture = isPreview
-                  ? null
-                  : (fixture as ActiveBracket['fixtures'][number]);
-                const winnerSide = activeFixture ? winnerSideOfFixture(activeFixture) : null;
-                return (
-                  <article
-                    className={`absolute left-0 w-full overflow-hidden rounded-lg border border-border bg-card shadow-sm ${winnerBorderClassName(winnerSide)}`}
-                    data-fixture-id={fixture.id}
-                    key={fixture.id}
-                    ref={(element) => {
-                      if (element) fixtureRefs.current.set(fixture.id, element);
-                      else fixtureRefs.current.delete(fixture.id);
-                    }}
-                    style={{ top: `${String(fixtureOffsets.get(fixture.id) ?? 0)}px` }}
-                  >
-                    {activeFixture ? (
-                      (() => {
-                        const statuses = activeFixture.match
-                          ? [
-                              presentLifecycle(activeFixture.match.lifecycle),
-                              presentPhase(activeFixture.match.phase),
-                            ]
-                          : [presentDisplayState(activeFixture.displayState)];
-                        return (
-                          <header className="flex flex-wrap items-center justify-between gap-1 border-b px-2 py-1.5">
-                            <p className="text-xs font-bold text-muted-foreground">
-                              {fixture.displayReference}
-                            </p>
-                            <span className="flex flex-wrap justify-end gap-1">
-                              {statuses.map((status) => (
-                                <span
-                                  className={`rounded-full border px-1 py-0.5 text-[10px] font-bold ${matchVariantClassName[status.variant]}`}
-                                  key={status.label}
-                                >
-                                  {status.label}
-                                </span>
-                              ))}
-                            </span>
-                          </header>
-                        );
-                      })()
-                    ) : (
-                      <header className="border-b px-2 py-1.5">
-                        <p className="text-xs font-bold text-muted-foreground">
-                          {fixture.displayReference}
-                        </p>
-                      </header>
-                    )}
-                    {fixture.slots.map((slot) => {
-                      // Confirmed slots retain Prisma's `resolvedEntrantId`
-                      // scalar, so it cannot distinguish preview and persisted
-                      // responses. The outer payload shape does.
-                      const previewSlot = slot as BracketFixture['slots'][number];
-                      const activeSlot = slot as ActiveBracket['fixtures'][number]['slots'][number];
-                      const entrant = isPreview
-                        ? previewSlot.resolvedEntrantId
-                          ? entrantById.get(previewSlot.resolvedEntrantId)
-                          : undefined
-                        : (activeSlot.resolvedEntrant ?? activeSlot.directEntrant);
-                      const waiting =
-                        !entrant && !isPreview && activeSlot.sourceFixtureId
-                          ? `Chờ người thắng ${fixtureReferenceById.get(activeSlot.sourceFixtureId) ?? ''}`
-                          : !entrant && isPreview && previewSlot.source.kind === 'FIXTURE_WINNER'
-                            ? `Chờ người thắng ${fixtureReferenceById.get(previewSlot.source.fixtureId ?? '') ?? ''}`
-                            : 'Đặc cách';
-                      const editableAthleteId =
-                        onEditAthlete &&
-                        isPreview &&
-                        previewSlot.source.kind === 'ENTRANT' &&
-                        previewSlot.resolvedEntrantId &&
-                        swappableAthleteIds.has(previewSlot.resolvedEntrantId)
-                          ? previewSlot.resolvedEntrantId
-                          : null;
-                      return (
-                        <div
-                          className={`flex min-h-11 items-center gap-1.5 border-l-4 px-2 py-1.5 ${slot.side === 'RED' ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/20' : 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20'}`}
-                          data-fixture-slot={`${fixture.id}:${slot.side}`}
-                          key={slot.side}
-                          ref={(element) => {
-                            const key = `${fixture.id}:${slot.side}`;
-                            if (element) slotRefs.current.set(key, element);
-                            else slotRefs.current.delete(key);
-                          }}
-                        >
-                          {entrant && 'imageUrl' in entrant && entrant.imageUrl ? (
-                            <img
-                              alt=""
-                              className="size-7 shrink-0 rounded-full object-cover"
-                              src={entrant.imageUrl}
-                            />
-                          ) : null}
-                          <div className="min-w-0 flex-1">
-                            <span className="sr-only">
-                              {slot.side === 'RED' ? 'Bên đỏ' : 'Bên xanh'}
-                            </span>
-                            <p className="break-words text-sm font-semibold leading-5">
-                              {entrant ? (
-                                <span className="inline-flex items-center gap-1">
-                                  {'name' in entrant ? entrant.name : entrant.snapshotName}
-                                  {entrant.isSeed ? (
-                                    <span aria-label="VĐV hạt giống" title="VĐV hạt giống">
-                                      <Star
-                                        aria-hidden="true"
-                                        className="size-4 fill-yellow-400 text-yellow-500"
-                                      />
-                                    </span>
-                                  ) : null}
-                                </span>
-                              ) : (
-                                waiting
-                              )}
-                            </p>
-                            {entrant ? (
-                              <p className="break-words text-[10px] leading-4 text-muted-foreground">
-                                {'organizationName' in entrant
-                                  ? entrant.organizationName
-                                  : (entrant.snapshotOrganization ?? 'Không đơn vị')}
+            {graph.edges.map((edge) => {
+              const key = `${edge.sourceFixtureId}:${edge.targetFixtureId}:${edge.targetSide}`;
+              const path = paths.find((item) => item.key === key);
+              return (
+                <path
+                  data-source-fixture={edge.sourceFixtureId}
+                  data-target-slot={`${edge.targetFixtureId}:${edge.targetSide}`}
+                  data-target-side={edge.targetSide}
+                  className={
+                    path?.winnerSide === 'RED'
+                      ? 'stroke-red-500'
+                      : path?.winnerSide === 'BLUE'
+                        ? 'stroke-blue-500'
+                        : 'stroke-muted-foreground/50 dark:stroke-muted-foreground/70'
+                  }
+                  d={path?.d}
+                  fill="none"
+                  key={key}
+                  strokeWidth="2"
+                  vectorEffect="non-scaling-stroke"
+                />
+              );
+            })}
+          </svg>
+          {rounds.map((round) => (
+            <section
+              className="relative z-10 shrink-0"
+              key={round.roundNumber}
+              style={{ width: `${String(BRACKET_LAYOUT.fixtureWidth)}px` }}
+            >
+              <h4 className="sticky left-0 top-0 z-10 mb-2 bg-muted/95 py-1 text-sm font-black">
+                {round.label}
+              </h4>
+              <div className="relative pt-8" style={{ minHeight: `${String(chartHeight)}px` }}>
+                {round.fixtures.map((fixture) => {
+                  const isBye = graph.byeIds.has(fixture.id);
+                  const activeFixture =
+                    isPreview || isBye ? null : (fixture as ActiveBracket['fixtures'][number]);
+                  const winnerSide = activeFixture ? winnerSideOfFixture(activeFixture) : null;
+                  return (
+                    <article
+                      className={`absolute left-0 w-full overflow-hidden rounded-lg border bg-card shadow-sm ${winnerBorderClassName(winnerSide)}`}
+                      data-fixture-id={fixture.id}
+                      data-round-number={round.roundNumber}
+                      key={fixture.id}
+                      ref={(element) => {
+                        if (element) fixtureRefs.current.set(fixture.id, element);
+                        else fixtureRefs.current.delete(fixture.id);
+                      }}
+                      style={{ top: `${String(fixtureOffsets.get(fixture.id) ?? 0)}px` }}
+                    >
+                      {isBye ? (
+                        <header className="flex justify-end border-b px-2 py-1">
+                          <span className="rounded-full border border-yellow-300 bg-yellow-100 px-1 py-0.5 text-[10px] font-bold text-yellow-800 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-300">
+                            Đặc cách
+                          </span>
+                        </header>
+                      ) : activeFixture ? (
+                        (() => {
+                          const statuses = activeFixture.match
+                            ? [
+                                presentLifecycle(activeFixture.match.lifecycle),
+                                presentPhase(activeFixture.match.phase),
+                              ]
+                            : [presentDisplayState(activeFixture.displayState)];
+                          return (
+                            <header className="flex flex-wrap items-center justify-between gap-1 border-b px-2 py-1">
+                              <p className="text-[10px] font-bold text-muted-foreground">
+                                {fixture.displayReference}
                               </p>
+                              <span className="flex flex-wrap justify-end gap-1">
+                                {statuses.map((status) => (
+                                  <span
+                                    className={`rounded-full border px-1 py-0.5 text-[10px] font-bold ${matchVariantClassName[status.variant]}`}
+                                    key={status.label}
+                                  >
+                                    {status.label}
+                                  </span>
+                                ))}
+                              </span>
+                            </header>
+                          );
+                        })()
+                      ) : (
+                        <header className="border-b px-2 py-1">
+                          <p className="text-[10px] font-bold text-muted-foreground">
+                            {fixture.displayReference}
+                          </p>
+                        </header>
+                      )}
+                      {fixture.slots.map((slot) => {
+                        // Confirmed slots retain Prisma's `resolvedEntrantId`
+                        // scalar, so it cannot distinguish preview and persisted
+                        // responses. The outer payload shape does.
+                        const previewSlot = slot as BracketFixture['slots'][number];
+                        const activeSlot =
+                          slot as ActiveBracket['fixtures'][number]['slots'][number];
+                        const entrant = isPreview
+                          ? previewSlot.resolvedEntrantId
+                            ? entrantById.get(previewSlot.resolvedEntrantId)
+                            : undefined
+                          : (activeSlot.resolvedEntrant ?? activeSlot.directEntrant);
+                        const isWinner = Boolean(
+                          entrant && activeFixture?.winnerEntrant?.id === entrant.id,
+                        );
+                        const waiting =
+                          !entrant && !isPreview && activeSlot.sourceFixtureId
+                            ? `Chờ người thắng ${fixtureReferenceById.get(activeSlot.sourceFixtureId) ?? ''}`
+                            : !entrant && isPreview && previewSlot.source.kind === 'FIXTURE_WINNER'
+                              ? `Chờ người thắng ${fixtureReferenceById.get(previewSlot.source.fixtureId ?? '') ?? ''}`
+                              : 'Đặc cách';
+                        const editableAthleteId =
+                          onEditAthlete &&
+                          isPreview &&
+                          previewSlot.source.kind === 'ENTRANT' &&
+                          previewSlot.resolvedEntrantId &&
+                          swappableAthleteIds.has(previewSlot.resolvedEntrantId)
+                            ? previewSlot.resolvedEntrantId
+                            : null;
+                        return (
+                          <div
+                            className={`group/athlete relative flex min-h-8 items-center gap-1 border-l-4 px-1.5 py-0.5 ${isBye ? 'border-l-green-500 bg-green-50 dark:bg-green-950/20' : `${slot.side === 'RED' ? 'border-l-red-500' : 'border-l-blue-500'} ${isWinner ? winnerSurfaceClassName(winnerSide) : slot.side === 'RED' ? 'bg-red-50/50 dark:bg-red-950/20' : 'bg-blue-50/50 dark:bg-blue-950/20'}`}`}
+                            data-fixture-slot={`${fixture.id}:${slot.side}`}
+                            key={slot.side}
+                            ref={(element) => {
+                              const key = `${fixture.id}:${slot.side}`;
+                              if (element) slotRefs.current.set(key, element);
+                              else slotRefs.current.delete(key);
+                            }}
+                          >
+                            {entrant && 'imageUrl' in entrant && entrant.imageUrl ? (
+                              <img
+                                alt=""
+                                className="size-6 shrink-0 rounded-full object-cover"
+                                src={entrant.imageUrl}
+                              />
+                            ) : null}
+                            <div className="min-w-0 flex-1">
+                              <span className="sr-only">
+                                {isBye
+                                  ? 'VĐV đặc cách'
+                                  : slot.side === 'RED'
+                                    ? 'Bên đỏ'
+                                    : 'Bên xanh'}
+                              </span>
+                              <p className="break-words text-xs font-semibold leading-4">
+                                {entrant ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    {'name' in entrant ? entrant.name : entrant.snapshotName}
+                                    {entrant.isSeed ? (
+                                      <span aria-label="VĐV hạt giống" title="VĐV hạt giống">
+                                        <Star
+                                          aria-hidden="true"
+                                          className="size-3 fill-yellow-400 text-yellow-500"
+                                        />
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                ) : (
+                                  waiting
+                                )}
+                              </p>
+                              {entrant ? (
+                                <p
+                                  className={`break-words text-[10px] ${isWinner ? 'text-white' : 'text-muted-foreground'}`}
+                                >
+                                  {'organizationName' in entrant
+                                    ? entrant.organizationName
+                                    : (entrant.snapshotOrganization ?? 'Không đơn vị')}
+                                </p>
+                              ) : null}
+                            </div>
+                            {activeFixture &&
+                            entrant &&
+                            onDecideWinner &&
+                            manualWinnerCandidates(activeFixture).length === 2 ? (
+                              <Button
+                                aria-label={`Chỉ định VĐV chiến thắng trận: ${'name' in entrant ? entrant.name : entrant.snapshotName} (${activeFixture.displayReference})`}
+                                title="Chỉ định VĐV chiến thắng trận"
+                                className="absolute right-1.5 z-10 size-8 border border-yellow-400 bg-yellow-100 text-yellow-700 hover:border-yellow-500 hover:bg-yellow-200 hover:text-yellow-800 opacity-0 pointer-events-none group-hover/athlete:opacity-100 group-hover/athlete:pointer-events-auto group-focus-within/athlete:opacity-100 group-focus-within/athlete:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto"
+                                disabled={decisionDisabled}
+                                onClick={() => {
+                                  onDecideWinner(activeFixture, entrant.id);
+                                }}
+                                size="icon"
+                                type="button"
+                                variant="ghost"
+                              >
+                                <Crown aria-hidden="true" className="size-4" />
+                              </Button>
+                            ) : null}
+                            {editableAthleteId ? (
+                              <Button
+                                aria-label={`Đổi vị trí ${entrant ? ('name' in entrant ? entrant.name : entrant.snapshotName) : 'vận động viên'}`}
+                                className="size-7 shrink-0"
+                                onClick={() => {
+                                  onEditAthlete?.(editableAthleteId);
+                                }}
+                                size="icon"
+                                type="button"
+                                variant="ghost"
+                              >
+                                <Pencil aria-hidden="true" className="size-4" />
+                              </Button>
                             ) : null}
                           </div>
-                          {editableAthleteId ? (
-                            <Button
-                              aria-label={`Đổi vị trí ${entrant ? ('name' in entrant ? entrant.name : entrant.snapshotName) : 'vận động viên'}`}
-                              className="shrink-0"
-                              onClick={() => {
-                                onEditAthlete?.(editableAthleteId);
-                              }}
-                              size="icon"
-                              type="button"
-                              variant="ghost"
-                            >
-                              <Pencil aria-hidden="true" className="size-4" />
-                            </Button>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                    {activeFixture?.winnerEntrant ? (
-                      <p
-                        className={`border-t px-2 py-1.5 text-sm font-bold ${winnerSurfaceClassName(winnerSide)}`}
-                      >
-                        Thắng: {activeFixture.winnerEntrant.snapshotName}
-                      </p>
-                    ) : null}
-                    {activeFixture?.status === 'AWAITING_WINNER' ? (
-                      <p className="border-t px-2 py-1.5 text-sm text-muted-foreground">
-                        Chờ xác định người thắng
-                      </p>
-                    ) : null}
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        ))}
+                        );
+                      })}
+                      {activeFixture?.winnerDecision?.reason ? (
+                        <p className="border-t px-2 py-1 text-[10px] text-muted-foreground">
+                          Lý do: {activeFixture.winnerDecision.reason}
+                        </p>
+                      ) : null}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
       </div>
     </div>
   );
+}
+
+function manualWinnerCandidates(fixture: ActiveBracket['fixtures'][number]) {
+  return manualWinnerDecisionType(fixture)
+    ? fixture.slots.flatMap((slot) => (slot.resolvedEntrant ? [slot.resolvedEntrant] : []))
+    : [];
+}
+
+function manualWinnerDecisionType(fixture: ActiveBracket['fixtures'][number]) {
+  if (fixture.status === 'AWAITING_WINNER') return 'ADMIN_TIEBREAK';
+  if (fixture.status === 'READY' && fixture.match === null) return 'WITHDRAWAL_OR_INJURY';
+  return null;
 }
