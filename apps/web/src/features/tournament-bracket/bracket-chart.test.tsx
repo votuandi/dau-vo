@@ -216,7 +216,11 @@ describe('BracketChart', () => {
 
   it('highlights a resolved fixture with its winner side color', () => {
     const bracket = activeBracket(MatchPhase.FINISHED, MatchLifecycle.COMPLETED);
-    const fixture = bracket.fixtures[0]!;
+    const fixture = bracket.fixtures[0];
+
+    if (!fixture) {
+      throw new Error('Expected the test bracket to contain a fixture');
+    }
     const resolvedBracket: ActiveBracket = {
       ...bracket,
       fixtures: [{ ...fixture, winnerEntrant: { id: 'a', snapshotName: 'Nguyễn An' } }],

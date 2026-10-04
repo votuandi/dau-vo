@@ -1,7 +1,8 @@
-import { Test } from '@nestjs/testing';
+import { Test, type TestingModule } from '@nestjs/testing';
 import {
   AthleteColor,
   MatchAccessRole,
+  MatchRulesVersion,
   MatchLifecycle,
   MatchRole,
   MatchStatus,
@@ -13,6 +14,7 @@ import { DEFAULT_SPORT } from '../../prisma/default-sport';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   InactivePenaltySessionError,
+  PenaltyLegacyOnlyError,
   MatchNotRunningForPenaltyError,
   RoundEndedForPenaltyError,
 } from './penalty.errors';
@@ -34,10 +36,12 @@ describe('PenaltyService (PostgreSQL integration)', () => {
 
   let penaltyService: PenaltyService;
   let prisma: PrismaService;
+  let module: TestingModule;
   let matchState: RealtimeMatchStateService;
   const tournamentIds = new Set<string>();
 
   async function fixture(options?: {
+    rulesVersion?: MatchRulesVersion;
     roundEndsAt?: Date;
     status?: MatchStatus;
   }): Promise<Fixture> {
@@ -71,6 +75,9 @@ describe('PenaltyService (PostgreSQL integration)', () => {
             },
           ],
         },
+        // This fixture exercises the legacy score/penalty contract explicitly.
+        rulesVersion:
+          options?.rulesVersion ?? MatchRulesVersion.LEGACY_SCORE_PENALTY_V1,
         breakDurationMs: 60_000,
         lifecycle:
           status === MatchStatus.WAITING
@@ -178,7 +185,7 @@ describe('PenaltyService (PostgreSQL integration)', () => {
       WEB_ORIGIN: 'http://localhost:5173',
     });
     const { AppModule } = await import('../app.module');
-    const module = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
     penaltyService = module.get(PenaltyService);
@@ -202,7 +209,7 @@ describe('PenaltyService (PostgreSQL integration)', () => {
       await prisma.match.deleteMany({ where: { tournamentId } });
       await prisma.tournament.deleteMany({ where: { id: tournamentId } });
     }
-    await prisma.$disconnect();
+    await module.close();
   });
 
   it('makes RED score five become four with one durable violation and audit record', async () => {
@@ -252,6 +259,26 @@ describe('PenaltyService (PostgreSQL integration)', () => {
         }),
       ]),
     );
+  });
+
+  it('rejects legacy penalties for V2 matches without persisting side effects', async () => {
+    const current = await fixture({
+      rulesVersion: MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2,
+    });
+    await expect(add(current, AthleteColor.RED)).rejects.toBeInstanceOf(
+      PenaltyLegacyOnlyError,
+    );
+    expect(
+      await prisma.penalty.count({ where: { matchId: current.matchId } }),
+    ).toBe(0);
+    expect(
+      await prisma.scoreEvent.count({ where: { matchId: current.matchId } }),
+    ).toBe(0);
+    expect(
+      await prisma.auditLog.count({
+        where: { matchId: current.matchId, eventType: 'PENALTY_ACTION' },
+      }),
+    ).toBe(0);
   });
 
   it('records each explicit consecutive inspector press, including concurrent requests', async () => {

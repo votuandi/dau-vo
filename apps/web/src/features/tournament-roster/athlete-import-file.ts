@@ -93,7 +93,7 @@ export async function parseAthleteImportFile(file: File): Promise<readonly Athle
       name: values[0] ?? '',
       birthYear,
       weightClass: values[2] ?? '',
-      organizationName: values[3] ?? noOrganizationName,
+      organizationName: values[3] === '' ? noOrganizationName : (values[3] ?? noOrganizationName),
       organizationLocation: values[4] ?? '',
     });
   }

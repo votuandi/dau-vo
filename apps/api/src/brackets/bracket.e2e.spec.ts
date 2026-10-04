@@ -620,7 +620,7 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
       .expect({
         code: 'BRACKET_CANCELLATION_UNSAFE',
         message:
-          'Linked operational matches require explicit cancellation confirmation',
+          'Linked bracket matches require explicit cancellation confirmation',
         unsafeMatches: [{ id: matchId, publicId }],
       });
     await authenticated(

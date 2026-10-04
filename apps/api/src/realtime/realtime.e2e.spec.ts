@@ -6,6 +6,7 @@ import {
   AuditEventType,
   FaultSeverity,
   MatchAccessRole,
+  MatchRulesVersion,
   MatchRole,
   JudgeSlot,
   ScoreEventType,
@@ -215,7 +216,10 @@ describe('Realtime match infrastructure (integration)', () => {
   const createdMatchIds = new Set<string>();
   const sockets = new Set<Socket>();
 
-  async function createTestMatch(label: string): Promise<TestMatch> {
+  async function createTestMatch(
+    label: string,
+    rulesVersion: MatchRulesVersion = MatchRulesVersion.LEGACY_SCORE_PENALTY_V1,
+  ): Promise<TestMatch> {
     const rawCodes = Object.fromEntries(
       ACCESS_ROLES.map((role) => [
         role,
@@ -247,6 +251,8 @@ describe('Realtime match infrastructure (integration)', () => {
             },
           ],
         },
+        // This fixture exercises the legacy score/penalty contract explicitly.
+        rulesVersion,
         breakDurationMs: 60_000,
         publicId: randomBytes(6).toString('hex').slice(0, 8).toUpperCase(),
         roundDurationMs: 120_000,
@@ -1217,6 +1223,11 @@ describe('Realtime match infrastructure (integration)', () => {
       data: {
         endsAt: new Date(Date.now() + 60_000),
         matchId: match.id,
+        roundId: (
+          await prisma.round.findFirstOrThrow({
+            where: { matchId: match.id, roundNumber: 1, invalidatedAt: null },
+          })
+        ).id,
         roundNumber: 1,
         startedAt: new Date(),
       },
@@ -1325,7 +1336,10 @@ describe('Realtime match infrastructure (integration)', () => {
   });
 
   it('normalizes legacy faults, persists each side/severity, and projects only valid faults', async () => {
-    const match = await createTestMatch('fault-severity');
+    const match = await createTestMatch(
+      'fault-severity',
+      MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2,
+    );
     const [inspector, referee, refereeTwo, refereeThree] = await Promise.all([
       login(
         match,
@@ -1523,11 +1537,20 @@ describe('Realtime match infrastructure (integration)', () => {
       where: { id: inspector.response.body.session.sessionId },
       data: { active: false, revokedAt: new Date() },
     });
-    await expect(
-      recordFault(inspectorSocket, { athlete: AthleteColor.RED }),
-    ).resolves.toMatchObject({
-      ok: false,
-      error: { code: 'FAULT_FORBIDDEN' },
+    const revoked = waitForEvent<SessionRevokedPayload>(
+      inspectorSocket,
+      RealtimeEvent.SESSION_REVOKED,
+    );
+    const disconnected = waitForDisconnect(inspectorSocket);
+    // Revalidation disconnects stale owners before an acknowledgement can be delivered.
+    inspectorSocket.emit(RealtimeEvent.FAULT_RECORD, {
+      athlete: AthleteColor.RED,
     });
+    await expect(revoked).resolves.toMatchObject({ code: 'SESSION_REVOKED' });
+    await expect(disconnected).resolves.toBeTruthy();
+    expect(inspectorSocket.connected).toBe(false);
+    await expect(
+      prisma.fault.count({ where: { matchId: match.id } }),
+    ).resolves.toBe(0);
   });
 });

@@ -1,4 +1,4 @@
-import { Test } from '@nestjs/testing';
+import { Test, type TestingModule } from '@nestjs/testing';
 import {
   AthleteColor,
   MatchAccessRole,
@@ -41,6 +41,7 @@ describe('ScoringService (PostgreSQL integration)', () => {
   jest.setTimeout(90_000);
 
   let prisma: PrismaService;
+  let module: TestingModule;
   let scoring: ScoringService;
   const tournamentIds = new Set<string>();
 
@@ -188,7 +189,7 @@ describe('ScoringService (PostgreSQL integration)', () => {
       WEB_ORIGIN: 'http://localhost:5173',
     });
     const { AppModule } = await import('../app.module');
-    const module = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
     prisma = module.get(PrismaService);
@@ -211,11 +212,8 @@ describe('ScoringService (PostgreSQL integration)', () => {
       await prisma.match.deleteMany({ where: { tournamentId } });
       await prisma.tournament.deleteMany({ where: { id: tournamentId } });
     }
-    if (scoring !== undefined) {
-      scoring.onModuleDestroy();
-    }
-    if (prisma !== undefined) {
-      await prisma.$disconnect();
+    if (module !== undefined) {
+      await module.close();
     }
   });
 
