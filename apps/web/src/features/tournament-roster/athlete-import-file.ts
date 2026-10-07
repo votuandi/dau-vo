@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import type { AthleteImportRow } from '@/services/api/admin-management';
 
 const supportedExtensions = ['xlsx', 'xls', 'csv'] as const;
@@ -38,6 +37,8 @@ export async function parseAthleteImportFile(file: File): Promise<readonly Athle
     );
   }
 
+  // Loaded on demand: the spreadsheet parser is large and only needed for imports.
+  const XLSX = await import('xlsx');
   let rows: unknown[][];
   try {
     const workbook =
