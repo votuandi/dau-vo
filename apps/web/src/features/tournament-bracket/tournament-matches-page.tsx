@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useSearchParams } from 'react-router-dom';
-import { ClipboardCheck, Crown, Download, Eye, Loader2, Maximize2, Minimize2 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Download, Loader2, Maximize2, Minimize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import {
@@ -22,16 +22,8 @@ import {
   type AdminTournament,
   type BracketPreview,
   type BracketDrawSetup,
-  type ActiveBracket,
 } from '@/services/api/admin-management';
-import { MatchDisplayState, MatchLifecycle, TournamentStatus } from '@/types/shared';
-import { bracketRoundLabel as roundLabel } from '@martial-arts-scoring/shared-types';
-import {
-  matchVariantClassName,
-  presentDisplayState,
-  presentLifecycle,
-  presentPhase,
-} from '@/features/match-presentation';
+import { TournamentStatus } from '@/types/shared';
 import { BracketChart } from './bracket-chart';
 import { downloadBracketPdf } from './download-bracket-pdf';
 import { BracketPreviewPanel } from './bracket-preview-dialog';
@@ -41,20 +33,12 @@ import { bracketQueryKeys } from './query-keys';
 import { WeightClassMatchTabs } from './weight-class-match-tabs';
 import { ManualMatchCreationForm } from './manual-match-creation-form';
 import { BracketStaffingEditor } from './bracket-staffing-editor';
-
-interface UnsafeCancellationMatch {
-  readonly id: string;
-  readonly publicId: string;
-}
-
-function isUnsafeCancellationMatch(value: unknown): value is UnsafeCancellationMatch {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const match = value as Record<string, unknown>;
-  return typeof match.id === 'string' && typeof match.publicId === 'string';
-}
+import { CancelBracketDialog } from './cancel-bracket-dialog';
+import { FixtureList } from './fixture-list';
+import { bracketPdfFileName, type BracketFixture } from './fixture-presentation';
+import { IntermissionDurationForm } from './intermission-duration-form';
+import { StandaloneMatchList } from './standalone-match-list';
+import { WinnerDecisionDialog } from './winner-decision-dialog';
 
 export function TournamentMatchesPage({
   tournament,
@@ -78,15 +62,9 @@ export function TournamentMatchesPage({
         ? selectedParam
         : (active[0]?.id ?? null);
   const selectedWeightClass = active.find((weightClass) => weightClass.id === selectedId);
-  const [intermissionDurationSeconds, setIntermissionDurationSeconds] = useState('0');
-  const [intermissionError, setIntermissionError] = useState<string | null>(null);
   const [isBracketExpanded, setIsBracketExpanded] = useState(true);
   const bracketChartRef = useRef<HTMLDivElement>(null);
   const [isDownloadingBracket, setIsDownloadingBracket] = useState(false);
-  useEffect(() => {
-    setIntermissionDurationSeconds(String(selectedWeightClass?.intermissionDurationSeconds ?? 0));
-    setIntermissionError(null);
-  }, [selectedWeightClass?.id, selectedWeightClass?.intermissionDurationSeconds]);
   const matches = useQuery(
     tournamentMatchesQueryOptions(
       tournament.id,
@@ -145,27 +123,17 @@ export function TournamentMatchesPage({
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [swapAthleteId, setSwapAthleteId] = useState<string | null>(null);
   const [swapError, setSwapError] = useState<string | null>(null);
-  const [decisionFixture, setDecisionFixture] = useState<ActiveBracket['fixtures'][number] | null>(
-    null,
-  );
-  const [selectedWinnerId, setSelectedWinnerId] = useState<string | null>(null);
-  const [decisionReason, setDecisionReason] = useState('');
-  const [decisionKey, setDecisionKey] = useState<string | null>(null);
-  const [decisionError, setDecisionError] = useState<string | null>(null);
-  const [cancelReason, setCancelReason] = useState('');
+  const [decision, setDecision] = useState<{
+    readonly fixture: BracketFixture;
+    readonly initialWinnerId: string | null;
+  } | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
-  const [cancelError, setCancelError] = useState<string | null>(null);
-  const [unsafeCancellationMatches, setUnsafeCancellationMatches] = useState<
-    readonly { readonly id: string; readonly publicId: string }[]
-  >([]);
   // Prevent a stale successful query from flashing a bracket after cancellation.
   const [confirmedCancelled, setConfirmedCancelled] = useState(false);
   const drawWeightClassRef = useRef(selectedId);
   const workflowEpochRef = useRef(0);
   const workflowAbortRef = useRef<AbortController | null>(null);
   const swapVersionRef = useRef(0);
-  const winnerReasonRef = useRef<HTMLTextAreaElement>(null);
-  const cancelReasonRef = useRef<HTMLTextAreaElement>(null);
   const resetDraw = () => {
     setWorkflow('idle');
     setPreview(null);
@@ -193,7 +161,7 @@ export function TournamentMatchesPage({
       workflowEpochRef.current += 1;
       resetDraw();
       setCancelOpen(false);
-      setCancelError(null);
+      setDecision(null);
       setConfirmedCancelled(false);
       setIsBracketExpanded(true);
       drawWeightClassRef.current = selectedId;
@@ -372,78 +340,6 @@ export function TournamentMatchesPage({
       notifyMutationError(error, 'Không thể chuẩn bị trận đấu.');
     },
   });
-  const decide = useMutation({
-    mutationFn: async () => {
-      if (!bracket.data || !decisionFixture) throw new Error('Fixture is unavailable');
-      if (!selectedWinnerId) throw new Error('Chọn vận động viên chiến thắng.');
-      return adminManagementApi.decideBracketFixtureWinner(
-        tournament.id,
-        bracket.data.bracket.id,
-        decisionFixture.id,
-        {
-          entrantId: selectedWinnerId,
-          decisionType: manualWinnerDecisionType(decisionFixture) ?? 'WITHDRAWAL_OR_INJURY',
-          reason: decisionReason.trim(),
-          idempotencyKey: decisionKey ?? '',
-        },
-      );
-    },
-    onSuccess: () => {
-      setDecisionFixture(null);
-      setDecisionReason('');
-      setDecisionKey(null);
-      setSelectedWinnerId(null);
-      setDecisionError(null);
-      notifyMutationSuccess('Đã xác định người thắng.');
-      void Promise.all([
-        qc.invalidateQueries({
-          queryKey: bracketQueryKeys.detail(tournament.id, selectedId ?? ''),
-        }),
-        qc.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournament.id) }),
-      ]);
-    },
-    onError: (error) => {
-      setDecisionError(
-        getApiErrorMessage(error, 'Không thể xác định người thắng. Trạng thái có thể đã thay đổi.'),
-      );
-    },
-  });
-  const cancelBracket = useMutation({
-    mutationFn: (force: boolean) =>
-      adminManagementApi.cancelBracket(tournament.id, selectedId ?? '', cancelReason.trim(), force),
-    onSuccess: () => {
-      setCancelOpen(false);
-      setCancelReason('');
-      setCancelError(null);
-      setUnsafeCancellationMatches([]);
-      setConfirmedCancelled(true);
-      qc.removeQueries({
-        queryKey: bracketQueryKeys.detail(tournament.id, selectedId ?? ''),
-        exact: true,
-      });
-      void Promise.all([
-        qc.invalidateQueries({
-          queryKey: bracketQueryKeys.detail(tournament.id, selectedId ?? ''),
-        }),
-        qc.invalidateQueries({ queryKey: tournamentQueryKeys.weightClasses(tournament.id) }),
-        qc.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournament.id) }),
-        qc.invalidateQueries({ queryKey: tournamentQueryKeys.matchCounts(tournament.id) }),
-        qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournament.id, 'athletes'] }),
-      ]);
-    },
-    onError: (error) => {
-      if (error instanceof ApiClientError && error.body.code === 'BRACKET_CANCELLATION_UNSAFE') {
-        const unsafeMatches = error.body.unsafeMatches;
-        setUnsafeCancellationMatches(
-          Array.isArray(unsafeMatches) ? unsafeMatches.filter(isUnsafeCancellationMatch) : [],
-        );
-        setCancelError('Đã có trận đấu đã hoặc đang diễn ra.');
-        return;
-      }
-      setUnsafeCancellationMatches([]);
-      setCancelError(getApiErrorMessage(error, 'Không thể hủy nhánh đấu.'));
-    },
-  });
   const staffing = useMutation({
     mutationFn: (input: {
       readonly weightClassId: string;
@@ -465,21 +361,6 @@ export function TournamentMatchesPage({
     },
     onError: (error) => {
       notifyMutationError(error, 'Không thể cập nhật số giám định.');
-    },
-  });
-  const updateIntermission = useMutation({
-    mutationFn: (input: { readonly weightClassId: string; readonly seconds: number }) =>
-      adminManagementApi.updateWeightClass(tournament.id, input.weightClassId, {
-        intermissionDurationSeconds: input.seconds,
-      }),
-    onSuccess: (_, input) => {
-      void qc.invalidateQueries({
-        queryKey: tournamentQueryKeys.weightClasses(tournament.id),
-      });
-      if (input.weightClassId === selectedId) notifyMutationSuccess('Đã cập nhật thời gian nghỉ.');
-    },
-    onError: (error) => {
-      notifyMutationError(error, 'Không thể cập nhật thời gian nghỉ.');
     },
   });
   const counts = useMemo(
@@ -575,10 +456,7 @@ export function TournamentMatchesPage({
               </Button>
               {bracket.data?.bracket.status === 'ACTIVE' && !isReadOnly ? (
                 <Button
-                  disabled={cancelBracket.isPending}
                   onClick={() => {
-                    setCancelError(null);
-                    setUnsafeCancellationMatches([]);
                     setCancelOpen(true);
                   }}
                   type="button"
@@ -682,22 +560,11 @@ export function TournamentMatchesPage({
                             try {
                               await downloadBracketPdf(
                                 bracketChartRef.current,
-                                `So-do-nhanh-dau_${tournament.name}_${tournament.sport.name}_${selectedWeightClass?.name ?? selectedId}_${new Intl.DateTimeFormat(
-                                  'sv-SE',
-                                  {
-                                    timeZone: 'Asia/Ho_Chi_Minh',
-                                    year: 'numeric',
-                                    month: '2-digit',
-                                    day: '2-digit',
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                    second: '2-digit',
-                                    hourCycle: 'h23',
-                                  },
-                                )
-                                  .format(new Date())
-                                  .replace(' ', '_')
-                                  .replaceAll(':', '-')}`,
+                                bracketPdfFileName({
+                                  tournamentName: tournament.name,
+                                  sportName: tournament.sport.name,
+                                  weightClassName: selectedWeightClass?.name ?? selectedId,
+                                }),
                               );
                             } catch (error) {
                               notifyMutationError(
@@ -740,13 +607,9 @@ export function TournamentMatchesPage({
                   <div hidden={!isBracketExpanded} id="bracket-chart" ref={bracketChartRef}>
                     <BracketChart
                       data={bracket.data}
-                      decisionDisabled={isReadOnly || decide.isPending || cancelBracket.isPending}
+                      decisionDisabled={isReadOnly}
                       onDecideWinner={(fixture, entrantId) => {
-                        setDecisionFixture(fixture);
-                        setSelectedWinnerId(entrantId);
-                        setDecisionReason('');
-                        setDecisionError(null);
-                        setDecisionKey(crypto.randomUUID());
+                        setDecision({ fixture, initialWinnerId: entrantId });
                       }}
                     />
                   </div>
@@ -759,75 +622,21 @@ export function TournamentMatchesPage({
                     staffing.mutate({ weightClassId: selectedId, roundNumber, count });
                   }}
                 />
-                <form
-                  className="mt-5 rounded-xl border border-border bg-muted/20 p-4"
-                  noValidate
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const seconds = Number(intermissionDurationSeconds);
-                    if (!Number.isInteger(seconds) || seconds < 0 || !selectedId) {
-                      setIntermissionError('Nhập số nguyên không âm. 0 để tắt thời gian nghỉ.');
-                      return;
-                    }
-                    setIntermissionError(null);
-                    updateIntermission.mutate({ weightClassId: selectedId, seconds });
-                  }}
-                >
-                  <label
-                    className="text-sm font-semibold"
-                    htmlFor="weight-class-intermission-duration"
-                  >
-                    Thời gian nghỉ giữa hiệp (giây)
-                  </label>
-                  <div className="mt-1 flex flex-wrap items-center gap-3">
-                    <input
-                      aria-describedby="weight-class-intermission-help weight-class-intermission-error"
-                      aria-invalid={Boolean(intermissionError)}
-                      className="block h-10 w-64 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary aria-[invalid=true]:border-destructive"
-                      disabled={isReadOnly || updateIntermission.isPending}
-                      id="weight-class-intermission-duration"
-                      inputMode="numeric"
-                      min={0}
-                      onChange={(event) => {
-                        setIntermissionDurationSeconds(event.target.value);
-                        if (intermissionError) setIntermissionError(null);
-                      }}
-                      step={1}
-                      type="number"
-                      value={intermissionDurationSeconds}
-                    />
-                    <Button disabled={isReadOnly || updateIntermission.isPending} type="submit">
-                      {updateIntermission.isPending ? 'Đang lưu…' : 'Lưu'}
-                    </Button>
-                  </div>
-                  <p
-                    className="mt-1 text-xs text-muted-foreground"
-                    id="weight-class-intermission-help"
-                  >
-                    Nhập 0 để tắt thời gian nghỉ.
-                  </p>
-                  {intermissionError ? (
-                    <p
-                      className="mt-1 text-xs text-destructive"
-                      id="weight-class-intermission-error"
-                      role="alert"
-                    >
-                      {intermissionError}
-                    </p>
-                  ) : null}
-                </form>
+                <IntermissionDurationForm
+                  initialSeconds={selectedWeightClass?.intermissionDurationSeconds ?? 0}
+                  isReadOnly={isReadOnly}
+                  key={`${selectedId}:${String(selectedWeightClass?.intermissionDurationSeconds ?? 0)}`}
+                  tournamentId={tournament.id}
+                  weightClassId={selectedId}
+                />
                 <FixtureList
                   data={bracket.data}
-                  disabled={isReadOnly || prepare.isPending || cancelBracket.isPending}
+                  disabled={isReadOnly || prepare.isPending}
                   onPrepare={(id) => {
                     prepare.mutate(id);
                   }}
                   onDecide={(fixture) => {
-                    setDecisionFixture(fixture);
-                    setSelectedWinnerId(null);
-                    setDecisionReason('');
-                    setDecisionError(null);
-                    setDecisionKey(crypto.randomUUID());
+                    setDecision({ fixture, initialWinnerId: null });
                   }}
                 />
               </>
@@ -919,183 +728,31 @@ export function TournamentMatchesPage({
           </div>
         </Dialog>
       ) : null}
-      {decisionFixture ? (
-        <Dialog
-          description={
-            manualWinnerDecisionType(decisionFixture) === 'WITHDRAWAL_OR_INJURY'
-              ? 'Ghi nhận VĐV rút lui hoặc chấn thương không thể tiếp tục. Chọn người thắng và nêu rõ lý do.'
-              : 'Chọn vận động viên chiến thắng và ghi rõ lý do quyết định hòa.'
-          }
-          initialFocusRef={winnerReasonRef}
+      {decision && selectedId && bracket.data ? (
+        <WinnerDecisionDialog
+          bracketId={bracket.data.bracket.id}
+          fixture={decision.fixture}
+          initialWinnerId={decision.initialWinnerId}
+          key={decision.fixture.id}
           onClose={() => {
-            setDecisionFixture(null);
-            setDecisionKey(null);
-            setSelectedWinnerId(null);
-            setDecisionError(null);
+            setDecision(null);
           }}
-          pending={decide.isPending}
-          title={
-            manualWinnerDecisionType(decisionFixture) === 'WITHDRAWAL_OR_INJURY'
-              ? 'Chọn VĐV chiến thắng do rút lui/chấn thương'
-              : 'Chọn VĐV chiến thắng'
-          }
-        >
-          <form
-            noValidate
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!selectedWinnerId) {
-                setDecisionError('Chọn vận động viên chiến thắng.');
-                return;
-              }
-              if (!decisionReason.trim()) {
-                setDecisionError('Nhập lý do quyết định.');
-                winnerReasonRef.current?.focus();
-                return;
-              }
-              setDecisionError(null);
-              decide.mutate();
-            }}
-          >
-            <fieldset className="mt-4">
-              <legend className="text-sm font-bold">Vận động viên chiến thắng</legend>
-              <div className="mt-2 space-y-2">
-                {manualWinnerCandidates(decisionFixture).map((entrant) => (
-                  <label
-                    className="flex cursor-pointer items-center gap-2 rounded border p-2"
-                    key={entrant.id}
-                  >
-                    <input
-                      checked={selectedWinnerId === entrant.id}
-                      disabled={decide.isPending}
-                      name="winner"
-                      onChange={() => {
-                        setSelectedWinnerId(entrant.id);
-                        setDecisionError(null);
-                      }}
-                      type="radio"
-                      value={entrant.id}
-                    />
-                    <span>{entrant.snapshotName}</span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-            <label className="mt-4 block text-sm font-bold" htmlFor="winner-reason">
-              Lý do
-            </label>
-            <textarea
-              aria-describedby={decisionError ? 'winner-decision-error' : undefined}
-              aria-invalid={Boolean(decisionError)}
-              className="mt-1 w-full rounded border p-2 aria-[invalid=true]:border-destructive"
-              disabled={decide.isPending}
-              id="winner-reason"
-              maxLength={500}
-              onChange={(event) => {
-                setDecisionReason(event.target.value);
-                if (decisionError) setDecisionError(null);
-              }}
-              ref={winnerReasonRef}
-              required
-              value={decisionReason}
-            />
-            {decisionError ? (
-              <p className="mt-2 text-sm text-destructive" id="winner-decision-error" role="alert">
-                {decisionError}
-              </p>
-            ) : null}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button disabled={decide.isPending} type="submit">
-                {decide.isPending ? 'Đang lưu…' : 'Xác nhận người thắng'}
-              </Button>
-              <Button
-                disabled={decide.isPending}
-                onClick={() => {
-                  setDecisionFixture(null);
-                  setDecisionKey(null);
-                  setSelectedWinnerId(null);
-                  setDecisionError(null);
-                }}
-                type="button"
-                variant="outline"
-              >
-                Hủy
-              </Button>
-            </div>
-          </form>
-        </Dialog>
+          tournamentId={tournament.id}
+          weightClassId={selectedId}
+        />
       ) : null}
-      {cancelOpen ? (
-        <Dialog
-          description={
-            unsafeCancellationMatches.length
-              ? 'Xác nhận cưỡng bức sẽ xóa các trận được cảnh báo và nhánh đấu hiện tại.'
-              : 'Thao tác này lưu nhánh cũ vào lịch sử và không xóa mã truy cập hay dữ liệu trận đấu.'
-          }
-          initialFocusRef={cancelReasonRef}
+      {cancelOpen && selectedId ? (
+        <CancelBracketDialog
+          onCancelled={() => {
+            setCancelOpen(false);
+            setConfirmedCancelled(true);
+          }}
           onClose={() => {
             setCancelOpen(false);
-            setUnsafeCancellationMatches([]);
           }}
-          pending={cancelBracket.isPending}
-          title="Hủy nhánh đấu?"
-        >
-          <textarea
-            className="mt-4 w-full rounded border p-2"
-            maxLength={500}
-            onChange={(e) => {
-              setCancelReason(e.target.value);
-            }}
-            placeholder="Lý do hủy (bắt buộc)"
-            ref={cancelReasonRef}
-            value={cancelReason}
-          />
-          {cancelError ? (
-            <div className="mt-3 text-sm text-destructive" role="alert">
-              {unsafeCancellationMatches.length ? (
-                <p>
-                  {cancelError} Nếu xóa các trận đấu sau đây sẽ bị xóa:{' '}
-                  {unsafeCancellationMatches.map((match) => match.publicId).join(', ')}
-                </p>
-              ) : (
-                <p>{cancelError}</p>
-              )}
-            </div>
-          ) : null}
-          <div className="mt-4 flex gap-2">
-            <Button
-              disabled={!cancelReason.trim() || cancelBracket.isPending}
-              onClick={() => {
-                cancelBracket.mutate(false);
-              }}
-              type="button"
-            >
-              Xác nhận hủy
-            </Button>
-            {unsafeCancellationMatches.length ? (
-              <Button
-                disabled={!cancelReason.trim() || cancelBracket.isPending}
-                onClick={() => {
-                  cancelBracket.mutate(true);
-                }}
-                type="button"
-                variant="destructive"
-              >
-                Vẫn xác nhận hủy trận
-              </Button>
-            ) : null}
-            <Button
-              disabled={cancelBracket.isPending}
-              onClick={() => {
-                setCancelOpen(false);
-              }}
-              type="button"
-              variant="outline"
-            >
-              Quay lại
-            </Button>
-          </div>
-        </Dialog>
+          tournamentId={tournament.id}
+          weightClassId={selectedId}
+        />
       ) : null}
       {preview && swapAthleteId ? (
         <BracketAthleteSwapDialog
@@ -1126,11 +783,9 @@ export function TournamentMatchesPage({
             ? 'Đang tạo bản xem trước nhánh đấu.'
             : workflow === 'reviewingPreview'
               ? 'Bản xem trước nhánh đấu đã sẵn sàng.'
-              : cancelBracket.isPending
-                ? 'Đang hủy nhánh đấu.'
-                : confirmedCancelled
-                  ? 'Đã hủy nhánh đấu.'
-                  : ''}
+              : confirmedCancelled
+                ? 'Đã hủy nhánh đấu.'
+                : ''}
       </p>
       <div className="grid items-start gap-6 border-t pt-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <StandaloneMatchList matches={matches} />
@@ -1144,215 +799,4 @@ export function TournamentMatchesPage({
       </div>
     </section>
   );
-}
-
-function StandaloneMatchList({
-  matches,
-}: {
-  readonly matches: ReturnType<
-    typeof useQuery<Awaited<ReturnType<typeof adminManagementApi.listMatches>>>
-  >;
-}) {
-  if (matches.isPending)
-    return (
-      <div className="space-y-3">
-        <h3 className="font-black">Trận riêng lẻ</h3>
-        <div className="h-16 animate-pulse rounded-xl bg-muted" />
-        <div className="h-16 animate-pulse rounded-xl bg-muted" />
-      </div>
-    );
-  if (matches.isError)
-    return (
-      <div role="alert">
-        <h3 className="font-black">Trận riêng lẻ</h3>
-        <p className="mt-2 text-sm text-destructive">
-          {getApiErrorMessage(matches.error, 'Không thể tải danh sách trận.')}
-        </p>
-        <Button
-          className="mt-3"
-          onClick={() => void matches.refetch()}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          Thử lại
-        </Button>
-      </div>
-    );
-  const standalone = matches.data.matches.filter((match) => !match.bracketFixtureId);
-  return (
-    <div>
-      <h3 className="font-black">Trận riêng lẻ</h3>
-      {standalone.length === 0 ? (
-        <p className="mt-3 rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
-          Chưa có trận riêng lẻ trong hạng cân này.
-        </p>
-      ) : (
-        <ul className="mt-3 space-y-3">
-          {standalone.map((match) => (
-            <li className="rounded-lg border p-3" key={match.id}>
-              <Link className="font-bold underline" to={`/admin/matches/${match.id}`}>
-                {match.publicId}
-              </Link>{' '}
-              · {match.athletes.map((athlete) => athlete.name).join(' — ')}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function FixtureList({
-  data,
-  disabled,
-  onPrepare,
-  onDecide,
-}: {
-  readonly data: ActiveBracket;
-  readonly disabled: boolean;
-  readonly onPrepare: (id: string) => void;
-  readonly onDecide: (fixture: ActiveBracket['fixtures'][number]) => void;
-}) {
-  const groups = new Map<number, typeof data.fixtures>();
-  for (const f of data.fixtures)
-    groups.set(f.roundNumber, [...(groups.get(f.roundNumber) ?? []), f]);
-  return (
-    <div className="mt-5 space-y-4">
-      <h3 className="font-black">Lịch fixture theo vòng</h3>
-      {[...groups].map(([round, fixtures]) => (
-        <section key={round}>
-          <h4 className="text-sm font-bold">{roundLabel(round, data.bracket.roundCount)}</h4>
-          <ul className="mt-2 space-y-2">
-            {fixtures.map((f) => {
-              const statuses = f.match
-                ? [presentLifecycle(f.match.lifecycle), presentPhase(f.match.phase)]
-                : [presentDisplayState(f.displayState)];
-              const fixtureSurfaceClassName = (() => {
-                if (f.match?.lifecycle === MatchLifecycle.COMPLETED) return 'bg-blue-50/80';
-                if (f.match?.lifecycle === MatchLifecycle.IN_PROGRESS) return 'bg-amber-50/80';
-                if (f.displayState === MatchDisplayState.READY) return 'bg-emerald-50/80';
-                if (f.displayState === MatchDisplayState.IN_PROGRESS) return 'bg-amber-50/80';
-                if (f.displayState === MatchDisplayState.COMPLETED) return 'bg-blue-50/80';
-                return 'bg-white';
-              })();
-              const person = (side: 'RED' | 'BLUE') => {
-                const s = f.slots.find((x) => x.side === side);
-                return (
-                  s?.resolvedEntrant?.snapshotName ??
-                  (s?.sourceFixtureId
-                    ? `Chờ người thắng ${data.fixtures.find((x) => x.id === s.sourceFixtureId)?.displayReference ?? ''}`
-                    : 'Chờ xác định')
-                );
-              };
-              return (
-                <li className={`rounded-xl border p-3 ${fixtureSurfaceClassName}`} key={f.id}>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-bold">{f.displayReference}</p>
-                        <span className="flex flex-wrap gap-1">
-                          {statuses.map((status) => (
-                            <span
-                              className={`rounded-full border px-2 py-0.5 text-xs font-bold ${matchVariantClassName[status.variant]}`}
-                              key={status.label}
-                            >
-                              {status.label}
-                            </span>
-                          ))}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-sm font-medium">
-                        <span className="text-red-700">{person('RED')}</span>
-                        <span className="px-2 text-muted-foreground">vs</span>
-                        <span className="text-blue-700">{person('BLUE')}</span>
-                      </p>
-                      {f.winnerEntrant ? (
-                        <p className="text-sm">Người thắng: {f.winnerEntrant.snapshotName}</p>
-                      ) : null}
-                      {f.winnerDecision?.reason ? (
-                        <p className="text-sm text-muted-foreground">
-                          Lý do: {f.winnerDecision.reason}
-                        </p>
-                      ) : null}
-                      {f.roundNumber === data.bracket.roundCount && data.bracket.championEntrant ? (
-                        <p className="text-sm font-bold">
-                          Vô địch: {data.bracket.championEntrant.snapshotName}
-                        </p>
-                      ) : null}
-                      {f.displayState === MatchDisplayState.NOT_READY ? (
-                        <p className="text-sm text-muted-foreground">
-                          Đang chờ kết quả các trận trước.
-                        </p>
-                      ) : null}
-                      {manualWinnerDecisionType(f) && manualWinnerCandidates(f).length === 2 ? (
-                        <p className="text-sm text-muted-foreground">
-                          {manualWinnerDecisionType(f) === 'WITHDRAWAL_OR_INJURY'
-                            ? 'Có thể xác nhận người thắng do rút lui hoặc chấn thương.'
-                            : 'Chờ xác định người thắng.'}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-                      {f.status === 'READY' ? (
-                        <Button
-                          disabled={disabled}
-                          onClick={() => {
-                            onPrepare(f.id);
-                          }}
-                          size="sm"
-                          type="button"
-                        >
-                          <ClipboardCheck aria-hidden="true" className="size-4 mr-1" />
-                          Chuẩn bị trận
-                        </Button>
-                      ) : null}
-                      {f.match &&
-                      (f.status === 'MATCH_PREPARED' ||
-                        f.match.lifecycle === MatchLifecycle.COMPLETED) ? (
-                        <Button asChild size="sm" variant="outline">
-                          <Link to={`/admin/matches/${f.match.id}`}>
-                            <Eye aria-hidden="true" className="size-4 mr-1" />
-                            {`Chi tiết trận ${f.match.publicId}`}
-                          </Link>
-                        </Button>
-                      ) : null}
-                      {manualWinnerDecisionType(f) && manualWinnerCandidates(f).length === 2 ? (
-                        <Button
-                          aria-label="Chỉ định VĐV chiến thắng"
-                          title="Chỉ định VĐV chiến thắng"
-                          className="w-9 border-0 bg-amber-600 px-0 text-yellow-300 hover:bg-amber-300 hover:text-yellow-800 hover:shadow-lg"
-                          disabled={disabled}
-                          onClick={() => {
-                            onDecide(f);
-                          }}
-                          size="sm"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <Crown aria-hidden="true" className="size-4" />
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
-    </div>
-  );
-}
-
-function manualWinnerCandidates(fixture: ActiveBracket['fixtures'][number]) {
-  return manualWinnerDecisionType(fixture)
-    ? fixture.slots.flatMap((slot) => (slot.resolvedEntrant ? [slot.resolvedEntrant] : []))
-    : [];
-}
-
-function manualWinnerDecisionType(fixture: ActiveBracket['fixtures'][number]) {
-  if (fixture.status === 'AWAITING_WINNER') return 'ADMIN_TIEBREAK';
-  if (fixture.status === 'READY' && fixture.match === null) return 'WITHDRAWAL_OR_INJURY';
-  return null;
 }
