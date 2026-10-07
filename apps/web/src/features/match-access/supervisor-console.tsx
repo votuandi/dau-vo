@@ -18,6 +18,7 @@ import {
 import { presentPhase } from '@/features/match-presentation';
 import { IntermissionCountdown, useIntermissionActive } from '@/components/intermission-countdown';
 import { VarMonitoringDialog } from './var-monitoring-dialog';
+import { formatCountdown, useServerCountdown } from '@/features/match-timer/server-countdown';
 
 interface SupervisorConsoleProps {
   readonly realtime: MatchRealtimeState;
@@ -124,50 +125,6 @@ function completionHelp(
   if (!blockedReasons) return 'Đang đồng bộ điều kiện lưu kết quả từ máy chủ.';
   if (blockedReasons.length === 0) return '';
   return blockedReasons.map((reason) => completionBlockedReasonLabels[reason]).join(' ');
-}
-
-function formatRemainingTime(milliseconds: number): string {
-  const seconds = Math.max(0, Math.ceil(milliseconds / 1_000));
-  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-}
-
-/**
- * This is a display-only timer. Server snapshots supply both timestamps; the
- * browser never uses it to transition state or decide command validity.
- */
-function useServerDisplayTimer(
-  endsAt: string | undefined,
-  generatedAt: string | undefined,
-): number | null {
-  const [browserNow, setBrowserNow] = useState(() => Date.now());
-  const serverOffsetRef = useRef(0);
-
-  useEffect(() => {
-    const localNow = Date.now();
-    const serverNow = generatedAt ? new Date(generatedAt).getTime() : Number.NaN;
-    serverOffsetRef.current = Number.isNaN(serverNow) ? 0 : serverNow - localNow;
-    setBrowserNow(localNow);
-
-    if (!endsAt) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      setBrowserNow(Date.now());
-    }, 250);
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [endsAt, generatedAt]);
-
-  if (!endsAt) {
-    return null;
-  }
-
-  const endMilliseconds = new Date(endsAt).getTime();
-  return Number.isNaN(endMilliseconds)
-    ? null
-    : Math.max(0, endMilliseconds - (browserNow + serverOffsetRef.current));
 }
 
 function AthleteScoreCard({
@@ -279,7 +236,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
     status === MatchStatus.ROUND_1_PAUSED ||
     status === MatchStatus.ROUND_2_PAUSED ||
     status === MatchStatus.OVERTIME_PAUSED;
-  const remainingTime = useServerDisplayTimer(
+  const remainingTime = useServerCountdown(
     roundIsRunning ? snapshot?.activeRound?.endsAt : undefined,
     snapshot?.generatedAt,
   );
@@ -500,12 +457,12 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
             {status ? presentPhase(status).label.toUpperCase() : 'ĐANG ĐỒNG BỘ'}
           </p>
           <p
-            aria-label={`Thời gian còn lại ${formatRemainingTime(displayedRemaining ?? 0)}`}
+            aria-label={`Thời gian còn lại ${formatCountdown(displayedRemaining ?? 0)}`}
             className="mt-2 font-mono text-6xl font-black tabular-nums tracking-tight sm:text-8xl"
             role="timer"
           >
             {(roundIsRunning || roundIsPaused) && displayedRemaining !== null
-              ? formatRemainingTime(displayedRemaining)
+              ? formatCountdown(displayedRemaining)
               : '--:--'}
           </p>
           <p className="mt-3 text-sm text-sky-100/75">
