@@ -170,7 +170,7 @@ export function SportForm({
           {error}
         </p>
       ) : null}
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <Button disabled={pending} type="submit">
           {pending ? 'Đang lưu…' : 'Lưu'}
         </Button>

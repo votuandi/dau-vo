@@ -332,7 +332,7 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
             'Giải đấu không tồn tại hoặc máy chủ không phản hồi.',
           )}
         </p>
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-wrap gap-2">
           <Button onClick={() => void tournamentQuery.refetch()} size="sm" type="button">
             Thử lại
           </Button>
