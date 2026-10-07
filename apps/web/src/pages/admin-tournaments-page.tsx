@@ -230,7 +230,7 @@ export function AdminTournamentsPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <Link
-                          className="truncate text-lg font-bold hover:underline"
+                          className="min-w-0 break-words text-lg font-bold hover:underline"
                           to={`/admin/tournaments/${tournament.id}`}
                         >
                           {tournament.name}
@@ -245,7 +245,7 @@ export function AdminTournamentsPage() {
                         {tournament.sport.name} · {tournament.location ?? 'Chưa có địa điểm'}
                       </p>
                     </div>
-                    <div className="flex shrink-0 gap-2">
+                    <div className="flex shrink-0 flex-wrap gap-2">
                       <Button asChild size="sm" variant="outline">
                         <Link to={`/admin/tournaments/${tournament.id}`}>Mở</Link>
                       </Button>
@@ -434,7 +434,7 @@ export function AdminTournamentsPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <label className="text-sm font-semibold" htmlFor="new-tournament-start-date">
                     Bắt đầu

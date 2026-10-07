@@ -307,8 +307,10 @@ function SupervisorAssignment({
       ) : null}
       {selected ? (
         <section className="mt-6 rounded-2xl border p-5 bg-white">
-          <div className="flex justify-between gap-3">
-            <h2 className="text-xl font-black">Chọn giám định · {selected.publicId}</h2>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <h2 className="min-w-0 break-words text-xl font-black">
+              Chọn giám định · {selected.publicId}
+            </h2>
             <Button
               disabled={refreshing || take.isPending}
               onClick={() => {
@@ -329,10 +331,10 @@ function SupervisorAssignment({
               const unavailable = r.status !== 'READY';
               return (
                 <label
-                  className="flex min-h-12 items-center justify-between rounded border p-3"
+                  className="flex min-h-12 items-center justify-between gap-3 rounded border p-3"
                   key={r.id}
                 >
-                  <span>
+                  <span className="min-w-0 break-words">
                     {r.name} ·{' '}
                     <span className="font-semibold">{presentOfficialStatus(r.status).label}</span>
                   </span>

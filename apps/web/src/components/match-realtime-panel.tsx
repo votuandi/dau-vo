@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from 'react';
 import {
   AthleteColor,
   FaultSeverity,
@@ -8,6 +7,7 @@ import {
 } from '@/types/shared';
 import type { MatchRealtimeState } from '@/features/match-access/match-realtime';
 import { Button } from '@/components/ui/button';
+import { formatCountdown, useServerCountdown } from '@/features/match-timer/server-countdown';
 
 interface MatchRealtimePanelProps {
   readonly canStartRound: boolean;
@@ -96,47 +96,6 @@ function PresenceStatus({ entry }: { readonly entry: MatchPresenceEntry | undefi
   return <span className="text-xs font-semibold text-muted-foreground">Chưa xác thực</span>;
 }
 
-function formatRemainingTime(milliseconds: number): string {
-  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1_000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
-
-function useRemainingTime(
-  endsAt: string | undefined,
-  serverGeneratedAt: string | undefined,
-): number | null {
-  const [now, setNow] = useState(() => Date.now());
-  const serverClockOffset = useRef(0);
-
-  useEffect(() => {
-    const localNow = Date.now();
-    const generatedAt = serverGeneratedAt ? new Date(serverGeneratedAt).getTime() : Number.NaN;
-    serverClockOffset.current = Number.isNaN(generatedAt) ? 0 : generatedAt - localNow;
-    setNow(localNow);
-
-    if (!endsAt) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      setNow(Date.now());
-    }, 250);
-
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [endsAt, serverGeneratedAt]);
-
-  if (!endsAt) {
-    return null;
-  }
-
-  const end = new Date(endsAt).getTime();
-  return Number.isNaN(end) ? null : Math.max(0, end - (now + serverClockOffset.current));
-}
-
 function MatchLifecycle({
   canStartRound,
   realtime,
@@ -148,7 +107,7 @@ function MatchLifecycle({
   const status = snapshot?.match.phase;
   const isRoundRunning =
     status === MatchStatus.ROUND_1_RUNNING || status === MatchStatus.ROUND_2_RUNNING;
-  const remainingTime = useRemainingTime(
+  const remainingTime = useServerCountdown(
     isRoundRunning ? snapshot?.activeRound?.endsAt : undefined,
     snapshot?.generatedAt,
   );
@@ -196,11 +155,11 @@ function MatchLifecycle({
             <div className="text-right">
               <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Còn lại</p>
               <p
-                aria-label={`Thời gian còn lại ${formatRemainingTime(remainingTime ?? 0)}`}
+                aria-label={`Thời gian còn lại ${formatCountdown(remainingTime ?? 0)}`}
                 className="mt-1 font-mono text-4xl font-black tabular-nums sm:text-5xl"
                 role="timer"
               >
-                {remainingTime === null ? '--:--' : formatRemainingTime(remainingTime)}
+                {remainingTime === null ? '--:--' : formatCountdown(remainingTime)}
               </p>
             </div>
           ) : null}

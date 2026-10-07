@@ -201,7 +201,7 @@ export function CreateSuperAdminUserPage() {
         {create.isError && Object.keys(errors).length === 0 ? (
           <p role="alert">Không thể tạo người dùng. Vui lòng thử lại.</p>
         ) : null}
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <Button disabled={create.isPending} type="submit">
             {create.isPending ? 'Đang tạo…' : 'Tạo người dùng'}
           </Button>

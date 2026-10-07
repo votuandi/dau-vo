@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AthleteColor, MatchAccessRole, MatchLifecycle } from '@/types/shared';
 import { formatDateTime, formatDateTimeWithSeconds } from './presentation';
@@ -9,6 +8,7 @@ import {
   presentPhase,
 } from '@/features/match-presentation';
 import { matchMonitoringQueryOptions } from './queries';
+import { formatCountdown, useServerCountdown } from '@/features/match-timer/server-countdown';
 
 const roleLabels: Record<MatchAccessRole, string> = {
   [MatchAccessRole.JUDGE_1]: 'Giám định 1',
@@ -16,32 +16,6 @@ const roleLabels: Record<MatchAccessRole, string> = {
   [MatchAccessRole.JUDGE_3]: 'Giám định 3',
   [MatchAccessRole.SUPERVISOR]: 'Giám sát',
 };
-
-function formatRemaining(milliseconds: number): string {
-  const seconds = Math.max(0, Math.ceil(milliseconds / 1_000));
-  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-}
-
-function useDisplayTimer(endsAt: string | undefined, generatedAt: string | undefined): string {
-  const [now, setNow] = useState(() => Date.now());
-  const offsetRef = useRef(0);
-  useEffect(() => {
-    const current = Date.now();
-    const source = generatedAt ? new Date(generatedAt).getTime() : Number.NaN;
-    offsetRef.current = Number.isNaN(source) ? 0 : source - current;
-    setNow(current);
-    if (!endsAt) return;
-    const interval = window.setInterval(() => {
-      setNow(Date.now());
-    }, 250);
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [endsAt, generatedAt]);
-  if (!endsAt) return '--:--';
-  const end = new Date(endsAt).getTime();
-  return Number.isNaN(end) ? '--:--' : formatRemaining(end - (now + offsetRef.current));
-}
 
 function colorLabel(color: AthleteColor | null): string {
   if (color === null) return '—';
@@ -159,10 +133,14 @@ export function AdminMatchMonitoring({
   const activeRound = snapshot?.activeRound;
   const running = isRunningPhase(snapshot?.match.phase);
   const paused = isPausedPhase(snapshot?.match.phase);
-  const timer = useDisplayTimer(running ? activeRound?.endsAt : undefined, snapshot?.generatedAt);
+  const remaining = useServerCountdown(
+    running ? activeRound?.endsAt : undefined,
+    snapshot?.generatedAt,
+  );
+  const timer = remaining === null ? '--:--' : formatCountdown(remaining);
   const displayedTimer =
     paused && activeRound?.remainingDurationMs != null
-      ? `${String(Math.floor(activeRound.remainingDurationMs / 60_000)).padStart(2, '0')}:${String(Math.ceil(activeRound.remainingDurationMs / 1_000) % 60).padStart(2, '0')}`
+      ? formatCountdown(activeRound.remainingDurationMs)
       : timer;
   const red = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
   const blue = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);

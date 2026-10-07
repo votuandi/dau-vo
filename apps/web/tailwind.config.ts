@@ -12,6 +12,10 @@ export default {
       },
     },
     extend: {
+      screens: {
+        // Short landscape viewports (phones on their side, small laptop windows).
+        short: { raw: '(max-height: 32rem)' },
+      },
       colors: {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
