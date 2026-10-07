@@ -393,32 +393,34 @@ export function SuperAdminUserDetailPage() {
       </Card>
       <Card title="Lịch sử đơn đăng ký">
         {user.subscriptionOrders?.length ? (
-          <table className="w-full text-sm">
-            <thead>
-              <tr>
-                <th>Ngày</th>
-                <th>Thời hạn</th>
-                <th>Sức chứa</th>
-                <th>Thành tiền</th>
-                <th>Thanh toán</th>
-              </tr>
-            </thead>
-            <tbody>
-              {user.subscriptionOrders.map((o) => (
-                <tr className="border-t" key={o.id}>
-                  <td>{formatDateTime(o.createdAt)}</td>
-                  <td>{o.durationMonthsGranted} tháng</td>
-                  <td>{o.tournamentLimitGranted} giải</td>
-                  <td>{money(o.totalAmountVnd)}</td>
-                  <td>
-                    {o.paymentStatus === 'SIMULATED_SUCCESS'
-                      ? 'Mô phỏng thành công'
-                      : o.paymentStatus}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[36rem] text-left text-sm [&_td]:py-2 [&_td]:pr-3 [&_th]:pb-2 [&_th]:pr-3">
+              <thead>
+                <tr>
+                  <th>Ngày</th>
+                  <th>Thời hạn</th>
+                  <th>Sức chứa</th>
+                  <th>Thành tiền</th>
+                  <th>Thanh toán</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {user.subscriptionOrders.map((o) => (
+                  <tr className="border-t" key={o.id}>
+                    <td>{formatDateTime(o.createdAt)}</td>
+                    <td>{o.durationMonthsGranted} tháng</td>
+                    <td>{o.tournamentLimitGranted} giải</td>
+                    <td>{money(o.totalAmountVnd)}</td>
+                    <td>
+                      {o.paymentStatus === 'SIMULATED_SUCCESS'
+                        ? 'Mô phỏng thành công'
+                        : o.paymentStatus}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <p>Chưa có đơn đăng ký.</p>
         )}
