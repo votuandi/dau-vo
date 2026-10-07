@@ -1,3 +1,4 @@
+import { lazy, type ComponentType } from 'react';
 import { Navigate, createBrowserRouter, type RouteObject } from 'react-router-dom';
 import { AdminRouteGuard } from '@/features/admin-auth/admin-route-guard';
 import { AuthenticatedRouteGuard } from '@/features/auth/authenticated-route-guard';
@@ -6,27 +7,78 @@ import { SubscriptionRouteGuard } from '@/features/auth/subscription-route-guard
 import { HomePage } from '@/pages/home-page';
 import { AppLayout } from '@/layouts/app-layout';
 import { SuperAdminLayout } from '@/layouts/super-admin-layout';
-import { AdminDashboardPage } from '@/pages/admin-dashboard-page';
-import { AdminLoginPage } from '@/pages/admin-login-page';
-import { AdminMatchDetailPage } from '@/pages/admin-match-detail-page';
-import { AdminTournamentDetailPage } from '@/pages/admin-tournament-detail-page';
-import { AdminTournamentsPage } from '@/pages/admin-tournaments-page';
-import { MatchAccessPage } from '@/pages/match-access-page';
-import { NotFoundPage } from '@/pages/not-found-page';
-import { ScoreboardPage } from '@/pages/scoreboard-page';
-import { RegisterPage } from '@/pages/register-page';
-import { AccountPage, MatchPage, TournamentPage, TournamentsPage } from '@/pages/public-view-pages';
-import { SubscriptionPage } from '@/pages/subscription-page';
-import { SuperAdminHomePage } from '@/features/super-admin/super-admin-home-page';
-import { SuperAdminPricingPage } from '@/features/super-admin/pricing/pricing-page';
-import { CreateSuperAdminUserPage } from '@/features/super-admin/users/create-user-page';
-import { SuperAdminUsersPage } from '@/features/super-admin/users/users-page';
-import { SuperAdminUserDetailPage } from '@/features/super-admin/users/user-detail-page';
-import { SuperAdminSportGroupsPage } from '@/features/super-admin/sports/sport-groups-page';
-import { SuperAdminSportsPage } from '@/features/super-admin/sports/sports-page';
 import { TournamentOfficialRole } from '@/types/shared';
 import { RoleAwareIndexRedirect } from './role-aware-index-redirect';
 import { LegacyJudgeAlias } from './legacy-judge-alias';
+
+/**
+ * Route-level code splitting: each page ships in its own chunk so public
+ * screens (scoreboard, official consoles) do not download the admin suite.
+ * The homepage stays eager because it is prerendered and hydrated.
+ */
+function lazyPage<Module, Key extends keyof Module>(
+  load: () => Promise<Module>,
+  exportName: Key,
+): Module[Key] {
+  return lazy(async () => ({
+    default: (await load())[exportName] as ComponentType<unknown>,
+  })) as Module[Key];
+}
+
+const AdminDashboardPage = lazyPage(
+  () => import('@/pages/admin-dashboard-page'),
+  'AdminDashboardPage',
+);
+const AdminLoginPage = lazyPage(() => import('@/pages/admin-login-page'), 'AdminLoginPage');
+const AdminMatchDetailPage = lazyPage(
+  () => import('@/pages/admin-match-detail-page'),
+  'AdminMatchDetailPage',
+);
+const AdminTournamentDetailPage = lazyPage(
+  () => import('@/pages/admin-tournament-detail-page'),
+  'AdminTournamentDetailPage',
+);
+const AdminTournamentsPage = lazyPage(
+  () => import('@/pages/admin-tournaments-page'),
+  'AdminTournamentsPage',
+);
+const MatchAccessPage = lazyPage(() => import('@/pages/match-access-page'), 'MatchAccessPage');
+const NotFoundPage = lazyPage(() => import('@/pages/not-found-page'), 'NotFoundPage');
+const ScoreboardPage = lazyPage(() => import('@/pages/scoreboard-page'), 'ScoreboardPage');
+const RegisterPage = lazyPage(() => import('@/pages/register-page'), 'RegisterPage');
+const SubscriptionPage = lazyPage(() => import('@/pages/subscription-page'), 'SubscriptionPage');
+const SuperAdminHomePage = lazyPage(
+  () => import('@/features/super-admin/super-admin-home-page'),
+  'SuperAdminHomePage',
+);
+const SuperAdminPricingPage = lazyPage(
+  () => import('@/features/super-admin/pricing/pricing-page'),
+  'SuperAdminPricingPage',
+);
+const CreateSuperAdminUserPage = lazyPage(
+  () => import('@/features/super-admin/users/create-user-page'),
+  'CreateSuperAdminUserPage',
+);
+const SuperAdminUsersPage = lazyPage(
+  () => import('@/features/super-admin/users/users-page'),
+  'SuperAdminUsersPage',
+);
+const SuperAdminUserDetailPage = lazyPage(
+  () => import('@/features/super-admin/users/user-detail-page'),
+  'SuperAdminUserDetailPage',
+);
+const SuperAdminSportGroupsPage = lazyPage(
+  () => import('@/features/super-admin/sports/sport-groups-page'),
+  'SuperAdminSportGroupsPage',
+);
+const SuperAdminSportsPage = lazyPage(
+  () => import('@/features/super-admin/sports/sports-page'),
+  'SuperAdminSportsPage',
+);
+const AccountPage = lazyPage(() => import('@/pages/public-view-pages'), 'AccountPage');
+const MatchPage = lazyPage(() => import('@/pages/public-view-pages'), 'MatchPage');
+const TournamentPage = lazyPage(() => import('@/pages/public-view-pages'), 'TournamentPage');
+const TournamentsPage = lazyPage(() => import('@/pages/public-view-pages'), 'TournamentsPage');
 
 export const routes: RouteObject[] = [
   {
