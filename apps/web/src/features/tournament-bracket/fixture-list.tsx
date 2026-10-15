@@ -81,7 +81,7 @@ function FixtureItem({
     ? [presentLifecycle(fixture.match.lifecycle), presentPhase(fixture.match.phase)]
     : [presentDisplayState(fixture.displayState)];
   const decisionType = manualWinnerDecisionType(fixture);
-  const decidable = decisionType !== null && canDecideManually(fixture);
+  const decidable = canDecideManually(fixture);
 
   return (
     <li className={`rounded-xl border p-3 ${fixtureSurfaceClassName(fixture)}`}>

@@ -161,8 +161,11 @@ describe('parseIntermissionSeconds', () => {
     ['0', 0],
     ['45', 45],
     [' 30 ', 30],
-    ['', null],
+    ['', 0],
+    ['  ', 0],
     ['-1', null],
+    ['1e2', null],
+    ['0x10', null],
     ['1.5', null],
     ['abc', null],
   ])('parses %j as %j', (input, expected) => {

@@ -1,8 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { appEnv } from '@/config/env';
 import { Button } from '@/components/ui/button';
 import { IMAGE_ACCEPT, imageFileProblem } from '@/lib/image-file';
+import { useObjectUrl } from '@/lib/use-object-url';
 
 export function tournamentImageUrl(imagePath: string | null): string | null {
   return imagePath ? `${appEnv.apiBaseUrl}/media/${imagePath}` : null;
@@ -51,14 +52,8 @@ export function TournamentImagePicker({
   readonly pending?: boolean;
 }) {
   const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  const preview = useObjectUrl(file);
   const [error, setError] = useState('');
-  useEffect(
-    () => () => {
-      if (preview) URL.revokeObjectURL(preview);
-    },
-    [preview],
-  );
   function choose(next: File | undefined) {
     setError('');
     if (!next) return;
@@ -71,9 +66,7 @@ export function TournamentImagePicker({
       );
       return;
     }
-    if (preview) URL.revokeObjectURL(preview);
     setFile(next);
-    setPreview(URL.createObjectURL(next));
     onSelect?.(next);
   }
   const display = preview ?? tournamentImageUrl(imagePath);

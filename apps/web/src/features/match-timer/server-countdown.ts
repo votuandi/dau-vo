@@ -25,6 +25,39 @@ export function remainingUntil(
 
 const TICK_MS = 250;
 
+interface ServerClock {
+  readonly endsAt: string | null | undefined;
+  readonly generatedAt: string | undefined;
+  readonly now: number;
+  readonly offset: number;
+}
+
+function readServerClock(
+  endsAt: string | null | undefined,
+  generatedAt: string | undefined,
+): ServerClock {
+  const now = Date.now();
+  return { endsAt, generatedAt, now, offset: serverClockOffset(generatedAt, now) };
+}
+
+/**
+ * A browser clock reading tied to one (endsAt, generatedAt) pair. When either
+ * changes the reading is refreshed during render, so the first frame for a new
+ * deadline never uses a timestamp taken minutes earlier.
+ */
+function useServerClock(
+  endsAt: string | null | undefined,
+  generatedAt: string | undefined,
+): readonly [ServerClock, (clock: ServerClock) => void] {
+  const [clock, setClock] = useState(() => readServerClock(endsAt, generatedAt));
+  if (clock.endsAt !== endsAt || clock.generatedAt !== generatedAt) {
+    const fresh = readServerClock(endsAt, generatedAt);
+    setClock(fresh);
+    return [fresh, setClock];
+  }
+  return [clock, setClock];
+}
+
 /**
  * Display-only countdown towards a server-projected deadline. The server stays
  * authoritative; the browser never uses this value to transition state.
@@ -36,29 +69,50 @@ export function useServerCountdown(
   endsAt: string | null | undefined,
   generatedAt: string | undefined,
 ): number | null {
-  const [clock, setClock] = useState(() => {
-    const now = Date.now();
-    return { now, offset: serverClockOffset(generatedAt, now) };
-  });
+  const [clock, setClock] = useServerClock(endsAt, generatedAt);
+  const { offset } = clock;
 
   useEffect(() => {
-    const now = Date.now();
-    const offset = serverClockOffset(generatedAt, now);
-    setClock({ now, offset });
     if (!endsAt) return;
 
-    let shownSecond = Math.ceil((remainingUntil(endsAt, now, offset) ?? 0) / 1_000);
+    let shownSecond = Math.ceil((remainingUntil(endsAt, Date.now(), offset) ?? 0) / 1_000);
     const interval = window.setInterval(() => {
       const tickNow = Date.now();
       const second = Math.ceil((remainingUntil(endsAt, tickNow, offset) ?? 0) / 1_000);
       if (second === shownSecond) return;
       shownSecond = second;
-      setClock({ now: tickNow, offset });
+      setClock({ endsAt, generatedAt, now: tickNow, offset });
     }, TICK_MS);
     return () => {
       window.clearInterval(interval);
     };
-  }, [endsAt, generatedAt]);
+  }, [endsAt, generatedAt, offset, setClock]);
 
-  return remainingUntil(endsAt, clock.now, clock.offset);
+  return remainingUntil(endsAt, clock.now, offset);
+}
+
+/**
+ * Whether a server-projected deadline is still ahead. Unlike
+ * `useServerCountdown` it re-renders only when the answer flips, so a whole
+ * screen can depend on it without redrawing every second.
+ */
+export function useBeforeServerDeadline(
+  endsAt: string | null | undefined,
+  generatedAt: string | undefined,
+): boolean {
+  const [clock, setClock] = useServerClock(endsAt, generatedAt);
+  const { offset } = clock;
+  const remaining = remainingUntil(endsAt, clock.now, offset);
+
+  useEffect(() => {
+    if (!endsAt || !remaining) return;
+    const timeout = window.setTimeout(() => {
+      setClock({ endsAt, generatedAt, now: Date.now(), offset });
+    }, remaining);
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [endsAt, generatedAt, offset, remaining, setClock]);
+
+  return (remaining ?? 0) > 0;
 }

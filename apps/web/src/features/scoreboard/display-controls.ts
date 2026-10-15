@@ -9,10 +9,13 @@ export function useScreenWakeLock(): void {
   useEffect(() => {
     if (!('wakeLock' in navigator)) return;
     let sentinel: WakeLockSentinel | null = null;
+    let requesting = false;
     let disposed = false;
 
     const acquire = async (): Promise<void> => {
-      if (document.visibilityState !== 'visible' || sentinel) return;
+      // `requesting` stops overlapping calls from each taking a lock and orphaning one.
+      if (document.visibilityState !== 'visible' || sentinel || requesting) return;
+      requesting = true;
       try {
         const lock = await navigator.wakeLock.request('screen');
         if (disposed) {
@@ -25,6 +28,8 @@ export function useScreenWakeLock(): void {
         });
       } catch {
         // Denied (e.g. battery saver); the board still works without it.
+      } finally {
+        requesting = false;
       }
     };
     const onVisibilityChange = (): void => {

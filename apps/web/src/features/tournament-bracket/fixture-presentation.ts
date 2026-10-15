@@ -82,9 +82,12 @@ export function bracketPdfFileName(
   return `So-do-nhanh-dau_${parts.tournamentName}_${parts.sportName}_${parts.weightClassName}_${stamp}`;
 }
 
-/** Parses a non-negative whole number of seconds, or returns null when invalid. */
+/**
+ * Parses a non-negative whole number of seconds, or returns null when invalid.
+ * A blank field means 0 (breaks off), as the form has always treated it.
+ */
 export function parseIntermissionSeconds(value: string): number | null {
-  if (!value.trim()) return null;
-  const seconds = Number(value);
-  return Number.isInteger(seconds) && seconds >= 0 ? seconds : null;
+  const text = value.trim();
+  if (!text) return 0;
+  return /^\d+$/u.test(text) ? Number(text) : null;
 }

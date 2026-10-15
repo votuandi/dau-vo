@@ -1,17 +1,21 @@
 /* eslint-disable react-refresh/only-export-components -- this display hook is shared by three match views. */
-import { formatCountdown, useServerCountdown } from '@/features/match-timer/server-countdown';
+import {
+  formatCountdown,
+  useBeforeServerDeadline,
+  useServerCountdown,
+} from '@/features/match-timer/server-countdown';
 
 /**
  * Display-only presentation state. The server deadline remains authoritative;
  * this only keeps an already-projected intermission from retaining its visual
- * treatment after the deadline passes locally.
+ * treatment after the deadline passes locally. It re-renders only when the
+ * intermission starts or ends; `IntermissionCountdown` owns the ticking value.
  */
 export function useIntermissionActive(
   endsAt: string | null | undefined,
   generatedAt: string | undefined,
-): { readonly active: boolean; readonly remaining: number } {
-  const remaining = useServerCountdown(endsAt, generatedAt) ?? 0;
-  return { active: remaining > 0, remaining };
+): { readonly active: boolean } {
+  return { active: useBeforeServerDeadline(endsAt, generatedAt) };
 }
 
 /** Display-only: the server-projected absolute deadline remains authoritative. */
@@ -22,8 +26,8 @@ export function IntermissionCountdown({
   readonly endsAt: string | null | undefined;
   readonly generatedAt: string | undefined;
 }) {
-  const { active, remaining } = useIntermissionActive(endsAt, generatedAt);
-  if (!active) return null;
+  const remaining = useServerCountdown(endsAt, generatedAt) ?? 0;
+  if (remaining <= 0) return null;
 
   return (
     <div className="mt-3" aria-live="polite">

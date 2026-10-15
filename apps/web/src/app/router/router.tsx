@@ -10,6 +10,7 @@ import { SuperAdminLayout } from '@/layouts/super-admin-layout';
 import { TournamentOfficialRole } from '@/types/shared';
 import { RoleAwareIndexRedirect } from './role-aware-index-redirect';
 import { LegacyJudgeAlias } from './legacy-judge-alias';
+import { RouteError } from './route-error';
 
 /**
  * Route-level code splitting: each page ships in its own chunk so public
@@ -84,6 +85,7 @@ export const routes: RouteObject[] = [
   {
     path: '/',
     element: <AppLayout />,
+    errorElement: <RouteError />,
     children: [
       {
         index: true,
