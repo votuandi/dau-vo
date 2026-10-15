@@ -107,7 +107,7 @@ export function AthleteCard({ athlete }: { readonly athlete: TournamentAthlete }
       {athlete.imageUrl ? (
         <img
           alt={`Ảnh ${athlete.name}`}
-          className="size-12 rounded-full object-cover"
+          className="size-12 shrink-0 rounded-full object-cover"
           src={athlete.imageUrl}
         />
       ) : (

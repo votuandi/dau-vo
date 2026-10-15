@@ -309,7 +309,7 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
             'Trận đấu không tồn tại hoặc máy chủ không phản hồi.',
           )}
         </p>
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-wrap gap-2">
           <Button onClick={() => void matchQuery.refetch()} size="sm" type="button">
             Thử lại
           </Button>

@@ -76,7 +76,7 @@ export function BracketAthleteSwapDialog({
           {error}
         </p>
       ) : null}
-      <div className="mt-5 flex justify-end gap-3">
+      <div className="mt-5 flex flex-wrap justify-end gap-3">
         <Button disabled={pending} onClick={onClose} type="button" variant="outline">
           Hủy
         </Button>

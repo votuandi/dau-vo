@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
 import { AthleteColor, MatchStatus } from '@martial-arts-scoring/shared-types';
 import type { MatchRealtimeState, RealtimeConnectionStatus } from './match-realtime';
 import { IntermissionCountdown, useIntermissionActive } from '@/components/intermission-countdown';
+import { formatCountdown, useServerCountdown } from '@/features/match-timer/server-countdown';
 
 interface JudgeConsoleProps {
   readonly realtime: MatchRealtimeState;
@@ -48,50 +48,6 @@ function displayPhase(status: MatchStatus | undefined): string {
     default:
       return 'Đang đồng bộ';
   }
-}
-
-function formatRemainingTime(milliseconds: number): string {
-  const seconds = Math.max(0, Math.ceil(milliseconds / 1_000));
-  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-}
-
-/**
- * This countdown is display-only. It derives its offset and end timestamp from
- * the server snapshot; it never decides whether a vote is valid.
- */
-function useServerDisplayTimer(
-  endsAt: string | undefined,
-  generatedAt: string | undefined,
-): number | null {
-  const [browserNow, setBrowserNow] = useState(() => Date.now());
-  const serverOffsetRef = useRef(0);
-
-  useEffect(() => {
-    const localNow = Date.now();
-    const serverNow = generatedAt ? new Date(generatedAt).getTime() : Number.NaN;
-    serverOffsetRef.current = Number.isNaN(serverNow) ? 0 : serverNow - localNow;
-    setBrowserNow(localNow);
-
-    if (!endsAt) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      setBrowserNow(Date.now());
-    }, 250);
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [endsAt, generatedAt]);
-
-  if (!endsAt) {
-    return null;
-  }
-
-  const endsAtMilliseconds = new Date(endsAt).getTime();
-  return Number.isNaN(endsAtMilliseconds)
-    ? null
-    : Math.max(0, endsAtMilliseconds - (browserNow + serverOffsetRef.current));
 }
 
 function AthleteVoteButton({
@@ -154,7 +110,7 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
     status === MatchStatus.ROUND_1_RUNNING || status === MatchStatus.ROUND_2_RUNNING;
   const roundIsPaused =
     status === MatchStatus.ROUND_1_PAUSED || status === MatchStatus.ROUND_2_PAUSED;
-  const remainingTime = useServerDisplayTimer(
+  const remainingTime = useServerCountdown(
     roundIsRunning ? snapshot?.activeRound?.endsAt : undefined,
     snapshot?.generatedAt,
   );
@@ -216,12 +172,12 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
             {displayPhase(status)}
           </p>
           <p
-            aria-label={`Thời gian còn lại ${formatRemainingTime(displayedRemaining ?? 0)}`}
+            aria-label={`Thời gian còn lại ${formatCountdown(displayedRemaining ?? 0)}`}
             className="mt-2 font-mono text-7xl font-black tabular-nums tracking-tight sm:text-8xl lg:text-9xl"
             role="timer"
           >
             {(roundIsRunning || roundIsPaused) && displayedRemaining !== null
-              ? formatRemainingTime(displayedRemaining)
+              ? formatCountdown(displayedRemaining)
               : '--:--'}
           </p>
           <p className="mt-3 text-sm text-sky-100/75">

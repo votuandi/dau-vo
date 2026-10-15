@@ -117,7 +117,7 @@ export function MatchPage() {
             {athlete.imageUrl ? (
               <img
                 alt={athlete.name}
-                className="size-10 rounded-full object-cover"
+                className="size-10 shrink-0 rounded-full object-cover"
                 src={athlete.imageUrl}
               />
             ) : null}

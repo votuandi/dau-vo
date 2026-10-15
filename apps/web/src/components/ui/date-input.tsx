@@ -139,7 +139,7 @@ export function DateInput({
             }}
             selected={dateFromDateOnly(value)}
           />
-          <div className="mt-2 flex justify-end gap-2">
+          <div className="mt-2 flex flex-wrap justify-end gap-2">
             <Button
               disabled={(disabled ?? false) || !value}
               onClick={() => {

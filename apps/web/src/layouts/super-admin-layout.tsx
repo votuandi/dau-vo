@@ -1,5 +1,7 @@
+import { Suspense } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { NavLink, Outlet, useNavigate, useOutletContext } from 'react-router-dom';
+import { RouteFallback } from '@/components/route-fallback';
 import { Button } from '@/components/ui/button';
 import { authenticatedUserQueryKey } from '@/features/auth/authenticated-user-session';
 import { cn } from '@/lib/utils';
@@ -68,7 +70,9 @@ export function SuperAdminLayout() {
         </nav>
       </div>
       <div className="pt-8">
-        <Outlet />
+        <Suspense fallback={<RouteFallback />}>
+          <Outlet />
+        </Suspense>
       </div>
     </section>
   );

@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import type { AthleteImportRow } from '@/services/api/admin-management';
 
 const supportedExtensions = ['xlsx', 'xls', 'csv'] as const;
@@ -38,6 +37,16 @@ export async function parseAthleteImportFile(file: File): Promise<readonly Athle
     );
   }
 
+  // Loaded on demand: the spreadsheet parser is large and only needed for imports.
+  let XLSX: typeof import('xlsx');
+  try {
+    XLSX = await import('xlsx');
+  } catch {
+    // The file is fine; the parser chunk failed to download (network or a new deploy).
+    throw new AthleteImportFileError(
+      'Không thể tải trình đọc bảng tính. Vui lòng tải lại trang rồi thử lại.',
+    );
+  }
   let rows: unknown[][];
   try {
     const workbook =

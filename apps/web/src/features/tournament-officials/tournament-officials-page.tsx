@@ -197,7 +197,7 @@ export function TournamentOfficialsPage({
           <p className="text-sm text-muted-foreground">Quản lý cán bộ của giải đấu.</p>
         </div>
         {!readOnly ? (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               onClick={() => {
                 setEditing(null);
@@ -427,7 +427,7 @@ export function TournamentOfficialsPage({
                   }}
                 />
               </label>
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -594,7 +594,7 @@ export function TournamentOfficialsPage({
               </div>
             </div>
           </div>
-          <div className="mt-4 flex justify-end gap-2">
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
             <Button
               onClick={() => {
                 setPasscode(null);

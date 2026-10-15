@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import {
   AthleteColor,
   MatchLifecycle,
@@ -8,6 +8,10 @@ import {
 } from '@martial-arts-scoring/shared-types';
 import { describe, expect, it, vi } from 'vitest';
 import { ScoreboardPage } from './scoreboard-page';
+
+const toastMock = vi.hoisted(() => vi.fn());
+
+vi.mock('@/components/ui/toast', () => ({ toast: toastMock }));
 
 const realtimeMock = vi.hoisted(() => vi.fn());
 
@@ -92,10 +96,10 @@ describe('ScoreboardPage', () => {
     expect(screen.getByText('Võ sĩ Đỏ')).toBeVisible();
     expect(screen.getByText('Võ sĩ Xanh')).toBeVisible();
     expect(screen.getByText('ĐANG KẾT NỐI LẠI')).toBeVisible();
-    expect(screen.getAllByText('4')).toHaveLength(1);
-    expect(screen.getAllByText('2')).toHaveLength(1);
-    expect(screen.getByText('Lỗi nhẹ: 1 · Lỗi nặng: 0')).toBeVisible();
-    expect(screen.getByText('Lỗi nhẹ: 2 · Lỗi nặng: 1')).toBeVisible();
+    expect(screen.getByLabelText('Điểm Đỏ: 4')).toHaveTextContent('4');
+    expect(screen.getByLabelText('Điểm Xanh: 2')).toHaveTextContent('2');
+    expect(screen.getByRole('group', { name: 'Lỗi nhẹ: 1 · Lỗi nặng: 0' })).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Lỗi nhẹ: 2 · Lỗi nặng: 1' })).toBeVisible();
     expect(screen.getByText(/Chưa công bố kết quả/u)).toBeVisible();
     expect(screen.getByRole('img', { name: 'Ảnh của Võ sĩ Đỏ' })).toHaveAttribute(
       'src',
@@ -210,11 +214,87 @@ describe('ScoreboardPage', () => {
         screen.queryByText(winner === AthleteColor.RED ? 'Võ sĩ Xanh' : 'Võ sĩ Đỏ'),
       ).not.toBeInTheDocument();
       expect(screen.queryByText('HIỆP PHỤ LẦN 2')).not.toBeInTheDocument();
-      expect(screen.queryByText('Lỗi nhẹ: 1 · Lỗi nặng: 0')).not.toBeInTheDocument();
+      expect(screen.queryByRole('group', { name: /Lỗi nhẹ/u })).not.toBeInTheDocument();
       expect(screen.queryByText('4')).not.toBeInTheDocument();
+      expect(screen.getByText('Quyết định giám sát sau hiệp phụ')).toBeVisible();
       expect(screen.getByLabelText('Kết quả đã công bố').parentElement).toHaveClass(
         winner === AthleteColor.RED ? 'from-red-500' : 'from-sky-500',
       );
     },
   );
+
+  function renderBoard(entry: string) {
+    function LocationProbe() {
+      const location = useLocation();
+      return <output data-testid="location">{location.pathname + location.search}</output>;
+    }
+    return render(
+      <MemoryRouter initialEntries={[entry]}>
+        <Routes>
+          <Route
+            element={
+              <>
+                <ScoreboardPage />
+                <LocationProbe />
+              </>
+            }
+            path="/bang-diem"
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it('opens a normalized match from the selector form', () => {
+    realtimeMock.mockReturnValue({ connectionStatus: 'connecting', snapshot: null });
+    renderBoard('/bang-diem');
+
+    const submit = screen.getByRole('button', { name: 'MỞ BẢNG ĐIỂM' });
+    expect(submit).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Mã trận đấu'), { target: { value: '  a72k9p ' } });
+    fireEvent.click(submit);
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/bang-diem?match=A72K9P');
+  });
+
+  it('shows committed scores while the result is not yet published', () => {
+    realtimeMock.mockReturnValue({
+      connectionStatus: 'connected',
+      snapshot: {
+        ...snapshot,
+        committedScores: { source: 'REGULATION', attemptNumber: null, RED: 5, BLUE: 3 },
+      },
+    });
+    renderBoard('/bang-diem?match=A72K9P');
+
+    expect(screen.getByText('Điểm chung cuộc sau 2 hiệp: Đỏ 5 · Xanh 3')).toBeVisible();
+  });
+
+  it('switches to another match and rejects the current one', () => {
+    toastMock.mockClear();
+    realtimeMock.mockReturnValue({ connectionStatus: 'connected', snapshot });
+    renderBoard('/bang-diem?match=A72K9P');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chuyển đổi mã trận đấu' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu mã trận đấu' }));
+    expect(toastMock).toHaveBeenCalledWith({
+      title: 'Đây là mã trận đấu cũ',
+      variant: 'destructive',
+    });
+
+    fireEvent.change(screen.getByLabelText('Mã trận đấu'), { target: { value: 'b55x' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu mã trận đấu' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/bang-diem?match=B55X');
+  });
+
+  it('cancels match editing with Escape', () => {
+    realtimeMock.mockReturnValue({ connectionStatus: 'connected', snapshot });
+    renderBoard('/bang-diem?match=A72K9P');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chuyển đổi mã trận đấu' }));
+    fireEvent.keyDown(screen.getByLabelText('Mã trận đấu'), { key: 'Escape' });
+
+    expect(screen.queryByLabelText('Mã trận đấu')).not.toBeInTheDocument();
+    expect(screen.getByText('A72K9P')).toBeVisible();
+  });
 });

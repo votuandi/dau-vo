@@ -22,6 +22,7 @@ import {
   fixtureTopOffsets,
   measuredFixtureRowPitch,
 } from './bracket-chart-layout';
+import { manualWinnerCandidates } from './fixture-presentation';
 
 type ChartData = Pick<BracketPreview, 'rounds' | 'initialEntrants'> | ActiveBracket;
 interface ConnectorPath {
@@ -453,16 +454,4 @@ export function BracketChart({
       </div>
     </div>
   );
-}
-
-function manualWinnerCandidates(fixture: ActiveBracket['fixtures'][number]) {
-  return manualWinnerDecisionType(fixture)
-    ? fixture.slots.flatMap((slot) => (slot.resolvedEntrant ? [slot.resolvedEntrant] : []))
-    : [];
-}
-
-function manualWinnerDecisionType(fixture: ActiveBracket['fixtures'][number]) {
-  if (fixture.status === 'AWAITING_WINNER') return 'ADMIN_TIEBREAK';
-  if (fixture.status === 'READY' && fixture.match === null) return 'WITHDRAWAL_OR_INJURY';
-  return null;
 }

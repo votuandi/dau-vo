@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
+import { RouteFallback } from '@/components/route-fallback';
 import { SiteFooter } from '@/components/site-footer';
 import { updatePageMetadata } from '@/features/seo/metadata';
 import { Button } from '@/components/ui/button';
@@ -18,14 +19,25 @@ export function AppLayout() {
     updatePageMetadata(location.pathname);
   }, [location.pathname]);
 
+  // The prerendered homepage is hydrated, so it must render without a Suspense
+  // boundary to match the server markup; it is never lazy-loaded.
+  if (location.pathname === '/') return <Outlet />;
+
   if (
-    location.pathname === '/' ||
     location.pathname === '/trong-tai' ||
     location.pathname === '/giam-dinh' ||
     location.pathname === '/giam-sat' ||
     location.pathname.startsWith('/bang-diem')
   ) {
-    return <Outlet />;
+    return (
+      <Suspense
+        fallback={
+          <RouteFallback tone={location.pathname.startsWith('/bang-diem') ? 'dark' : 'light'} />
+        }
+      >
+        <Outlet />
+      </Suspense>
+    );
   }
 
   return <StandardAppLayout />;
@@ -122,8 +134,10 @@ function StandardAppLayout() {
         </div>
       </header>
 
-      <main className="container flex flex-1 items-center py-10 md:py-16">
-        <Outlet />
+      <main className="container flex flex-1 items-center py-10 md:py-16 [&>*]:min-w-0">
+        <Suspense fallback={<RouteFallback />}>
+          <Outlet />
+        </Suspense>
       </main>
 
       <SiteFooter />
