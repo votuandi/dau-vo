@@ -50,9 +50,13 @@ export const AthletePanel = memo(function AthletePanel({
         </div>
       </div>
 
-      <div className="flex min-w-0 items-center gap-[clamp(0.75rem,2.4vmin,1.5rem)] short:col-start-1">
+      <div className="flex min-w-0 items-center gap-[clamp(0.75rem,2.8vmin,2rem)] short:col-start-1">
         <ScoreboardImage
           alt={`Ảnh của ${athlete.name}`}
+          className={cn(
+            'ring-[clamp(3px,0.7vmin,6px)]',
+            red ? 'ring-red-200/50' : 'ring-sky-200/50',
+          )}
           imagePath={athlete.athleteImagePath}
           kind="athlete"
         />
@@ -63,13 +67,13 @@ export const AthletePanel = memo(function AthletePanel({
           >
             {athlete.name}
           </h2>
-          <div className="mt-[clamp(0.25rem,1vmin,0.75rem)] flex min-w-0 items-center gap-2 text-[clamp(0.875rem,2.6vmin,1.75rem)] text-white/90">
+          <div className="mt-[clamp(0.375rem,1.4vmin,1rem)] flex min-w-0 items-center gap-[clamp(0.5rem,1.6vmin,1rem)] text-[clamp(0.875rem,2.6vmin,1.75rem)] font-semibold text-white/90">
             <ScoreboardImage
               alt={`Logo ${organization}`}
               imagePath={athlete.organizationImagePath}
               kind="organization"
             />
-            <p className="truncate" title={organization}>
+            <p className="line-clamp-2 break-words leading-tight" title={organization}>
               {organization}
             </p>
           </div>

@@ -218,6 +218,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
     status === MatchStatus.REGULATION_APPEAL
       ? 'Phúc khảo sau hiệp 2'
       : `Phúc khảo hiệp phụ lần ${String(snapshot?.result.currentOvertimeAttempt?.attemptNumber ?? 1)}`;
+  const tieBreak = snapshot?.result.tieBreak;
   const appealContext =
     status === MatchStatus.OVERTIME_APPEAL
       ? snapshot?.result.overtimeAppeal
@@ -231,21 +232,21 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
           : 'arena-background'
       }`}
     >
-      <main className="mx-auto w-full max-w-6xl px-3 py-3 sm:px-5 sm:py-5">
+      <main className="mx-auto w-full max-w-6xl space-y-3 px-3 py-3 sm:space-y-5 sm:px-5 sm:py-5">
         <header
-          className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/45' : 'border-white/15 bg-blue-950/35'}`}
+          className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5 sm:py-3 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/45' : 'border-white/15 bg-blue-950/35'}`}
         >
-          <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-200/80">
+          <div className="flex min-w-0 items-baseline gap-2 sm:block">
+            <p className="shrink-0 text-xs font-bold uppercase tracking-[0.18em] text-sky-200/80">
               Giám sát
             </p>
-            <p className="mt-1 truncate font-mono text-lg font-black tracking-[0.14em] text-white sm:text-xl">
+            <p className="truncate font-mono text-base font-black tracking-[0.14em] text-white sm:mt-1 sm:text-xl">
               {snapshot?.match.publicId ?? 'Đang đồng bộ'}
             </p>
           </div>
           <div
             aria-live="polite"
-            className="flex items-center gap-2 text-xs font-semibold text-sky-100/75"
+            className="flex shrink-0 items-center gap-2 rounded-full bg-black/20 px-3 py-1 text-xs font-semibold text-sky-100/85"
           >
             <span
               aria-hidden="true"
@@ -256,21 +257,21 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
         </header>
 
         <section
-          className={`mt-3 rounded-3xl border px-5 py-7 text-center shadow-2xl backdrop-blur-xl sm:mt-5 sm:px-8 sm:py-9 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/30 shadow-amber-950/30' : 'border-white/15 bg-white/10 shadow-blue-950/20'}`}
+          className={`rounded-3xl border px-4 py-4 text-center shadow-2xl backdrop-blur-xl sm:px-8 sm:py-8 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/30 shadow-amber-950/30' : 'border-white/15 bg-white/10 shadow-blue-950/20'}`}
         >
           <p className="text-sm font-black tracking-[0.2em] text-sky-200">
             {status ? presentPhase(status).label.toUpperCase() : 'ĐANG ĐỒNG BỘ'}
           </p>
           <p
             aria-label={`Thời gian còn lại ${formatCountdown(displayedRemaining ?? 0)}`}
-            className="mt-2 font-mono text-6xl font-black tabular-nums tracking-tight sm:text-8xl"
+            className="mt-1 font-mono text-6xl font-black tabular-nums tracking-tight sm:mt-2 sm:text-8xl"
             role="timer"
           >
             {(roundIsRunning || roundIsPaused) && displayedRemaining !== null
               ? formatCountdown(displayedRemaining)
               : '--:--'}
           </p>
-          <p className="mt-3 text-sm text-sky-100/75">
+          <p className="mt-2 text-xs text-sky-100/75 sm:mt-3 sm:text-sm">
             {roundIsPaused
               ? 'Đồng hồ đang tạm dừng theo trạng thái chính thức từ máy chủ'
               : roundIsRunning
@@ -286,37 +287,38 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
             generatedAt={snapshot?.generatedAt}
           />
           {canStartRound ? (
-            <>
-              <section
-                aria-labelledby="match-readiness-title"
-                className="mx-auto mt-6 max-w-md rounded-2xl border border-white/15 bg-blue-950/30 p-4 text-left"
-              >
-                <h2 className="font-black" id="match-readiness-title">
-                  Sẵn sàng trận đấu
-                </h2>
-                <ul className="mt-3 grid gap-2 text-sm font-semibold">
-                  {judgeReadiness.map((referee) => (
-                    <li
-                      className={referee.connected ? 'text-emerald-200' : 'text-red-200'}
-                      key={referee.label}
-                    >
-                      <span aria-hidden="true">{referee.connected ? '✓' : '✗'}</span>{' '}
-                      {referee.label} {referee.connected ? 'đã kết nối' : 'chưa kết nối'}
-                    </li>
-                  ))}
+            <section
+              aria-labelledby="match-readiness-title"
+              className="mx-auto mt-4 max-w-md rounded-2xl border border-white/15 bg-blue-950/30 p-4 text-left sm:mt-6"
+            >
+              <h2 className="font-black" id="match-readiness-title">
+                Sẵn sàng trận đấu
+              </h2>
+              <ul className="mt-3 grid gap-2 text-sm font-semibold">
+                {judgeReadiness.map((referee) => (
                   <li
-                    className={scoreboardConnectedCount > 0 ? 'text-emerald-200' : 'text-red-200'}
+                    className={referee.connected ? 'text-emerald-200' : 'text-red-200'}
+                    key={referee.label}
                   >
-                    <span aria-hidden="true">{scoreboardConnectedCount > 0 ? '✓' : '✗'}</span> Bảng
-                    điểm{' '}
-                    {scoreboardConnectedCount > 0
-                      ? `đã kết nối (${String(scoreboardConnectedCount)})`
-                      : 'chưa kết nối'}
+                    <span aria-hidden="true">{referee.connected ? '✓' : '✗'}</span> {referee.label}{' '}
+                    {referee.connected ? 'đã kết nối' : 'chưa kết nối'}
                   </li>
-                </ul>
-              </section>
+                ))}
+                <li className={scoreboardConnectedCount > 0 ? 'text-emerald-200' : 'text-red-200'}>
+                  <span aria-hidden="true">{scoreboardConnectedCount > 0 ? '✓' : '✗'}</span> Bảng
+                  điểm{' '}
+                  {scoreboardConnectedCount > 0
+                    ? `đã kết nối (${String(scoreboardConnectedCount)})`
+                    : 'chưa kết nối'}
+                </li>
+              </ul>
+            </section>
+          ) : null}
+
+          <div className="mx-auto mt-4 grid w-full max-w-md gap-3 empty:hidden sm:mt-6">
+            {canStartRound ? (
               <Button
-                className="mt-4 h-16 w-full max-w-md text-lg font-black"
+                className="h-16 w-full text-lg font-black"
                 disabled={
                   realtime.connectionStatus !== 'connected' ||
                   realtime.startingRound ||
@@ -327,29 +329,35 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
               >
                 {realtime.startingRound ? 'ĐANG BẮT ĐẦU…' : startLabel}
               </Button>
-              {!participantsReady ? (
-                <p className="mx-auto mt-3 max-w-md text-sm font-semibold text-amber-100">
-                  {readinessMessage}
-                </p>
-              ) : null}
-            </>
-          ) : null}
-
-          <div className="mx-auto mt-6 grid max-w-md grid-cols-2 gap-3 lg:max-w-5xl lg:grid-cols-4">
-            <Button
-              className="h-24 flex-col gap-2 border border-violet-300/50 bg-violet-700 text-center font-black text-white shadow-lg shadow-violet-950/30 hover:bg-violet-600"
-              disabled={varDisabled}
-              onClick={() => {
-                setVarOpen(true);
-              }}
-              type="button"
-            >
-              <Monitor aria-hidden="true" className="size-7" strokeWidth={2.5} />
-              <span>CHECK VAR</span>
-            </Button>
+            ) : null}
+            {roundIsRunning ? (
+              <Button
+                className="h-16 w-full touch-manipulation border border-amber-200/60 bg-amber-500 text-lg font-black text-amber-950 shadow-lg shadow-amber-950/25 hover:bg-amber-400"
+                disabled={realtime.connectionStatus !== 'connected' || realtime.controllingRound}
+                onClick={() => {
+                  setConfirmation('pause');
+                }}
+                type="button"
+              >
+                <CirclePause aria-hidden="true" className="size-6" strokeWidth={2.5} />
+                <span>{realtime.controllingRound ? 'ĐANG XỬ LÝ…' : 'TẠM DỪNG'}</span>
+              </Button>
+            ) : roundIsPaused ? (
+              <Button
+                className="h-16 w-full touch-manipulation border border-emerald-200/50 bg-emerald-600 text-lg font-black text-white shadow-lg shadow-emerald-950/25 hover:bg-emerald-500"
+                disabled={realtime.connectionStatus !== 'connected' || realtime.controllingRound}
+                onClick={() => {
+                  setConfirmation('resume');
+                }}
+                type="button"
+              >
+                <CirclePlay aria-hidden="true" className="size-6" strokeWidth={2.5} />
+                <span>{realtime.controllingRound ? 'ĐANG XỬ LÝ…' : 'TIẾP TỤC'}</span>
+              </Button>
+            ) : null}
             {snapshot?.result.publication.canPublish ? (
               <Button
-                className="h-24 flex-col gap-2 border border-emerald-200/50 bg-emerald-600 text-center font-black text-white shadow-lg shadow-emerald-950/25 hover:bg-emerald-500"
+                className="h-16 w-full border border-emerald-200/50 bg-emerald-600 text-lg font-black text-white shadow-lg shadow-emerald-950/25 hover:bg-emerald-500"
                 disabled={
                   realtime.connectionStatus !== 'connected' || realtime.submittingResultAction
                 }
@@ -358,163 +366,38 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
                 }}
                 type="button"
               >
-                <Trophy aria-hidden="true" className="size-7" strokeWidth={2.5} />
+                <Trophy aria-hidden="true" className="size-6" strokeWidth={2.5} />
                 <span>CÔNG BỐ KẾT QUẢ</span>
               </Button>
             ) : null}
-            {roundIsRunning ? (
-              <Button
-                className="h-24 flex-col gap-2 border border-amber-200/60 bg-amber-500 text-center font-black text-amber-950 shadow-lg shadow-amber-950/25 hover:bg-amber-400"
-                disabled={realtime.connectionStatus !== 'connected' || realtime.controllingRound}
-                onClick={() => {
-                  setConfirmation('pause');
-                }}
-                type="button"
-              >
-                <CirclePause aria-hidden="true" className="size-7" strokeWidth={2.5} />
-                <span>{realtime.controllingRound ? 'ĐANG XỬ LÝ…' : 'TẠM DỪNG'}</span>
-              </Button>
-            ) : roundIsPaused ? (
-              <Button
-                className="h-24 flex-col gap-2 border border-emerald-200/50 bg-emerald-600 text-center font-black text-white shadow-lg shadow-emerald-950/25 hover:bg-emerald-500"
-                disabled={realtime.connectionStatus !== 'connected' || realtime.controllingRound}
-                onClick={() => {
-                  setConfirmation('resume');
-                }}
-                type="button"
-              >
-                <CirclePlay aria-hidden="true" className="size-7" strokeWidth={2.5} />
-                <span>{realtime.controllingRound ? 'ĐANG XỬ LÝ…' : 'TIẾP TỤC'}</span>
-              </Button>
-            ) : null}
-            <div>
-              <Button
-                aria-describedby={saveResultDisabled ? 'save-result-help' : undefined}
-                className="h-24 w-full flex-col gap-2 border border-sky-200/50 bg-sky-600 text-center font-black text-white shadow-lg shadow-sky-950/25 hover:bg-sky-500"
-                disabled={saveResultDisabled}
-                onClick={() => {
-                  setConfirmation('complete');
-                }}
-                type="button"
-              >
-                <Save aria-hidden="true" className="size-7" strokeWidth={2.5} />
-                <span>{realtime.completingMatch ? 'ĐANG LƯU…' : 'LƯU KẾT QUẢ'}</span>
-              </Button>
-              {saveResultDisabled ? (
-                <p className="mt-3 text-sm font-semibold text-amber-100" id="save-result-help">
-                  {realtime.connectionStatus !== 'connected'
-                    ? 'Cần kết nối máy chủ để kiểm tra điều kiện lưu kết quả.'
-                    : completionUnavailableMessage}
-                </p>
-              ) : null}
-            </div>
-            <div>
-              <Button
-                aria-describedby={exitDisabled ? 'exit-match-help' : undefined}
-                className="h-24 w-full flex-col gap-2 border border-rose-200/50 bg-rose-700 text-center font-black text-white shadow-lg shadow-rose-950/25 hover:bg-rose-600"
-                disabled={exitDisabled}
-                onClick={() => {
-                  setExitMenuOpen(true);
-                }}
-                type="button"
-              >
-                <LogOut aria-hidden="true" className="size-7" strokeWidth={2.5} />
-                <span>THOÁT TRẬN</span>
-              </Button>
-              {exitDisabled ? (
-                <p className="mt-3 text-sm font-semibold text-amber-100" id="exit-match-help">
-                  {exitUnavailableMessage}
-                </p>
-              ) : null}
-            </div>
           </div>
-
-          {realtime.completionErrorMessage ? (
-            <p
-              className="mx-auto mt-4 max-w-xl rounded-xl bg-red-400/15 px-4 py-3 text-sm font-semibold text-red-100"
-              role="alert"
-            >
-              {realtime.completionErrorMessage}
+          {canStartRound && !participantsReady ? (
+            <p className="mx-auto mt-3 max-w-md text-sm font-semibold text-amber-100">
+              {readinessMessage}
             </p>
           ) : null}
 
-          {realtime.roundControlErrorMessage ? (
-            <p
-              className="mx-auto mt-4 max-w-xl rounded-xl bg-red-400/15 px-4 py-3 text-sm font-semibold text-red-100"
-              role="alert"
-            >
-              {realtime.roundControlErrorMessage}
-            </p>
-          ) : null}
-
-          {status === MatchStatus.BREAK ? (
-            <div className="mx-auto mt-6 grid max-w-xl gap-3">
-              <Button
-                disabled={realtime.connectionStatus !== 'connected' || realtime.cancellingResults}
-                onClick={() => {
-                  setConfirmation('cancel-round');
-                }}
-                type="button"
-                variant="outline"
+          {[
+            realtime.roundControlErrorMessage,
+            realtime.roundStartErrorMessage,
+            realtime.completionErrorMessage,
+          ].map((message) =>
+            message ? (
+              <p
+                className="mx-auto mt-4 max-w-xl rounded-xl bg-red-400/15 px-4 py-3 text-sm font-semibold text-red-100"
+                key={message}
+                role="alert"
               >
-                HỦY KẾT QUẢ HIỆP 1 VÀ BẮT ĐẦU LẠI
-              </Button>
-            </div>
-          ) : null}
-
-          {realtime.resultCancellationErrorMessage ? (
-            <p
-              className="mx-auto mt-4 max-w-xl rounded-xl bg-red-400/15 px-4 py-3 text-sm font-semibold text-red-100"
-              role="alert"
-            >
-              {realtime.resultCancellationErrorMessage}
-            </p>
-          ) : null}
-
-          {realtime.roundStartErrorMessage ? (
-            <p
-              className="mx-auto mt-5 max-w-xl rounded-xl bg-red-400/15 px-4 py-3 text-sm font-semibold text-red-100"
-              role="alert"
-            >
-              {realtime.roundStartErrorMessage}
-            </p>
-          ) : null}
-        </section>
-
-        <section
-          aria-label="Bảng điểm trận đấu"
-          className="mt-3 grid gap-3 sm:mt-5 sm:grid-cols-2 sm:gap-5"
-        >
-          <AthleteScoreCard
-            athlete={
-              redAthlete ?? {
-                color: AthleteColor.RED,
-                name: 'Võ sĩ Đỏ',
-                organization: 'Đang tải…',
-                score: 0,
-                violations: 0,
-                faultCounts: { minor: 0, major: 0 },
-              }
-            }
-          />
-          <AthleteScoreCard
-            athlete={
-              blueAthlete ?? {
-                color: AthleteColor.BLUE,
-                name: 'Võ sĩ Xanh',
-                organization: 'Đang tải…',
-                score: 0,
-                violations: 0,
-                faultCounts: { minor: 0, major: 0 },
-              }
-            }
-          />
+                {message}
+              </p>
+            ) : null,
+          )}
         </section>
 
         {status === MatchStatus.REGULATION_APPEAL || status === MatchStatus.OVERTIME_APPEAL ? (
           <section
             aria-labelledby="appeal-title"
-            className="mt-3 rounded-3xl border border-amber-200/30 bg-amber-950/20 p-4 shadow-xl backdrop-blur-xl sm:mt-5 sm:p-6"
+            className="rounded-3xl border border-amber-200/30 bg-amber-950/20 p-4 shadow-xl backdrop-blur-xl sm:p-6"
           >
             <h2 className="text-xl font-black" id="appeal-title">
               {appealTitle}
@@ -611,115 +494,132 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
           </section>
         ) : null}
 
-        {varOpen && snapshot ? (
-          <VarMonitoringDialog
-            matchId={snapshot.match.id}
-            onClose={() => {
-              setVarOpen(false);
-            }}
-          />
-        ) : null}
-
-        <section aria-label="Hành động kết quả" className="mt-3 grid gap-3 sm:grid-cols-2">
-          {snapshot?.result.tieBreak.canStartOvertime ? (
-            <Button
-              className="min-h-14 text-lg font-black"
-              disabled={
-                realtime.connectionStatus !== 'connected' || realtime.submittingResultAction
-              }
-              onClick={() => {
-                setConfirmation('start-overtime');
-              }}
-              type="button"
-            >
-              BẮT ĐẦU HIỆP PHỤ
-            </Button>
-          ) : null}
-          {snapshot?.result.tieBreak.canRestartOvertime ? (
-            <Button
-              className="min-h-14 text-lg font-black"
-              onClick={() => {
-                setConfirmation('restart-overtime');
-              }}
-              type="button"
-              variant="outline"
-            >
-              ĐẤU LẠI HIỆP PHỤ
-            </Button>
-          ) : null}
-          {snapshot?.result.tieBreak.canSelectManualWinner ? (
-            <div className="rounded-2xl border border-amber-200/30 p-3 sm:col-span-2">
-              <p className="font-black">CHỌN NGƯỜI CHIẾN THẮNG</p>
-              <p className="mt-1 text-sm text-amber-100">
-                Điểm chung cuộc hiệp phụ đang hòa. Chọn kết quả chính thức.
-              </p>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <Button
-                  disabled={
-                    realtime.connectionStatus !== 'connected' || realtime.submittingResultAction
-                  }
-                  onClick={() => {
-                    setConfirmation('manual-red');
-                  }}
-                  type="button"
-                  variant="outline"
-                >
-                  ĐỎ — {redAthlete?.name ?? 'VĐV đỏ'}
-                </Button>
-                <Button
-                  disabled={
-                    realtime.connectionStatus !== 'connected' || realtime.submittingResultAction
-                  }
-                  onClick={() => {
-                    setConfirmation('manual-blue');
-                  }}
-                  type="button"
-                  variant="outline"
-                >
-                  XANH — {blueAthlete?.name ?? 'VĐV xanh'}
-                </Button>
+        {tieBreak &&
+        (tieBreak.canStartOvertime ||
+          tieBreak.canRestartOvertime ||
+          tieBreak.canSelectManualWinner) ? (
+          <section aria-label="Hành động kết quả" className="grid gap-3 sm:grid-cols-2">
+            {tieBreak.canStartOvertime ? (
+              <Button
+                className="min-h-14 text-lg font-black"
+                disabled={
+                  realtime.connectionStatus !== 'connected' || realtime.submittingResultAction
+                }
+                onClick={() => {
+                  setConfirmation('start-overtime');
+                }}
+                type="button"
+              >
+                BẮT ĐẦU HIỆP PHỤ
+              </Button>
+            ) : null}
+            {tieBreak.canRestartOvertime ? (
+              <Button
+                className="min-h-14 text-lg font-black"
+                onClick={() => {
+                  setConfirmation('restart-overtime');
+                }}
+                type="button"
+                variant="outline"
+              >
+                ĐẤU LẠI HIỆP PHỤ
+              </Button>
+            ) : null}
+            {tieBreak.canSelectManualWinner ? (
+              <div className="rounded-2xl border border-amber-200/30 p-3 sm:col-span-2">
+                <p className="font-black">CHỌN NGƯỜI CHIẾN THẮNG</p>
+                <p className="mt-1 text-sm text-amber-100">
+                  Điểm chung cuộc hiệp phụ đang hòa. Chọn kết quả chính thức.
+                </p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <Button
+                    disabled={
+                      realtime.connectionStatus !== 'connected' || realtime.submittingResultAction
+                    }
+                    onClick={() => {
+                      setConfirmation('manual-red');
+                    }}
+                    type="button"
+                    variant="outline"
+                  >
+                    ĐỎ — {redAthlete?.name ?? 'VĐV đỏ'}
+                  </Button>
+                  <Button
+                    disabled={
+                      realtime.connectionStatus !== 'connected' || realtime.submittingResultAction
+                    }
+                    onClick={() => {
+                      setConfirmation('manual-blue');
+                    }}
+                    type="button"
+                    variant="outline"
+                  >
+                    XANH — {blueAthlete?.name ?? 'VĐV xanh'}
+                  </Button>
+                </div>
               </div>
-            </div>
-          ) : null}
-        </section>
+            ) : null}
+          </section>
+        ) : null}
 
         <section
           aria-labelledby="inspector-fault-title"
-          className="mt-3 rounded-3xl border border-white/15 bg-white/10 p-4 shadow-xl shadow-blue-950/15 backdrop-blur-xl sm:mt-5 sm:p-6"
+          className="rounded-3xl border border-white/15 bg-white/10 p-3 shadow-xl shadow-blue-950/15 backdrop-blur-xl sm:p-6"
         >
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <div>
-              <h1 className="text-lg font-black" id="inspector-fault-title">
-                Ghi nhận lỗi
-              </h1>
-              <p className="mt-1 text-sm text-sky-100/75">
-                Nhấn hai lần cùng một nút trong 1,8 giây để xác nhận, giúp tránh chạm nhầm.
-              </p>
-            </div>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-1">
+            <h1 className="text-lg font-black" id="inspector-fault-title">
+              Ghi nhận lỗi
+            </h1>
             <p className="text-sm font-semibold text-sky-100/85">
               Hiệp: {snapshot?.match.currentRound ?? 'Chưa bắt đầu'}
             </p>
+            <p className="w-full text-xs text-sky-100/75 sm:text-sm">
+              Nhấn hai lần cùng một nút trong 1,8 giây để xác nhận, giúp tránh chạm nhầm.
+            </p>
           </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 sm:gap-5">
-            {([AthleteColor.RED, AthleteColor.BLUE] as const).map((athlete) => (
-              <div className="grid grid-cols-2 gap-3" key={athlete}>
-                {([FaultSeverity.MINOR, FaultSeverity.MAJOR] as const).map((severity) => (
-                  <FaultButton
-                    athlete={athlete}
-                    disabled={faultControlsDisabled}
-                    isArmed={armedFault?.athlete === athlete && armedFault.severity === severity}
-                    isSubmitting={realtime.submittingFault === athlete}
-                    key={severity}
-                    onPress={handleFaultPress}
-                    severity={severity}
-                  />
-                ))}
+          <div
+            aria-label="Bảng điểm trận đấu"
+            className="mt-3 grid grid-cols-2 gap-2 sm:mt-4 sm:gap-5"
+            role="group"
+          >
+            {(
+              [
+                [AthleteColor.RED, redAthlete, 'Võ sĩ Đỏ'],
+                [AthleteColor.BLUE, blueAthlete, 'Võ sĩ Xanh'],
+              ] as const
+            ).map(([color, athlete, placeholderName]) => (
+              <div className="flex min-w-0 flex-col gap-2 sm:gap-3" key={color}>
+                <AthleteScoreCard
+                  athlete={
+                    athlete ?? {
+                      color,
+                      name: placeholderName,
+                      organization: 'Đang tải…',
+                      score: 0,
+                      violations: 0,
+                      faultCounts: { minor: 0, major: 0 },
+                    }
+                  }
+                />
+                <div className="grid gap-2 sm:grid-cols-2 sm:gap-3">
+                  {([FaultSeverity.MINOR, FaultSeverity.MAJOR] as const).map((severity) => (
+                    <FaultButton
+                      athlete={color}
+                      disabled={faultControlsDisabled}
+                      isArmed={armedFault?.athlete === color && armedFault.severity === severity}
+                      isSubmitting={realtime.submittingFault === color}
+                      key={severity}
+                      onPress={handleFaultPress}
+                      severity={severity}
+                    />
+                  ))}
+                </div>
               </div>
             ))}
           </div>
 
-          <div aria-live="polite" className="mt-4 min-h-6 text-sm">
+          <div aria-live="polite" className="mt-3 min-h-6 px-1 text-sm sm:mt-4">
             {armedFault ? (
               <p className="font-semibold text-amber-200">
                 Nhấn {armedFault.severity === FaultSeverity.MINOR ? 'LỖI NHẸ' : 'LỖI NẶNG'} lần nữa
@@ -741,6 +641,88 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
             ) : null}
           </div>
         </section>
+
+        <section aria-label="Công cụ trận đấu" className="space-y-3">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <Button
+              className="h-20 flex-col gap-1.5 border border-violet-300/50 bg-violet-700 px-1 text-center text-xs font-black text-white shadow-lg shadow-violet-950/30 hover:bg-violet-600 sm:h-24 sm:gap-2 sm:text-sm"
+              disabled={varDisabled}
+              onClick={() => {
+                setVarOpen(true);
+              }}
+              type="button"
+            >
+              <Monitor aria-hidden="true" className="size-6 sm:size-7" strokeWidth={2.5} />
+              <span>CHECK VAR</span>
+            </Button>
+            <Button
+              aria-describedby={saveResultDisabled ? 'save-result-help' : undefined}
+              className="h-20 flex-col gap-1.5 border border-sky-200/50 bg-sky-600 px-1 text-center text-xs font-black text-white shadow-lg shadow-sky-950/25 hover:bg-sky-500 sm:h-24 sm:gap-2 sm:text-sm"
+              disabled={saveResultDisabled}
+              onClick={() => {
+                setConfirmation('complete');
+              }}
+              type="button"
+            >
+              <Save aria-hidden="true" className="size-6 sm:size-7" strokeWidth={2.5} />
+              <span>{realtime.completingMatch ? 'ĐANG LƯU…' : 'LƯU KẾT QUẢ'}</span>
+            </Button>
+            <Button
+              aria-describedby={exitDisabled ? 'exit-match-help' : undefined}
+              className="h-20 flex-col gap-1.5 border border-rose-200/50 bg-rose-700 px-1 text-center text-xs font-black text-white shadow-lg shadow-rose-950/25 hover:bg-rose-600 sm:h-24 sm:gap-2 sm:text-sm"
+              disabled={exitDisabled}
+              onClick={() => {
+                setExitMenuOpen(true);
+              }}
+              type="button"
+            >
+              <LogOut aria-hidden="true" className="size-6 sm:size-7" strokeWidth={2.5} />
+              <span>THOÁT TRẬN</span>
+            </Button>
+          </div>
+          {saveResultDisabled ? (
+            <p className="px-1 text-sm font-semibold text-amber-100" id="save-result-help">
+              {realtime.connectionStatus !== 'connected'
+                ? 'Cần kết nối máy chủ để kiểm tra điều kiện lưu kết quả.'
+                : completionUnavailableMessage}
+            </p>
+          ) : null}
+          {exitDisabled ? (
+            <p className="px-1 text-sm font-semibold text-amber-100" id="exit-match-help">
+              {exitUnavailableMessage}
+            </p>
+          ) : null}
+          {status === MatchStatus.BREAK ? (
+            <Button
+              className="min-h-12 w-full"
+              disabled={realtime.connectionStatus !== 'connected' || realtime.cancellingResults}
+              onClick={() => {
+                setConfirmation('cancel-round');
+              }}
+              type="button"
+              variant="outline"
+            >
+              HỦY KẾT QUẢ HIỆP 1 VÀ BẮT ĐẦU LẠI
+            </Button>
+          ) : null}
+          {realtime.resultCancellationErrorMessage ? (
+            <p
+              className="rounded-xl bg-red-400/15 px-4 py-3 text-sm font-semibold text-red-100"
+              role="alert"
+            >
+              {realtime.resultCancellationErrorMessage}
+            </p>
+          ) : null}
+        </section>
+
+        {varOpen && snapshot ? (
+          <VarMonitoringDialog
+            matchId={snapshot.match.id}
+            onClose={() => {
+              setVarOpen(false);
+            }}
+          />
+        ) : null}
       </main>
       {confirmation ? (
         <ConfirmationDialog
