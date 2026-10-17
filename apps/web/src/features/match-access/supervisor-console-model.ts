@@ -4,6 +4,7 @@ import {
   type ResultCapabilityBlockedReason,
 } from '@martial-arts-scoring/shared-types';
 import type { RealtimeConnectionStatus } from './match-realtime';
+import { createUuid } from '@/lib/uuid';
 
 /* Pure presentation and validation rules for the supervisor console. */
 
@@ -99,7 +100,7 @@ export function appealNumber(value: string): number | null {
     : null;
 }
 export function newIdempotencyKey(): string {
-  return globalThis.crypto.randomUUID();
+  return createUuid();
 }
 
 export function completionHelp(

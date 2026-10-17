@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Download, Loader2, Maximize2, Minimize2 } from 'lucide-react';
+import { Download, Loader2, Maximize2, Minimize2, RotateCcw, Shuffle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import {
@@ -39,6 +39,7 @@ import { bracketPdfFileName, type BracketFixture } from './fixture-presentation'
 import { IntermissionDurationForm } from './intermission-duration-form';
 import { StandaloneMatchList } from './standalone-match-list';
 import { WinnerDecisionDialog } from './winner-decision-dialog';
+import { createUuid } from '@/lib/uuid';
 
 export function TournamentMatchesPage({
   tournament,
@@ -193,7 +194,7 @@ export function TournamentMatchesPage({
       if (!currentWorkflow(input.context.weightClassId, input.context.epoch)) return;
       setDialogError(null);
       setPreview(value);
-      setConfirmationKey(crypto.randomUUID());
+      setConfirmationKey(createUuid());
       setWorkflow('reviewingPreview');
     },
     onError: (error, input) => {
@@ -302,7 +303,7 @@ export function TournamentMatchesPage({
     onSuccess: (value, input) => {
       if (input.version !== swapVersionRef.current) return;
       setPreview(value);
-      setConfirmationKey(crypto.randomUUID());
+      setConfirmationKey(createUuid());
       setSwapAthleteId(null);
       setSwapError(null);
     },
@@ -438,33 +439,38 @@ export function TournamentMatchesPage({
       <div id="weight-class-match-panel" role="tabpanel">
         {selectedId ? (
           <>
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h3 className="font-black">{active.find((x) => x.id === selectedId)?.name}</h3>
-              </div>
-              <Button
-                disabled={blocked || draw.isPending || setupDraw.isPending}
-                onClick={() => {
-                  setConfirmedCancelled(false);
-                  setDialogError(null);
-                  setWorkflow('loadingSetup');
-                  if (selectedId) setupDraw.mutate(beginWorkflow(selectedId));
-                }}
-                type="button"
-              >
-                {setupDraw.isPending ? 'Đang chuẩn bị…' : 'Bốc thăm, chia nhánh đấu'}
-              </Button>
-              {bracket.data?.bracket.status === 'ACTIVE' && !isReadOnly ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 p-3 pl-4">
+              <h3 className="text-lg font-black">
+                {active.find((x) => x.id === selectedId)?.name}
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {bracket.data?.bracket.status === 'ACTIVE' && !isReadOnly ? (
+                  <Button
+                    onClick={() => {
+                      setCancelOpen(true);
+                    }}
+                    type="button"
+                    variant="destructive-soft"
+                  >
+                    <RotateCcw aria-hidden="true" className="size-4" />
+                    Hủy / bốc thăm lại
+                  </Button>
+                ) : null}
                 <Button
+                  disabled={blocked || draw.isPending || setupDraw.isPending}
                   onClick={() => {
-                    setCancelOpen(true);
+                    setConfirmedCancelled(false);
+                    setDialogError(null);
+                    setWorkflow('loadingSetup');
+                    if (selectedId) setupDraw.mutate(beginWorkflow(selectedId));
                   }}
+                  title={blocked ? reason : undefined}
                   type="button"
-                  variant="outline"
                 >
-                  Hủy / bốc thăm lại
+                  <Shuffle aria-hidden="true" className="size-4" />
+                  {setupDraw.isPending ? 'Đang chuẩn bị…' : 'Bốc thăm, chia nhánh đấu'}
                 </Button>
-              ) : null}
+              </div>
             </div>
             {preview && ['reviewingPreview', 'confirming'].includes(workflow) ? (
               <BracketPreviewPanel

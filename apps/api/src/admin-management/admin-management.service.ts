@@ -15,7 +15,7 @@ import {
   TournamentStatus,
   UserRole,
 } from '@prisma/client';
-import type { AthleteColor, MatchStatus } from '@prisma/client';
+import type { AthleteColor, MatchLifecycle, MatchStatus } from '@prisma/client';
 
 import type { EnvironmentVariables } from '../config/environment';
 import { PrismaService } from '../prisma/prisma.service';
@@ -65,6 +65,7 @@ import {
   monitoringScoringWindow,
 } from './monitoring-history';
 import { projectMatchDisplayState } from '../match-display-state';
+import { matchPerformance } from './dashboard-performance';
 
 const PUBLIC_ID_GENERATION_ATTEMPTS = 8;
 const TOURNAMENT_PUBLIC_CODE_GENERATION_ATTEMPTS = 8;
@@ -224,6 +225,149 @@ export class AdminManagementService {
       select: sportCatalogSelect,
       where: { isActive: true },
     });
+  }
+
+  async getDashboardFor(actor: AuthenticatedUser) {
+    const isSuperAdmin = await this.assertAdminAccess(actor, false);
+    const scope: Prisma.TournamentWhereInput = {
+      softDeletedAt: null,
+      ...(isSuperAdmin ? {} : { ownerUserId: actor.id }),
+    };
+    // Aggregate in the database; never load roster records or official credentials.
+    const matchQuery = this.prisma.match.groupBy({
+      by: ['tournamentId', 'lifecycle'],
+      where: { tournament: scope },
+      _count: { _all: true },
+    });
+    const officialQuery = this.prisma.tournamentOfficial.groupBy({
+      by: ['tournamentId', 'role'],
+      where: { tournament: scope, isActive: true },
+      _count: { _all: true },
+    });
+    const performanceQuery = this.prisma.match.findMany({
+      where: { tournament: scope, lifecycle: { not: 'NOT_STARTED' } },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        publicId: true,
+        tournamentId: true,
+        lifecycle: true,
+        status: true,
+        roundDurationMs: true,
+        athletes: { select: { color: true, name: true } },
+        rounds: {
+          where: { invalidatedAt: null },
+          select: {
+            stage: true,
+            roundNumber: true,
+            durationMs: true,
+            endsAt: true,
+            endedAt: true,
+            pausedAt: true,
+            remainingDurationMs: true,
+            invalidatedAt: true,
+            athleteResults: {
+              where: { invalidatedAt: null },
+              select: { judgePoints: true, invalidatedAt: true },
+            },
+          },
+        },
+        outcome: {
+          select: {
+            method: true,
+            sourceAppeal: {
+              select: {
+                status: true,
+                invalidatedAt: true,
+                sourceRound: { select: { invalidatedAt: true } },
+                adjustments: { select: { finalScore: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const [tournaments, matches, officials, performanceMatches] =
+      await this.prisma.$transaction(
+        [
+          this.prisma.tournament.findMany({
+            where: scope,
+            orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              startDate: true,
+              endDate: true,
+              location: true,
+              sport: { select: { name: true } },
+              _count: {
+                select: {
+                  athletes: { where: { isActive: true } },
+                  organizations: { where: { isActive: true } },
+                  weightClasses: { where: { isActive: true } },
+                },
+              },
+            },
+          }),
+          matchQuery,
+          officialQuery,
+          performanceQuery,
+        ],
+        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      );
+    const now = new Date();
+    const performanceByTournament = new Map<
+      string,
+      ReturnType<typeof matchPerformance>[]
+    >();
+    for (const match of performanceMatches) {
+      const rows = performanceByTournament.get(match.tournamentId) ?? [];
+      rows.push(matchPerformance(match, now));
+      performanceByTournament.set(match.tournamentId, rows);
+    }
+    const matchCounts = new Map<string, Record<MatchLifecycle, number>>();
+    for (const row of matches) {
+      const counts = matchCounts.get(row.tournamentId) ?? {
+        NOT_STARTED: 0,
+        IN_PROGRESS: 0,
+        SUSPENDED: 0,
+        COMPLETED: 0,
+      };
+      counts[row.lifecycle] = row._count._all;
+      matchCounts.set(row.tournamentId, counts);
+    }
+    const officialCounts = new Map<
+      string,
+      { JUDGE: number; SUPERVISOR: number }
+    >();
+    for (const row of officials) {
+      const counts = officialCounts.get(row.tournamentId) ?? {
+        JUDGE: 0,
+        SUPERVISOR: 0,
+      };
+      counts[row.role] = row._count._all;
+      officialCounts.set(row.tournamentId, counts);
+    }
+    return {
+      tournaments: tournaments.map(({ _count, ...tournament }) => ({
+        ...tournament,
+        athleteCount: _count.athletes,
+        organizationCount: _count.organizations,
+        weightClassCount: _count.weightClasses,
+        performance: performanceByTournament.get(tournament.id) ?? [],
+        matches: matchCounts.get(tournament.id) ?? {
+          NOT_STARTED: 0,
+          IN_PROGRESS: 0,
+          SUSPENDED: 0,
+          COMPLETED: 0,
+        },
+        officials: officialCounts.get(tournament.id) ?? {
+          JUDGE: 0,
+          SUPERVISOR: 0,
+        },
+      })),
+    };
   }
 
   async assertTournamentAccess(

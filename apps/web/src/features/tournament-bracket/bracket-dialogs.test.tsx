@@ -104,6 +104,17 @@ describe('WinnerDecisionDialog', () => {
       idempotencyKey: expect.any(String) as string,
     });
   });
+
+  it('opens over plain HTTP where crypto.randomUUID is unavailable', () => {
+    const realCrypto = globalThis.crypto;
+    vi.stubGlobal('crypto', { getRandomValues: realCrypto.getRandomValues.bind(realCrypto) });
+    try {
+      renderDialog();
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe('CancelBracketDialog', () => {

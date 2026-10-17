@@ -14,6 +14,7 @@ import {
   type BracketFixture,
 } from './fixture-presentation';
 import { bracketQueryKeys } from './query-keys';
+import { createUuid } from '@/lib/uuid';
 
 /**
  * Records an administrator's winner for a tied or forfeited fixture. Mount it
@@ -40,7 +41,7 @@ export function WinnerDecisionDialog({
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   // Created once per opening so retries of the same action stay idempotent.
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey] = useState(createUuid);
   const decisionType = manualWinnerDecisionType(fixture);
   const withdrawal = decisionType === 'WITHDRAWAL_OR_INJURY';
 

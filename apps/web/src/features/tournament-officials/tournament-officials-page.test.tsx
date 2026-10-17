@@ -80,8 +80,8 @@ describe('TournamentOfficialsPage credentials', () => {
       renderPage(role);
       const button = await screen.findByRole('button', { name: 'Tạo link đăng nhập' });
       expect(button).toHaveAttribute('title', 'Tạo link đăng nhập');
-      expect(button).toHaveClass('bg-amber-500');
-      expect(button.textContent).toBe('');
+      expect(button).toHaveClass('bg-primary/10');
+      expect(button.textContent).toBe('Link đăng nhập');
       fireEvent.click(button);
       const input = await screen.findByRole('textbox', { name: 'Link đăng nhập' });
       const path = role === TournamentOfficialRole.JUDGE ? '/giam-dinh' : '/giam-sat';

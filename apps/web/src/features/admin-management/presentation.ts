@@ -79,7 +79,10 @@ export const athleteColorLabels: Record<AthleteColor, string> = {
 };
 
 export const inputClassName =
-  'mt-1.5 h-11 w-full rounded-lg border border-input bg-white/80 px-3 text-sm text-foreground shadow-sm outline-none transition-[border-color,box-shadow,background-color] placeholder:text-muted-foreground/70 hover:border-primary/35 focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10 aria-[invalid=true]:border-destructive aria-[invalid=true]:bg-red-50/50 aria-[invalid=true]:focus:ring-destructive/10 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-70';
+  'mt-1.5 h-11 w-full rounded-lg border border-input bg-white/80 px-3 py-1 text-sm font-normal text-foreground shadow-sm outline-none transition-[border-color,box-shadow,background-color] placeholder:text-muted-foreground/70 hover:border-primary/35 focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10 aria-[invalid=true]:border-destructive aria-[invalid=true]:bg-destructive/5 aria-[invalid=true]:focus:ring-destructive/10 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-70 file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-primary hover:file:bg-primary/15';
+
+/** Field style for native `<select>`; `.form-select` adds the chevron and styled option list. */
+export const selectClassName = `${inputClassName} form-select`;
 
 export const textAreaClassName =
   'mt-1.5 min-h-28 w-full resize-y rounded-lg border border-input bg-white/80 px-3 py-2.5 text-sm leading-6 text-foreground shadow-sm outline-none transition-[border-color,box-shadow,background-color] placeholder:text-muted-foreground/70 hover:border-primary/35 focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10 aria-[invalid=true]:border-destructive aria-[invalid=true]:bg-red-50/50 aria-[invalid=true]:focus:ring-destructive/10 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-70';

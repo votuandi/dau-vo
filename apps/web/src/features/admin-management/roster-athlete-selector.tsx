@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { inputClassName } from './presentation';
+import { inputClassName, selectClassName } from './presentation';
 import type { TournamentAthlete } from '@/services/api/admin-management';
 import { AthleteColor } from '@/types/shared';
 
@@ -72,7 +72,7 @@ export function RosterAthleteSelector({
       </label>
       <select
         aria-describedby={`${color}-athlete-help`}
-        className={inputClassName}
+        className={selectClassName}
         disabled={disabled || !weightClassName || loading || available.length === 0}
         id={`${color}-athlete-select`}
         onChange={(event) => {

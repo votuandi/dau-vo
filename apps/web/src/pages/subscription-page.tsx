@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { subscriptionsApi } from '@/services/api/subscriptions';
 import { authenticatedUserQueryKey } from '@/features/auth/authenticated-user-session';
 import { entitlementQueryKey } from '@/features/auth/admin-access';
+import { createUuid } from '@/lib/uuid';
 
 export function SubscriptionPage() {
   const [durationBundle, setDuration] = useState<number>();
@@ -20,7 +21,7 @@ export function SubscriptionPage() {
       subscriptionsApi.activate({
         durationBundle,
         tournamentBundle,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey: createUuid(),
       }),
     onSuccess: async () => {
       await Promise.all([

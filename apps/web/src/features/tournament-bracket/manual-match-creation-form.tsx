@@ -153,7 +153,7 @@ export function ManualMatchCreationForm({
       ) : null}
       {create.isError ? (
         <p
-          className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+          className="mt-4 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive"
           role="alert"
         >
           {getApiErrorMessage(create.error, 'Không thể tạo trận đấu.')}

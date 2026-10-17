@@ -59,7 +59,9 @@ export function RegisterPage() {
   ];
   return (
     <section className="mx-auto w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-lg shadow-sky-950/5 sm:p-8">
-      <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">Đấu Võ</p>
+      <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">
+        Chấm Điểm Võ Thuật
+      </p>
       <h1 className="mt-3 text-3xl font-black tracking-tight">Đăng ký tài khoản</h1>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">
         Tạo tài khoản để bắt đầu quản lý giải đấu của bạn.

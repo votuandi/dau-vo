@@ -49,7 +49,7 @@ function MatchSelector() {
         onSubmit={submit}
       >
         <p className="text-xs font-black uppercase tracking-[0.22em] text-sky-200">
-          Đấu Võ trực tiếp
+          Chấm Điểm Võ Thuật trực tiếp
         </p>
         <h1 className="mt-3 text-3xl font-black">Bảng điểm</h1>
         <p className="mt-2 text-sm text-sky-100/80">

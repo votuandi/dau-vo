@@ -1,3 +1,4 @@
+import { Badge } from '@/components/ui/badge';
 import { useQuery } from '@tanstack/react-query';
 import { AthleteColor, MatchAccessRole, MatchLifecycle } from '@/types/shared';
 import { formatDateTime, formatDateTimeWithSeconds } from './presentation';
@@ -163,9 +164,9 @@ export function AdminMatchMonitoring({
           </p>
         </div>
         {live ? (
-          <span className="text-sm font-bold text-emerald-700">
+          <Badge dot tone="success">
             {monitoring.isFetching ? 'Đang đồng bộ…' : 'Đang theo dõi'}
-          </span>
+          </Badge>
         ) : null}
       </div>
       {monitoring.isError ? (
@@ -210,7 +211,7 @@ export function AdminMatchMonitoring({
             </div>
           </div>
           {winner ? (
-            <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+            <p className="mt-4 rounded-xl border border-success/25 bg-success/5 p-4 text-foreground">
               <strong>Vận động viên chiến thắng:</strong> {winner.name} ({colorLabel(winner.color)})
             </p>
           ) : null}
@@ -224,7 +225,7 @@ export function AdminMatchMonitoring({
                 <span className="font-semibold">{roleLabels[entry.accessRole]}</span>
                 <span
                   className={
-                    entry.connected ? 'font-bold text-emerald-700' : 'font-bold text-slate-500'
+                    entry.connected ? 'font-bold text-success' : 'font-bold text-muted-foreground'
                   }
                 >
                   {entry.connected ? 'Đã kết nối' : 'Mất kết nối'}
@@ -238,12 +239,12 @@ export function AdminMatchMonitoring({
         <p className="mt-5 text-sm text-muted-foreground">Đang tải trạng thái trận đấu…</p>
       )}
       <div className="mt-8 grid gap-4">
-        <details className="rounded-xl border p-4" open>
+        <details className="rounded-xl border border-border bg-card p-4 shadow-sm" open>
           <summary className="cursor-pointer font-black">Diễn biến và kết quả đã lưu</summary>
           <div className="mt-4 space-y-3 text-sm">
             {diagnostics.map((diagnostic) => (
               <p
-                className="rounded-lg border border-amber-200 bg-amber-50 p-3 font-semibold text-amber-900"
+                className="rounded-lg border border-warning/25 bg-warning/5 p-3 font-semibold text-warning"
                 key={diagnostic}
               >
                 {diagnostic}
@@ -280,7 +281,7 @@ export function AdminMatchMonitoring({
               </article>
             ))}
             {outcome ? (
-              <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900">
+              <p className="rounded-lg border border-success/25 bg-success/5 p-3 text-foreground">
                 <strong>Kết quả công bố:</strong> {colorLabel(outcome.winnerColor)} ·{' '}
                 {outcome.method} · {formatDateTime(outcome.publishedAt)}
               </p>
@@ -288,7 +289,7 @@ export function AdminMatchMonitoring({
             {!rounds.length && !appeals.length ? <p>Chưa có lịch sử trận đấu.</p> : null}
           </div>
         </details>
-        <details className="rounded-xl border p-4" open>
+        <details className="rounded-xl border border-border bg-card p-4 shadow-sm" open>
           <summary className="cursor-pointer font-black">
             Lịch sử cửa sổ chấm điểm ({scoringWindows.length})
           </summary>
@@ -346,7 +347,7 @@ export function AdminMatchMonitoring({
                 {penalty.athlete.name} · <strong>{penalty.value}</strong> ·{' '}
                 {formatDateTime(penalty.createdAt)}
                 {penalty.revertedAt ? (
-                  <span className="ml-2 font-bold text-amber-700">Đã hoàn tác</span>
+                  <span className="ml-2 font-bold text-warning">Đã hoàn tác</span>
                 ) : null}
               </li>
             ))}

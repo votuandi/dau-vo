@@ -124,7 +124,7 @@ function Waiting({
           disabled={pending}
           onClick={logout}
           type="button"
-          variant="outline"
+          variant="destructive-gradient"
         >
           {pending ? 'Đang đăng xuất…' : 'Đăng xuất'}
         </Button>
@@ -251,13 +251,7 @@ function SupervisorAssignment({
           <p className="text-sm font-semibold text-primary">{session.tournament.name}</p>
           <h1 className="text-3xl font-black">Khu vực giám sát</h1>
         </div>
-        <Button
-          disabled={pending}
-          onClick={logout}
-          type="button"
-          variant="outline"
-          className="bg-red-800 text-white"
-        >
+        <Button disabled={pending} onClick={logout} type="button" variant="destructive-gradient">
           {pending ? 'Đang đăng xuất…' : 'Đăng xuất'}
         </Button>
         {logoutError ? (
@@ -462,7 +456,7 @@ function RoleMismatch({
           disabled={pending}
           onClick={logout}
           type="button"
-          variant="outline"
+          variant="destructive-gradient"
         >
           {pending ? 'Đang đăng xuất…' : 'Đăng xuất'}
         </Button>

@@ -87,14 +87,14 @@ function StandardAppLayout() {
           <NavLink className="flex items-center gap-3" to="/">
             <img
               src={`${import.meta.env.BASE_URL}logo.webp`}
-              alt="Logo Đấu Võ Minwy"
+              alt="Logo Chấm Điểm Võ Thuật"
               width={48}
               height={48}
               className="size-12 shrink-0 object-contain"
             />
             <span>
               <span className="block text-sm font-extrabold uppercase tracking-[0.18em] text-primary">
-                Đấu Võ
+                Chấm Điểm Võ Thuật
               </span>
               <span className="block text-xs text-muted-foreground">Chấm điểm võ thuật</span>
             </span>
@@ -125,7 +125,7 @@ function StandardAppLayout() {
                 }}
                 size="sm"
                 type="button"
-                variant="outline"
+                variant="destructive-gradient"
               >
                 {logoutMutation.isPending ? 'Đang đăng xuất…' : 'Đăng xuất'}
               </Button>

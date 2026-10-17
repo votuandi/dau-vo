@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { TabCount, TabScroller } from '@/components/ui/tabs';
+import { tabListClassName, tabTriggerClassName } from '@/components/ui/tab-styles';
 import type { TournamentRosterItem } from '@/services/api/admin-management';
 
 interface Props {
@@ -25,17 +27,13 @@ export function WeightClassMatchTabs({
     refs.current = refs.current.slice(0, items.length);
   }, [items.length]);
   return (
-    <div aria-label="Hạng cân" className="overflow-x-auto border-b" role="tablist">
-      <div className="flex min-w-max gap-1">
+    <TabScroller>
+      <div aria-label="Hạng cân" className={tabListClassName} role="tablist">
         {items.map((item, index) => (
           <button
             aria-controls="weight-class-match-panel"
             aria-selected={selectedId === item.id}
-            className={
-              selectedId === item.id
-                ? 'border-b-2 border-primary px-3 py-3 text-sm font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary'
-                : 'px-3 py-3 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary'
-            }
+            className={tabTriggerClassName(selectedId === item.id)}
             key={item.id ?? '__unassigned'}
             onClick={() => {
               onSelect(item.id);
@@ -60,15 +58,15 @@ export function WeightClassMatchTabs({
             type="button"
           >
             {item.label}{' '}
-            <span
-              aria-label={`${String(counts.get(item.id ?? '__unassigned') ?? 0)} trận`}
-              className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-xs"
+            <TabCount
+              active={selectedId === item.id}
+              label={`${String(counts.get(item.id ?? '__unassigned') ?? 0)} trận`}
             >
               {counts.get(item.id ?? '__unassigned') ?? 0}
-            </span>
+            </TabCount>
           </button>
         ))}
       </div>
-    </div>
+    </TabScroller>
   );
 }

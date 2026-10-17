@@ -61,7 +61,7 @@ export function BracketPreviewPanel({
       </div>
       {error ? (
         <p
-          className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+          className="mt-4 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive"
           role="alert"
         >
           {error}

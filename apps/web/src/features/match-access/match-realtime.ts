@@ -49,6 +49,7 @@ import {
   reconnectSocket,
 } from '@/services/socket/client';
 import { toast } from '@/components/ui/toast';
+import { createUuid } from '@/lib/uuid';
 
 export type RealtimeConnectionStatus =
   | 'authentication-required'
@@ -98,7 +99,7 @@ function voteAcknowledgementMatchesReferee(
 }
 
 function createMatchExitTraceId(): string {
-  return globalThis.crypto.randomUUID();
+  return createUuid();
 }
 
 export interface MatchRealtimeState {
@@ -499,7 +500,7 @@ export function useMatchRealtime({
     resultActionInFlightRef.current = true;
     setSubmittingResultAction(true);
     setResultActionErrorMessage(null);
-    const payload: ResultPublishPayload = { idempotencyKey: globalThis.crypto.randomUUID() };
+    const payload: ResultPublishPayload = { idempotencyKey: createUuid() };
     try {
       const response = await new Promise<ResultPublishResponse>((resolve, reject) =>
         socket
@@ -914,7 +915,7 @@ export function useMatchRealtime({
           .timeout(10_000)
           .emit(
             RealtimeEvent.FAULT_RECORD,
-            { athlete, severity, traceId: globalThis.crypto.randomUUID() },
+            { athlete, severity, traceId: createUuid() },
             (error: Error | null, acknowledgement: FaultRecordResponse) => {
               if (error) {
                 reject(error);
