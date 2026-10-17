@@ -10,7 +10,10 @@ const SIZE_CLASSES = {
 const IMAGE_CLASSES = {
   athlete: 'border-[3px] border-white/70 bg-white/10 object-cover shadow-xl shadow-black/30',
   // Logos are artwork: keep them whole on a light tile instead of cropping.
-  organization: 'bg-white object-contain p-[8%] shadow-lg shadow-black/25 ring-1 ring-black/5',
+  // Padding is 8% of the tile size; a `%` padding would resolve against the
+  // parent row's width and swallow the whole image on wide (fullscreen) screens.
+  organization:
+    'bg-white object-contain p-[clamp(0.18rem,0.56vmin,0.36rem)] shadow-lg shadow-black/25 ring-1 ring-black/5',
 } as const;
 
 function initials(name: string): string {
