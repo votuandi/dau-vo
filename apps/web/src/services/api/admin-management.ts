@@ -1,5 +1,6 @@
 import type {
   AthleteColor,
+  DashboardMatchPerformance,
   MatchDisplayState,
   MatchLifecycle,
   MatchStatePayload,
@@ -11,6 +12,22 @@ import type { ApiRequestOptions } from '@/services/api/client';
 import type { TournamentOfficialRole } from '@martial-arts-scoring/shared-types';
 
 type ApiRequestWithoutBody = Omit<ApiRequestOptions<never>, 'body' | 'method'>;
+
+export interface AdminDashboardTournament {
+  readonly id: string;
+  readonly name: string;
+  readonly status: TournamentStatus;
+  readonly startDate: string | null;
+  readonly endDate: string | null;
+  readonly location: string | null;
+  readonly sport: { readonly name: string };
+  readonly athleteCount: number;
+  readonly organizationCount: number;
+  readonly weightClassCount: number;
+  readonly matches: Readonly<Record<MatchLifecycle, number>>;
+  readonly officials: { readonly JUDGE: number; readonly SUPERVISOR: number };
+  readonly performance: readonly DashboardMatchPerformance[];
+}
 
 export interface AdminTournament {
   readonly id: string;
@@ -463,6 +480,8 @@ function encodePathSegment(value: string): string {
 export const adminManagementApi = {
   listSports: () => apiClient.get<readonly SportSummary[]>('admin/sports'),
   listTournaments: () => apiClient.get<TournamentsResponse>('admin/tournaments'),
+  getDashboard: () =>
+    apiClient.get<{ readonly tournaments: readonly AdminDashboardTournament[] }>('admin/dashboard'),
   createTournament: (input: CreateTournamentInput) =>
     apiClient.post<TournamentResponse>('admin/tournaments', input),
   getTournament: (id: string) =>

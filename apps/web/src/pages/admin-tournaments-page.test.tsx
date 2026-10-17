@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   createTournament: vi.fn(),
   replaceTournamentImage: vi.fn(),
   archiveTournament: vi.fn(),
+  updateTournament: vi.fn(),
 }));
 
 vi.mock('@/services/api/admin-management', () => ({ adminManagementApi: api }));
@@ -79,5 +80,55 @@ describe('tournament creation logo', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Tạo giải đấu' }));
     expect(await screen.findByText('Tournament details')).toBeVisible();
     expect(api.replaceTournamentImage).not.toHaveBeenCalled();
+  });
+});
+
+describe('archived tournament status', () => {
+  const archived = {
+    id: 'tournament-1',
+    name: 'Giải Karate',
+    status: 'ARCHIVED',
+    location: null,
+    imagePath: null,
+    sport: { name: 'Karate' },
+  };
+
+  beforeEach(() => {
+    api.listTournaments.mockResolvedValue({ tournaments: [archived] });
+    api.listSports.mockResolvedValue([]);
+    api.updateTournament.mockImplementation((id: string, input: { status: string }) =>
+      Promise.resolve({ tournament: { ...archived, id, status: input.status } }),
+    );
+  });
+
+  function renderPage() {
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <MemoryRouter>
+          <AdminTournamentsPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  it('restores an archived tournament back to draft', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Khôi phục' }));
+    await waitFor(() => {
+      expect(api.updateTournament).toHaveBeenCalledWith('tournament-1', { status: 'DRAFT' });
+    });
+    expect(api.archiveTournament).not.toHaveBeenCalled();
+  });
+
+  it('changes an archived tournament to any other status from the list', async () => {
+    renderPage();
+    fireEvent.change(await screen.findByLabelText('Trạng thái của Giải Karate'), {
+      target: { value: 'ACTIVE' },
+    });
+    await waitFor(() => {
+      expect(api.updateTournament).toHaveBeenCalledWith('tournament-1', { status: 'ACTIVE' });
+    });
   });
 });

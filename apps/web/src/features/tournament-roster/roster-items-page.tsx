@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Check, Image, Pencil } from 'lucide-react';
+import { Ban, Image, Pencil, Plus, RotateCcw } from 'lucide-react';
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { FileImagePreview } from '@/components/file-image-preview';
@@ -13,6 +15,7 @@ import {
   textAreaClassName,
 } from '@/features/admin-management/presentation';
 import { IMAGE_ACCEPT, imageFileProblem } from '@/lib/image-file';
+import { cn } from '@/lib/utils';
 import { ApiClientError } from '@/services/api/client';
 import {
   adminManagementApi,
@@ -61,7 +64,7 @@ function RosterForm({
   return (
     <form
       aria-label={mode === 'edit' ? 'Chỉnh sửa danh mục' : 'Tạo danh mục mới'}
-      className="grid grid-cols-1 gap-4 rounded-xl border bg-muted/30 p-4"
+      className="grid grid-cols-1 gap-4 rounded-2xl border border-primary/20 bg-card p-5 shadow-sm sm:grid-cols-2"
       onSubmit={(e) => {
         e.preventDefault();
         if (!busy && values.name.trim()) {
@@ -74,10 +77,10 @@ function RosterForm({
         }
       }}
     >
-      <p aria-live="polite" className="text-sm font-semibold">
+      <p aria-live="polite" className="text-base font-black sm:col-span-2">
         {mode === 'edit' ? 'Đang chỉnh sửa danh mục' : 'Tạo danh mục mới'}
       </p>
-      <label className="form-field">
+      <label className={organization ? 'form-field' : 'form-field sm:col-span-2'}>
         Tên
         <input
           className={inputClassName}
@@ -103,7 +106,7 @@ function RosterForm({
         </label>
       ) : null}
       {organization ? (
-        <label className="form-field">
+        <label className="form-field sm:col-span-2">
           Logo đơn vị (JPEG, PNG hoặc WebP, tối đa 2 MiB)
           <input
             accept={IMAGE_ACCEPT}
@@ -123,13 +126,13 @@ function RosterForm({
             />
           ) : null}
           {values.imageError ? (
-            <span className="block text-xs text-destructive" role="alert">
+            <span className="form-error block" role="alert">
               {values.imageError}
             </span>
           ) : null}
         </label>
       ) : null}
-      <label className="form-field">
+      <label className="form-field sm:col-span-2">
         Chi tiết
         <textarea
           className={textAreaClassName}
@@ -140,12 +143,12 @@ function RosterForm({
           value={values.details}
         />
       </label>
-      <div className="flex flex-wrap self-end gap-2">
-        <Button disabled={busy} type="submit">
-          {busy ? 'Đang lưu…' : mode === 'edit' ? 'Lưu' : 'Thêm mới'}
-        </Button>
+      <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4 sm:col-span-2">
         <Button disabled={busy} onClick={onCancel} type="button" variant="outline">
           Hủy
+        </Button>
+        <Button disabled={busy} type="submit">
+          {busy ? 'Đang lưu…' : mode === 'edit' ? 'Lưu' : 'Thêm mới'}
         </Button>
       </div>
     </form>
@@ -326,33 +329,15 @@ export function RosterItemsPage({
           type="file"
         />
       ) : null}
-      <div>
-        <h2 className="text-xl font-black">
-          {kind === 'organizations' ? 'Đơn vị tham gia' : 'Hạng cân'}
-        </h2>
-        <p className="text-sm text-muted-foreground">Quản lý danh mục sử dụng trong giải đấu.</p>
-      </div>
-      {!readOnly ? (
-        draft ? (
-          <RosterForm
-            busy={mutate.isPending}
-            mode={draft.mode}
-            organization={kind === 'organizations'}
-            onCancel={() => {
-              setDraft(null);
-            }}
-            onSubmit={(input) => {
-              if (!mutate.isPending && !submitLock.current) {
-                submitLock.current = true;
-                mutate.mutate({ itemId: draft.mode === 'edit' ? draft.item.id : undefined, input });
-              }
-            }}
-            onValuesChange={(values) => {
-              setDraft((current) => (current ? { ...current, values } : current));
-            }}
-            values={draft.values}
-          />
-        ) : (
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-xl font-black">
+            {kind === 'organizations' ? 'Đơn vị tham gia' : 'Hạng cân'}
+            {query.isSuccess ? <Badge tone="primary">{items.length}</Badge> : null}
+          </h2>
+          <p className="text-sm text-muted-foreground">Quản lý danh mục sử dụng trong giải đấu.</p>
+        </div>
+        {!readOnly && !draft ? (
           <Button
             disabled={mutate.isPending || deactivate.isPending}
             onClick={() => {
@@ -360,18 +345,45 @@ export function RosterItemsPage({
             }}
             type="button"
           >
+            <Plus aria-hidden="true" className="size-4" />
             Thêm {noun}
           </Button>
-        )
+        ) : null}
+      </div>
+      {!readOnly && draft ? (
+        <RosterForm
+          busy={mutate.isPending}
+          mode={draft.mode}
+          organization={kind === 'organizations'}
+          onCancel={() => {
+            setDraft(null);
+          }}
+          onSubmit={(input) => {
+            if (!mutate.isPending && !submitLock.current) {
+              submitLock.current = true;
+              mutate.mutate({ itemId: draft.mode === 'edit' ? draft.item.id : undefined, input });
+            }
+          }}
+          onValuesChange={(values) => {
+            setDraft((current) => (current ? { ...current, values } : current));
+          }}
+          values={draft.values}
+        />
       ) : null}
-      {query.isPending ? <p>Đang tải…</p> : null}
+      {query.isPending ? (
+        <p aria-live="polite" className="text-sm text-muted-foreground">
+          Đang tải…
+        </p>
+      ) : null}
       {query.isError ? (
-        <div role="alert">
-          Không thể tải.{' '}
-          <Button onClick={() => void query.refetch()} size="sm" type="button">
-            Thử lại
-          </Button>
-        </div>
+        <Alert role="alert" tone="error">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            Không thể tải.
+            <Button onClick={() => void query.refetch()} size="sm" type="button" variant="outline">
+              Thử lại
+            </Button>
+          </div>
+        </Alert>
       ) : null}
       {query.isSuccess && items.length === 0 ? (
         <p className="rounded-xl border border-dashed p-8 text-center text-muted-foreground">
@@ -381,14 +393,13 @@ export function RosterItemsPage({
       <ul className="grid gap-3">
         {items.map((item) => (
           <li
-            className={
-              kind === 'organizations'
-                ? 'rounded-xl border p-3 bg-white/30'
-                : 'rounded-xl border p-4 bg-white/30'
-            }
+            className={cn(
+              'rounded-xl border border-border bg-card p-4 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-primary/30 hover:shadow-md',
+              !item.isActive && 'bg-muted/40',
+            )}
             key={item.id}
           >
-            <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               {kind === 'organizations' ? (
                 <div className="flex min-w-0 items-center gap-3">
                   {(item as TournamentOrganization).imagePath ? (
@@ -401,7 +412,7 @@ export function RosterItemsPage({
                   ) : (
                     <span
                       aria-label={`Chưa có logo cho ${item.name}`}
-                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted font-bold text-xs"
+                      className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-black text-primary"
                       role="img"
                     >
                       {item.name.trim().slice(0, 1).toLocaleUpperCase('vi')}
@@ -410,9 +421,14 @@ export function RosterItemsPage({
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <b className="break-words">{item.name}</b>
-                      <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-semibold text-teal-800">
+                      <Badge>
                         {(item as TournamentOrganization).location ?? 'Chưa có địa phương'}
-                      </span>
+                      </Badge>
+                      {item.isActive ? null : (
+                        <Badge dot tone="warning">
+                          Đã ngừng
+                        </Badge>
+                      )}
                     </div>
                     {item.details ? (
                       <p className="mt-1 break-words text-sm text-muted-foreground">
@@ -423,12 +439,14 @@ export function RosterItemsPage({
                 </div>
               ) : (
                 <div className="min-w-0">
-                  <h3 className="break-words font-bold">{item.name}</h3>
-                  <p className="break-words text-sm text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="break-words font-bold">{item.name}</h3>
+                    <Badge dot tone={item.isActive ? 'success' : 'warning'}>
+                      {item.isActive ? 'Đang hoạt động' : 'Đã ngừng'}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 break-words text-sm text-muted-foreground">
                     {item.details ?? 'Chưa có chi tiết'}
-                  </p>
-                  <p className="mt-1 text-xs font-semibold">
-                    {item.isActive ? 'Đang hoạt động' : 'Đã ngừng'}
                   </p>
                 </div>
               )}
@@ -437,77 +455,49 @@ export function RosterItemsPage({
                   {kind === 'organizations' ? (
                     <Button
                       aria-label="Cập nhật logo"
-                      className="border-sky-200 bg-sky-100 text-sky-700 shadow-none hover:bg-sky-200 hover:text-sky-800"
                       disabled={mutate.isPending || deactivate.isPending || updateLogo.isPending}
                       onClick={() => {
                         logoOrganizationId.current = item.id;
                         logoInput.current?.click();
                       }}
-                      size="icon"
+                      size="sm"
                       title="Cập nhật logo"
                       type="button"
                       variant="outline"
                     >
                       <Image aria-hidden="true" className="size-4" />
+                      Logo
                     </Button>
                   ) : null}
                   <Button
                     aria-label="Sửa"
-                    className={
-                      kind === 'organizations'
-                        ? 'bg-sky-600 text-white shadow-none hover:bg-sky-800'
-                        : undefined
-                    }
                     disabled={mutate.isPending || deactivate.isPending}
                     onClick={() => {
                       setDraft({ mode: 'edit', item, values: rosterValues(item) });
                     }}
-                    size={kind === 'organizations' ? 'icon' : 'sm'}
-                    title={kind === 'organizations' ? 'Sửa' : undefined}
+                    size="sm"
                     type="button"
-                    variant={kind === 'organizations' ? undefined : 'outline'}
+                    variant="soft"
                   >
-                    {kind === 'organizations' ? (
-                      <Pencil aria-hidden="true" className="size-4" />
-                    ) : (
-                      'Sửa'
-                    )}
+                    <Pencil aria-hidden="true" className="size-4" />
+                    Sửa
                   </Button>
                   <Button
                     aria-label={item.isActive ? 'Ngừng dùng' : 'Khôi phục'}
-                    className={
-                      kind === 'organizations'
-                        ? item.isActive
-                          ? 'bg-orange-700 text-white shadow-none hover:bg-orange-800'
-                          : 'bg-green-700 text-white shadow-none hover:bg-green-800'
-                        : undefined
-                    }
                     disabled={mutate.isPending || deactivate.isPending}
                     onClick={() => {
                       setConfirm(item);
                     }}
-                    size={kind === 'organizations' ? 'icon' : 'sm'}
-                    title={
-                      kind === 'organizations'
-                        ? item.isActive
-                          ? 'Ngừng dùng'
-                          : 'Khôi phục'
-                        : undefined
-                    }
+                    size="sm"
                     type="button"
-                    variant={kind === 'organizations' ? undefined : 'outline'}
+                    variant={item.isActive ? 'warning-soft' : 'success-soft'}
                   >
-                    {kind === 'organizations' ? (
-                      item.isActive ? (
-                        <Ban aria-hidden="true" className="size-4" />
-                      ) : (
-                        <Check aria-hidden="true" className="size-4" />
-                      )
-                    ) : item.isActive ? (
-                      'Ngừng dùng'
+                    {item.isActive ? (
+                      <Ban aria-hidden="true" className="size-4" />
                     ) : (
-                      'Khôi phục'
+                      <RotateCcw aria-hidden="true" className="size-4" />
                     )}
+                    {item.isActive ? 'Ngừng dùng' : 'Khôi phục'}
                   </Button>
                 </div>
               ) : null}

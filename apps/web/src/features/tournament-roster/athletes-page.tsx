@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Check, Pencil, Star, Trash2 } from 'lucide-react';
+import { Ban, Check, FileSpreadsheet, Pencil, Plus, Star, Trash2 } from 'lucide-react';
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Pagination } from '@/components/ui/pagination';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
@@ -10,6 +12,7 @@ import { FileImagePreview } from '@/components/file-image-preview';
 import { toast } from '@/components/ui/toast';
 import {
   inputClassName,
+  selectClassName,
   notifyMutationError,
   notifyMutationSuccess,
   textAreaClassName,
@@ -20,6 +23,7 @@ import {
   tournamentWeightClassesQueryOptions,
 } from '@/features/admin-management/queries';
 import { IMAGE_ACCEPT, imageFileProblem } from '@/lib/image-file';
+import { cn } from '@/lib/utils';
 import {
   adminManagementApi,
   type CreateAthleteInput,
@@ -34,6 +38,7 @@ import {
 } from './athlete-import-file';
 import { summarizeImportUnits } from './athlete-import-summary';
 import { ImportCompletionSection, ImportReviewSection, ImportUnitSection } from './import-sections';
+import { createUuid } from '@/lib/uuid';
 
 function athleteImageError(file: File): string {
   const problem = imageFileProblem(file);
@@ -221,7 +226,7 @@ export function AthletesPage({
     mutationFn: (rows: readonly AthleteImportRow[]) =>
       adminManagementApi.previewAthleteImport(tournamentId, rows),
     onSuccess: (result) => {
-      setImportPreview({ ...result, idempotencyKey: crypto.randomUUID() });
+      setImportPreview({ ...result, idempotencyKey: createUuid() });
     },
     onError: (error) => {
       notifyMutationError(error, 'Không thể tạo bản xem trước dữ liệu nhập.');
@@ -257,11 +262,59 @@ export function AthletesPage({
   }
   return (
     <section className="space-y-5">
-      <div>
-        <h2 className="text-xl font-black">Vận động viên</h2>
-        <p className="text-sm text-muted-foreground">Tìm kiếm và lọc danh sách đăng ký.</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-xl font-black">
+            Vận động viên
+            {query.data ? <Badge tone="primary">{query.data.total}</Badge> : null}
+          </h2>
+          <p className="text-sm text-muted-foreground">Tìm kiếm và lọc danh sách đăng ký.</p>
+        </div>
+        {!readOnly &&
+          (activeWeights.length ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                className="bg-[#217346] text-white hover:bg-[#185c37]"
+                disabled={previewImport.isPending || confirmImport.isPending}
+                onClick={() => importFilePicker.current?.click()}
+                title={`Chấp nhận đúng một tệp .xlsx, .xls hoặc .csv. Tệp có thể không có tiêu đề; chỉ bỏ dòng đầu nếu khớp chính xác: ${athleteImportHeaderHelp}. Thứ tự 5 cột bắt buộc là như trên.`}
+                type="button"
+                variant="success"
+              >
+                <FileSpreadsheet aria-hidden="true" className="size-4" />
+                Thêm từ file Excel
+              </Button>
+              <Button
+                disabled={!activeUnlockedWeights.length}
+                onClick={() => {
+                  setDraft({
+                    name: '',
+                    birthYear: new Date().getFullYear(),
+                    weightClassId: activeUnlockedWeights[0]?.id ?? '',
+                    organizationId: null,
+                    details: null,
+                    isSeed: false,
+                    file: null,
+                    imageError: '',
+                  });
+                  setEditing(null);
+                }}
+                type="button"
+              >
+                <Plus aria-hidden="true" className="size-4" />
+                Thêm vận động viên
+              </Button>
+            </div>
+          ) : (
+            <Button asChild>
+              <Link to={`/admin/tournaments/${tournamentId}/weight-classes`}>
+                <Plus aria-hidden="true" className="size-4" />
+                Tạo hạng cân trước
+              </Link>
+            </Button>
+          ))}
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-4">
         <label className="text-sm">
           Tìm tên
           <input
@@ -276,7 +329,7 @@ export function AthletesPage({
         <label className="text-sm">
           Hạng cân
           <select
-            className={inputClassName}
+            className={selectClassName}
             onChange={(e) => {
               updateParam('weightClassId', e.target.value);
             }}
@@ -293,7 +346,7 @@ export function AthletesPage({
         <label className="text-sm">
           Đơn vị
           <select
-            className={inputClassName}
+            className={selectClassName}
             onChange={(e) => {
               const value = e.target.value;
               updateParam('organizationId', value === '__none' ? '' : value);
@@ -319,7 +372,7 @@ export function AthletesPage({
         <label className="text-sm">
           Trạng thái
           <select
-            className={inputClassName}
+            className={selectClassName}
             onChange={(e) => {
               updateParam('isActive', e.target.value);
             }}
@@ -331,47 +384,10 @@ export function AthletesPage({
           </select>
         </label>
       </div>
-      {!readOnly &&
-        (activeWeights.length ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              disabled={!activeUnlockedWeights.length}
-              onClick={() => {
-                setDraft({
-                  name: '',
-                  birthYear: new Date().getFullYear(),
-                  weightClassId: activeUnlockedWeights[0]?.id ?? '',
-                  organizationId: null,
-                  details: null,
-                  isSeed: false,
-                  file: null,
-                  imageError: '',
-                });
-                setEditing(null);
-              }}
-              type="button"
-            >
-              Thêm vận động viên
-            </Button>
-            <Button
-              className="bg-emerald-600 text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500 hover:shadow-lg hover:shadow-emerald-600/25"
-              disabled={previewImport.isPending || confirmImport.isPending}
-              onClick={() => importFilePicker.current?.click()}
-              title={`Chấp nhận đúng một tệp .xlsx, .xls hoặc .csv. Tệp có thể không có tiêu đề; chỉ bỏ dòng đầu nếu khớp chính xác: ${athleteImportHeaderHelp}. Thứ tự 5 cột bắt buộc là như trên.`}
-              type="button"
-            >
-              Thêm từ file Excel
-            </Button>
-          </div>
-        ) : (
-          <Button asChild>
-            <Link to={`/admin/tournaments/${tournamentId}/weight-classes`}>Tạo hạng cân trước</Link>
-          </Button>
-        ))}
       {!readOnly && activeWeights.length > 0 && !activeUnlockedWeights.length ? (
-        <p className="text-sm text-muted-foreground">
+        <Alert tone="info">
           Không thể thêm vận động viên vì tất cả hạng cân đang hoạt động đã được chia nhánh đấu.
-        </p>
+        </Alert>
       ) : null}
       {!readOnly ? (
         <input
@@ -425,7 +441,17 @@ export function AthletesPage({
               }))}
             />
           </div>
-          <div className="mt-5 flex gap-2">
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <Button
+              disabled={confirmImport.isPending}
+              onClick={() => {
+                setImportPreview(null);
+              }}
+              type="button"
+              variant="outline"
+            >
+              Hủy
+            </Button>
             <Button
               disabled={
                 confirmImport.isPending ||
@@ -437,16 +463,6 @@ export function AthletesPage({
               type="button"
             >
               {confirmImport.isPending ? 'Đang xác nhận…' : 'OK'}
-            </Button>
-            <Button
-              disabled={confirmImport.isPending}
-              onClick={() => {
-                setImportPreview(null);
-              }}
-              type="button"
-              variant="outline"
-            >
-              Hủy
             </Button>
           </div>
         </Dialog>
@@ -482,7 +498,7 @@ export function AthletesPage({
               records={summarizeImportUnits(importResults)}
             />
           </div>
-          <div className="mt-5">
+          <div className="mt-5 flex justify-end">
             <Button
               onClick={() => {
                 setImportResults(null);
@@ -496,7 +512,8 @@ export function AthletesPage({
       ) : null}
       {draft ? (
         <form
-          className="grid gap-3 rounded-xl border p-4"
+          aria-label={editing ? 'Sửa vận động viên' : 'Thêm vận động viên mới'}
+          className="grid gap-4 rounded-2xl border border-primary/20 bg-card p-5 text-sm font-semibold shadow-sm sm:grid-cols-2"
           onSubmit={(e: SyntheticEvent<HTMLFormElement>) => {
             e.preventDefault();
             if (!save.isPending && !submitLock.current && draft.name.trim() && !draft.imageError) {
@@ -505,6 +522,9 @@ export function AthletesPage({
             }
           }}
         >
+          <p className="text-base font-black sm:col-span-2">
+            {editing ? `Sửa vận động viên: ${editing.name}` : 'Vận động viên mới'}
+          </p>
           <label>
             Tên vận động viên
             <input
@@ -532,20 +552,9 @@ export function AthletesPage({
             />
           </label>
           <label>
-            Thông tin chi tiết
-            <textarea
-              className={textAreaClassName}
-              maxLength={5000}
-              onChange={(e) => {
-                setDraft({ ...draft, details: e.target.value });
-              }}
-              value={draft.details ?? ''}
-            />
-          </label>
-          <label>
             Hạng cân
             <select
-              className={inputClassName}
+              className={selectClassName}
               onChange={(e) => {
                 setDraft({ ...draft, weightClassId: e.target.value });
               }}
@@ -563,15 +572,15 @@ export function AthletesPage({
               ))}
             </select>
             {activeWeights.some((x) => x.hasCurrentBracket) ? (
-              <span className="block text-xs text-muted-foreground">
-                Hạng cân đã được chia nhánh đấu
+              <span className="form-hint mt-1 block font-normal">
+                Hạng cân đã chia nhánh đấu không thể chọn thêm vận động viên.
               </span>
             ) : null}
           </label>
           <label>
             Đơn vị tham gia
             <select
-              className={inputClassName}
+              className={selectClassName}
               onChange={(e) => {
                 setDraft({ ...draft, organizationId: e.target.value || null });
               }}
@@ -587,7 +596,7 @@ export function AthletesPage({
                 ))}
             </select>
           </label>
-          <label className="flex items-center gap-2">
+          <label className="flex min-h-11 cursor-pointer items-center gap-3 self-end rounded-lg border border-input bg-white/80 px-3 py-2 shadow-sm transition-colors hover:border-primary/35 has-[:checked]:border-warning/40 has-[:checked]:bg-warning/5">
             <input
               checked={draft.isSeed ?? false}
               onChange={(e) => {
@@ -595,7 +604,12 @@ export function AthletesPage({
               }}
               type="checkbox"
             />
-            Hạt giống
+            <span>
+              Hạt giống
+              <span className="form-hint block font-normal">
+                Được ưu tiên khi bốc thăm chia nhánh.
+              </span>
+            </span>
           </label>
           <label>
             Ảnh đại diện (JPEG, PNG hoặc WebP, tối đa 2 MiB)
@@ -612,20 +626,28 @@ export function AthletesPage({
             {draft.file ? (
               <FileImagePreview
                 alt="Xem trước ảnh đại diện"
-                className="size-16 rounded-full"
+                className="mt-2 size-16 rounded-full"
                 file={draft.file}
               />
             ) : null}
             {draft.imageError ? (
-              <span className="block text-xs text-destructive" role="alert">
+              <span className="form-error mt-1 block" role="alert">
                 {draft.imageError}
               </span>
             ) : null}
           </label>
-          <div className="flex gap-2">
-            <Button disabled={save.isPending || !!draft.imageError} type="submit">
-              {save.isPending ? 'Đang lưu…' : 'Lưu'}
-            </Button>
+          <label className="sm:col-span-2">
+            Thông tin chi tiết
+            <textarea
+              className={textAreaClassName}
+              maxLength={5000}
+              onChange={(e) => {
+                setDraft({ ...draft, details: e.target.value });
+              }}
+              value={draft.details ?? ''}
+            />
+          </label>
+          <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4 sm:col-span-2">
             <Button
               disabled={save.isPending}
               onClick={() => {
@@ -637,27 +659,42 @@ export function AthletesPage({
             >
               Hủy
             </Button>
+            <Button disabled={save.isPending || !!draft.imageError} type="submit">
+              {save.isPending ? 'Đang lưu…' : 'Lưu'}
+            </Button>
           </div>
         </form>
       ) : null}
-      {query.isPending ? <p>Đang tải…</p> : null}
+      {query.isPending ? (
+        <p aria-live="polite" className="text-sm text-muted-foreground">
+          Đang tải…
+        </p>
+      ) : null}
       {query.isError ? (
-        <div role="alert">
-          Không thể tải.{' '}
-          <Button onClick={() => void query.refetch()} size="sm" type="button">
-            Thử lại
-          </Button>
-        </div>
+        <Alert role="alert" tone="error">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            Không thể tải.
+            <Button onClick={() => void query.refetch()} size="sm" type="button" variant="outline">
+              Thử lại
+            </Button>
+          </div>
+        </Alert>
       ) : null}
       {query.data?.items.length === 0 ? (
-        <p className="rounded-xl border border-dashed p-8 text-center">
+        <p className="rounded-xl border border-dashed p-8 text-center text-muted-foreground">
           Không tìm thấy vận động viên.
         </p>
       ) : (
-        <ul className="grid gap-2">
+        <ul className="grid gap-2.5">
           {query.data?.items.map((x) => (
-            <li className="rounded-xl border p-3 bg-white/30" key={x.id}>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <li
+              className={cn(
+                'rounded-xl border border-border bg-card p-3.5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-primary/30 hover:shadow-md',
+                !x.isActive && 'bg-muted/40',
+              )}
+              key={x.id}
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
                   {x.imageUrl ? (
                     <img
@@ -669,7 +706,7 @@ export function AthletesPage({
                   ) : (
                     <span
                       aria-label={`Chưa có ảnh đại diện cho ${x.name}`}
-                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted font-bold"
+                      className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/10 font-black text-primary"
                       role="img"
                     >
                       {x.name.trim().slice(0, 1).toLocaleUpperCase('vi')}
@@ -678,15 +715,22 @@ export function AthletesPage({
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <b className="break-words">{x.name}</b>
-                      <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800">
-                        {x.birthYear}
-                      </span>
-                      <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-semibold text-teal-800">
-                        {x.organization?.name ?? 'Không đơn vị'}
-                      </span>
-                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">
-                        {x.weightClass.name}
-                      </span>
+                      {x.isSeed ? (
+                        <Badge tone="warning">
+                          <Star aria-hidden="true" className="size-3" fill="currentColor" />
+                          Hạt giống
+                        </Badge>
+                      ) : null}
+                      {x.isActive ? null : (
+                        <Badge dot tone="danger">
+                          Đình chỉ
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <Badge tone="primary">{x.weightClass.name}</Badge>
+                      <Badge>{x.organization?.name ?? 'Không đơn vị'}</Badge>
+                      <Badge>{x.birthYear}</Badge>
                     </div>
                     {x.details ? (
                       <p className="mt-1 break-words text-sm text-muted-foreground">{x.details}</p>
@@ -697,16 +741,13 @@ export function AthletesPage({
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <Button
                       aria-label={x.isSeed ? 'Hạt giống' : 'Chọn làm hạt giống'}
-                      className={
-                        x.isSeed
-                          ? 'bg-amber-200 text-amber-500 shadow-none hover:bg-blue-50 hover:text-amber-200'
-                          : 'border border-blue-200 bg-blue-50 text-blue-200 shadow-none hover:bg-amber-100 hover:text-amber-500 hover:border-none'
-                      }
+                      aria-pressed={x.isSeed}
                       disabled={toggleSeed.isPending}
                       onClick={() => {
                         toggleSeed.mutate(x);
                       }}
-                      size="icon"
+                      size="icon-sm"
+                      variant={x.isSeed ? 'warning-soft' : 'outline'}
                       title={
                         x.isSeed
                           ? 'Đang là Hạt giống. Nhấn vào sẽ hủy tư cách'
@@ -722,7 +763,7 @@ export function AthletesPage({
                     </Button>
                     <Button
                       aria-label="Sửa"
-                      className="bg-sky-600 text-white shadow-none hover:bg-sky-800"
+                      variant="soft"
                       disabled={save.isPending || deactivate.isPending}
                       onClick={() => {
                         setEditing(x);
@@ -737,7 +778,7 @@ export function AthletesPage({
                           imageError: '',
                         });
                       }}
-                      size="icon"
+                      size="icon-sm"
                       title="Sửa"
                       type="button"
                     >
@@ -745,16 +786,12 @@ export function AthletesPage({
                     </Button>
                     <Button
                       aria-label={x.isActive ? 'Đình chỉ thi đấu' : 'Cho phép thi đấu'}
-                      className={
-                        x.isActive
-                          ? 'bg-orange-700 text-white shadow-none hover:bg-orange-800'
-                          : 'bg-green-700 text-white shadow-none hover:bg-green-800'
-                      }
+                      variant={x.isActive ? 'warning-soft' : 'success-soft'}
                       disabled={deactivate.isPending || softDelete.isPending}
                       onClick={() => {
                         setConfirm(x);
                       }}
-                      size="icon"
+                      size="icon-sm"
                       title={x.isActive ? 'Đình chỉ thi đấu' : 'Cho phép thi đấu'}
                       type="button"
                     >
@@ -770,11 +807,10 @@ export function AthletesPage({
                       onClick={() => {
                         setDeleteConfirm(x);
                       }}
-                      size="icon"
+                      size="icon-sm"
                       title="Xóa"
                       type="button"
-                      variant="destructive"
-                      className="bg-red-600 text-white shadow-none hover:bg-red-700"
+                      variant="destructive-soft"
                     >
                       <Trash2 aria-hidden="true" className="size-4" />
                     </Button>

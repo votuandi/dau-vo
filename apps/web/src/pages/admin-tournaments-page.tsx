@@ -1,17 +1,33 @@
 import { useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Archive,
+  ArchiveRestore,
+  CalendarDays,
+  ChevronRight,
+  MapPin,
+  Plus,
+  Trophy,
+} from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DateInput } from '@/components/ui/date-input';
+import { PageHeader } from '@/components/ui/page-header';
+import { TournamentStatusBadge } from '@/features/admin-management/tournament-status-badge';
 import { TournamentImage } from '@/components/tournament-image';
 import { TournamentImagePicker } from '@/components/tournament-image';
 import {
+  formatDate,
   getApiErrorMessage,
   inputClassName,
+  selectClassName,
   notifyMutationError,
   notifyMutationSuccess,
   textAreaClassName,
   tournamentStatusLabels,
+  tournamentStatuses,
 } from '@/features/admin-management/presentation';
 import {
   activeSportsQueryOptions,
@@ -26,21 +42,6 @@ interface TournamentFormErrors {
   readonly name?: string;
   readonly sportId?: string;
   readonly dates?: string;
-}
-
-function tournamentStatusTagClassName(status: TournamentStatus): string {
-  switch (status) {
-    case TournamentStatus.DRAFT:
-      return 'border border-slate-200 bg-slate-100 text-slate-700';
-    case TournamentStatus.ACTIVE:
-      return 'border border-emerald-200 bg-emerald-50 text-emerald-800';
-    case TournamentStatus.FINISHED:
-      return 'border border-blue-200 bg-blue-50 text-blue-800';
-    case TournamentStatus.ARCHIVED:
-      return 'border border-amber-200 bg-amber-50 text-amber-800';
-    default:
-      return 'border border-slate-200 bg-slate-100 text-slate-700';
-  }
 }
 
 function buildCreateTournamentInput(values: {
@@ -150,35 +151,50 @@ export function AdminTournamentsPage() {
     );
   }
 
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { readonly id: string; readonly status: TournamentStatus }) =>
+      adminManagementApi.updateTournament(id, { status }),
+    onSuccess: ({ tournament }, { status }) => {
+      queryClient.setQueryData(tournamentQueryKeys.detail(tournament.id), { tournament });
+      notifyMutationSuccess(
+        status === TournamentStatus.DRAFT
+          ? 'Đã khôi phục giải đấu.'
+          : 'Đã cập nhật trạng thái giải đấu.',
+      );
+      void queryClient.invalidateQueries({ queryKey: tournamentQueryKeys.all });
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể cập nhật trạng thái giải đấu.');
+    },
+  });
+
   function archiveTournament(id: string) {
     archiveMutation.mutate(id);
   }
 
+  function changeTournamentStatus(id: string, nextStatus: TournamentStatus) {
+    if (nextStatus === TournamentStatus.ARCHIVED) {
+      archiveTournament(id);
+      return;
+    }
+    statusMutation.mutate({ id, status: nextStatus });
+  }
+
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <Link
-            className="text-sm font-semibold text-muted-foreground hover:text-foreground"
-            to="/admin"
-          >
-            ← Bảng điều khiển
-          </Link>
-          <h1 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">Giải đấu</h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Tạo giải đấu, cập nhật lịch và quản lý các trận thuộc từng giải.
-          </p>
-        </div>
-      </header>
+      <PageHeader
+        backLabel="Bảng điều khiển"
+        backTo="/admin"
+        description="Tạo giải đấu, cập nhật lịch và quản lý các trận thuộc từng giải."
+        title="Giải đấu"
+      />
 
       <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
           <div className="flex items-center justify-between gap-4">
             <h2 className="text-xl font-black tracking-tight">Danh sách giải đấu</h2>
             {tournamentsQuery.isSuccess ? (
-              <span className="rounded-full bg-muted px-3 py-1 text-xs font-bold text-muted-foreground">
-                {tournamentsQuery.data.tournaments.length} giải
-              </span>
+              <Badge tone="primary">{tournamentsQuery.data.tournaments.length} giải</Badge>
             ) : null}
           </div>
 
@@ -189,10 +205,7 @@ export function AdminTournamentsPage() {
           ) : null}
 
           {tournamentsQuery.isError ? (
-            <div
-              className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
-              role="alert"
-            >
+            <Alert className="mt-6" role="alert" tone="error">
               <p>
                 {getApiErrorMessage(tournamentsQuery.error, 'Không thể tải danh sách giải đấu.')}
               </p>
@@ -205,12 +218,15 @@ export function AdminTournamentsPage() {
               >
                 Thử lại
               </Button>
-            </div>
+            </Alert>
           ) : null}
 
           {tournamentsQuery.isSuccess && tournamentsQuery.data.tournaments.length === 0 ? (
             <div className="mt-6 rounded-xl border border-dashed border-border p-8 text-center">
-              <p className="font-semibold">Chưa có giải đấu</p>
+              <span className="mx-auto grid size-12 place-items-center rounded-full bg-primary/10 text-primary">
+                <Trophy aria-hidden="true" className="size-6" />
+              </span>
+              <p className="mt-3 font-semibold">Chưa có giải đấu</p>
               <p className="mt-2 text-sm text-muted-foreground">
                 Dùng biểu mẫu bên cạnh để tạo giải đầu tiên.
               </p>
@@ -218,72 +234,120 @@ export function AdminTournamentsPage() {
           ) : null}
 
           {tournamentsQuery.isSuccess && tournamentsQuery.data.tournaments.length > 0 ? (
-            <ul className="mt-5 divide-y divide-border">
-              {tournamentsQuery.data.tournaments.map((tournament) => (
-                <li className="py-5 first:pt-0 last:pb-0" key={tournament.id}>
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <TournamentImage
-                      className="size-14 shrink-0"
-                      imagePath={tournament.imagePath}
-                      name={tournament.name}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Link
-                          className="min-w-0 break-words text-lg font-bold hover:underline"
-                          to={`/admin/tournaments/${tournament.id}`}
-                        >
-                          {tournament.name}
-                        </Link>
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-xs font-bold ${tournamentStatusTagClassName(tournament.status)}`}
-                        >
-                          {tournamentStatusLabels[tournament.status]}
-                        </span>
+            <ul className="mt-5 space-y-3">
+              {tournamentsQuery.data.tournaments.map((tournament) => {
+                const isArchiving =
+                  archiveMutation.isPending && archiveMutation.variables === tournament.id;
+                const isChangingStatus =
+                  statusMutation.isPending && statusMutation.variables.id === tournament.id;
+                const isUpdating = isArchiving || isChangingStatus;
+                const isArchived = tournament.status === TournamentStatus.ARCHIVED;
+                return (
+                  <li
+                    className="rounded-xl border border-border bg-white/60 p-4 transition-[border-color,box-shadow] duration-200 hover:border-primary/30 hover:shadow-md"
+                    key={tournament.id}
+                  >
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                      <TournamentImage
+                        className="size-14 shrink-0"
+                        imagePath={tournament.imagePath}
+                        name={tournament.name}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link
+                            className="min-w-0 break-words text-lg font-bold hover:text-primary hover:underline"
+                            to={`/admin/tournaments/${tournament.id}`}
+                          >
+                            {tournament.name}
+                          </Link>
+                          <TournamentStatusBadge status={tournament.status} />
+                        </div>
+                        <p className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                          <span className="font-semibold text-foreground/80">
+                            {tournament.sport.name}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin aria-hidden="true" className="size-3.5" />
+                            {tournament.location ?? 'Chưa có địa điểm'}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <CalendarDays aria-hidden="true" className="size-3.5" />
+                            {formatDate(tournament.startDate)} – {formatDate(tournament.endDate)}
+                          </span>
+                        </p>
                       </div>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {tournament.sport.name} · {tournament.location ?? 'Chưa có địa điểm'}
-                      </p>
+                      <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        <select
+                          aria-label={`Trạng thái của ${tournament.name}`}
+                          className="form-select h-9 min-w-36 rounded-lg border border-input bg-white pl-3 text-sm font-semibold shadow-sm outline-none transition-[border-color,box-shadow] hover:border-primary/40 focus:border-primary focus:ring-4 focus:ring-primary/10 disabled:opacity-60"
+                          disabled={isUpdating || isReadOnly}
+                          onChange={(event) => {
+                            changeTournamentStatus(
+                              tournament.id,
+                              event.target.value as TournamentStatus,
+                            );
+                          }}
+                          value={tournament.status}
+                        >
+                          {tournamentStatuses.map((item) => (
+                            <option key={item} value={item}>
+                              {tournamentStatusLabels[item]}
+                            </option>
+                          ))}
+                        </select>
+                        <Button
+                          disabled={isUpdating || isReadOnly}
+                          onClick={() => {
+                            if (isArchived)
+                              changeTournamentStatus(tournament.id, TournamentStatus.DRAFT);
+                            else archiveTournament(tournament.id);
+                          }}
+                          size="sm"
+                          type="button"
+                          variant={isArchived ? 'success-soft' : 'warning-soft'}
+                        >
+                          {isArchived ? (
+                            <ArchiveRestore aria-hidden="true" className="size-4" />
+                          ) : (
+                            <Archive aria-hidden="true" className="size-4" />
+                          )}
+                          {isUpdating ? 'Đang lưu…' : isArchived ? 'Khôi phục' : 'Lưu trữ'}
+                        </Button>
+                        <Button asChild size="sm" variant="soft">
+                          <Link to={`/admin/tournaments/${tournament.id}`}>
+                            Quản lý
+                            <ChevronRight aria-hidden="true" className="size-4" />
+                          </Link>
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      <Button asChild size="sm" variant="outline">
-                        <Link to={`/admin/tournaments/${tournament.id}`}>Mở</Link>
-                      </Button>
-                      <Button
-                        disabled={
-                          tournament.status === TournamentStatus.ARCHIVED ||
-                          (archiveMutation.isPending &&
-                            archiveMutation.variables === tournament.id) ||
-                          isReadOnly
-                        }
-                        onClick={() => {
-                          archiveTournament(tournament.id);
-                        }}
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                      >
-                        {archiveMutation.isPending && archiveMutation.variables === tournament.id
-                          ? 'Đang lưu…'
-                          : 'Lưu trữ'}
-                      </Button>
-                    </div>
-                  </div>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           ) : null}
 
           {archiveMutation.isError ? (
-            <p className="mt-5 text-sm text-destructive" role="alert">
+            <Alert className="mt-5" role="alert" tone="error">
               {getApiErrorMessage(archiveMutation.error, 'Không thể lưu trữ giải đấu.')}
-            </p>
+            </Alert>
+          ) : null}
+          {statusMutation.isError ? (
+            <Alert className="mt-5" role="alert" tone="error">
+              {getApiErrorMessage(statusMutation.error, 'Không thể cập nhật trạng thái giải đấu.')}
+            </Alert>
           ) : null}
         </section>
 
         {!isReadOnly ? (
           <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-6">
-            <h2 className="text-xl font-black tracking-tight">Tạo giải đấu</h2>
+            <h2 className="flex items-center gap-2 text-xl font-black tracking-tight">
+              <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
+                <Plus aria-hidden="true" className="size-4" />
+              </span>
+              Tạo giải đấu
+            </h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               Thiết lập thông tin và trạng thái ban đầu cho giải đấu.
             </p>
@@ -327,7 +391,7 @@ export function AdminTournamentsPage() {
                   <select
                     aria-describedby={formErrors.sportId ? 'new-tournament-sport-error' : undefined}
                     aria-invalid={Boolean(formErrors.sportId)}
-                    className={inputClassName}
+                    className={selectClassName}
                     disabled={createMutation.isPending}
                     id="new-tournament-sport"
                     onChange={(event) => {
@@ -367,7 +431,7 @@ export function AdminTournamentsPage() {
                   Trạng thái
                 </label>
                 <select
-                  className={inputClassName}
+                  className={selectClassName}
                   disabled={createMutation.isPending}
                   id="new-tournament-status"
                   onChange={(event) => {
@@ -469,12 +533,9 @@ export function AdminTournamentsPage() {
               ) : null}
 
               {createMutation.isError ? (
-                <p
-                  className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-                  role="alert"
-                >
+                <Alert role="alert" tone="error">
                   {getApiErrorMessage(createMutation.error, 'Không thể tạo giải đấu.')}
-                </p>
+                </Alert>
               ) : null}
 
               <Button
@@ -486,14 +547,24 @@ export function AdminTournamentsPage() {
                 }
                 type="submit"
               >
+                <Plus aria-hidden="true" className="size-4" />
                 {createMutation.isPending ? 'Đang tạo…' : 'Tạo giải đấu'}
               </Button>
             </form>
           </section>
         ) : (
-          <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-            Chế độ chỉ xem: hãy gia hạn gói để tạo hoặc thay đổi giải đấu.
-          </section>
+          <Alert title="Chế độ chỉ xem" tone="warning">
+            <p>
+              Hãy{' '}
+              <Link
+                className="font-bold text-primary underline underline-offset-2"
+                to="/subscription"
+              >
+                gia hạn gói
+              </Link>{' '}
+              để tạo hoặc thay đổi giải đấu.
+            </p>
+          </Alert>
         )}
       </div>
     </div>

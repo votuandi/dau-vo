@@ -7,6 +7,7 @@ import { RealtimeModule } from '../realtime/realtime.module';
 import { SportRulesModule } from '../sport-rules/sport-rules.module';
 import { MediaModule } from '../media/media.module';
 import { AdminManagementService } from './admin-management.service';
+import { AdminDashboardController } from './admin-dashboard.controller';
 import { AdminMatchesController } from './admin-matches.controller';
 import { AdminSportsController } from './admin-sports.controller';
 import { AdminTournamentsController } from './admin-tournaments.controller';
@@ -15,6 +16,7 @@ import { TournamentImageService } from './tournament-image.service';
 
 @Module({
   controllers: [
+    AdminDashboardController,
     AdminTournamentsController,
     AdminMatchesController,
     AdminSportsController,

@@ -46,7 +46,7 @@ export function SuperAdminLayout() {
               logoutMutation.mutate();
             }}
             type="button"
-            variant="outline"
+            variant="destructive-gradient"
           >
             {logoutMutation.isPending ? 'Đang đăng xuất…' : 'Đăng xuất'}
           </Button>

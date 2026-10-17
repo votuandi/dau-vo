@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface ConfirmationDialogProps {
@@ -64,21 +65,28 @@ export function ConfirmationDialog({
       aria-describedby={descriptionId}
       aria-labelledby={titleId}
       aria-modal="true"
-      className="fixed inset-0 z-50 grid place-items-center bg-slate-950/75 p-4"
+      className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-sm"
       role="dialog"
     >
       <div
-        className="w-full max-w-md rounded-2xl border border-white/15 bg-blue-950 p-6 text-white shadow-2xl"
+        className="w-full max-w-md rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-2xl"
         ref={dialogRef}
       >
-        <h2 className="text-xl font-black" id={titleId}>
-          {title}
-        </h2>
-        <p className="mt-3 text-sky-100" id={descriptionId}>
+        <div className="flex items-start gap-3">
+          {warning ? (
+            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-destructive/10 text-destructive">
+              <AlertTriangle aria-hidden="true" className="size-5" />
+            </span>
+          ) : null}
+          <h2 className="pt-1.5 text-xl font-black" id={titleId}>
+            {title}
+          </h2>
+        </div>
+        <p className="mt-3 leading-6 text-muted-foreground" id={descriptionId}>
           {description}
         </p>
         {warning ? (
-          <p className="mt-3 rounded-xl bg-red-400/15 p-3 text-sm font-semibold text-red-100">
+          <p className="mt-3 rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm font-semibold text-destructive">
             {warning}
           </p>
         ) : null}

@@ -63,7 +63,7 @@ export function Dialog({
       aria-describedby={descriptionId}
       aria-labelledby={titleId}
       aria-modal="true"
-      className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/75 p-4"
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-sm"
       role="dialog"
     >
       <div className="grid min-h-full place-items-center py-4">

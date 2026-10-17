@@ -120,7 +120,9 @@ export function AdminLoginPage() {
       </div>
 
       <div className="p-7 sm:p-10">
-        <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">Đấu Võ</p>
+        <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">
+          Chấm Điểm Võ Thuật
+        </p>
         <h2 className="mt-3 text-3xl font-black tracking-tight">Đăng nhập quản trị</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Nhập thông tin tài khoản để tiếp tục.

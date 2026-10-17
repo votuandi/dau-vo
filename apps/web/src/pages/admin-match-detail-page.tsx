@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Save, XCircle } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
+import { Alert } from '@/components/ui/alert';
 import { ClipboardCopyButton } from '@/components/ui/clipboard-copy-button';
+import { PageHeader } from '@/components/ui/page-header';
+import { cn } from '@/lib/utils';
 import { AdminMatchMonitoring } from '@/features/admin-management/admin-match-monitoring';
 import { shouldMonitorLiveMatch } from '@/features/admin-management/admin-match-monitoring-visibility';
 import { Button } from '@/components/ui/button';
@@ -9,6 +13,7 @@ import {
   formatDateTime,
   getApiErrorMessage,
   inputClassName,
+  selectClassName,
   millisecondsToSeconds,
   notifyMutationError,
   notifyMutationSuccess,
@@ -197,7 +202,7 @@ function MatchEditor({
                 Hạng cân
               </label>
               <select
-                className={inputClassName}
+                className={selectClassName}
                 id="edit-match-weight-class"
                 onChange={(event) => {
                   setWeightClassId(event.target.value);
@@ -256,22 +261,22 @@ function MatchEditor({
           </p>
         ) : null}
         {updateMutation.isError ? (
-          <p
-            className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-            role="alert"
-          >
+          <Alert role="alert" tone="error">
             {getApiErrorMessage(updateMutation.error, 'Không thể cập nhật trận đấu.')}
-          </p>
+          </Alert>
         ) : null}
         {updateMutation.isSuccess ? (
-          <p className="text-sm font-semibold text-emerald-700" role="status">
+          <Alert role="status" tone="success">
             Đã lưu thông tin trận đấu.
-          </p>
+          </Alert>
         ) : null}
 
-        <Button disabled={updateMutation.isPending || isReadOnly} type="submit">
-          {updateMutation.isPending ? 'Đang lưu…' : 'Lưu thay đổi'}
-        </Button>
+        <div className="flex justify-end border-t border-border pt-5">
+          <Button disabled={updateMutation.isPending || isReadOnly} type="submit">
+            <Save aria-hidden="true" className="size-4" />
+            {updateMutation.isPending ? 'Đang lưu…' : 'Lưu thay đổi'}
+          </Button>
+        </div>
       </form>
     </section>
   );
@@ -299,11 +304,14 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
   if (matchQuery.isError) {
     return (
       <section
-        className="mx-auto w-full max-w-xl rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700"
+        className="mx-auto w-full max-w-xl rounded-2xl border border-destructive/25 bg-card p-6 shadow-sm"
         role="alert"
       >
-        <h1 className="text-xl font-black">Không thể mở trận đấu</h1>
-        <p className="mt-2 text-sm">
+        <span className="grid size-11 place-items-center rounded-full bg-destructive/10 text-destructive">
+          <XCircle aria-hidden="true" className="size-6" />
+        </span>
+        <h1 className="mt-4 text-xl font-black">Không thể mở trận đấu</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
           {getApiErrorMessage(
             matchQuery.error,
             'Trận đấu không tồn tại hoặc máy chủ không phản hồi.',
@@ -324,48 +332,66 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
   const match = matchQuery.data.match;
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8">
-      <header>
-        <Link
-          className="text-sm font-semibold text-muted-foreground hover:text-foreground"
-          to={`/admin/tournaments/${match.tournamentId}`}
-        >
-          ← Về giải đấu
-        </Link>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <h1 className="font-mono text-4xl font-black tracking-[0.18em] md:text-5xl">
-            {match.publicId}
-          </h1>
-          <ClipboardCopyButton
-            accessibleLabel="Sao chép mã trận đấu"
-            label="Sao chép ID"
-            value={match.publicId}
-          />
-          <span
-            className={`rounded-full border px-3 py-1 text-xs font-bold ${matchVariantClassName[presentLifecycle(match.lifecycle).variant]}`}
-          >
-            {presentLifecycle(match.lifecycle).label}
-          </span>
-          <span
-            className={`rounded-full border px-3 py-1 text-xs font-bold ${matchVariantClassName[presentPhase(match.phase).variant]}`}
-          >
-            {presentPhase(match.phase).label}
-          </span>
-        </div>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Match ID công khai · Tạo {formatDateTime(match.createdAt)}
-        </p>
-        <p className="mt-1 text-sm font-semibold">
-          {match.weightClass?.name ?? 'Hạng cân chưa xác định'}
-        </p>
-        <div className="mt-3 flex flex-wrap gap-3 text-sm">
-          {match.athletes.map((athlete) => (
-            <span className="rounded-lg border px-3 py-2" key={athlete.id}>
-              {athlete.color === AthleteColor.RED ? 'Đỏ (RED)' : 'Xanh (BLUE)'}:{' '}
-              <b>{athlete.name}</b> · {athlete.organization ?? 'Không đơn vị'}
+      <div className="space-y-5">
+        <PageHeader
+          actions={
+            <ClipboardCopyButton
+              accessibleLabel="Sao chép mã trận đấu"
+              label="Sao chép ID"
+              value={match.publicId}
+            />
+          }
+          backLabel="Về giải đấu"
+          backTo={`/admin/tournaments/${match.tournamentId}/matches`}
+          badge={
+            <span className="flex flex-wrap gap-2">
+              <span
+                className={`rounded-full border px-2.5 py-0.5 text-xs font-bold leading-5 ${matchVariantClassName[presentLifecycle(match.lifecycle).variant]}`}
+              >
+                {presentLifecycle(match.lifecycle).label}
+              </span>
+              <span
+                className={`rounded-full border px-2.5 py-0.5 text-xs font-bold leading-5 ${matchVariantClassName[presentPhase(match.phase).variant]}`}
+              >
+                {presentPhase(match.phase).label}
+              </span>
             </span>
+          }
+          description={
+            <p>
+              <span className="font-semibold text-foreground/80">
+                {match.weightClass?.name ?? 'Hạng cân chưa xác định'}
+              </span>{' '}
+              · Match ID công khai · Tạo {formatDateTime(match.createdAt)}
+            </p>
+          }
+          title={<span className="font-mono tracking-[0.14em]">{match.publicId}</span>}
+        />
+        <div className="grid gap-3 sm:grid-cols-2">
+          {match.athletes.map((athlete) => (
+            <div
+              className={cn(
+                'rounded-xl border border-border border-l-4 bg-card p-4 shadow-sm',
+                athlete.color === AthleteColor.RED ? 'border-l-red-600' : 'border-l-blue-600',
+              )}
+              key={athlete.id}
+            >
+              <p
+                className={cn(
+                  'text-xs font-black uppercase tracking-wider',
+                  athlete.color === AthleteColor.RED ? 'text-red-700' : 'text-blue-700',
+                )}
+              >
+                {athlete.color === AthleteColor.RED ? 'Đỏ (RED)' : 'Xanh (BLUE)'}
+              </p>
+              <p className="mt-1 text-lg font-bold">{athlete.name}</p>
+              <p className="text-sm text-muted-foreground">
+                {athlete.organization ?? 'Không đơn vị'}
+              </p>
+            </div>
           ))}
         </div>
-      </header>
+      </div>
 
       <MatchEditor isReadOnly={isReadOnly} key={match.updatedAt} match={match} />
       <AdminMatchMonitoring live={shouldMonitorLiveMatch(match)} matchId={match.id} />

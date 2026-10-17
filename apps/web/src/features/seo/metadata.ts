@@ -4,7 +4,7 @@ const configuredSiteUrl = import.meta.env.VITE_SITE_URL?.trim()
 export const siteUrl = new URL(configuredSiteUrl).origin;
 
 export const homeSeo = {
-  title: 'Đấu Võ Minwy | Chấm điểm võ gậy và thi đấu võ thuật',
+  title: 'Chấm Điểm Võ Thuật | Chấm điểm võ gậy và thi đấu võ thuật',
   description:
     'Nền tảng chấm điểm võ thuật, chấm điểm võ gậy theo thời gian thực. Quản lý giải đấu, vận động viên, nhánh đấu và bảng điểm cho thi đấu võ gậy.',
 };
@@ -15,14 +15,14 @@ export const homeStructuredData = {
     {
       '@type': 'WebSite',
       '@id': `${siteUrl}/#website`,
-      name: 'Đấu Võ Minwy',
+      name: 'Chấm Điểm Võ Thuật',
       url: `${siteUrl}/`,
       inLanguage: 'vi-VN',
       description: homeSeo.description,
     },
     {
       '@type': 'WebApplication',
-      name: 'Đấu Võ Minwy',
+      name: 'Chấm Điểm Võ Thuật',
       url: `${siteUrl}/`,
       applicationCategory: 'SportsApplication',
       operatingSystem: 'Web',
@@ -36,7 +36,7 @@ export const homeStructuredData = {
 
 export function updatePageMetadata(pathname: string) {
   const isHome = pathname === '/';
-  document.title = isHome ? homeSeo.title : 'Đấu Võ | Chấm điểm võ thuật';
+  document.title = isHome ? homeSeo.title : 'Chấm Điểm Võ Thuật';
   document
     .querySelector('meta[name="description"]')
     ?.setAttribute(

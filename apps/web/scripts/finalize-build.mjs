@@ -29,7 +29,7 @@ try {
     <link data-home-seo rel="canonical" href="${escape(siteUrl)}/" />
     <meta data-home-seo property="og:type" content="website" />
     <meta data-home-seo property="og:locale" content="vi_VN" />
-    <meta data-home-seo property="og:site_name" content="Đấu Võ Minwy" />
+    <meta data-home-seo property="og:site_name" content="Chấm Điểm Võ Thuật" />
     <meta data-home-seo property="og:title" content="${escape(homeSeo.title)}" />
     <meta data-home-seo property="og:description" content="${escape(homeSeo.description)}" />
     <meta data-home-seo property="og:url" content="${escape(siteUrl)}/" />

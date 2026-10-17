@@ -141,7 +141,7 @@ function FixtureItem({
               size="sm"
               type="button"
             >
-              <ClipboardCheck aria-hidden="true" className="mr-1 size-4" />
+              <ClipboardCheck aria-hidden="true" className="size-4" />
               Chuẩn bị trận
             </Button>
           ) : null}
@@ -150,7 +150,7 @@ function FixtureItem({
             fixture.match.lifecycle === MatchLifecycle.COMPLETED) ? (
             <Button asChild size="sm" variant="outline">
               <Link to={`/admin/matches/${fixture.match.id}`}>
-                <Eye aria-hidden="true" className="mr-1 size-4" />
+                <Eye aria-hidden="true" className="size-4" />
                 {`Chi tiết trận ${fixture.match.publicId}`}
               </Link>
             </Button>
@@ -159,14 +159,14 @@ function FixtureItem({
             <Button
               aria-label="Chỉ định VĐV chiến thắng"
               title="Chỉ định VĐV chiến thắng"
-              className="w-9 border-0 bg-amber-600 px-0 text-yellow-300 hover:bg-amber-300 hover:text-yellow-800 hover:shadow-lg"
+              className="w-9 px-0"
               disabled={disabled}
               onClick={() => {
                 onDecide(fixture);
               }}
               size="sm"
               type="button"
-              variant="ghost"
+              variant="warning-soft"
             >
               <Crown aria-hidden="true" className="size-4" />
             </Button>

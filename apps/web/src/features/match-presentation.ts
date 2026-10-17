@@ -142,10 +142,10 @@ export function presentOfficialStatus(value: 'READY' | 'IN_MATCH' | 'DISABLED'):
 
 export const matchVariantClassName: Record<MatchSemanticVariant, string> = {
   neutral: 'border-border bg-muted text-foreground',
-  info: 'border-sky-200 bg-sky-50 text-sky-800',
-  warning: 'border-amber-200 bg-amber-50 text-amber-900',
-  success: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  danger: 'border-red-200 bg-red-50 text-red-800',
+  info: 'border-primary/20 bg-primary/10 text-primary',
+  warning: 'border-warning/20 bg-warning/10 text-warning',
+  success: 'border-success/20 bg-success/10 text-success',
+  danger: 'border-destructive/20 bg-destructive/10 text-destructive',
 };
 
 export function isRunningPhase(phase: MatchPhase | undefined): boolean {

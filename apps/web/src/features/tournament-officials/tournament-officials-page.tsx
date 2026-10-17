@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Check, KeyRound, Link, Pencil } from 'lucide-react';
+import { Ban, Check, KeyRound, Link, Pencil, Plus, Search, Wifi, WifiOff, Zap } from 'lucide-react';
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ClipboardCopyButton } from '@/components/ui/clipboard-copy-button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
@@ -28,12 +30,12 @@ function errorText(error: unknown) {
   return message;
 }
 function Status({ official }: { readonly official: TournamentOfficial }) {
-  const style =
+  const tone =
     official.status === 'READY'
-      ? 'bg-emerald-100 text-emerald-800'
+      ? 'success'
       : official.status === 'IN_MATCH'
-        ? 'bg-amber-100 text-amber-900'
-        : 'bg-slate-200 text-slate-700';
+        ? 'warning'
+        : 'neutral';
   const text =
     official.status === 'READY'
       ? 'Sẵn sàng'
@@ -42,12 +44,17 @@ function Status({ official }: { readonly official: TournamentOfficial }) {
         : 'Chưa sẵn sàng';
   return (
     <div className="flex flex-wrap gap-2">
-      <span className={`rounded-full px-2 py-1 text-xs font-bold ${style}`}>{text}</span>
-      <span
-        className={`rounded-full px-2 py-1 text-xs font-bold ${official.connected ? 'bg-sky-100 text-sky-800' : 'bg-muted text-muted-foreground'}`}
-      >
+      <Badge dot tone={tone}>
+        {text}
+      </Badge>
+      <Badge tone={official.connected ? 'primary' : 'neutral'}>
+        {official.connected ? (
+          <Wifi aria-hidden="true" className="size-3" />
+        ) : (
+          <WifiOff aria-hidden="true" className="size-3" />
+        )}
         {official.connected ? 'Đang kết nối' : 'Ngoại tuyến'}
-      </span>
+      </Badge>
     </div>
   );
 }
@@ -193,20 +200,14 @@ export function TournamentOfficialsPage({
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-black">{labels[role]}</h2>
+          <h2 className="flex items-center gap-2 text-xl font-black">
+            {labels[role]}
+            {query.isSuccess ? <Badge tone="primary">{query.data.officials.length}</Badge> : null}
+          </h2>
           <p className="text-sm text-muted-foreground">Quản lý cán bộ của giải đấu.</p>
         </div>
         {!readOnly ? (
           <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={() => {
-                setEditing(null);
-                setName('');
-              }}
-              type="button"
-            >
-              Thêm {labels[role].toLocaleLowerCase('vi')}
-            </Button>
             <Button
               disabled={query.isPending || query.isError || save.isPending || quickAdd.isPending}
               onClick={() => {
@@ -218,15 +219,30 @@ export function TournamentOfficialsPage({
               type="button"
               variant="outline"
             >
+              <Zap aria-hidden="true" className="size-4" />
               Thêm nhanh
+            </Button>
+            <Button
+              onClick={() => {
+                setEditing(null);
+                setName('');
+              }}
+              type="button"
+            >
+              <Plus aria-hidden="true" className="size-4" />
+              Thêm {labels[role].toLocaleLowerCase('vi')}
             </Button>
           </div>
         ) : null}
       </div>
-      <label className="block max-w-md text-sm font-semibold">
+      <label className="relative block max-w-md text-sm font-semibold">
         Tìm kiếm
+        <Search
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-3.5 left-3 size-4 text-muted-foreground"
+        />
         <input
-          className={`${inputClassName} mt-1`}
+          className={`${inputClassName} mt-1 pl-9`}
           onChange={(e) => {
             setSearch(e.target.value);
           }}
@@ -235,7 +251,7 @@ export function TournamentOfficialsPage({
       </label>
       {!readOnly ? (
         <form
-          className="grid gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-[1fr_auto_auto] items-end"
+          className="grid items-end gap-3 rounded-2xl border border-primary/20 bg-card p-4 shadow-sm sm:grid-cols-[1fr_auto_auto]"
           onSubmit={submit}
         >
           <label className="text-sm font-semibold">
@@ -278,28 +294,34 @@ export function TournamentOfficialsPage({
         </div>
       ) : null}
       {query.isError ? (
-        <div className="rounded-xl border border-destructive/30 p-4" role="alert">
-          {getApiErrorMessage(query.error, 'Không thể tải danh sách.')}{' '}
-          <Button
-            onClick={() => {
-              void query.refetch();
-            }}
-            size="sm"
-            type="button"
-          >
-            Thử lại
-          </Button>
-        </div>
+        <Alert role="alert" tone="error">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {getApiErrorMessage(query.error, 'Không thể tải danh sách.')}
+            <Button
+              onClick={() => {
+                void query.refetch();
+              }}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Thử lại
+            </Button>
+          </div>
+        </Alert>
       ) : null}
       {query.isSuccess && visible.length === 0 ? (
-        <p className="rounded-xl border border-dashed p-8 text-center">
+        <p className="rounded-xl border border-dashed p-8 text-center text-muted-foreground">
           Chưa có {labels[role].toLocaleLowerCase('vi')}.
         </p>
       ) : null}
       <ul className="grid gap-3">
         {visible.map((official) => (
-          <li className="rounded-xl border p-4" key={official.id}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          <li
+            className="rounded-xl border border-border bg-card p-4 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-primary/30 hover:shadow-md"
+            key={official.id}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="font-bold">{official.name}</h3>
                 <p className="text-sm text-muted-foreground">
@@ -315,56 +337,7 @@ export function TournamentOfficialsPage({
               {!readOnly ? (
                 <div className="flex flex-wrap gap-2">
                   <Button
-                    aria-label="Sửa"
-                    className="bg-sky-600 text-white shadow-none hover:bg-sky-800"
-                    disabled={save.isPending || state.isPending || regenerate.isPending}
-                    onClick={() => {
-                      setEditing(official);
-                      setName(official.name);
-                    }}
-                    size="icon"
-                    title="Sửa"
-                    type="button"
-                  >
-                    <Pencil aria-hidden="true" className="size-4" />
-                  </Button>
-                  <Button
-                    aria-label={official.isActive ? 'Ngừng dùng' : 'Kích hoạt'}
-                    className={
-                      official.isActive
-                        ? 'bg-orange-600 text-white shadow-none hover:bg-orange-800'
-                        : 'bg-green-700 text-white shadow-none hover:bg-green-800'
-                    }
-                    disabled={state.isPending || regenerate.isPending}
-                    onClick={() => {
-                      setConfirm({ official, regenerate: false });
-                    }}
-                    size="icon"
-                    title={official.isActive ? 'Đình chỉ' : 'Kích hoạt'}
-                    type="button"
-                  >
-                    {official.isActive ? (
-                      <Ban aria-hidden="true" className="size-4" />
-                    ) : (
-                      <Check aria-hidden="true" className="size-4" />
-                    )}
-                  </Button>
-                  <Button
-                    aria-label="Tạo mã mới"
-                    className="bg-amber-500 text-white shadow-none hover:bg-amber-600"
-                    disabled={state.isPending || regenerate.isPending}
-                    onClick={() => {
-                      setConfirm({ official, regenerate: true });
-                    }}
-                    size="icon"
-                    title="Tạo mã mới"
-                    type="button"
-                  >
-                    <KeyRound aria-hidden="true" className="size-4" />
-                  </Button>
-                  <Button
                     aria-label="Tạo link đăng nhập"
-                    className="bg-amber-500 text-white shadow-none hover:bg-amber-600"
                     disabled={
                       !official.isActive ||
                       createLink.isPending ||
@@ -374,11 +347,57 @@ export function TournamentOfficialsPage({
                     onClick={() => {
                       createLink.mutate(official);
                     }}
-                    size="icon"
+                    size="sm"
                     title="Tạo link đăng nhập"
                     type="button"
+                    variant="soft"
                   >
                     <Link aria-hidden="true" className="size-4" />
+                    Link đăng nhập
+                  </Button>
+                  <Button
+                    aria-label="Tạo mã mới"
+                    disabled={state.isPending || regenerate.isPending}
+                    onClick={() => {
+                      setConfirm({ official, regenerate: true });
+                    }}
+                    size="icon-sm"
+                    title="Tạo mã mới"
+                    type="button"
+                    variant="outline"
+                  >
+                    <KeyRound aria-hidden="true" className="size-4" />
+                  </Button>
+                  <Button
+                    aria-label="Sửa"
+                    disabled={save.isPending || state.isPending || regenerate.isPending}
+                    onClick={() => {
+                      setEditing(official);
+                      setName(official.name);
+                    }}
+                    size="icon-sm"
+                    title="Sửa"
+                    type="button"
+                    variant="outline"
+                  >
+                    <Pencil aria-hidden="true" className="size-4" />
+                  </Button>
+                  <Button
+                    aria-label={official.isActive ? 'Ngừng dùng' : 'Kích hoạt'}
+                    disabled={state.isPending || regenerate.isPending}
+                    onClick={() => {
+                      setConfirm({ official, regenerate: false });
+                    }}
+                    size="icon-sm"
+                    title={official.isActive ? 'Đình chỉ' : 'Kích hoạt'}
+                    type="button"
+                    variant={official.isActive ? 'warning-soft' : 'success-soft'}
+                  >
+                    {official.isActive ? (
+                      <Ban aria-hidden="true" className="size-4" />
+                    ) : (
+                      <Check aria-hidden="true" className="size-4" />
+                    )}
                   </Button>
                 </div>
               ) : null}
@@ -468,7 +487,7 @@ export function TournamentOfficialsPage({
                 {quickCredentials.map((credential) => (
                   <li
                     key={credential.name}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded border p-2"
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 p-2.5"
                   >
                     <span>{credential.name}</span>
                     <code className="select-all font-bold">{credential.passcode}</code>
@@ -574,7 +593,7 @@ export function TournamentOfficialsPage({
               <div>
                 <p className="text-sm font-semibold">Mã giải đấu</p>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <code className="select-all rounded bg-muted p-3 font-mono font-bold uppercase">
+                  <code className="select-all rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 font-mono font-bold uppercase tracking-wider text-primary">
                     {tournamentPublicCode}
                   </code>
                   <ClipboardCopyButton
@@ -587,7 +606,7 @@ export function TournamentOfficialsPage({
             <div>
               <p className="text-sm font-semibold">Mã bảo mật riêng</p>
               <div className="mt-1 flex flex-wrap items-center gap-2">
-                <code className="select-all rounded bg-muted p-3 font-mono font-bold">
+                <code className="select-all rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 font-mono font-bold tracking-wider text-primary">
                   {passcode}
                 </code>
                 <ClipboardCopyButton accessibleLabel="Sao chép mã bảo mật riêng" value={passcode} />

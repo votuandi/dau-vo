@@ -1,7 +1,11 @@
 import { useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CalendarDays, KeyRound, MapPin, Save, XCircle } from 'lucide-react';
 import { Link, useLocation, useParams } from 'react-router-dom';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
+import { TournamentStatusBadge } from '@/features/admin-management/tournament-status-badge';
 import { ClipboardCopyButton } from '@/components/ui/clipboard-copy-button';
 import { toast } from '@/components/ui/toast';
 import { DateInput } from '@/components/ui/date-input';
@@ -10,6 +14,7 @@ import {
   formatDate,
   getApiErrorMessage,
   inputClassName,
+  selectClassName,
   notifyMutationError,
   notifyMutationSuccess,
   textAreaClassName,
@@ -146,7 +151,7 @@ function TournamentEditor({
             Môn thể thao
           </label>
           <select
-            className={inputClassName}
+            className={selectClassName}
             disabled={
               updateMutation.isPending || isReadOnly || matchesQuery.data?.matches.length !== 0
             }
@@ -253,7 +258,7 @@ function TournamentEditor({
             Trạng thái
           </label>
           <select
-            className={inputClassName}
+            className={selectClassName}
             disabled={updateMutation.isPending || isReadOnly}
             id="tournament-status"
             onChange={(event) => {
@@ -275,21 +280,19 @@ function TournamentEditor({
           </p>
         ) : null}
         {updateMutation.isError ? (
-          <p
-            className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 sm:col-span-2"
-            role="alert"
-          >
+          <Alert className="sm:col-span-2" role="alert" tone="error">
             {getApiErrorMessage(updateMutation.error, 'Không thể cập nhật giải đấu.')}
-          </p>
+          </Alert>
         ) : null}
         {updateMutation.isSuccess ? (
-          <p className="text-sm font-semibold text-emerald-700 sm:col-span-2" role="status">
+          <Alert className="sm:col-span-2" role="status" tone="success">
             Đã lưu thông tin giải đấu.
-          </p>
+          </Alert>
         ) : null}
 
-        <div className="sm:col-span-2">
+        <div className="flex justify-end border-t border-border pt-5 sm:col-span-2">
           <Button disabled={updateMutation.isPending || isReadOnly} type="submit">
+            <Save aria-hidden="true" className="size-4" />
             {updateMutation.isPending ? 'Đang lưu…' : 'Lưu thay đổi'}
           </Button>
         </div>
@@ -322,11 +325,14 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
   if (tournamentQuery.isError) {
     return (
       <section
-        className="mx-auto w-full max-w-xl rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700"
+        className="mx-auto w-full max-w-xl rounded-2xl border border-destructive/25 bg-card p-6 shadow-sm"
         role="alert"
       >
-        <h1 className="text-xl font-black">Không thể mở giải đấu</h1>
-        <p className="mt-2 text-sm">
+        <span className="grid size-11 place-items-center rounded-full bg-destructive/10 text-destructive">
+          <XCircle aria-hidden="true" className="size-6" />
+        </span>
+        <h1 className="mt-4 text-xl font-black">Không thể mở giải đấu</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
           {getApiErrorMessage(
             tournamentQuery.error,
             'Giải đấu không tồn tại hoặc máy chủ không phản hồi.',
@@ -360,55 +366,74 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8">
-      <header>
-        <Link
-          className="text-sm font-semibold text-muted-foreground hover:text-foreground"
-          to="/admin/tournaments"
-        >
-          ← Tất cả giải đấu
-        </Link>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <TournamentImage
-            className="size-16"
-            imagePath={tournament.imagePath}
-            name={tournament.name}
-          />
-          <h1 className="text-3xl font-black tracking-tight md:text-4xl">{tournament.name}</h1>
-          <span className="rounded-full border border-primary/10 bg-accent px-3 py-1 text-xs font-bold text-accent-foreground">
-            {tournamentStatusLabels[tournament.status]}
-          </span>
-        </div>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {tournament.sport.name} · {tournament.sport.sportGroup.name} ·{' '}
-          {tournament.location ?? 'Chưa có địa điểm'} · {formatDate(tournament.startDate)} –{' '}
-          {formatDate(tournament.endDate)}
-        </p>
-        <section className="mt-5 max-w-2xl rounded-xl border border-primary/20 bg-primary/5 p-4">
-          <h2 className="text-sm font-bold">Mã đăng nhập giải đấu</h2>
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            <code className="select-all rounded-md border bg-background px-3 py-2 font-mono text-lg font-black tracking-[0.12em] uppercase">
-              {tournament.publicCode}
-            </code>
-            <ClipboardCopyButton
-              accessibleLabel="Sao chép mã đăng nhập giải đấu"
-              label="Sao chép mã"
-              onCopyError={() => {
-                toast({
-                  title: 'Không thể sao chép mã. Vui lòng sao chép thủ công.',
-                  variant: 'destructive',
-                });
-              }}
-              onCopySuccess={() => {
-                toast({ title: 'Đã sao chép mã giải đấu.', variant: 'success' });
-              }}
-              value={tournament.publicCode}
+      <div className="space-y-5">
+        <PageHeader
+          backLabel="Tất cả giải đấu"
+          backTo="/admin/tournaments"
+          badge={<TournamentStatusBadge status={tournament.status} />}
+          description={
+            <p className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="font-semibold text-foreground/80">
+                {tournament.sport.name} · {tournament.sport.sportGroup.name}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <MapPin aria-hidden="true" className="size-3.5" />
+                {tournament.location ?? 'Chưa có địa điểm'}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <CalendarDays aria-hidden="true" className="size-3.5" />
+                {formatDate(tournament.startDate)} – {formatDate(tournament.endDate)}
+              </span>
+            </p>
+          }
+          media={
+            <TournamentImage
+              className="size-16 shrink-0"
+              imagePath={tournament.imagePath}
+              name={tournament.name}
             />
+          }
+          title={tournament.name}
+        />
+        {tournament.status === TournamentStatus.ARCHIVED ? (
+          <Alert title="Giải đấu đã lưu trữ" tone="warning">
+            <p>
+              Danh sách hạng cân, đơn vị, vận động viên và trọng tài chỉ có thể xem. Đổi trạng thái
+              ở tab Thông tin để chỉnh sửa lại.
+            </p>
+          </Alert>
+        ) : null}
+        <section className="flex max-w-2xl flex-col gap-3 rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 to-white/60 p-4 sm:flex-row sm:items-center">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-md shadow-primary/20">
+            <KeyRound aria-hidden="true" className="size-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-bold">Mã đăng nhập giải đấu</h2>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <code className="select-all rounded-lg border border-primary/20 bg-white px-3 py-1.5 font-mono text-lg font-black uppercase tracking-[0.12em] text-primary">
+                {tournament.publicCode}
+              </code>
+              <ClipboardCopyButton
+                accessibleLabel="Sao chép mã đăng nhập giải đấu"
+                label="Sao chép mã"
+                onCopyError={() => {
+                  toast({
+                    title: 'Không thể sao chép mã. Vui lòng sao chép thủ công.',
+                    variant: 'destructive',
+                  });
+                }}
+                onCopySuccess={() => {
+                  toast({ title: 'Đã sao chép mã giải đấu.', variant: 'success' });
+                }}
+                value={tournament.publicCode}
+              />
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Giám định và giám sát sử dụng mã này cùng với mã bảo mật riêng để đăng nhập.
+            </p>
           </div>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Giám định và giám sát sử dụng mã này cùng với mã bảo mật riêng để đăng nhập.
-          </p>
         </section>
-      </header>
+      </div>
 
       <TournamentTabs active={active} tournamentId={tournamentId} />
       {active === 'info' ? (

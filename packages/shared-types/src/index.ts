@@ -98,3 +98,8 @@ export type {
   VoteSubmitPayload,
   VoteSubmitResponse,
 } from './realtime';
+export type {
+  DashboardRoundKey,
+  DashboardScoreStats,
+  DashboardMatchPerformance,
+} from './admin-dashboard';
