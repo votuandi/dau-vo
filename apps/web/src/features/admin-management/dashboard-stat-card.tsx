@@ -30,7 +30,7 @@ export function DashboardStatCard({
         'dashboard-stat-card group relative isolate min-w-0 overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br p-5 text-white shadow-lg sm:p-6',
         tones[tone],
       )}
-      style={{ animationDelay: `${index * 70}ms` }}
+      style={{ animationDelay: `${String(index * 70)}ms` }}
     >
       <span
         aria-hidden="true"

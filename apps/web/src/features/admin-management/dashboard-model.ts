@@ -1,5 +1,6 @@
 import type { AdminDashboardTournament } from '@/services/api/admin-management';
 import type { DashboardScoreStats } from '@martial-arts-scoring/shared-types';
+import { TournamentStatus } from '@/types/shared';
 
 export function mergeScoreStats(stats: readonly DashboardScoreStats[]): DashboardScoreStats {
   const samples = stats.filter((stat) => stat.count > 0);
@@ -18,7 +19,7 @@ export const dashboardRoundLabels = {
 } as const;
 
 export function summarizePerformance(tournaments: readonly AdminDashboardTournament[]) {
-  const matches = tournaments.flatMap((tournament) => tournament.performance ?? []);
+  const matches = tournaments.flatMap((tournament) => tournament.performance);
   const timedMatches = matches.filter((match) => match.elapsedMs > 0);
   return {
     matches,
@@ -57,7 +58,7 @@ export function summarizeDashboard(tournaments: readonly AdminDashboardTournamen
     matches: { NOT_STARTED: 0, IN_PROGRESS: 0, SUSPENDED: 0, COMPLETED: 0 },
   };
   for (const tournament of tournaments) {
-    if (tournament.status === 'ACTIVE') summary.active += 1;
+    if (tournament.status === TournamentStatus.ACTIVE) summary.active += 1;
     summary.athletes += tournament.athleteCount;
     summary.organizations += tournament.organizationCount;
     summary.weightClasses += tournament.weightClassCount;
