@@ -70,7 +70,7 @@ export function DashboardPerformancePanel({
         <DashboardStatCard
           label="Điểm trung bình / VĐV"
           value={format(average(summary.scores))}
-          detail={`Kết quả đã công bố · ${summary.scores.count} lượt VĐV`}
+          detail={`Kết quả đã công bố · ${String(summary.scores.count)} lượt VĐV`}
           icon={<Target aria-hidden="true" />}
           tone="violet"
         />
@@ -85,7 +85,7 @@ export function DashboardPerformancePanel({
         <DashboardStatCard
           label="Trận cần hiệp phụ"
           value={summary.overtimeMatches}
-          detail={`${format(overtimePercentage)}% trong ${summary.matches.length} trận đã bắt đầu`}
+          detail={`${format(overtimePercentage)}% trong ${String(summary.matches.length)} trận đã bắt đầu`}
           icon={<Flame aria-hidden="true" />}
           tone="amber"
           index={2}
@@ -146,7 +146,7 @@ export function DashboardPerformancePanel({
                               ? 'from-cyan-400 to-blue-600'
                               : 'from-orange-400 to-rose-500',
                         )}
-                        style={{ width: `${((average(stats) ?? 0) / maxScore) * 100}%` }}
+                        style={{ width: `${String(((average(stats) ?? 0) / maxScore) * 100)}%` }}
                       />
                     </div>
                   </td>
@@ -258,7 +258,9 @@ export function DashboardPerformancePanel({
                   aria-label="Trang trận trước"
                   title="Trang trận trước"
                   disabled={currentPage === 0}
-                  onClick={() => setPage(currentPage - 1)}
+                  onClick={() => {
+                    setPage(currentPage - 1);
+                  }}
                 >
                   <ChevronLeft className="size-4" />
                 </Button>
@@ -269,7 +271,9 @@ export function DashboardPerformancePanel({
                   aria-label="Trang trận sau"
                   title="Trang trận sau"
                   disabled={currentPage + 1 >= pages}
-                  onClick={() => setPage(currentPage + 1)}
+                  onClick={() => {
+                    setPage(currentPage + 1);
+                  }}
                 >
                   <ChevronRight className="size-4" />
                 </Button>

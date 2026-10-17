@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { adminManagementApi } from '@/services/api/admin-management';
 import { cn } from '@/lib/utils';
+import { TournamentStatus } from '@/types/shared';
 import { TournamentStatusBadge } from './tournament-status-badge';
 import { DashboardStatCard as StatCard } from './dashboard-stat-card';
 import { DashboardPerformancePanel } from './dashboard-performance-panel';
@@ -54,7 +55,7 @@ export function DashboardOverview() {
   const completed = completionPercent(summary.matches.COMPLETED, summary.totalMatches);
   const sorted = [...tournaments].sort(
     (a, b) =>
-      Number(b.status === 'ACTIVE') - Number(a.status === 'ACTIVE') ||
+      Number(b.status === TournamentStatus.ACTIVE) - Number(a.status === TournamentStatus.ACTIVE) ||
       b.matches.IN_PROGRESS - a.matches.IN_PROGRESS,
   );
   const chartTournaments = sorted.filter((tournament) => totalMatches(tournament) > 0).slice(0, 5);
@@ -169,7 +170,7 @@ export function DashboardOverview() {
                   tone="violet"
                   label="Tổng giải đấu"
                   value={summary.tournaments}
-                  detail={`${summary.active} giải đang hoạt động`}
+                  detail={`${String(summary.active)} giải đang hoạt động`}
                   icon={<Trophy />}
                 />
                 <StatCard
@@ -208,7 +209,7 @@ export function DashboardOverview() {
                     <svg
                       viewBox="0 0 160 160"
                       role="img"
-                      aria-label={`Tổng ${summary.totalMatches} trận, ${completed}% hoàn thành`}
+                      aria-label={`Tổng ${String(summary.totalMatches)} trận, ${String(completed)}% hoàn thành`}
                       className="dashboard-donut size-full -rotate-90"
                     >
                       <circle
@@ -235,7 +236,7 @@ export function DashboardOverview() {
                             stroke={color}
                             strokeWidth="15"
                             pathLength="100"
-                            strokeDasharray={`${length} ${100 - length}`}
+                            strokeDasharray={`${String(length)} ${String(100 - length)}`}
                             strokeDashoffset={-offset}
                           />
                         );
@@ -295,20 +296,22 @@ export function DashboardOverview() {
                           </div>
                           <div
                             role="img"
-                            aria-label={`${tournament.name}: ${matchSegments.map(({ key, label }) => `${tournament.matches[key]} ${label.toLowerCase()}`).join(', ')}`}
+                            aria-label={`${tournament.name}: ${matchSegments.map(({ key, label }) => `${String(tournament.matches[key])} ${label.toLowerCase()}`).join(', ')}`}
                             className="h-3 overflow-hidden rounded-full bg-slate-100"
                           >
                             <div
                               className="dashboard-bar flex h-full overflow-hidden rounded-full"
-                              style={{ width: `${(totalMatches(tournament) / maxMatches) * 100}%` }}
+                              style={{
+                                width: `${String((totalMatches(tournament) / maxMatches) * 100)}%`,
+                              }}
                             >
                               {matchSegments.map(({ key, className, label }) => (
                                 <span
                                   key={key}
-                                  title={`${label}: ${tournament.matches[key]}`}
+                                  title={`${label}: ${String(tournament.matches[key])}`}
                                   className={cn('h-full', className)}
                                   style={{
-                                    width: `${(tournament.matches[key] / totalMatches(tournament)) * 100}%`,
+                                    width: `${String((tournament.matches[key] / totalMatches(tournament)) * 100)}%`,
                                   }}
                                 />
                               ))}
@@ -411,7 +414,7 @@ export function DashboardOverview() {
                                 >
                                   <div
                                     className="dashboard-bar h-full rounded-full bg-indigo-500"
-                                    style={{ width: `${percent}%` }}
+                                    style={{ width: `${String(percent)}%` }}
                                   />
                                 </div>
                               </td>
@@ -433,7 +436,9 @@ export function DashboardOverview() {
                         size="icon-sm"
                         type="button"
                         disabled={currentPage === 0}
-                        onClick={() => setPage(currentPage - 1)}
+                        onClick={() => {
+                          setPage(currentPage - 1);
+                        }}
                       >
                         <ChevronLeft className="size-4" />
                       </Button>
@@ -444,7 +449,9 @@ export function DashboardOverview() {
                         size="icon-sm"
                         type="button"
                         disabled={currentPage + 1 >= pageCount}
-                        onClick={() => setPage(currentPage + 1)}
+                        onClick={() => {
+                          setPage(currentPage + 1);
+                        }}
                       >
                         <ChevronRight className="size-4" />
                       </Button>
@@ -494,7 +501,7 @@ export function DashboardOverview() {
                             <div
                               className={cn('h-full rounded-full', color)}
                               style={{
-                                width: `${(count / Math.max(summary.judges + summary.supervisors, 1)) * 100}%`,
+                                width: `${String((count / Math.max(summary.judges + summary.supervisors, 1)) * 100)}%`,
                               }}
                             />
                           </div>

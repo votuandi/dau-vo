@@ -113,8 +113,8 @@ describe('admin dashboard', () => {
     api.getDashboard.mockResolvedValue({
       tournaments: Array.from({ length: 7 }, (_, index) => ({
         ...tournament,
-        id: `${index}`,
-        name: `Giải ${index + 1}`,
+        id: String(index),
+        name: `Giải ${String(index + 1)}`,
       })),
     });
     renderDashboard();
