@@ -54,6 +54,7 @@ describe('Reveal accessibility and prerendering', () => {
     );
     const { container, unmount } = render(<Reveal>Feature content</Reveal>);
     expect(container.firstChild).toHaveClass('opacity-0');
+    expect(container.firstChild).toHaveAttribute('data-reveal', 'hidden');
     act(() => {
       onIntersect?.(
         [{ isIntersecting: true } as IntersectionObserverEntry],
@@ -61,6 +62,7 @@ describe('Reveal accessibility and prerendering', () => {
       );
     });
     expect(container.firstChild).toHaveClass('opacity-100');
+    expect(container.firstChild).toHaveAttribute('data-reveal', 'shown');
     expect(disconnect).toHaveBeenCalledOnce();
     unmount();
     expect(disconnect).toHaveBeenCalledTimes(2);

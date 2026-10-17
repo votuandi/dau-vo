@@ -28,20 +28,40 @@ import {
 } from '@/components/home-mockups';
 import '@/styles/home.css';
 
+type Tone = 'sky' | 'emerald' | 'violet' | 'amber' | 'rose' | 'orange' | 'indigo' | 'teal';
+
 const highlights = [
   {
     icon: Monitor,
+    tone: 'sky',
     title: '4 màn hình chuyên biệt',
     text: 'Quản lý · Giám định · Giám sát · Bảng điểm',
   },
-  { icon: FileSpreadsheet, title: 'Nhập danh sách từ Excel', text: 'Hỗ trợ .xlsx, .xls và .csv' },
-  { icon: GitBranch, title: 'Nhánh đấu tự động', text: 'Bốc thăm, đặc cách, xuất PDF' },
-  { icon: Wifi, title: 'Đồng bộ thời gian thực', text: 'Tự kết nối lại khi mạng chập chờn' },
+  {
+    icon: FileSpreadsheet,
+    tone: 'emerald',
+    title: 'Nhập danh sách từ Excel',
+    text: 'Hỗ trợ .xlsx, .xls và .csv',
+  },
+  {
+    icon: GitBranch,
+    tone: 'violet',
+    title: 'Nhánh đấu tự động',
+    text: 'Bốc thăm, đặc cách, xuất PDF',
+  },
+  {
+    icon: Wifi,
+    tone: 'teal',
+    title: 'Đồng bộ thời gian thực',
+    text: 'Tự kết nối lại khi mạng chập chờn',
+  },
 ];
 
 const features = [
   {
     icon: Trophy,
+    tone: 'amber',
+    art: '12 hạng cân · 36 đơn vị',
     tag: 'Quản lý tập trung',
     title: 'Toàn bộ giải đấu trong một không gian',
     text: 'Tạo giải, khai báo hạng cân, đơn vị và vận động viên ở cùng một nơi. Không còn những bảng tính rời rạc gửi qua lại.',
@@ -49,6 +69,8 @@ const features = [
   },
   {
     icon: FileSpreadsheet,
+    tone: 'emerald',
+    art: 'danh-sach.xlsx → 248 VĐV',
     tag: 'Chuẩn bị nhanh',
     title: 'Nhập hàng trăm vận động viên trong vài giây',
     text: 'Tải tệp Excel hoặc CSV có sẵn, hệ thống đọc danh sách và đưa vận động viên vào đúng hạng cân để bạn rà soát.',
@@ -56,6 +78,8 @@ const features = [
   },
   {
     icon: GitBranch,
+    tone: 'violet',
+    art: 'Tứ kết → Chung kết',
     tag: 'Nhánh đấu rõ ràng',
     title: 'Bốc thăm công bằng, nhánh đấu minh bạch',
     text: 'Chia nhánh theo hạng cân, chọn đặc cách ngẫu nhiên, theo hạt giống hoặc thủ công. Xem trước, đổi vị trí rồi mới chốt.',
@@ -63,6 +87,8 @@ const features = [
   },
   {
     icon: UserCheck,
+    tone: 'sky',
+    art: '3 giám định · 1 giám sát',
     tag: 'Đúng người, đúng việc',
     title: 'Phân công trọng tài cho từng trận',
     text: 'Gán giám định và giám sát theo trận. Mỗi người chỉ thấy đúng màn hình và đúng thao tác thuộc vai trò của mình.',
@@ -70,6 +96,8 @@ const features = [
   },
   {
     icon: Smartphone,
+    tone: 'rose',
+    art: 'Đỏ 2 · Xanh 1',
     tag: 'Chấm điểm tại sân',
     title: 'Giám định chấm bằng một chạm',
     text: 'Màn hình giám định tối giản với hai nút Đỏ – Xanh cỡ lớn, dùng tốt trên điện thoại và máy tính bảng ngay cạnh thảm đấu.',
@@ -77,6 +105,8 @@ const features = [
   },
   {
     icon: Timer,
+    tone: 'orange',
+    art: 'Hiệp 2 · 01:24',
     tag: 'Điều hành chủ động',
     title: 'Giám sát nắm quyền từng hiệp',
     text: 'Bắt đầu, tạm dừng, tiếp tục hiệp; ghi điểm cộng, lỗi nhẹ, lỗi nặng; xử lý hiệp phụ và phúc khảo ngay trên một màn hình.',
@@ -84,6 +114,8 @@ const features = [
   },
   {
     icon: History,
+    tone: 'indigo',
+    art: '00:42 · +1 Đỏ',
     tag: 'Có căn cứ đối chiếu',
     title: 'Check VAR từng sự kiện trận đấu',
     text: 'Mọi lựa chọn của giám định, điểm, lỗi và mốc hiệp đều được lưu theo thời gian để giám sát đối chiếu trước khi công bố.',
@@ -91,6 +123,8 @@ const features = [
   },
   {
     icon: Monitor,
+    tone: 'teal',
+    art: 'Trình chiếu 16:9',
     tag: 'Hấp dẫn khán đài',
     title: 'Bảng điểm sống động trên màn hình lớn',
     text: 'Điểm hai bên, đồng hồ, lỗi và trạng thái trận hiển thị rõ ràng, cập nhật tức thì. Chỉ cần mở trình duyệt và trình chiếu.',
@@ -101,6 +135,7 @@ const features = [
 const showcases: readonly {
   role: string;
   icon: typeof Users;
+  tone: Tone;
   title: string;
   text: string;
   points: string[];
@@ -108,6 +143,7 @@ const showcases: readonly {
 }[] = [
   {
     role: 'Dành cho ban tổ chức',
+    tone: 'sky',
     icon: ClipboardList,
     title: 'Chuẩn bị giải đấu gọn gàng như một bảng tính — nhưng thông minh hơn',
     text: 'Danh sách vận động viên được sắp theo hạng cân và đơn vị ngay khi nhập. Bạn luôn biết ai đã được xếp vào nhánh, ai còn chờ, giải đấu đã sẵn sàng đến đâu.',
@@ -120,6 +156,7 @@ const showcases: readonly {
   },
   {
     role: 'Bốc thăm & nhánh đấu',
+    tone: 'violet',
     icon: GitBranch,
     title: 'Từ bốc thăm đến chung kết, mọi cặp đấu đều rõ ràng',
     text: 'Hệ thống tự dựng nhánh đấu cho từng hạng cân và đưa người thắng đi tiếp sau mỗi trận. Ban tổ chức không phải tổng hợp lại bằng tay.',
@@ -132,6 +169,7 @@ const showcases: readonly {
   },
   {
     role: 'Dành cho giám định',
+    tone: 'rose',
     icon: Smartphone,
     title: 'Chấm điểm bằng điện thoại, chỉ một chạm',
     text: 'Không cần thiết bị chuyên dụng. Giám định mở màn hình trên điện thoại, chạm chọn Đỏ hoặc Xanh khi hiệp đấu diễn ra — máy chủ xác nhận ngay lập tức.',
@@ -144,6 +182,7 @@ const showcases: readonly {
   },
   {
     role: 'Dành cho giám sát',
+    tone: 'orange',
     icon: ShieldCheck,
     title: 'Điều hành trận đấu và đối chiếu bằng Check VAR',
     text: 'Giám sát thấy ngay giám định nào đã kết nối, điểm số hai bên và đồng hồ chính thức. Khi cần, mở Check VAR để xem lại từng sự kiện trước khi công bố kết quả.',
@@ -159,21 +198,25 @@ const showcases: readonly {
 const steps = [
   {
     icon: ClipboardList,
+    tone: 'sky',
     title: 'Tạo giải & nhập danh sách',
     text: 'Khai báo hạng cân, đơn vị; nhập vận động viên từ Excel trong vài giây.',
   },
   {
     icon: GitBranch,
+    tone: 'violet',
     title: 'Bốc thăm & phân công',
     text: 'Dựng nhánh đấu cho từng hạng cân, phân công giám định và giám sát.',
   },
   {
     icon: Radio,
+    tone: 'rose',
     title: 'Thi đấu & chấm điểm',
     text: 'Giám định chấm trên điện thoại, giám sát điều hành, bảng điểm cập nhật tức thì.',
   },
   {
     icon: Trophy,
+    tone: 'amber',
     title: 'Đối chiếu & công bố',
     text: 'Check VAR khi cần, công bố kết quả và đưa người thắng vào vòng tiếp theo.',
   },
@@ -210,6 +253,7 @@ export function HomePage() {
   return (
     <div className="home-page flex min-h-dvh flex-col">
       <header className="home-header">
+        <div className="home-scroll-progress" aria-hidden="true" />
         <div className="container flex flex-wrap items-center justify-between gap-3 py-3">
           <a
             href="/"
@@ -253,7 +297,7 @@ export function HomePage() {
       <main className="flex-1">
         <section className="home-hero">
           <div className="container grid items-center gap-14 py-14 lg:grid-cols-[1.05fr_1fr] lg:py-24">
-            <div>
+            <div className="home-hero-copy">
               <p className="home-eyebrow">
                 <span /> CHẤM ĐIỂM · ĐIỀU HÀNH · TRÌNH CHIẾU
               </p>
@@ -317,16 +361,18 @@ export function HomePage() {
 
         <div className="home-highlights">
           <div className="container grid gap-4 py-7 sm:grid-cols-2 lg:grid-cols-4">
-            {highlights.map(({ icon: Icon, title, text }) => (
-              <div key={title} className="home-highlight">
-                <span className="home-feature-icon">
-                  <Icon size={22} />
-                </span>
-                <div className="min-w-0">
-                  <p className="font-bold">{title}</p>
-                  <p className="text-sm text-muted-foreground">{text}</p>
+            {highlights.map(({ icon: Icon, tone, title, text }, index) => (
+              <Reveal key={title} delay={index * 70}>
+                <div className={`home-highlight home-tone-${tone}`}>
+                  <span className="home-feature-icon">
+                    <Icon size={22} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="font-bold">{title}</p>
+                    <p className="text-sm text-muted-foreground">{text}</p>
+                  </div>
                 </div>
-              </div>
+              </Reveal>
             ))}
           </div>
         </div>
@@ -344,13 +390,17 @@ export function HomePage() {
             </p>
           </Reveal>
           <div className="mt-12 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-            {features.map(({ icon: Icon, tag, title, text, points }, index) => (
+            {features.map(({ icon: Icon, tone, art, tag, title, text, points }, index) => (
               <Reveal key={title} delay={(index % 4) * 70} className="h-full">
-                <article className="home-card home-feature-card h-full">
-                  <span className="home-feature-icon">
-                    <Icon size={24} />
-                  </span>
-                  <p className="mt-5 text-xs font-bold uppercase tracking-wider text-primary">
+                <article className={`home-card home-feature-card home-tone-${tone} h-full`}>
+                  <div className="home-card-art" aria-hidden="true">
+                    <Icon className="home-card-art-ghost" />
+                    <span className="home-card-art-icon">
+                      <Icon size={24} />
+                    </span>
+                    <span className="home-card-art-chip">{art}</span>
+                  </div>
+                  <p className="home-card-tag mt-5 text-xs font-bold uppercase tracking-wider">
                     {tag}
                   </p>
                   <h3 className="mt-2 text-lg font-bold leading-snug">{title}</h3>
@@ -380,8 +430,11 @@ export function HomePage() {
               </p>
             </Reveal>
             <div className="mt-14 flex flex-col gap-20 lg:gap-28">
-              {showcases.map(({ role, icon: Icon, title, text, points, mockup }, index) => (
-                <div key={title} className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
+              {showcases.map(({ role, icon: Icon, tone, title, text, points, mockup }, index) => (
+                <div
+                  key={title}
+                  className={`home-tone-${tone} grid items-center gap-10 lg:grid-cols-2 lg:gap-16`}
+                >
                   <Reveal
                     direction={index % 2 ? 'right' : 'left'}
                     className={index % 2 ? 'lg:order-2' : ''}
@@ -457,9 +510,9 @@ export function HomePage() {
             <h2 className="home-heading">Sẵn sàng cho ngày thi đấu.</h2>
           </Reveal>
           <div className="home-steps mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {steps.map(({ icon: Icon, title, text }, index) => (
+            {steps.map(({ icon: Icon, tone, title, text }, index) => (
               <Reveal key={title} delay={index * 80} className="h-full">
-                <article className="home-card home-step h-full">
+                <article className={`home-card home-step home-tone-${tone} h-full`}>
                   <div className="flex items-center justify-between">
                     <span className="home-feature-icon">
                       <Icon size={22} />

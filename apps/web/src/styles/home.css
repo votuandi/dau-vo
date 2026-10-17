@@ -7,12 +7,66 @@
   --home-shadow-sm: 0 1px 2px #0f2a4a0d, 0 4px 14px #153b620d;
   --home-shadow-md: 0 2px 4px #0f2a4a0f, 0 14px 34px #153b6214;
   --home-shadow-lg: 0 4px 10px #0f2a4a14, 0 28px 60px #153b6226;
+  --tone: #0284c7;
+  --tone-strong: #0369a1;
+  --tone-soft: #e0f2fe;
+  --tone-mid: #bae6fd;
   color: var(--home-ink);
   background: #f8fbff;
   overflow: clip;
 }
 .home-page section[id] {
   scroll-margin-top: 6rem;
+}
+
+/* Accent tones: each card or section picks one so the page is not a single blue. */
+.home-tone-sky {
+  --tone: #0284c7;
+  --tone-strong: #0369a1;
+  --tone-soft: #e0f2fe;
+  --tone-mid: #bae6fd;
+}
+.home-tone-emerald {
+  --tone: #059669;
+  --tone-strong: #047857;
+  --tone-soft: #d1fae5;
+  --tone-mid: #a7f3d0;
+}
+.home-tone-violet {
+  --tone: #7c3aed;
+  --tone-strong: #6d28d9;
+  --tone-soft: #ede9fe;
+  --tone-mid: #ddd6fe;
+}
+.home-tone-amber {
+  --tone: #d97706;
+  --tone-strong: #b45309;
+  --tone-soft: #fef3c7;
+  --tone-mid: #fde68a;
+}
+.home-tone-rose {
+  --tone: #e11d48;
+  --tone-strong: #be123c;
+  --tone-soft: #ffe4e6;
+  --tone-mid: #fecdd3;
+}
+.home-tone-orange {
+  --tone: #ea580c;
+  --tone-strong: #c2410c;
+  --tone-soft: #ffedd5;
+  --tone-mid: #fed7aa;
+}
+.home-tone-indigo {
+  --tone: #4f46e5;
+  --tone-strong: #4338ca;
+  --tone-soft: #e0e7ff;
+  --tone-mid: #c7d2fe;
+}
+.home-tone-teal {
+  --tone: #0d9488;
+  --tone-strong: #0f766e;
+  --tone-soft: #ccfbf1;
+  --tone-mid: #99f6e4;
 }
 
 /* Header */
@@ -23,6 +77,28 @@
   border-bottom: 1px solid #dae6f0;
   background: #ffffffe6;
   backdrop-filter: blur(18px);
+}
+.home-scroll-progress {
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, #0ea5e9, #7c3aed, #e11d48);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  pointer-events: none;
+}
+@supports (animation-timeline: scroll()) {
+  .home-scroll-progress {
+    animation: home-scroll-progress linear both;
+    animation-timeline: scroll(root);
+  }
+}
+@keyframes home-scroll-progress {
+  to {
+    transform: scaleX(1);
+  }
 }
 .home-nav-link {
   display: inline-flex;
@@ -184,10 +260,41 @@
   outline-offset: 4px;
 }
 
+/* Hero entrance: plays once on load and ends in the normal state when animations are off. */
+.home-hero-copy > * {
+  animation: home-enter-up 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.home-hero-copy > :nth-child(2) {
+  animation-delay: 0.08s;
+}
+.home-hero-copy > :nth-child(3) {
+  animation-delay: 0.16s;
+}
+.home-hero-copy > :nth-child(4) {
+  animation-delay: 0.24s;
+}
+.home-hero-copy > :nth-child(5) {
+  animation-delay: 0.32s;
+}
+@keyframes home-enter-up {
+  from {
+    opacity: 0;
+    translate: 0 1.5rem;
+  }
+}
+@keyframes home-enter-zoom {
+  from {
+    opacity: 0;
+    translate: 2rem 0;
+    scale: 0.94;
+  }
+}
+
 /* Hero stage: scoreboard + phone + floating chips */
 .home-hero-stage {
   position: relative;
   padding: 1.5rem 0 3rem 4.5rem;
+  animation: home-enter-zoom 1s 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 .home-hero-stage .home-scoreboard {
   transform: perspective(1600px) rotateY(-6deg) rotateX(2deg);
@@ -942,7 +1049,10 @@
   transition: background 0.2s;
 }
 .home-highlight:hover {
-  background: #f0f7fd;
+  background: var(--tone-soft);
+}
+.home-highlight:hover .home-feature-icon {
+  transform: scale(1.08) rotate(-4deg);
 }
 
 /* Sections & typography */
@@ -972,10 +1082,11 @@
 
 /* Cards */
 .home-card {
+  --home-card-pad: 1.75rem;
   position: relative;
   border: 1px solid var(--home-line);
   border-radius: 1.5rem;
-  padding: 1.75rem;
+  padding: var(--home-card-pad);
   background: white;
   box-shadow: var(--home-shadow-sm);
   transition:
@@ -988,7 +1099,7 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: radial-gradient(ellipse at 0% 0%, #e0f2fe, transparent 55%);
+  background: radial-gradient(ellipse at 0% 100%, var(--tone-soft), transparent 60%);
   opacity: 0;
   transition: opacity 0.3s;
   pointer-events: none;
@@ -998,7 +1109,7 @@
 }
 .home-card:hover {
   transform: translateY(-6px);
-  border-color: #a5cde9;
+  border-color: var(--tone-mid);
   box-shadow: var(--home-shadow-lg);
 }
 .home-card:hover::before {
@@ -1010,10 +1121,10 @@
   width: 3rem;
   height: 3rem;
   flex-shrink: 0;
-  color: var(--home-brand);
-  border: 1px solid #d5eafa;
+  color: var(--tone-strong);
+  border: 1px solid var(--tone-mid);
   border-radius: 1rem;
-  background: linear-gradient(145deg, #f3faff, #e0f2fe);
+  background: linear-gradient(145deg, #fff, var(--tone-soft));
   box-shadow: 0 1px 0 #fff inset;
   transition:
     transform 0.3s,
@@ -1023,8 +1134,131 @@
 .home-card:hover .home-feature-icon {
   transform: scale(1.08) rotate(-4deg);
   border-color: transparent;
-  background: linear-gradient(135deg, #0ea5e9, #0369a1);
+  background: linear-gradient(135deg, var(--tone), var(--tone-strong));
   color: white;
+}
+
+/* Feature card illustration header */
+.home-card-art {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  height: 7.5rem;
+  margin: calc(var(--home-card-pad) * -1) calc(var(--home-card-pad) * -1) 0;
+  padding: 1rem 1.15rem;
+  overflow: hidden;
+  border-radius: calc(1.5rem - 1px) calc(1.5rem - 1px) 0 0;
+  border-bottom: 1px solid var(--tone-mid);
+  background:
+    radial-gradient(circle at 80% 10%, #ffffffb3 0, transparent 45%),
+    linear-gradient(135deg, var(--tone-soft), var(--tone-mid));
+}
+.home-card-art::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--tone) 22%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 14px 14px;
+  mask-image: linear-gradient(200deg, #000, transparent 70%);
+  pointer-events: none;
+}
+.home-card-art-ghost {
+  position: absolute;
+  top: -1.4rem;
+  right: -1.2rem;
+  width: 7.5rem;
+  height: 7.5rem;
+  color: var(--tone);
+  opacity: 0.16;
+  transform: rotate(-12deg);
+  transition:
+    transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.3s;
+}
+.home-card:hover .home-card-art-ghost {
+  opacity: 0.24;
+  transform: rotate(-2deg) scale(1.1);
+}
+.home-card-art-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  flex-shrink: 0;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, var(--tone), var(--tone-strong));
+  box-shadow:
+    0 1px 0 #ffffff59 inset,
+    0 10px 22px color-mix(in srgb, var(--tone) 35%, transparent);
+  color: white;
+  transition:
+    transform 0.3s,
+    scale 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.25s,
+    opacity 0.4s 0.25s;
+}
+.home-card:hover .home-card-art-icon {
+  transform: scale(1.08) rotate(-4deg);
+}
+.home-card-art-chip {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid #ffffffb3;
+  border-radius: 2rem;
+  background: #ffffffc7;
+  backdrop-filter: blur(6px);
+  box-shadow: var(--home-shadow-sm);
+  color: var(--tone-strong);
+  font-size: 0.7rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition:
+    opacity 0.5s 0.4s,
+    translate 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) 0.4s;
+}
+.home-card-tag {
+  color: var(--tone-strong);
+}
+.home-feature-card .home-points svg {
+  background: var(--tone-soft);
+  color: var(--tone-strong);
+}
+
+/* Staggered entrance for content inside a Reveal block that starts hidden */
+[data-reveal] .home-points li {
+  transition:
+    opacity 0.5s,
+    translate 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition-delay: 0.35s;
+}
+[data-reveal] .home-points li:nth-child(2) {
+  transition-delay: 0.45s;
+}
+[data-reveal] .home-points li:nth-child(3) {
+  transition-delay: 0.55s;
+}
+[data-reveal='hidden'] .home-points li {
+  opacity: 0;
+  translate: -0.75rem 0;
+}
+[data-reveal='hidden'] .home-card-art-icon {
+  opacity: 0;
+  scale: 0.5;
+}
+[data-reveal='hidden'] .home-card-art-chip {
+  opacity: 0;
+  translate: 0 0.75rem;
+}
+[data-reveal='hidden'] .home-step-number {
+  opacity: 0;
+  translate: 0 -0.75rem;
 }
 .home-points {
   display: flex;
@@ -1070,11 +1304,11 @@
   align-items: center;
   gap: 0.45rem;
   padding: 0.4rem 0.8rem;
-  border: 1px solid #bfdcf0;
+  border: 1px solid var(--tone-mid);
   border-radius: 2rem;
-  background: white;
+  background: linear-gradient(135deg, #fff, var(--tone-soft));
   box-shadow: var(--home-shadow-sm);
-  color: var(--home-brand);
+  color: var(--tone-strong);
   font-size: 0.78rem;
   font-weight: 750;
 }
@@ -1087,7 +1321,7 @@
   inset: 8% 6%;
   z-index: 0;
   border-radius: 2rem;
-  background: linear-gradient(135deg, #7dd3fc, #3b82f6);
+  background: linear-gradient(135deg, var(--tone-mid), var(--tone));
   filter: blur(48px);
   opacity: 0.28;
   transition: opacity 0.4s;
@@ -1121,6 +1355,22 @@
 }
 .home-arena:hover img {
   transform: scale(1.04);
+}
+/* Subtle parallax tied to the image's position in the viewport. */
+@supports (animation-timeline: view()) {
+  .home-arena img {
+    scale: 1.12;
+    animation: home-parallax linear both;
+    animation-timeline: view();
+  }
+}
+@keyframes home-parallax {
+  from {
+    translate: 0 -5%;
+  }
+  to {
+    translate: 0 5%;
+  }
 }
 .home-arena-badge {
   position: absolute;
@@ -1159,15 +1409,21 @@
 }
 
 /* Steps */
+.home-step {
+  border-top: 4px solid var(--tone);
+}
 .home-step-number {
   font-size: 2.4rem;
   font-weight: 900;
   line-height: 1;
-  color: #e0effa;
-  transition: color 0.3s;
+  color: var(--tone-mid);
+  transition:
+    color 0.3s,
+    opacity 0.5s 0.35s,
+    translate 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) 0.35s;
 }
 .home-card:hover .home-step-number {
-  color: #bae0f7;
+  color: var(--tone);
 }
 
 /* FAQ */
@@ -1294,7 +1550,7 @@
     padding-block: 4rem;
   }
   .home-card {
-    padding: 1.3rem;
+    --home-card-pad: 1.3rem;
   }
   .home-cta {
     padding: 1.6rem;
@@ -1347,5 +1603,12 @@
   .home-mock-frame:hover > *,
   .home-hero-stage .home-scoreboard {
     transform: none;
+  }
+  .home-arena img {
+    scale: 1;
+    translate: none;
+  }
+  .home-scroll-progress {
+    display: none;
   }
 }

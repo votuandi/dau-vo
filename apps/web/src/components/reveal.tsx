@@ -65,6 +65,8 @@ export function Reveal({ children, className, delay = 0, direction = 'up' }: Rev
           : ['opacity-0', hiddenClassNames[direction]],
         className,
       )}
+      // Lets descendants stagger their own entrance once the block is revealed.
+      data-reveal={visible ? 'shown' : 'hidden'}
       ref={ref}
       style={style}
     >
