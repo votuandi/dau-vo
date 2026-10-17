@@ -59,46 +59,6 @@ function CopyIcon({ status }: { readonly status: CopyStatus }) {
   );
 }
 
-/**
- * Legacy copy for pages served without a secure context (plain HTTP, a LAN IP)
- * or in in-app browsers, where `navigator.clipboard` does not exist. The
- * textarea is placed next to the button so it stays inside any open modal.
- */
-function copyWithSelection(value: string, anchor: HTMLElement | null): void {
-  const textarea = document.createElement('textarea');
-  textarea.value = value;
-  textarea.readOnly = true;
-  textarea.setAttribute('aria-hidden', 'true');
-  // A font size of 16px stops iOS from zooming in when the field is selected.
-  textarea.style.cssText =
-    'position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:0;opacity:0;font-size:16px;';
-  (anchor?.parentElement ?? document.body).appendChild(textarea);
-  try {
-    textarea.focus({ preventScroll: true });
-    textarea.select();
-    textarea.setSelectionRange(0, value.length);
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- the only copy path outside a secure context.
-    if (!document.execCommand('copy')) throw new Error('Copy command was rejected.');
-  } finally {
-    textarea.remove();
-    anchor?.focus({ preventScroll: true });
-  }
-}
-
-async function writeToClipboard(value: string, anchor: HTMLElement | null): Promise<void> {
-  // `navigator.clipboard` is undefined outside a secure context despite its DOM typing.
-  const clipboard = navigator.clipboard as Clipboard | undefined;
-  if (typeof clipboard?.writeText === 'function') {
-    try {
-      await clipboard.writeText(value);
-      return;
-    } catch {
-      // Permission denied or document not focused: fall back to a selection copy.
-    }
-  }
-  copyWithSelection(value, anchor);
-}
-
 export function ClipboardCopyButton({
   accessibleLabel,
   className,
@@ -114,7 +74,6 @@ export function ClipboardCopyButton({
 }: ClipboardCopyButtonProps) {
   const [status, setStatus] = useState<CopyStatus>('idle');
   const resetTimeout = useRef<number | null>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(
     () => () => {
@@ -131,7 +90,11 @@ export function ClipboardCopyButton({
     }
 
     try {
-      await writeToClipboard(value, buttonRef.current);
+      if (typeof navigator.clipboard.writeText !== 'function') {
+        throw new Error('Clipboard API is unavailable.');
+      }
+
+      await navigator.clipboard.writeText(value);
       setStatus('copied');
       onCopySuccess?.();
     } catch {
@@ -159,7 +122,6 @@ export function ClipboardCopyButton({
             'border-red-300 bg-red-50 text-red-700 hover:border-red-400 hover:bg-red-100 hover:text-red-800',
         )}
         onClick={() => void copyValue()}
-        ref={buttonRef}
         size={size}
         type="button"
         variant={variant}
