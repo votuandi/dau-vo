@@ -262,9 +262,9 @@ export function HomePage() {
                 <span className="home-gradient-text">minh bạch đến từng điểm số.</span>
               </h1>
               <p className="mt-6 max-w-xl text-lg leading-8 text-muted-foreground">
-                Kết nối ban tổ chức, giám định, giám sát và khán giả trên cùng một hệ thống. Chuẩn
-                bị giải trong vài bước, chấm điểm bằng điện thoại, điều hành từng hiệp và trình
-                chiếu kết quả ngay khi trận đấu diễn ra.
+                Kết nối ban tổ chức, giám định, giám sát và khán giả trên cùng một hệ thống chấm
+                điểm võ gậy và thi đấu võ thuật. Chuẩn bị giải trong vài bước, chấm điểm bằng điện
+                thoại, điều hành từng hiệp và trình chiếu kết quả ngay khi trận đấu diễn ra.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <a href="/register" className="home-button home-button-primary">
