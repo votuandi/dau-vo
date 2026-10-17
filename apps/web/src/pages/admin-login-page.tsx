@@ -93,8 +93,8 @@ export function AdminLoginPage() {
   }
 
   return (
-    <section className="mx-auto grid w-full max-w-5xl overflow-hidden rounded-[1.75rem] border border-white/80 bg-card/90 shadow-2xl shadow-blue-950/10 backdrop-blur md:grid-cols-[1.05fr_0.95fr]">
-      <div className="relative hidden overflow-hidden bg-gradient-to-br from-sky-700 via-blue-950 to-red-800 p-10 text-white md:flex md:flex-col md:justify-between">
+    <section className="mx-auto grid w-full max-w-5xl overflow-hidden rounded-[1.75rem] border border-white/50 bg-card/35 shadow-2xl shadow-blue-950/20 backdrop-blur-lg backdrop-saturate-150 md:grid-cols-[1.05fr_0.95fr]">
+      <div className="relative hidden overflow-hidden bg-gradient-to-br from-sky-700/60 via-blue-950/60 to-red-800/60 p-10 text-white md:flex md:flex-col md:justify-between">
         <span
           aria-hidden="true"
           className="absolute -right-20 -top-20 size-64 rounded-full bg-white/15 blur-2xl"
@@ -103,9 +103,13 @@ export function AdminLoginPage() {
           aria-hidden="true"
           className="absolute -bottom-28 -left-16 size-72 rounded-full bg-red-300/20 blur-3xl"
         />
-        <div className="relative grid size-12 place-items-center rounded-xl bg-white/20 text-sm font-black text-white shadow-lg ring-1 ring-white/40 backdrop-blur">
-          ĐV
-        </div>
+        <img
+          src={`${import.meta.env.BASE_URL}logo.webp`}
+          alt="Logo Chấm Điểm Võ Thuật"
+          width={64}
+          height={64}
+          className="relative size-16 rounded-2xl bg-white/20 object-contain p-1 shadow-lg ring-1 ring-white/40 backdrop-blur"
+        />
         <div className="relative">
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/90">
             Khu vực quản trị

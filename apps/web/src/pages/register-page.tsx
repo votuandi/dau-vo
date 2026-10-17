@@ -58,7 +58,14 @@ export function RegisterPage() {
     ['organization', 'Đơn vị'],
   ];
   return (
-    <section className="mx-auto w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-lg shadow-sky-950/5 sm:p-8">
+    <section className="mx-auto w-full max-w-lg rounded-2xl border border-white/50 bg-card/35 p-6 shadow-2xl shadow-blue-950/20 backdrop-blur-lg backdrop-saturate-150 sm:p-8">
+      <img
+        src={`${import.meta.env.BASE_URL}logo.webp`}
+        alt="Logo Chấm Điểm Võ Thuật"
+        width={64}
+        height={64}
+        className="mb-4 size-16 rounded-2xl bg-white/20 object-contain p-1 shadow-lg ring-1 ring-white/40 backdrop-blur"
+      />
       <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">
         Chấm Điểm Võ Thuật
       </p>

@@ -44,6 +44,8 @@ export function AppLayout() {
 }
 
 function StandardAppLayout() {
+  const location = useLocation();
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const sessionQuery = useQuery(authenticatedUserQueryOptions);
@@ -81,7 +83,17 @@ function StandardAppLayout() {
       ];
 
   return (
-    <div className="flex min-h-dvh flex-col bg-transparent text-foreground">
+    <div className="relative isolate flex min-h-dvh flex-col bg-transparent text-foreground">
+      {isAuthPage ? (
+        <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10">
+          <img
+            src={`${import.meta.env.BASE_URL}martial-arts-arena.webp`}
+            alt=""
+            className="size-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/40 via-slate-950/20 to-slate-950/60" />
+        </div>
+      ) : null}
       <header className="sticky top-0 z-20 border-b border-white/70 bg-white/75 shadow-sm shadow-blue-950/5 backdrop-blur-xl">
         <div className="container flex min-h-16 flex-col justify-center gap-3 py-3 md:flex-row md:items-center md:justify-between">
           <NavLink className="flex items-center gap-3" to="/">
