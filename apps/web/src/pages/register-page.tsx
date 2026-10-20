@@ -1,5 +1,7 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useState, type SyntheticEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { authenticatedUserQueryKey } from '@/features/auth/authenticated-user-session';
 import { authApi } from '@/services/api/auth';
 import { ApiClientError } from '@/services/api/client';
 import { passwordValidationMessage } from '@/features/auth/password-policy';
@@ -13,6 +15,7 @@ function value(data: FormData, key: string): string {
 
 export function RegisterPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   async function submit(event: SyntheticEvent<HTMLFormElement>) {
@@ -31,7 +34,7 @@ export function RegisterPage() {
     }
     setPending(true);
     try {
-      await authApi.register({
+      const session = await authApi.register({
         fullName: value(data, 'fullName'),
         username: value(data, 'username'),
         email: value(data, 'email'),
@@ -39,7 +42,10 @@ export function RegisterPage() {
         organization: value(data, 'organization'),
         password,
       });
-      await navigate('/tournaments', { replace: true });
+      // Seed the session so the authenticated guard does not reuse a cached
+      // anonymous result and bounce the new user back to the login page.
+      queryClient.setQueryData(authenticatedUserQueryKey, session);
+      await navigate('/account', { replace: true });
     } catch (cause) {
       setError(
         cause instanceof ApiClientError

@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { publicViewApi } from '@/services/api/public-view';
-import { authenticatedUserQueryOptions } from '@/features/auth/authenticated-user-session';
 
 function TournamentLogo({ name, src }: { readonly name: string; readonly src: string | null }) {
   if (!src)
@@ -125,18 +124,6 @@ export function MatchPage() {
           </li>
         ))}
       </ul>
-    </Notice>
-  );
-}
-
-export function AccountPage() {
-  const query = useQuery(authenticatedUserQueryOptions);
-  if (!query.data) return null;
-  return (
-    <Notice>
-      <h1 className="text-2xl font-black">Tài khoản</h1>
-      <p className="mt-3">{query.data.user.fullName ?? query.data.user.username}</p>
-      <p className="text-sm text-muted-foreground">{query.data.user.username}</p>
     </Notice>
   );
 }

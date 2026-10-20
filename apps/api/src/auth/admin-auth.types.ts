@@ -10,6 +10,13 @@ export interface AuthenticatedUser {
   isActive: boolean;
 }
 
+export interface AccountProfile extends AuthenticatedUser {
+  email: string | null;
+  phone: string | null;
+  organization: string | null;
+  createdAt: Date;
+}
+
 export interface AuthResponse {
   user: AuthenticatedUser;
 }

@@ -12,6 +12,25 @@ export interface AuthResponse {
   readonly user: AuthenticatedUser;
 }
 
+export interface AccountProfile extends AuthenticatedUser {
+  readonly email: string | null;
+  readonly phone: string | null;
+  readonly organization: string | null;
+  readonly createdAt: string;
+}
+
+export interface UpdateProfileRequest {
+  readonly fullName?: string;
+  readonly email?: string;
+  readonly phone?: string;
+  readonly organization?: string;
+}
+
+export interface ChangePasswordRequest {
+  readonly currentPassword: string;
+  readonly newPassword: string;
+}
+
 export interface LoginRequest {
   readonly username: string;
   readonly password: string;
@@ -29,4 +48,12 @@ export const authApi = {
   logout: () => request<undefined>('auth/logout', { method: 'POST' }),
   me: () => apiClient.get<AuthResponse>('auth/me'),
   register: (input: RegisterRequest) => apiClient.post<AuthResponse>('auth/register', input),
+  profile: () => apiClient.get<AccountProfile>('auth/profile'),
+  updateProfile: (input: UpdateProfileRequest) =>
+    apiClient.patch<AccountProfile>('auth/profile', input),
+  changePassword: (input: ChangePasswordRequest) =>
+    request<undefined, ChangePasswordRequest>('auth/change-password', {
+      method: 'POST',
+      body: input,
+    }),
 };

@@ -76,7 +76,7 @@ const SuperAdminSportsPage = lazyPage(
   () => import('@/features/super-admin/sports/sports-page'),
   'SuperAdminSportsPage',
 );
-const AccountPage = lazyPage(() => import('@/pages/public-view-pages'), 'AccountPage');
+const AccountPage = lazyPage(() => import('@/pages/account-page'), 'AccountPage');
 const MatchPage = lazyPage(() => import('@/pages/public-view-pages'), 'MatchPage');
 const TournamentPage = lazyPage(() => import('@/pages/public-view-pages'), 'TournamentPage');
 const TournamentsPage = lazyPage(() => import('@/pages/public-view-pages'), 'TournamentsPage');

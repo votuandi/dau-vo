@@ -307,4 +307,89 @@ describe('Admin authentication (integration)', () => {
       data: { role: 'ADMIN' },
     });
   });
+
+  it('returns, updates and guards the self-service account profile', async () => {
+    const usernames = ['profile-self-e2e', 'profile-other-e2e'];
+    await prisma.user.deleteMany({ where: { username: { in: usernames } } });
+    const password = 'ProfilePass1!';
+    const agent = request.agent(app.getHttpServer());
+    await agent
+      .post('/api/auth/register')
+      .send({
+        username: usernames[0],
+        password,
+        fullName: 'Profile Self',
+        email: 'profile-self@example.test',
+        phone: '0900000101',
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/api/auth/register')
+      .send({
+        username: usernames[1],
+        password,
+        fullName: 'Profile Other',
+        email: 'profile-other@example.test',
+        phone: '0900000102',
+      })
+      .expect(201);
+
+    await agent
+      .get('/api/auth/profile')
+      .expect(200)
+      .expect(({ body }: { body: Record<string, unknown> }) =>
+        expect(body).toMatchObject({
+          username: usernames[0],
+          email: 'profile-self@example.test',
+          phone: '0900000101',
+          organization: null,
+        }),
+      );
+    await agent
+      .patch('/api/auth/profile')
+      .send({ email: 'PROFILE-OTHER@example.test' })
+      .expect(409)
+      .expect(({ body }: { body: { code: string } }) =>
+        expect(body.code).toBe('EMAIL_ALREADY_EXISTS'),
+      );
+    await agent
+      .patch('/api/auth/profile')
+      .send({ phone: '0900 000 102' })
+      .expect(409)
+      .expect(({ body }: { body: { code: string } }) =>
+        expect(body.code).toBe('PHONE_ALREADY_EXISTS'),
+      );
+    await agent
+      .patch('/api/auth/profile')
+      .send({
+        email: 'profile-self@example.test',
+        phone: '0900000103',
+        organization: 'Võ đường A',
+      })
+      .expect(200)
+      .expect(({ body }: { body: Record<string, unknown> }) =>
+        expect(body).toMatchObject({
+          phone: '0900000103',
+          organization: 'Võ đường A',
+        }),
+      );
+
+    await agent
+      .post('/api/auth/change-password')
+      .send({ currentPassword: 'wrong-password', newPassword: 'NewPass123!' })
+      .expect(400)
+      .expect(({ body }: { body: { code: string } }) =>
+        expect(body.code).toBe('INVALID_CURRENT_PASSWORD'),
+      );
+    await agent
+      .post('/api/auth/change-password')
+      .send({ currentPassword: password, newPassword: 'NewPass123!' })
+      .expect(204);
+    await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ username: usernames[0], password: 'NewPass123!' })
+      .expect(200);
+
+    await prisma.user.deleteMany({ where: { username: { in: usernames } } });
+  });
 });

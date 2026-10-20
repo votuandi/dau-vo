@@ -5,6 +5,7 @@ import {
   Header,
   HttpCode,
   Inject,
+  Patch,
   Post,
   Req,
   Res,
@@ -18,6 +19,7 @@ import { AUTH_SESSION_COOKIE } from './admin-auth.constants';
 import { AuthGuard } from './admin-auth.guard';
 import { AuthService } from './admin-auth.service';
 import type {
+  AccountProfile,
   AuthResponse,
   AuthenticatedUserRequest,
 } from './admin-auth.types';
@@ -27,6 +29,10 @@ import { getClientAddress, readAuthSessionToken } from './admin-auth.utils';
 import { AdminLoginDto } from './dto/admin-login.dto';
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { RegisterDto } from './dto/register.dto';
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+import { UpdateProfileDto } from './dto/update-profile.dto';
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -115,5 +121,37 @@ export class AuthController {
   @Header('Cache-Control', 'no-store')
   me(@Req() request: AuthenticatedUserRequest): AuthResponse {
     return { user: request.user };
+  }
+
+  @Get('profile')
+  @UseGuards(AuthGuard)
+  @Header('Cache-Control', 'no-store')
+  profile(@Req() request: AuthenticatedUserRequest): Promise<AccountProfile> {
+    return this.authService.profile(request.user.id);
+  }
+
+  @Patch('profile')
+  @UseGuards(AuthGuard)
+  @Header('Cache-Control', 'no-store')
+  updateProfile(
+    @Body() input: UpdateProfileDto,
+    @Req() request: AuthenticatedUserRequest,
+  ): Promise<AccountProfile> {
+    return this.authService.updateProfile(request.user.id, input);
+  }
+
+  @Post('change-password')
+  @HttpCode(204)
+  @UseGuards(AuthGuard)
+  @Header('Cache-Control', 'no-store')
+  async changePassword(
+    @Body() input: ChangePasswordDto,
+    @Req() request: AuthenticatedUserRequest,
+  ): Promise<void> {
+    await this.authService.changePassword(
+      request.user.id,
+      input.currentPassword,
+      input.newPassword,
+    );
   }
 }

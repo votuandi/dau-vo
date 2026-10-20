@@ -25,5 +25,7 @@ export const subscriptionsApi = {
     tournamentBundle?: number | undefined;
     idempotencyKey: string;
   }) => apiClient.post('subscriptions/activate', body),
-  me: () => apiClient.get<Entitlement | null>('subscriptions/me'),
+  // A `null` entitlement arrives as an empty body, which the client reads as
+  // `undefined`; React Query rejects `undefined` data, so normalize it here.
+  me: async () => (await apiClient.get<Entitlement | null>('subscriptions/me')) ?? null,
 };

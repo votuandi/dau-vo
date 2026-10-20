@@ -21,7 +21,11 @@ import {
   LOGIN_RATE_LIMITED_ERROR,
   REGISTRATION_RATE_LIMITED_ERROR,
 } from './admin-auth.constants';
-import type { AuthenticatedUser, CreatedSession } from './admin-auth.types';
+import type {
+  AccountProfile,
+  AuthenticatedUser,
+  CreatedSession,
+} from './admin-auth.types';
 import {
   MAX_BCRYPT_PASSWORD_BYTES,
   passwordValidationCode,
@@ -32,6 +36,17 @@ const SESSION_TOKEN_BYTES = 32;
 const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const DUMMY_PASSWORD_COST = 12;
 const IP_RATE_LIMIT_MULTIPLIER = 20;
+const PROFILE_SELECT = {
+  id: true,
+  username: true,
+  fullName: true,
+  email: true,
+  phone: true,
+  organization: true,
+  role: true,
+  isActive: true,
+  createdAt: true,
+} as const;
 
 @Injectable()
 export class AuthService {
@@ -277,6 +292,126 @@ export class AuthService {
     );
     await this.redis.delete(registrationRateLimitKey);
     return session;
+  }
+
+  async profile(userId: string): Promise<AccountProfile> {
+    const user = await this.prisma.user.findUnique({
+      select: PROFILE_SELECT,
+      where: { id: userId },
+    });
+    if (user === null)
+      throw new UnauthorizedException({
+        code: 'AUTH_REQUIRED',
+        message: 'Authentication required',
+      });
+    return user;
+  }
+
+  async updateProfile(
+    userId: string,
+    input: {
+      fullName?: string;
+      email?: string;
+      phone?: string;
+      organization?: string;
+    },
+  ): Promise<AccountProfile> {
+    const normalizedEmail =
+      input.email === undefined
+        ? undefined
+        : this.normalizer.email(input.email);
+    const normalizedPhone =
+      input.phone === undefined
+        ? undefined
+        : this.normalizer.phone(input.phone);
+    if (normalizedPhone !== undefined && normalizedPhone.length < 6)
+      throw new BadRequestException({
+        code: 'INVALID_PHONE',
+        message: 'Phone number is invalid',
+      });
+    // Check up front for a clear field-level error; the unique indexes still
+    // guard the race between this lookup and the update below.
+    const identityFilters = [
+      ...(normalizedEmail === undefined ? [] : [{ normalizedEmail }]),
+      ...(normalizedPhone === undefined ? [] : [{ normalizedPhone }]),
+    ];
+    if (identityFilters.length > 0) {
+      const taken = await this.prisma.user.findFirst({
+        select: { normalizedEmail: true, normalizedPhone: true },
+        where: { id: { not: userId }, OR: identityFilters },
+      });
+      if (taken !== null)
+        this.throwIdentityConflict(
+          normalizedEmail !== undefined &&
+            taken.normalizedEmail === normalizedEmail
+            ? 'EMAIL_ALREADY_EXISTS'
+            : 'PHONE_ALREADY_EXISTS',
+        );
+    }
+    try {
+      return await this.prisma.user.update({
+        select: PROFILE_SELECT,
+        where: { id: userId },
+        data: {
+          ...(input.fullName === undefined
+            ? {}
+            : { fullName: input.fullName.trim() }),
+          ...(input.email === undefined
+            ? {}
+            : { email: input.email.trim(), normalizedEmail }),
+          ...(input.phone === undefined
+            ? {}
+            : { phone: input.phone.trim(), normalizedPhone }),
+          ...(input.organization === undefined
+            ? {}
+            : { organization: input.organization.trim() || null }),
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      )
+        this.throwIdentityConflict(
+          String(error.meta?.target ?? '').includes('normalized_email')
+            ? 'EMAIL_ALREADY_EXISTS'
+            : 'PHONE_ALREADY_EXISTS',
+        );
+      throw error;
+    }
+  }
+
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    this.assertPasswordIsValid(newPassword);
+    const user = await this.prisma.user.findUnique({
+      select: { passwordHash: true },
+      where: { id: userId },
+    });
+    if (user === null || !(await compare(currentPassword, user.passwordHash)))
+      throw new BadRequestException({
+        code: 'INVALID_CURRENT_PASSWORD',
+        message: 'Current password is incorrect',
+      });
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: await hash(newPassword, DUMMY_PASSWORD_COST) },
+    });
+  }
+
+  private throwIdentityConflict(
+    code: 'EMAIL_ALREADY_EXISTS' | 'PHONE_ALREADY_EXISTS',
+  ): never {
+    throw new ConflictException({
+      code,
+      message:
+        code === 'EMAIL_ALREADY_EXISTS'
+          ? 'This email is already registered'
+          : 'This phone number is already registered',
+    });
   }
 
   private assertPasswordIsValid(password: string): void {
