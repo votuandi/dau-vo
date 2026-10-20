@@ -227,6 +227,17 @@
     0 1px 0 #ffffff33 inset,
     0 14px 30px #0369a14d;
 }
+.home-button-danger {
+  background: linear-gradient(135deg, #dc2626, #b91c1c 60%, #991b1b);
+  color: white;
+  box-shadow:
+    0 1px 0 #ffffff33 inset,
+    0 8px 20px #b91c1c38;
+}
+.home-button-danger:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
 .home-button-secondary {
   background: white;
   color: var(--home-brand-dark);

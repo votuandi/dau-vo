@@ -16,7 +16,8 @@ import {
   Users,
   Wifi,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { authApi } from '@/services/api/auth';
 import { SiteFooter } from '@/components/site-footer';
 import { Reveal } from '@/components/reveal';
 import {
@@ -249,7 +250,45 @@ const questions = [
   ],
 ];
 
+/**
+ * The homepage is prerendered and hydrated without the app providers, so the
+ * session is checked after mount; the first render always matches the static
+ * signed-out markup.
+ */
+function useHomeSession() {
+  const [signedIn, setSignedIn] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    authApi.me().then(
+      () => {
+        if (active) setSignedIn(true);
+      },
+      () => {
+        // Signed out or unreachable: keep the public header.
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function signOut() {
+    setSigningOut(true);
+    try {
+      await authApi.logout();
+      setSignedIn(false);
+    } finally {
+      setSigningOut(false);
+    }
+  }
+
+  return { signedIn, signingOut, signOut };
+}
+
 export function HomePage() {
+  const { signedIn, signingOut, signOut } = useHomeSession();
   return (
     <div className="home-page flex min-h-dvh flex-col">
       <header className="home-header">
@@ -285,9 +324,20 @@ export function HomePage() {
             <a href="#hoi-dap" className="home-nav-link max-md:hidden">
               Hỏi đáp
             </a>
-            <a href="/login" className="home-nav-link text-primary">
-              Đăng nhập
-            </a>
+            {signedIn ? (
+              <button
+                type="button"
+                className="home-button home-button-danger home-button-sm"
+                disabled={signingOut}
+                onClick={() => void signOut()}
+              >
+                {signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}
+              </button>
+            ) : (
+              <a href="/login" className="home-nav-link text-primary">
+                Đăng nhập
+              </a>
+            )}
             <a href="/workspace" className="home-button home-button-primary home-button-sm">
               Vào nền tảng <ArrowRight size={15} />
             </a>

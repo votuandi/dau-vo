@@ -6,9 +6,8 @@ import {
   authenticatedUserQueryKey,
   authenticatedUserQueryOptions,
 } from '@/features/auth/authenticated-user-session';
-import { getAccessLandingPath, getSafeReturnPath } from '@/features/auth/role-aware-routing';
-import { effectiveAdminAccessState, entitlementQueryOptions } from '@/features/auth/admin-access';
-import { authApi } from '@/services/api/auth';
+import { getSafeReturnPath } from '@/features/auth/role-aware-routing';
+import { authApi, type AuthenticatedUser } from '@/services/api/auth';
 import { ApiClientError } from '@/services/api/client';
 import { inputClassName } from '@/features/admin-management/presentation';
 
@@ -47,6 +46,11 @@ function getLoginErrorMessage(error: unknown): string {
   return 'Không thể kết nối đến máy chủ. Vui lòng thử lại.';
 }
 
+// Admins without an active plan are sent on to /account by AdminRouteGuard.
+function getPostLoginPath(user: AuthenticatedUser): string {
+  return user.role === 'SUPER_ADMIN' ? '/super-admin' : '/admin';
+}
+
 export function AdminLoginPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -58,19 +62,13 @@ export function AdminLoginPage() {
 
   const loginMutation = useMutation({
     mutationFn: authApi.login,
-    onSuccess: async (session) => {
-      queryClient.setQueryData(authenticatedUserQueryKey, session);
-      const entitlement = await queryClient.query({
-        ...entitlementQueryOptions,
-        staleTime: 'static',
+    onSuccess: (session) => {
+      // Navigate before publishing the session so the "already signed in"
+      // redirect below cannot race this one to a different landing page.
+      void navigate(getSafeReturnPath(location.state) ?? getPostLoginPath(session.user), {
+        replace: true,
       });
-      void navigate(
-        getSafeReturnPath(location.state) ??
-          getAccessLandingPath(effectiveAdminAccessState(session.user, entitlement)),
-        {
-          replace: true,
-        },
-      );
+      queryClient.setQueryData(authenticatedUserQueryKey, session);
     },
   });
 
@@ -88,8 +86,8 @@ export function AdminLoginPage() {
     loginMutation.mutate({ username: username.trim(), password });
   }
 
-  if (sessionQuery.isSuccess && sessionQuery.data) {
-    return <Navigate replace to="/workspace" />;
+  if (sessionQuery.isSuccess && sessionQuery.data && !loginMutation.isSuccess) {
+    return <Navigate replace to={getPostLoginPath(sessionQuery.data.user)} />;
   }
 
   return (
