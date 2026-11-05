@@ -245,7 +245,7 @@ describe('BracketOutcomeService retraction', () => {
     const downstreamSlot = {
       id: '99999999-9999-4999-8999-999999999999',
       fixtureId: childFixtureId,
-      resolvedEntrantId: otherId,
+      resolvedEntrantId: otherId as string | null,
       fixture: { match: { id: downstreamMatchId } },
     };
     const tx = {
