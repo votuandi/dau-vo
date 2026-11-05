@@ -35,7 +35,7 @@ import {
 } from './scoring.errors';
 
 /** Official duration of a persisted referee voting window. */
-export const SCORING_WINDOW_DURATION_MS = 1_000;
+export const SCORING_WINDOW_DURATION_MS = 1_500;
 
 const TRANSACTION_MAX_WAIT_MS = 5_000;
 const TRANSACTION_TIMEOUT_MS = 10_000;

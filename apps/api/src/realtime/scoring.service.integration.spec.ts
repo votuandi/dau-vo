@@ -19,7 +19,11 @@ import {
   RoundEndedForVoteError,
   RoundPausedForVoteError,
 } from './scoring.errors';
-import { isWithinScoringWindow, ScoringService } from './scoring.service';
+import {
+  isWithinScoringWindow,
+  SCORING_WINDOW_DURATION_MS,
+  ScoringService,
+} from './scoring.service';
 
 const TEST_PREFIX = `scoring-${process.pid}-${Date.now().toString(36)}`;
 // The first database transaction can initialize Prisma's connection pool, and
@@ -220,27 +224,28 @@ describe('ScoringService (PostgreSQL integration)', () => {
     }
   });
 
-  it('defines the official half-open 0/999/1000/1001ms boundary exactly', () => {
+  it('defines the official half-open 0/1499/1500/1501ms boundary exactly', () => {
+    expect(SCORING_WINDOW_DURATION_MS).toBe(1_500);
     const startedAt = new Date('2030-01-01T00:00:00.000Z');
-    const endsAt = new Date('2030-01-01T00:00:01.000Z');
+    const endsAt = new Date(startedAt.getTime() + SCORING_WINDOW_DURATION_MS);
     expect(isWithinScoringWindow(startedAt, startedAt, endsAt)).toBe(true);
     expect(
       isWithinScoringWindow(
-        new Date(startedAt.getTime() + 999),
+        new Date(startedAt.getTime() + 1_499),
         startedAt,
         endsAt,
       ),
     ).toBe(true);
     expect(
       isWithinScoringWindow(
-        new Date(startedAt.getTime() + 1_000),
+        new Date(startedAt.getTime() + 1_500),
         startedAt,
         endsAt,
       ),
     ).toBe(false);
     expect(
       isWithinScoringWindow(
-        new Date(startedAt.getTime() + 1_001),
+        new Date(startedAt.getTime() + 1_501),
         startedAt,
         endsAt,
       ),
