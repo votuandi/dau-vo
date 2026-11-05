@@ -16,6 +16,8 @@ apps/api/public/uploads/*
 *.log
 *.pid
 pnpm-debug.log*
+.playwright-cli/
+.logs/
 
 # Editors and operating systems
 .DS_Store

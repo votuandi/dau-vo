@@ -206,6 +206,9 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
       });
       const ids = tournaments.map(({ id }) => id);
       if (ids.length) {
+        await prisma.matchOutcome.deleteMany({
+          where: { match: { tournamentId: { in: ids } } },
+        });
         await prisma.match.deleteMany({ where: { tournamentId: { in: ids } } });
         const brackets = await prisma.tournamentBracket.findMany({
           select: { id: true },
@@ -213,6 +216,10 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
         });
         const bracketIds = brackets.map(({ id }) => id);
         if (bracketIds.length) {
+          await prisma.tournamentBracket.updateMany({
+            where: { id: { in: bracketIds } },
+            data: { championEntrantId: null },
+          });
           await prisma.bracketSlot.deleteMany({
             where: { fixture: { bracketId: { in: bracketIds } } },
           });
@@ -642,4 +649,144 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
       prisma.tournamentBracket.findUnique({ where: { id: bracketId } }),
     ).resolves.toBeNull();
   });
+  it.each([
+    'WITHDRAWAL_OR_INJURY',
+    'ADMIN_TIEBREAK',
+    'ADMIN_OVERRIDE',
+  ] as const)(
+    'decides %s winners, advances the bracket, and retries without duplicate audit entries',
+    async (decisionType) => {
+      const { tournamentId, weightClassId } = await setup(4);
+      const previewBody = (await preview(tournamentId, weightClassId))
+        .body as PreviewResponse;
+      const confirmation = await authenticated(
+        request(app.getHttpServer()).post(
+          `/api/admin/tournaments/${tournamentId}/weight-classes/${weightClassId}/bracket/confirm`,
+        ),
+      )
+        .send({
+          idempotencyKey: `${prefix}-winner-confirm-${decisionType}`,
+          previewToken: previewBody.previewToken,
+        })
+        .expect(201);
+      const bracketId = (confirmation.body as { bracket: { id: string } })
+        .bracket.id;
+      const fixtures = await prisma.bracketFixture.findMany({
+        where: { bracketId },
+        orderBy: [{ roundNumber: 'asc' }, { position: 'asc' }],
+      });
+      let championId: string | undefined;
+      for (const fixture of fixtures) {
+        if (decisionType !== 'WITHDRAWAL_OR_INJURY') {
+          await authenticated(
+            request(app.getHttpServer()).post(
+              `/api/admin/tournaments/${tournamentId}/brackets/${bracketId}/fixtures/${fixture.id}/prepare-match`,
+            ),
+          ).expect(201);
+        }
+        if (decisionType === 'ADMIN_TIEBREAK') {
+          await prisma.match.update({
+            where: { bracketFixtureId: fixture.id },
+            data: {
+              status: MatchStatus.FINISHED,
+              lifecycle: MatchLifecycle.COMPLETED,
+              startedAt: new Date(),
+              finishedAt: new Date(),
+            },
+          });
+          await prisma.bracketFixture.update({
+            where: { id: fixture.id },
+            data: {
+              status: 'AWAITING_WINNER',
+              winnerDecision: {
+                decisionType: 'RULES_TIE',
+                scoreSnapshot: { effectiveTotals: { RED: 0, BLUE: 0 } },
+              },
+            },
+          });
+        }
+        const slots = await prisma.bracketSlot.findMany({
+          where: { fixtureId: fixture.id },
+          orderBy: { side: 'asc' },
+        });
+        const entrantId = slots[0]!.resolvedEntrantId!;
+        const endpoint = `/api/admin/tournaments/${tournamentId}/brackets/${bracketId}/fixtures/${fixture.id}/decide-winner`;
+        const input = {
+          entrantId,
+          decisionType,
+          reason: 'Opponent withdrew due to injury',
+          idempotencyKey: `${prefix}-winner-${fixture.id}`,
+        };
+        const decision = await authenticated(
+          request(app.getHttpServer()).post(endpoint),
+        )
+          .send(input)
+          .expect(201);
+        expect(decision.body).toEqual({
+          fixtureId: fixture.id,
+          bracketId,
+          winnerEntrantId: entrantId,
+        });
+        const retry = await authenticated(
+          request(app.getHttpServer()).post(endpoint),
+        )
+          .send(input)
+          .expect(201);
+        expect(retry.body).toEqual(decision.body);
+        if (decisionType === 'ADMIN_OVERRIDE') {
+          const match = await prisma.match.findUniqueOrThrow({
+            where: { bracketFixtureId: fixture.id },
+            include: { outcome: true, athletes: true },
+          });
+          expect(match).toMatchObject({
+            status: MatchStatus.FINISHED,
+            lifecycle: MatchLifecycle.COMPLETED,
+            finishedAt: expect.any(Date),
+            outcome: {
+              method: 'ADMIN_MANUAL',
+              winnerAthleteId: match.athletes.find(
+                (athlete) => athlete.color === slots[0]!.side,
+              )!.id,
+              sourceAppealId: null,
+              sourceOvertimeRoundId: null,
+              publishedSupervisorAssignmentId: null,
+              publishedSupervisorSessionId: null,
+              snapshot: expect.objectContaining({ actorId: adminId }),
+            },
+          });
+        }
+        await expect(
+          prisma.bracketFixture.findUniqueOrThrow({
+            where: { id: fixture.id },
+          }),
+        ).resolves.toMatchObject({
+          status: 'COMPLETED',
+          winnerEntrantId: entrantId,
+        });
+        await expect(
+          prisma.auditLog.count({
+            where: {
+              adminUserId: adminId,
+              eventType: AuditEventType.BRACKET_WINNER_MANUALLY_DECIDED,
+              metadata: { path: ['fixtureId'], equals: fixture.id },
+            },
+          }),
+        ).resolves.toBe(1);
+        championId = entrantId;
+      }
+      await expect(
+        prisma.tournamentBracket.findUniqueOrThrow({
+          where: { id: bracketId },
+        }),
+      ).resolves.toMatchObject({
+        status: 'COMPLETED',
+        championEntrantId: championId,
+      });
+      await expect(
+        prisma.match.count({ where: { tournamentId } }),
+      ).resolves.toBe(
+        decisionType === 'WITHDRAWAL_OR_INJURY' ? 0 : fixtures.length,
+      );
+    },
+  );
 });
