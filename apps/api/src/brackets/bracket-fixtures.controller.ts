@@ -14,6 +14,8 @@ import {
 } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
 import { createHash } from 'node:crypto';
+// Nest needs the DTO at runtime for validation metadata.
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { DecideMatchWinnerDto } from './dto/decide-match-winner.dto';
 import {
   AdminManagementService,
