@@ -62,7 +62,7 @@ describe('manual winner decisions', () => {
     expect(manualWinnerDecisionType(fixture({ status: 'AWAITING_WINNER' }))).toBe('ADMIN_TIEBREAK');
   });
 
-  it('offers no decision once a match is prepared', () => {
+  it('permits administrative winner selection after a match is prepared or completed', () => {
     const prepared = fixture({
       status: 'MATCH_PREPARED',
       match: {
@@ -73,9 +73,22 @@ describe('manual winner decisions', () => {
         status: MatchPhase.WAITING,
       },
     });
-    expect(manualWinnerDecisionType(prepared)).toBeNull();
-    expect(manualWinnerCandidates(prepared)).toEqual([]);
-    expect(canDecideManually(prepared)).toBe(false);
+    expect(manualWinnerDecisionType(prepared)).toBe('ADMIN_OVERRIDE');
+    expect(manualWinnerCandidates(prepared).map((candidate) => candidate.id)).toEqual(['a', 'b']);
+    expect(canDecideManually(prepared)).toBe(true);
+    const completed = fixture({
+      ...prepared,
+      status: 'COMPLETED',
+      match: {
+        id: 'm',
+        publicId: 'M-1',
+        lifecycle: MatchLifecycle.COMPLETED,
+        phase: MatchPhase.FINISHED,
+        status: MatchPhase.FINISHED,
+      },
+    });
+    expect(manualWinnerDecisionType(completed)).toBe('ADMIN_OVERRIDE');
+    expect(canDecideManually(completed)).toBe(true);
   });
 
   it('needs both entrants resolved', () => {
