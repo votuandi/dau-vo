@@ -286,7 +286,14 @@ describe('BracketOutcomeService retraction', () => {
           ];
           return [];
         }),
-        update: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockImplementation(({ where, data }: {
+          where: { id: string };
+          data: { resolvedEntrantId: string | null };
+        }) => {
+          if (where.id === downstreamSlot.id)
+            downstreamSlot.resolvedEntrantId = data.resolvedEntrantId;
+          return Promise.resolve({});
+        }),
       },
       match: { update: jest.fn().mockResolvedValue({}) },
       tournamentBracket: { update: jest.fn().mockResolvedValue({}) },
