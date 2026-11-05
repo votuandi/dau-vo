@@ -339,7 +339,7 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
           actions={
             <div className="flex flex-wrap gap-2">
               {!isReadOnly && match.athletes.length === 2 ? (
-                <Button type="button" variant="warning-soft" onClick={() => setWinnerDialogOpen(true)}>
+                <Button type="button" variant="warning-soft" onClick={() => { setWinnerDialogOpen(true); }}>
                   {match.hasFinalOutcome ? 'Thay đổi người chiến thắng' : 'Chọn người chiến thắng'}
                 </Button>
               ) : null}
@@ -405,7 +405,7 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
       <MatchEditor isReadOnly={isReadOnly} key={match.updatedAt} match={match} />
       <AdminMatchMonitoring live={shouldMonitorLiveMatch(match)} matchId={match.id} />
       {winnerDialogOpen ? (
-        <MatchWinnerDecisionDialog match={match} onClose={() => setWinnerDialogOpen(false)} />
+        <MatchWinnerDecisionDialog match={match} onClose={() => { setWinnerDialogOpen(false); }} />
       ) : null}
     </div>
   );

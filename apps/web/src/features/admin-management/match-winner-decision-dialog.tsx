@@ -22,11 +22,14 @@ export function MatchWinnerDecisionDialog({
   const [error, setError] = useState<string | null>(null);
   const [idempotencyKey] = useState(createUuid);
   const save = useMutation({
-    mutationFn: () => adminManagementApi.decideMatchWinner(match.id, {
-      winnerColor: winnerColor!,
-      reason: reason.trim(),
-      idempotencyKey,
-    }),
+    mutationFn: () => {
+      if (!winnerColor) throw new Error('Chọn vận động viên chiến thắng.');
+      return adminManagementApi.decideMatchWinner(match.id, {
+        winnerColor,
+        reason: reason.trim(),
+        idempotencyKey,
+      });
+    },
     onSuccess: () => {
       notifyMutationSuccess('Đã lưu người chiến thắng chính thức.');
       void Promise.all([
