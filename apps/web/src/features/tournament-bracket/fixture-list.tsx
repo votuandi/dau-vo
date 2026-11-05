@@ -127,7 +127,9 @@ function FixtureItem({
             <p className="text-sm text-muted-foreground">
               {decisionType === 'WITHDRAWAL_OR_INJURY'
                 ? 'Có thể xác nhận người thắng do rút lui hoặc chấn thương.'
-                : 'Chờ xác định người thắng.'}
+                : decisionType === 'ADMIN_OVERRIDE'
+                  ? 'Có thể chỉ định hoặc thay đổi người chiến thắng.'
+                  : 'Chờ xác định người thắng.'}
             </p>
           ) : null}
         </div>

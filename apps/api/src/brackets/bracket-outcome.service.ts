@@ -4,6 +4,9 @@ import {
   BracketFixtureStatus,
   BracketStatus,
   MatchStatus,
+  MatchLifecycle,
+  MatchOutcomeMethod,
+  MatchOfficialAssignmentReleaseReason,
 } from '@prisma/client';
 import { Prisma, type AthleteColor } from '@prisma/client';
 import { createHash } from 'node:crypto';
@@ -224,6 +227,8 @@ export class BracketOutcomeService {
       reason,
       decisionType,
     );
+    // Match publication locks the operational row first; follow the same order.
+    await tx.$queryRaw`SELECT id FROM matches WHERE bracket_fixture_id=${fixtureId}::uuid FOR UPDATE`;
     // Serialize decisions for this fixture before checking the idempotency row.
     // Otherwise two same-key calls can both miss it and one can observe the
     // winner mutation before it learns that it is merely a retry.
@@ -241,7 +246,7 @@ export class BracketOutcomeService {
     }
     const fixture = await tx.bracketFixture.findUniqueOrThrow({
       where: { id: fixtureId },
-      include: { match: { select: { id: true, status: true } }, slots: true },
+      include: { match: { select: { id: true, status: true } }, slots: true, bracket: true },
     });
     const isTieDecision =
       decisionType === 'ADMIN_TIEBREAK' &&
@@ -254,7 +259,11 @@ export class BracketOutcomeService {
       decisionType === 'WITHDRAWAL_OR_INJURY' &&
       fixture.match === null &&
       fixture.status === BracketFixtureStatus.READY;
-    if (!isTieDecision && !isWithdrawalDecision)
+    const isOverride =
+      decisionType === 'ADMIN_OVERRIDE' &&
+      fixture.bracket?.status !== BracketStatus.CANCELLED &&
+      fixture.status !== BracketFixtureStatus.PENDING_PARTICIPANTS;
+    if (!isTieDecision && !isWithdrawalDecision && !isOverride)
       throw new ConflictException({
         code: 'BRACKET_WINNER_DECISION_INELIGIBLE',
         message: 'Fixture is not eligible for this winner decision',
@@ -275,6 +284,23 @@ export class BracketOutcomeService {
     const priorDecision = fixture.winnerDecision as {
       scoreSnapshot?: unknown;
     } | null;
+    // A prepared/running/finished match must have the same authoritative winner.
+    if (fixture.match && decisionType === 'ADMIN_OVERRIDE') {
+      const entrant = await tx.bracketEntrant.findUniqueOrThrow({
+        where: { id: entrantId },
+        select: { athleteId: true },
+      });
+      const athlete = await tx.matchAthlete.findFirst({
+        where: { matchId: fixture.match.id, athleteId: entrant.athleteId },
+        select: { id: true },
+      });
+      if (!athlete)
+        throw new ConflictException({
+          code: 'BRACKET_WINNER_MATCH_ROSTER_MISMATCH',
+          message: 'Selected entrant is not in the prepared match',
+        });
+      await this.finalizeMatchManually(tx, fixture.match.id, athlete.id, actorId, reason);
+    }
     const result = await this.decide(tx, fixtureId, entrantId, {
       actorId,
       decisionType,
@@ -293,6 +319,207 @@ export class BracketOutcomeService {
       },
     });
     return result;
+  }
+
+  /** Finalize or correct any operational match, including standalone matches. */
+  async manuallyDecideMatch(
+    tx: Prisma.TransactionClient,
+    matchId: string,
+    winnerColor: AthleteColor,
+    actorId: string,
+    reason: string,
+    idempotencyKey: string,
+  ) {
+    await tx.$queryRaw`SELECT id FROM matches WHERE id=${matchId}::uuid FOR UPDATE`;
+    const match = await tx.match.findUniqueOrThrow({
+      where: { id: matchId },
+      include: { athletes: true },
+    });
+    const athlete = match.athletes.find((item) => item.color === winnerColor);
+    if (!athlete || match.athletes.length !== 2)
+      throw new ConflictException({
+        code: 'MATCH_WINNER_PARTICIPANTS_UNRESOLVED',
+        message: 'Match must have two athletes before selecting a winner',
+      });
+    if (match.bracketFixtureId) {
+      const slot = await tx.bracketSlot.findFirst({
+        where: {
+          fixtureId: match.bracketFixtureId,
+          resolvedEntrant: { athleteId: athlete.athleteId ?? undefined },
+        },
+        select: { resolvedEntrantId: true },
+      });
+      if (!athlete.athleteId || !slot?.resolvedEntrantId)
+        throw new ConflictException({
+          code: 'BRACKET_WINNER_MATCH_ROSTER_MISMATCH',
+          message: 'Match athlete is not in the bracket fixture',
+        });
+      return this.manuallyDecide(
+        tx, match.bracketFixtureId, slot.resolvedEntrantId,
+        actorId, reason, idempotencyKey, 'ADMIN_OVERRIDE',
+      );
+    }
+    const fingerprint = createHash('sha256')
+      .update(JSON.stringify({ matchId, winnerColor, reason: reason.trim() }))
+      .digest('hex');
+    const replay = await tx.matchWinnerDecisionIdempotency.findUnique({
+      where: { key: idempotencyKey },
+    });
+    if (replay) {
+      if (replay.requestFingerprint !== fingerprint)
+        throw new ConflictException({
+          code: 'IDEMPOTENCY_KEY_CONFLICT',
+          message: 'Key was previously used for another match winner',
+        });
+      return replay.response;
+    }
+    await this.finalizeMatchManually(tx, matchId, athlete.id, actorId, reason);
+    const response = { matchId, winnerColor };
+    await tx.matchWinnerDecisionIdempotency.create({
+      data: {
+        matchId,
+        key: idempotencyKey,
+        requestFingerprint: fingerprint,
+        response,
+      },
+    });
+    return response;
+  }
+
+  private async finalizeMatchManually(
+    tx: Prisma.TransactionClient,
+    matchId: string,
+    winnerAthleteId: string,
+    actorId: string,
+    reason: string,
+  ) {
+    const match = await tx.match.findUniqueOrThrow({
+      where: { id: matchId },
+      include: { outcome: true, athletes: true },
+    });
+    const athlete = match.athletes.find((item) => item.id === winnerAthleteId);
+    if (!athlete)
+      throw new ConflictException({
+        code: 'MATCH_WINNER_INVALID',
+        message: 'Selected athlete does not belong to match',
+      });
+    const now = new Date();
+    const previous = match.outcome
+      ? {
+          winnerColor: match.outcome.winnerColor,
+          method: match.outcome.method,
+          publishedAt: match.outcome.publishedAt.toISOString(),
+        }
+      : null;
+    await tx.matchOutcome.upsert({
+      where: { matchId },
+      create: {
+        matchId,
+        winnerAthleteId,
+        winnerColor: athlete.color,
+        method: MatchOutcomeMethod.ADMIN_MANUAL,
+        snapshot: { manual: true, actorId, reason, previous },
+        publishedAt: now,
+      },
+      update: {
+        winnerAthleteId,
+        winnerColor: athlete.color,
+        method: MatchOutcomeMethod.ADMIN_MANUAL,
+        sourceAppealId: null,
+        sourceOvertimeRoundId: null,
+        publishedSupervisorAssignmentId: null,
+        publishedSupervisorSessionId: null,
+        snapshot: { manual: true, actorId, reason, previous },
+        publishedAt: now,
+      },
+    });
+    await tx.match.update({
+      where: { id: matchId },
+      data: {
+        status: MatchStatus.FINISHED,
+        lifecycle: MatchLifecycle.COMPLETED,
+        finishedAt: match.finishedAt ?? now,
+        suspendedAt: null,
+        intermissionEndsAt: null,
+      },
+    });
+    await tx.round.updateMany({
+      where: { matchId, endedAt: null, invalidatedAt: null },
+      data: { endedAt: now },
+    });
+    await tx.scoringWindow.updateMany({
+      where: { matchId, resolvedAt: null, invalidatedAt: null },
+      data: { resolvedAt: now },
+    });
+    await tx.matchOfficialAssignment.updateMany({
+      where: { matchId, releasedAt: null },
+      data: {
+        releasedAt: now,
+        releaseReason: MatchOfficialAssignmentReleaseReason.MATCH_FINISHED,
+      },
+    });
+    await tx.auditLog.create({
+      data: {
+        eventType: AuditEventType.MATCH_ACTION,
+        matchId,
+        adminUserId: actorId,
+        metadata: {
+          action: 'ADMIN_MANUAL_WINNER',
+          winnerColor: athlete.color,
+          reason,
+          previous,
+          previousMatchStatus: match.status,
+        },
+      },
+    });
+  }
+
+  /** Preserve historical downstream matches as standalone when a correction
+   * changes their participants, and reset only the affected bracket path. */
+  private async resetDependentFixtures(
+    tx: Prisma.TransactionClient,
+    sourceFixtureId: string,
+    actorId: string,
+    reason: string,
+  ): Promise<void> {
+    const slots = await tx.bracketSlot.findMany({
+      where: { sourceFixtureId },
+      include: { fixture: { include: { match: { select: { id: true } } } } },
+    });
+    for (const slot of slots) {
+      await this.resetDependentFixtures(tx, slot.fixtureId, actorId, reason);
+      if (slot.fixture.match) {
+        await tx.match.update({
+          where: { id: slot.fixture.match.id },
+          data: { bracketFixtureId: null },
+        });
+        await tx.auditLog.create({
+          data: {
+            eventType: AuditEventType.BRACKET_WINNER_RETRACTED,
+            matchId: slot.fixture.match.id,
+            adminUserId: actorId,
+            metadata: {
+              action: 'DOWNSTREAM_MATCH_DETACHED_AFTER_WINNER_CORRECTION',
+              fixtureId: slot.fixtureId,
+              sourceFixtureId,
+              reason,
+            },
+          },
+        });
+      }
+      await tx.bracketFixture.update({
+        where: { id: slot.fixtureId },
+        data: {
+          winnerEntrantId: null,
+          winnerDecision: Prisma.JsonNull,
+          status: BracketFixtureStatus.PENDING_PARTICIPANTS,
+        },
+      });
+      await tx.bracketSlot.update({
+        where: { id: slot.id },
+        data: { resolvedEntrantId: null },
+      });
+    }
   }
 
   manualDecisionFingerprint(
@@ -325,17 +552,20 @@ export class BracketOutcomeService {
       where: { id: fixtureId },
       include: { bracket: true, match: { select: { id: true } } },
     });
-    if (fixture.winnerEntrantId) {
-      if (fixture.winnerEntrantId !== entrantId)
-        throw new ConflictException({
-          code: 'BRACKET_WINNER_DECISION_CONFLICT',
-          message: 'Fixture already has another winner',
-        });
-      return {
+    const previousWinnerEntrantId = fixture.winnerEntrantId;
+    if (previousWinnerEntrantId && previousWinnerEntrantId !== entrantId) {
+      await this.resetDependentFixtures(
+        tx,
         fixtureId,
-        winnerEntrantId: entrantId,
-        bracketId: fixture.bracketId,
-      };
+        typeof decision.actorId === 'string' ? decision.actorId : '',
+        typeof decision.reason === 'string' ? decision.reason : '',
+      );
+      if (fixture.roundNumber !== fixture.bracket.roundCount &&
+          fixture.bracket.status === BracketStatus.COMPLETED)
+        await tx.tournamentBracket.update({
+          where: { id: fixture.bracketId },
+          data: { status: BracketStatus.ACTIVE, completedAt: null, championEntrantId: null },
+        });
     }
     await tx.bracketFixture.update({
       where: { id: fixtureId },
@@ -397,14 +627,15 @@ export class BracketOutcomeService {
       data: {
         eventType:
           decision.decisionType === 'ADMIN_TIEBREAK' ||
-          decision.decisionType === 'WITHDRAWAL_OR_INJURY'
+          decision.decisionType === 'WITHDRAWAL_OR_INJURY' ||
+          decision.decisionType === 'ADMIN_OVERRIDE'
             ? AuditEventType.BRACKET_WINNER_MANUALLY_DECIDED
             : AuditEventType.BRACKET_WINNER_ADVANCED,
         ...(fixture.match ? { matchId: fixture.match.id } : {}),
         ...(typeof decision.actorId === 'string'
           ? { adminUserId: decision.actorId }
           : {}),
-        metadata: { fixtureId, entrantId, ...decision },
+        metadata: { fixtureId, entrantId, previousWinnerEntrantId, ...decision },
       },
     });
     return {

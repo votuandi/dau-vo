@@ -2,12 +2,15 @@ import type { ActiveBracket } from '@/services/api/admin-management';
 import { MatchDisplayState, MatchLifecycle } from '@/types/shared';
 
 export type BracketFixture = ActiveBracket['fixtures'][number];
-export type ManualWinnerDecisionType = 'ADMIN_TIEBREAK' | 'WITHDRAWAL_OR_INJURY';
+export type ManualWinnerDecisionType = 'ADMIN_TIEBREAK' | 'WITHDRAWAL_OR_INJURY' | 'ADMIN_OVERRIDE';
 
 /** Which manual winner decision, if any, an administrator may record for a fixture. */
 export function manualWinnerDecisionType(fixture: BracketFixture): ManualWinnerDecisionType | null {
   if (fixture.status === 'AWAITING_WINNER') return 'ADMIN_TIEBREAK';
   if (fixture.status === 'READY' && fixture.match === null) return 'WITHDRAWAL_OR_INJURY';
+  // After preparation, during the match, or after completion the administrator
+  // can still declare or correct the official winner.
+  if (fixture.status !== 'PENDING_PARTICIPANTS') return 'ADMIN_OVERRIDE';
   return null;
 }
 

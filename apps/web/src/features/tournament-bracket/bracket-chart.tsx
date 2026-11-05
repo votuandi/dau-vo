@@ -410,7 +410,7 @@ export function BracketChart({
                               <Button
                                 aria-label={`Chỉ định VĐV chiến thắng trận: ${'name' in entrant ? entrant.name : entrant.snapshotName} (${activeFixture.displayReference})`}
                                 title="Chỉ định VĐV chiến thắng trận"
-                                className="absolute right-1.5 z-10 size-8 border border-yellow-400 bg-yellow-100 text-yellow-700 hover:border-yellow-500 hover:bg-yellow-200 hover:text-yellow-800 opacity-0 pointer-events-none group-hover/athlete:opacity-100 group-hover/athlete:pointer-events-auto group-focus-within/athlete:opacity-100 group-focus-within/athlete:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto"
+                                className="absolute right-1.5 z-10 size-8 border border-yellow-400 bg-yellow-100 text-yellow-700 hover:border-yellow-500 hover:bg-yellow-200 hover:text-yellow-800 opacity-100"
                                 disabled={decisionDisabled}
                                 onClick={() => {
                                   onDecideWinner(activeFixture, entrant.id);

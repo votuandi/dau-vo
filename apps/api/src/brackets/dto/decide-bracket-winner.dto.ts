@@ -4,6 +4,7 @@ import { IsIn, IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
 export const bracketWinnerDecisionTypes = [
   'ADMIN_TIEBREAK',
   'WITHDRAWAL_OR_INJURY',
+  'ADMIN_OVERRIDE',
 ] as const;
 export type BracketWinnerDecisionType =
   (typeof bracketWinnerDecisionTypes)[number];

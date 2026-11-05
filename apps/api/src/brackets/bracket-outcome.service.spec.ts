@@ -1,4 +1,4 @@
-import { BracketFixtureStatus, MatchStatus } from '@prisma/client';
+import { AthleteColor, BracketFixtureStatus, BracketStatus, MatchLifecycle, MatchStatus } from '@prisma/client';
 
 import { BracketOutcomeService } from './bracket-outcome.service';
 
@@ -236,4 +236,159 @@ describe('BracketOutcomeService retraction', () => {
       response: { code: 'BRACKET_FIXTURE_PARTICIPANTS_UNRESOLVED' },
     });
   });
+  it('replaces a completed winner, resets the affected bracket path and retains downstream matches', async () => {
+    const winnerId = '33333333-3333-4333-8333-333333333333';
+    const otherId = '44444444-4444-4444-8444-444444444444';
+    const bracketId = '55555555-5555-4555-8555-555555555555';
+    const childFixtureId = '77777777-7777-4777-8777-777777777777';
+    const downstreamMatchId = '88888888-8888-4888-8888-888888888888';
+    const downstreamSlot = {
+      id: '99999999-9999-4999-8999-999999999999',
+      fixtureId: childFixtureId,
+      resolvedEntrantId: otherId,
+      fixture: { match: { id: downstreamMatchId } },
+    };
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      bracketWinnerDecisionIdempotency: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({}),
+      },
+      bracketFixture: {
+        findUniqueOrThrow: jest.fn()
+          .mockResolvedValueOnce({
+            id: fixtureId,
+            status: BracketFixtureStatus.COMPLETED,
+            bracket: { status: BracketStatus.COMPLETED },
+            match: null,
+            slots: [{ resolvedEntrantId: winnerId }, { resolvedEntrantId: otherId }],
+            winnerDecision: { decisionType: 'RULES' },
+          })
+          .mockResolvedValueOnce({
+            id: fixtureId,
+            bracketId,
+            roundNumber: 1,
+            winnerEntrantId: otherId,
+            bracket: { status: BracketStatus.COMPLETED, roundCount: 2 },
+            match: null,
+          }),
+        update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      bracketSlot: {
+        findMany: jest.fn().mockImplementation(({ where }: {
+          where: { sourceFixtureId?: string; fixtureId?: string };
+        }) => {
+          if (where.sourceFixtureId === fixtureId) return [downstreamSlot];
+          if (where.fixtureId === childFixtureId) return [
+            { resolvedEntrantId: winnerId },
+            { resolvedEntrantId: otherId },
+          ];
+          return [];
+        }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      match: { update: jest.fn().mockResolvedValue({}) },
+      tournamentBracket: { update: jest.fn().mockResolvedValue({}) },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const service = new BracketOutcomeService({} as never);
+
+    await service.manuallyDecide(
+      tx as never, fixtureId, winnerId,
+      '66666666-6666-4666-8666-666666666666',
+      'correct official result', 'corrected-winner-key', 'ADMIN_OVERRIDE',
+    );
+
+    expect(tx.match.update).toHaveBeenCalledWith({
+      where: { id: downstreamMatchId },
+      data: { bracketFixtureId: null },
+    });
+    expect(tx.bracketFixture.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: fixtureId },
+        data: expect.objectContaining({
+          winnerEntrantId: winnerId,
+          status: BracketFixtureStatus.COMPLETED,
+        }),
+      }),
+    );
+    expect(tx.tournamentBracket.update).toHaveBeenCalledWith({
+      where: { id: bracketId },
+      data: {
+        status: BracketStatus.ACTIVE,
+        completedAt: null,
+        championEntrantId: null,
+      },
+    });
+  });
+
+  it('supports correcting an already finished standalone match with an audited result', async () => {
+    const red = { id: '33333333-3333-4333-8333-333333333333', color: AthleteColor.RED };
+    const blue = { id: '44444444-4444-4444-8444-444444444444', color: AthleteColor.BLUE };
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      match: {
+        findUniqueOrThrow: jest.fn()
+          .mockResolvedValueOnce({
+            id: matchId,
+            bracketFixtureId: null,
+            athletes: [red, blue],
+          })
+          .mockResolvedValueOnce({
+            id: matchId,
+            status: MatchStatus.FINISHED,
+            lifecycle: MatchLifecycle.COMPLETED,
+            finishedAt: new Date('2026-11-01T00:00:00.000Z'),
+            outcome: {
+              winnerColor: AthleteColor.RED,
+              method: 'REGULATION_SCORE',
+              publishedAt: new Date('2026-11-01T00:00:00.000Z'),
+            },
+            athletes: [red, blue],
+          }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      matchWinnerDecisionIdempotency: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({}),
+      },
+      matchOutcome: { upsert: jest.fn().mockResolvedValue({}) },
+      round: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      scoringWindow: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      matchOfficialAssignment: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const service = new BracketOutcomeService({} as never);
+
+    await service.manuallyDecideMatch(
+      tx as never, matchId, AthleteColor.BLUE,
+      '66666666-6666-4666-8666-666666666666',
+      'official correction', 'standalone-override-key',
+    );
+
+    expect(tx.matchOutcome.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { matchId },
+        update: expect.objectContaining({
+          winnerColor: AthleteColor.BLUE,
+          method: 'ADMIN_MANUAL',
+          sourceAppealId: null,
+        }),
+      }),
+    );
+    expect(tx.match.update).toHaveBeenCalledWith({
+      where: { id: matchId },
+      data: expect.objectContaining({
+        status: MatchStatus.FINISHED,
+        lifecycle: MatchLifecycle.COMPLETED,
+      }),
+    });
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        metadata: expect.objectContaining({ action: 'ADMIN_MANUAL_WINNER' }),
+      }),
+    });
+  });
+
 });

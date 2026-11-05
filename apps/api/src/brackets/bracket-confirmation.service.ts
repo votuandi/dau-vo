@@ -412,7 +412,8 @@ export class BracketConfirmationService {
           typeof fixture.winnerDecision === 'object' &&
           'decisionType' in fixture.winnerDecision &&
           (fixture.winnerDecision.decisionType === 'ADMIN_TIEBREAK' ||
-            fixture.winnerDecision.decisionType === 'WITHDRAWAL_OR_INJURY')
+            fixture.winnerDecision.decisionType === 'WITHDRAWAL_OR_INJURY' ||
+            fixture.winnerDecision.decisionType === 'ADMIN_OVERRIDE')
             ? {
                 decisionType: fixture.winnerDecision.decisionType,
                 reason:

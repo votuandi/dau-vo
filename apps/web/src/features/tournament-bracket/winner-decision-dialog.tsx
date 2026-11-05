@@ -17,7 +17,7 @@ import { bracketQueryKeys } from './query-keys';
 import { createUuid } from '@/lib/uuid';
 
 /**
- * Records an administrator's winner for a tied or forfeited fixture. Mount it
+ * Records an administrator's winner or correction for any resolved fixture. Mount it
  * with a `key` per fixture so each opening starts a fresh idempotent action.
  */
 export function WinnerDecisionDialog({
@@ -60,6 +60,7 @@ export function WinnerDecisionDialog({
           queryKey: bracketQueryKeys.detail(tournamentId, weightClassId),
         }),
         queryClient.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournamentId) }),
+        queryClient.invalidateQueries({ queryKey: ['admin', 'matches'] }),
       ]);
       onClose();
     },
@@ -78,7 +79,9 @@ export function WinnerDecisionDialog({
       description={
         withdrawal
           ? 'Ghi nhận VĐV rút lui hoặc chấn thương không thể tiếp tục. Chọn người thắng và nêu rõ lý do.'
-          : 'Chọn vận động viên chiến thắng và ghi rõ lý do quyết định hòa.'
+          : decisionType === 'ADMIN_TIEBREAK'
+            ? 'Chọn vận động viên chiến thắng và ghi rõ lý do quyết định hòa.'
+            : 'Xác lập hoặc thay đổi người chiến thắng chính thức, kể cả khi trận đã diễn ra hoặc hoàn thành. Nhập lý do để lưu lịch sử.'
       }
       initialFocusRef={reasonRef}
       onClose={onClose}
@@ -102,6 +105,11 @@ export function WinnerDecisionDialog({
           decide.mutate(winnerId);
         }}
       >
+        {decisionType === 'ADMIN_OVERRIDE' ? (
+          <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+            Nếu thay người thắng, các trận vòng sau đã chuẩn bị sẽ được tách khỏi nhánh đấu để giữ lịch sử và nhánh đấu được cập nhật lại.
+          </p>
+        ) : null}
         <fieldset className="mt-4">
           <legend className="text-sm font-bold">Vận động viên chiến thắng</legend>
           <div className="mt-2 space-y-2">

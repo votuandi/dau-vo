@@ -13,6 +13,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
+import { createHash } from 'node:crypto';
+import { DecideMatchWinnerDto } from './dto/decide-match-winner.dto';
 import {
   AdminManagementService,
   type CreatedMatchResult,
@@ -136,5 +138,64 @@ export class BracketFixturesController {
         'bracket_winner_decision_idempotency_key_key',
       )
     );
+  }
+}
+
+/** Administrator-level winner selection for created matches, bracketed or standalone. */
+@Controller('admin/matches')
+@UseGuards(AuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+export class AdminMatchWinnerController {
+  constructor(
+    @Inject(AdminManagementService)
+    private readonly management: AdminManagementService,
+    @Inject(BracketOutcomeService)
+    private readonly outcomes: BracketOutcomeService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+  ) {}
+
+  @Post(':matchId/decide-winner')
+  @Header('Cache-Control', 'no-store')
+  async decide(
+    @Param('matchId', uuid) matchId: string,
+    @Body() input: DecideMatchWinnerDto,
+    @Req() request: AuthenticatedUserRequest,
+  ) {
+    await this.management.assertMatchAccess(matchId, request.user, true);
+    const match = await this.prisma.match.findUniqueOrThrow({
+      where: { id: matchId },
+      select: { tournamentId: true },
+    });
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.management.assertTournamentMutationAccessInTransaction(
+          tx, match.tournamentId, request.user.id,
+        );
+        return this.outcomes.manuallyDecideMatch(
+          tx, matchId, input.winnerColor, request.user.id,
+          input.reason, input.idempotencyKey,
+        );
+      });
+    } catch (error) {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) ||
+          error.code !== 'P2002') throw error;
+      const replay = await this.prisma.matchWinnerDecisionIdempotency.findUnique({
+        where: { key: input.idempotencyKey },
+      });
+      if (!replay) throw error;
+      const fingerprint = createHash('sha256')
+        .update(JSON.stringify({
+          matchId,
+          winnerColor: input.winnerColor,
+          reason: input.reason.trim(),
+        }))
+        .digest('hex');
+      if (replay.requestFingerprint !== fingerprint)
+        throw new ConflictException({
+          code: 'IDEMPOTENCY_KEY_CONFLICT',
+          message: 'Key was previously used for another match winner',
+        });
+      return replay.response;
+    }
   }
 }

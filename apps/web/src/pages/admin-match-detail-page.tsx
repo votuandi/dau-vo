@@ -41,6 +41,7 @@ import {
 } from '@/features/match-presentation';
 import { useAdminAccessContext } from '@/features/auth/admin-access';
 import { RosterAthleteSelector } from '@/features/admin-management/roster-athlete-selector';
+import { MatchWinnerDecisionDialog } from '@/features/admin-management/match-winner-decision-dialog';
 
 function MatchEditor({
   match,
@@ -294,6 +295,7 @@ export function AdminMatchDetailPage() {
 function MatchDetailContent({ matchId }: { readonly matchId: string }) {
   const { isReadOnly } = useAdminAccessContext();
   const matchQuery = useQuery(matchQueryOptions(matchId));
+  const [winnerDialogOpen, setWinnerDialogOpen] = useState(false);
 
   if (matchQuery.isPending) {
     return (
@@ -335,11 +337,18 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
       <div className="space-y-5">
         <PageHeader
           actions={
-            <ClipboardCopyButton
-              accessibleLabel="Sao chép mã trận đấu"
-              label="Sao chép ID"
-              value={match.publicId}
-            />
+            <div className="flex flex-wrap gap-2">
+              {!isReadOnly && match.athletes.length === 2 ? (
+                <Button type="button" variant="warning-soft" onClick={() => setWinnerDialogOpen(true)}>
+                  {match.hasFinalOutcome ? 'Thay đổi người chiến thắng' : 'Chọn người chiến thắng'}
+                </Button>
+              ) : null}
+              <ClipboardCopyButton
+                accessibleLabel="Sao chép mã trận đấu"
+                label="Sao chép ID"
+                value={match.publicId}
+              />
+            </div>
           }
           backLabel="Về giải đấu"
           backTo={`/admin/tournaments/${match.tournamentId}/matches`}
@@ -395,6 +404,9 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
 
       <MatchEditor isReadOnly={isReadOnly} key={match.updatedAt} match={match} />
       <AdminMatchMonitoring live={shouldMonitorLiveMatch(match)} matchId={match.id} />
+      {winnerDialogOpen ? (
+        <MatchWinnerDecisionDialog match={match} onClose={() => setWinnerDialogOpen(false)} />
+      ) : null}
     </div>
   );
 }

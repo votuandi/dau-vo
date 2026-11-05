@@ -443,7 +443,7 @@ export interface ActiveBracket {
     } | null;
     readonly winnerEntrant: { readonly id: string; readonly snapshotName: string } | null;
     readonly winnerDecision?: {
-      readonly decisionType: 'ADMIN_TIEBREAK' | 'WITHDRAWAL_OR_INJURY';
+      readonly decisionType: 'ADMIN_TIEBREAK' | 'WITHDRAWAL_OR_INJURY' | 'ADMIN_OVERRIDE';
       readonly reason: string | null;
     } | null;
     readonly slots: readonly {
@@ -613,7 +613,7 @@ export const adminManagementApi = {
     fixtureId: string,
     input: {
       readonly entrantId: string;
-      readonly decisionType: 'ADMIN_TIEBREAK' | 'WITHDRAWAL_OR_INJURY';
+      readonly decisionType: 'ADMIN_TIEBREAK' | 'WITHDRAWAL_OR_INJURY' | 'ADMIN_OVERRIDE';
       readonly reason: string;
       readonly idempotencyKey: string;
     },
@@ -622,6 +622,12 @@ export const adminManagementApi = {
       `admin/tournaments/${encodePathSegment(tournamentId)}/brackets/${encodePathSegment(bracketId)}/fixtures/${encodePathSegment(fixtureId)}/decide-winner`,
       input,
     ),
+  decideMatchWinner: (
+    id: string,
+    input: { readonly winnerColor: AthleteColor; readonly reason: string; readonly idempotencyKey: string },
+  ) => apiClient.post<{ readonly matchId?: string; readonly winnerColor?: AthleteColor }>(
+    `admin/matches/${encodePathSegment(id)}/decide-winner`, input,
+  ),
   getMatch: (id: string) => apiClient.get<MatchResponse>(`admin/matches/${encodePathSegment(id)}`),
   getMatchMonitoring: (id: string) =>
     apiClient.get<AdminMatchMonitoring>(`admin/matches/${encodePathSegment(id)}/monitoring`),

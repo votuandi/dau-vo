@@ -342,7 +342,7 @@ describe('BracketChart', () => {
     expect(screen.queryByText(`Thắng: ${name}`)).not.toBeInTheDocument();
   });
 
-  it('offers manual winner selection only for an awaiting fixture with two resolved participants', () => {
+  it('offers manual winner selection before and after match preparation when both entrants are resolved', () => {
     const bracket = activeBracket(MatchPhase.FINISHED, MatchLifecycle.COMPLETED);
     const fixture = required(bracket.fixtures[0]);
     const eligible: ActiveBracket = {
@@ -383,9 +383,17 @@ describe('BracketChart', () => {
         onDecideWinner={decide}
       />,
     );
-    expect(
-      screen.queryByRole('button', { name: /Chỉ định VĐV chiến thắng trận:/ }),
-    ).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Chỉ định VĐV chiến thắng trận:/ })).toHaveLength(2);
+    rerender(
+      <BracketChart
+        data={{
+          ...eligible,
+          fixtures: [{ ...required(eligible.fixtures[0]), status: 'COMPLETED' }],
+        }}
+        onDecideWinner={decide}
+      />,
+    );
+    expect(screen.getAllByRole('button', { name: /Chỉ định VĐV chiến thắng trận:/ })).toHaveLength(2);
   });
 
   it('marks only seeded athletes with an accessible label', () => {
