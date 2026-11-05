@@ -377,7 +377,7 @@ export interface PublicMatchStatePayload {
   match: Omit<MatchStateIdentity, 'id' | 'startedAt'> & {
     outcome: {
       winner: AthleteColor;
-      method: 'REGULATION_SCORE' | 'OVERTIME_SCORE' | 'MANUAL_AFTER_OVERTIME_TIE';
+      method: 'REGULATION_SCORE' | 'OVERTIME_SCORE' | 'MANUAL_AFTER_OVERTIME_TIE' | 'ADMIN_MANUAL';
     } | null;
   };
 }
@@ -390,7 +390,7 @@ export interface ResultPublishedPayload {
   matchPublicId: string;
   outcome: {
     winner: AthleteColor;
-    method: 'REGULATION_SCORE' | 'OVERTIME_SCORE' | 'MANUAL_AFTER_OVERTIME_TIE';
+    method: 'REGULATION_SCORE' | 'OVERTIME_SCORE' | 'MANUAL_AFTER_OVERTIME_TIE' | 'ADMIN_MANUAL';
   };
   phase: 'FINISHED';
   finishedAt: string;
