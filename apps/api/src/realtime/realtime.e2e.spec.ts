@@ -667,7 +667,9 @@ describe('Realtime match infrastructure (integration)', () => {
         login(primaryMatch, role, `${TEST_PREFIX}-public-scoreboard-${role}`),
       ),
     );
-    await Promise.all(refereeLogins.map(({ cookie }) => connect(cookie)));
+    const [judgeOneSocket, judgeTwoSocket] = await Promise.all(
+      refereeLogins.map(({ cookie }) => connect(cookie)),
+    );
     await waitForReadySnapshot(inspectorSocket);
     const roundStarted = waitForEvent<PublicMatchStatePayload>(
       socket,
@@ -698,6 +700,33 @@ describe('Realtime match infrastructure (integration)', () => {
       ok: true,
     });
     await expect(penaltyRecorded).resolves.toBeDefined();
+
+    // A split decision awards nothing, but spectators still see each vote.
+    const splitResolved = waitForEvent<PublicMatchStatePayload>(
+      socket,
+      RealtimeEvent.PUBLIC_MATCH_STATE,
+      (payload) => payload.judgeVotes.lastResolvedWindow !== null,
+    );
+    if (!judgeOneSocket || !judgeTwoSocket)
+      throw new Error('Expected judge sockets.');
+    await expect(
+      submitVote(judgeOneSocket, AthleteColor.RED),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      submitVote(judgeTwoSocket, AthleteColor.BLUE),
+    ).resolves.toMatchObject({ ok: true });
+    const split = await splitResolved;
+    expect(split.judgeVotes.judgeCount).toBe(3);
+    expect(split.judgeVotes.lastResolvedWindow).toMatchObject({
+      winningColor: null,
+      votes: [
+        { judgePosition: 1, athlete: 'RED' },
+        { judgePosition: 2, athlete: 'BLUE' },
+      ],
+    });
+    expect(
+      Object.keys(split.judgeVotes.lastResolvedWindow?.votes[0] ?? {}).sort(),
+    ).toEqual(['athlete', 'judgePosition']);
   });
 
   it('rejects starts unless referees and scoreboards are present on the same match', async () => {

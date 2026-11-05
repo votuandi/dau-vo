@@ -58,6 +58,7 @@ export type {
   MatchStateIdentity,
   MatchStatePayload,
   MatchStateViewer,
+  PublicJudgeVotes,
   PublicMatchStatePayload,
   ResultPublishPayload,
   ResultPublishedPayload,

@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest';
 import {
   buildScoreboardViewModel,
   committedScoresLabel,
+  judgeVoteCells,
+  judgeVotesHoldUntil,
   roundLabel,
   validateMatchIdChange,
 } from './scoreboard-view-model';
@@ -32,6 +34,7 @@ function snapshot(match: Partial<PublicMatchStatePayload['match']> = {}): Public
     athletes: [athlete(AthleteColor.RED, 'Đỏ'), athlete(AthleteColor.BLUE, 'Xanh')],
     committedScores: { source: null, attemptNumber: null, RED: null, BLUE: null },
     generatedAt: '2030-01-01T00:00:00.000Z',
+    judgeVotes: { judgeCount: 3, lastResolvedWindow: null },
     match: {
       currentRound: 1,
       finishedAt: null,
@@ -157,5 +160,33 @@ describe('round label de-duplication', () => {
       activeRound: { ...round, stage: 'OVERTIME' as const, attemptNumber: 2 },
     };
     expect(buildScoreboardViewModel(overtime, false).roundLabel).toBe('HIỆP PHỤ LẦN 2');
+  });
+});
+
+describe('judgeVoteCells', () => {
+  const judgeVotes = {
+    judgeCount: 3,
+    lastResolvedWindow: {
+      resolvedAt: '2030-01-01T00:00:10.000Z',
+      winningColor: null,
+      votes: [
+        { judgePosition: 1, athlete: AthleteColor.BLUE },
+        { judgePosition: 2, athlete: AthleteColor.RED },
+      ],
+    },
+  };
+
+  it('gives every judge a cell and colours only the judges who voted', () => {
+    expect(judgeVoteCells(judgeVotes, true)).toEqual([
+      { position: 1, vote: AthleteColor.BLUE },
+      { position: 2, vote: AthleteColor.RED },
+      { position: 3, vote: null },
+    ]);
+  });
+
+  it('clears the votes once the hold time has passed', () => {
+    expect(judgeVoteCells(judgeVotes, false).map((cell) => cell.vote)).toEqual([null, null, null]);
+    expect(judgeVotesHoldUntil(judgeVotes)).toBe('2030-01-01T00:00:15.000Z');
+    expect(judgeVotesHoldUntil({ judgeCount: 3, lastResolvedWindow: null })).toBeNull();
   });
 });

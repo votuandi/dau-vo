@@ -72,6 +72,34 @@ export function committedScoresLabel(
     : `Điểm chung cuộc sau 2 hiệp: Đỏ ${String(scores.RED)} · Xanh ${String(scores.BLUE)}`;
 }
 
+/** How long a resolved window's votes stay lit on the board. */
+export const JUDGE_VOTE_HOLD_MS = 5_000;
+
+export interface JudgeVoteCell {
+  readonly position: number;
+  readonly vote: AthleteColor | null;
+}
+
+/** One cell per judge position, coloured with that judge's vote if any. */
+export function judgeVoteCells(
+  judgeVotes: PublicMatchStatePayload['judgeVotes'] | undefined,
+  showVotes: boolean,
+): JudgeVoteCell[] {
+  const votes = showVotes ? (judgeVotes?.lastResolvedWindow?.votes ?? []) : [];
+  return Array.from({ length: judgeVotes?.judgeCount ?? 0 }, (_, index) => ({
+    position: index + 1,
+    vote: votes.find((vote) => vote.judgePosition === index + 1)?.athlete ?? null,
+  }));
+}
+
+/** The server deadline after which the last resolved votes are cleared. */
+export function judgeVotesHoldUntil(
+  judgeVotes: PublicMatchStatePayload['judgeVotes'] | undefined,
+): string | null {
+  const resolvedAt = judgeVotes?.lastResolvedWindow?.resolvedAt;
+  return resolvedAt ? new Date(Date.parse(resolvedAt) + JUDGE_VOTE_HOLD_MS).toISOString() : null;
+}
+
 export interface ScoreboardViewModel {
   readonly theme: ScoreboardTheme;
   readonly presentation: MatchPresentation | null;

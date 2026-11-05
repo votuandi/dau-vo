@@ -8,6 +8,7 @@ import {
   type MatchOfficialPresenceEntry,
   type MatchReadiness,
   type MatchStartReadinessDetails,
+  type PublicJudgeVotes,
   type PublicMatchStatePayload,
   type MatchRoundState,
   type MatchScoringWindowState,
@@ -52,6 +53,12 @@ const ACCESS_ROLES = [
   MatchAccessRole.JUDGE_3,
   MatchAccessRole.SUPERVISOR,
 ] as const satisfies readonly MatchAccessRole[];
+
+const LEGACY_JUDGE_POSITION: Record<JudgeSlot, number> = {
+  [JudgeSlot.JUDGE_1]: 1,
+  [JudgeSlot.JUDGE_2]: 2,
+  [JudgeSlot.JUDGE_3]: 3,
+};
 
 @Injectable()
 export class RealtimeMatchStateService {
@@ -624,7 +631,7 @@ export class RealtimeMatchStateService {
     publicMatchId: string,
   ): Promise<PublicMatchStatePayload> {
     const match = await this.prisma.match.findUnique({
-      select: { id: true },
+      select: { id: true, requiredJudgeCount: true },
       where: { publicId: publicMatchId },
     });
 
@@ -632,14 +639,62 @@ export class RealtimeMatchStateService {
       throw new NotFoundException('Match not found');
     }
 
-    const [snapshot, outcome] = await Promise.all([
+    const [snapshot, outcome, lastResolvedWindow] = await Promise.all([
       this.snapshot(match.id),
       this.prisma.matchOutcome.findUnique({
         where: { matchId: match.id },
         select: { winnerColor: true, method: true },
       }),
+      this.prisma.scoringWindow.findFirst({
+        orderBy: { resolvedAt: 'desc' },
+        select: {
+          resolvedAt: true,
+          winningColor: true,
+          judgeVotes: {
+            orderBy: { serverReceivedAt: 'asc' },
+            select: {
+              athleteColor: true,
+              judgeSlot: true,
+              assignment: { select: { judgePosition: true } },
+            },
+            where: { invalidatedAt: null },
+          },
+        },
+        where: {
+          matchId: match.id,
+          invalidatedAt: null,
+          resolvedAt: { not: null },
+        },
+      }),
     ]);
-    return this.toPublicSnapshot(snapshot, outcome);
+    return this.toPublicSnapshot(snapshot, outcome, {
+      judgeCount: match.requiredJudgeCount,
+      lastResolvedWindow:
+        lastResolvedWindow?.resolvedAt == null
+          ? null
+          : {
+              resolvedAt: lastResolvedWindow.resolvedAt.toISOString(),
+              winningColor:
+                lastResolvedWindow.winningColor === null
+                  ? null
+                  : this.sharedAthleteColor(lastResolvedWindow.winningColor),
+              votes: lastResolvedWindow.judgeVotes.flatMap((vote) => {
+                const judgePosition =
+                  vote.assignment?.judgePosition ??
+                  (vote.judgeSlot === null
+                    ? null
+                    : LEGACY_JUDGE_POSITION[vote.judgeSlot]);
+                return judgePosition == null
+                  ? []
+                  : [
+                      {
+                        judgePosition,
+                        athlete: this.sharedAthleteColor(vote.athleteColor),
+                      },
+                    ];
+              }),
+            },
+    });
   }
 
   toPublicSnapshot(
@@ -648,6 +703,10 @@ export class RealtimeMatchStateService {
       winnerColor: AthleteColor;
       method: MatchOutcomeMethod;
     } | null,
+    judgeVotes: PublicJudgeVotes = {
+      judgeCount: 0,
+      lastResolvedWindow: null,
+    },
   ): PublicMatchStatePayload {
     return {
       activeRound: snapshot.activeRound
@@ -676,6 +735,7 @@ export class RealtimeMatchStateService {
         }),
       ),
       generatedAt: snapshot.generatedAt,
+      judgeVotes,
       committedScores: {
         source:
           snapshot.result.currentOvertimeAttempt &&

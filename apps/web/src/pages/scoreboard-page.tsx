@@ -16,6 +16,7 @@ import {
   type ScoreboardTheme,
 } from '@/features/scoreboard/scoreboard-view-model';
 import { AthletePanel } from '@/features/scoreboard/components/athlete-panel';
+import { JudgeVoteStrip } from '@/features/scoreboard/components/judge-vote-strip';
 import { MatchIdSwitcher } from '@/features/scoreboard/components/match-id-switcher';
 import { ScoreboardClock } from '@/features/scoreboard/components/scoreboard-clock';
 import { WinnerPresentation } from '@/features/scoreboard/components/winner-presentation';
@@ -258,6 +259,8 @@ function ScoreboardContent({ matchPublicId }: { readonly matchPublicId: string }
               <span className="text-amber-50">{view.committedScoresLabel}</span>
             ) : null}
           </p>
+
+          <JudgeVoteStrip generatedAt={snapshot?.generatedAt} judgeVotes={snapshot?.judgeVotes} />
 
           <section
             aria-label="Điểm số hai góc"

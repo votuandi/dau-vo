@@ -332,8 +332,23 @@ export type MatchExitResponse =
     };
 
 /**
+ * Votes of the most recently resolved scoring window, keyed by 1-based judge
+ * position. Only resolved windows are exposed, so an open vote can never be
+ * seen (and copied) by the other judges before the window closes.
+ */
+export interface PublicJudgeVotes {
+  judgeCount: number;
+  lastResolvedWindow: {
+    resolvedAt: string;
+    winningColor: AthleteColor | null;
+    votes: Array<{ judgePosition: number; athlete: AthleteColor }>;
+  } | null;
+}
+
+/**
  * Deliberately minimal state exposed to public scoreboards. It omits internal
- * database IDs, session/presence data, access codes, and referee vote details.
+ * database IDs, session/presence data, access codes, and judge identities;
+ * judge votes appear only by position, after their window has resolved.
  */
 export interface PublicMatchStatePayload {
   activeRound: Omit<MatchRoundState, 'id'> | null;
@@ -358,6 +373,7 @@ export interface PublicMatchStatePayload {
     BLUE: number | null;
   };
   generatedAt: string;
+  judgeVotes: PublicJudgeVotes;
   match: Omit<MatchStateIdentity, 'id' | 'startedAt'> & {
     outcome: {
       winner: AthleteColor;

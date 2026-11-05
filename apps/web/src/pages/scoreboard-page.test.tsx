@@ -55,6 +55,7 @@ const snapshot: PublicMatchStatePayload = {
   ],
   committedScores: { source: null, attemptNumber: null, RED: null, BLUE: null },
   generatedAt: '2030-01-01T00:00:00.000Z',
+  judgeVotes: { judgeCount: 3, lastResolvedWindow: null },
   match: {
     currentRound: 1,
     finishedAt: null,
@@ -296,5 +297,54 @@ describe('ScoreboardPage', () => {
 
     expect(screen.queryByLabelText('Mã trận đấu')).not.toBeInTheDocument();
     expect(screen.getByText('A72K9P')).toBeVisible();
+  });
+
+  it('colours each judge cell with that judge vote right after a window resolves', () => {
+    realtimeMock.mockReturnValue({
+      connectionStatus: 'connected',
+      snapshot: {
+        ...snapshot,
+        generatedAt: '2030-01-01T00:00:11.000Z',
+        judgeVotes: {
+          judgeCount: 3,
+          lastResolvedWindow: {
+            resolvedAt: '2030-01-01T00:00:10.000Z',
+            winningColor: null,
+            votes: [
+              { judgePosition: 1, athlete: AthleteColor.RED },
+              { judgePosition: 3, athlete: AthleteColor.BLUE },
+            ],
+          },
+        },
+      },
+    });
+    renderBoard('/bang-diem?match=A72K9P');
+
+    expect(screen.getByLabelText('Giám định 1: Đỏ')).toHaveAttribute('data-vote', 'RED');
+    expect(screen.getByLabelText('Giám định 2: không chọn')).toHaveAttribute('data-vote', 'NONE');
+    expect(screen.getByLabelText('Giám định 3: Xanh')).toHaveAttribute('data-vote', 'BLUE');
+    expect(screen.getByText('Không đủ đa số — không cộng điểm')).toBeVisible();
+  });
+
+  it('leaves judge cells neutral when the last window resolved long ago', () => {
+    realtimeMock.mockReturnValue({
+      connectionStatus: 'connected',
+      snapshot: {
+        ...snapshot,
+        generatedAt: '2030-01-01T00:01:00.000Z',
+        judgeVotes: {
+          judgeCount: 3,
+          lastResolvedWindow: {
+            resolvedAt: '2030-01-01T00:00:10.000Z',
+            winningColor: AthleteColor.RED,
+            votes: [{ judgePosition: 1, athlete: AthleteColor.RED }],
+          },
+        },
+      },
+    });
+    renderBoard('/bang-diem?match=A72K9P');
+
+    expect(screen.getByLabelText('Giám định 1: không chọn')).toBeVisible();
+    expect(screen.queryByText('Cộng điểm cho ĐỎ')).not.toBeInTheDocument();
   });
 });
