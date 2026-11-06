@@ -175,6 +175,14 @@ describe('BracketChart', () => {
     expect(zoomIn).toBeDisabled();
   });
 
+  it('hides its own zoom toolbar when the parent controls zoom', () => {
+    render(<BracketChart data={previewBracket()} zoomPercent={150} />);
+    const content = required(document.querySelector<HTMLElement>('[data-bracket-content]'));
+    expect(content.style.zoom).toBe('1.5');
+    expect(screen.queryByRole('button', { name: 'Phóng to' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Thu nhỏ' })).not.toBeInTheDocument();
+  });
+
   it('fills an omitted preview bye branch with one athlete and no match reference', () => {
     const original = previewBracket();
     const first = required(original.rounds[0]);
@@ -383,7 +391,9 @@ describe('BracketChart', () => {
         onDecideWinner={decide}
       />,
     );
-    expect(screen.getAllByRole('button', { name: /Chỉ định VĐV chiến thắng trận:/ })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /Chỉ định VĐV chiến thắng trận:/ })).toHaveLength(
+      2,
+    );
     rerender(
       <BracketChart
         data={{
@@ -393,7 +403,9 @@ describe('BracketChart', () => {
         onDecideWinner={decide}
       />,
     );
-    expect(screen.getAllByRole('button', { name: /Chỉ định VĐV chiến thắng trận:/ })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /Chỉ định VĐV chiến thắng trận:/ })).toHaveLength(
+      2,
+    );
   });
 
   it('marks only seeded athletes with an accessible label', () => {

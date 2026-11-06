@@ -26,7 +26,7 @@ export function BracketPreviewPanel({
   return (
     <section
       aria-labelledby="bracket-preview-title"
-      className="mt-5 rounded-xl border border-primary/30 bg-primary/5 p-4 sm:p-5"
+      className="rounded-xl border border-primary/30 bg-primary/5 p-4 sm:p-5"
     >
       <div>
         <h4 className="font-black" id="bracket-preview-title">

@@ -53,11 +53,25 @@ const weightClassSelect = {
 } satisfies Prisma.TournamentWeightClassSelect;
 const weightClassListSelect = {
   ...weightClassSelect,
-  _count: {
+  brackets: {
+    where: {
+      status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 1,
     select: {
-      brackets: {
-        where: {
-          status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
+      status: true,
+      _count: {
+        select: {
+          // A fixture has started once a match was prepared for it or a winner was recorded.
+          fixtures: {
+            where: {
+              OR: [
+                { match: { isNot: null } },
+                { winnerEntrantId: { not: null } },
+              ],
+            },
+          },
         },
       },
     },
@@ -69,8 +83,12 @@ export type OrganizationView = Prisma.TournamentOrganizationGetPayload<{
 export type WeightClassView = Prisma.TournamentWeightClassGetPayload<{
   select: typeof weightClassSelect;
 }>;
+/** Coarse progress of a weight class's current bracket, for list badges. */
+export type WeightClassBracketProgress =
+  'NONE' | 'DRAWN' | 'IN_PROGRESS' | 'COMPLETED';
 export type WeightClassListView = WeightClassView & {
   hasCurrentBracket: boolean;
+  bracketProgress: WeightClassBracketProgress;
 };
 type RosterView = OrganizationView | WeightClassView;
 
@@ -96,10 +114,20 @@ export class OrganizationService {
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
       select: weightClassListSelect,
     });
-    return rows.map(({ _count, ...weightClass }) => ({
-      ...weightClass,
-      hasCurrentBracket: _count.brackets > 0,
-    }));
+    return rows.map(({ brackets, ...weightClass }) => {
+      const current = brackets[0];
+      return {
+        ...weightClass,
+        hasCurrentBracket: current !== undefined,
+        bracketProgress: !current
+          ? 'NONE'
+          : current.status === BracketStatus.COMPLETED
+            ? 'COMPLETED'
+            : current._count.fixtures > 0
+              ? 'IN_PROGRESS'
+              : 'DRAWN',
+      };
+    });
   }
   async getOrganization(
     tournamentId: string,

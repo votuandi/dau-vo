@@ -25,6 +25,7 @@ import {
 } from '@/services/api/admin-management';
 import { TournamentStatus } from '@/types/shared';
 import { BracketChart } from './bracket-chart';
+import { BracketZoomControls } from './bracket-zoom-controls';
 import { downloadBracketPdf } from './download-bracket-pdf';
 import { BracketPreviewPanel } from './bracket-preview-dialog';
 import { BracketDrawSetupDialog } from './bracket-draw-setup-dialog';
@@ -32,14 +33,21 @@ import { BracketAthleteSwapDialog } from './bracket-athlete-swap-dialog';
 import { bracketQueryKeys } from './query-keys';
 import { WeightClassMatchTabs } from './weight-class-match-tabs';
 import { ManualMatchCreationForm } from './manual-match-creation-form';
+import { BracketRoundRulesEditor } from './bracket-round-rules-editor';
 import { BracketStaffingEditor } from './bracket-staffing-editor';
 import { CancelBracketDialog } from './cancel-bracket-dialog';
 import { FixtureList } from './fixture-list';
 import { bracketPdfFileName, type BracketFixture } from './fixture-presentation';
 import { IntermissionDurationForm } from './intermission-duration-form';
+import { parseMatchSection, type MatchSection } from './match-section';
+import { MatchSectionPanel, MatchSectionTabs } from './match-section-tabs';
 import { StandaloneMatchList } from './standalone-match-list';
 import { WinnerDecisionDialog } from './winner-decision-dialog';
 import { createUuid } from '@/lib/uuid';
+
+// Compact sizing for the bracket toolbar so actions don't compete with the chart.
+const TOOLBAR_TEXT_BUTTON = 'min-h-8 gap-1.5 px-2.5 text-xs';
+const TOOLBAR_ICON_BUTTON = 'size-8 [&_svg]:size-3.5';
 
 export function TournamentMatchesPage({
   tournament,
@@ -63,7 +71,40 @@ export function TournamentMatchesPage({
         ? selectedParam
         : (active[0]?.id ?? null);
   const selectedWeightClass = active.find((weightClass) => weightClass.id === selectedId);
-  const [isBracketExpanded, setIsBracketExpanded] = useState(true);
+  const bracketFullscreenRef = useRef<HTMLDivElement>(null);
+  const [isBracketFullscreen, setIsBracketFullscreen] = useState(false);
+  // Prefer the browser Fullscreen API; where it is unavailable the fixed overlay still fills the window.
+  const enterBracketFullscreen = () => {
+    setIsBracketFullscreen(true);
+    const element = bracketFullscreenRef.current;
+    if (element?.requestFullscreen && !document.fullscreenElement) {
+      element.requestFullscreen().catch(() => undefined);
+    }
+  };
+  const exitBracketFullscreen = () => {
+    setIsBracketFullscreen(false);
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
+  };
+  useEffect(() => {
+    if (!isBracketFullscreen) return;
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement) setIsBracketFullscreen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsBracketFullscreen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('keydown', onKeyDown);
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
+    };
+  }, [isBracketFullscreen]);
+  const [bracketZoomPercent, setBracketZoomPercent] = useState(100);
   const bracketChartRef = useRef<HTMLDivElement>(null);
   const [isDownloadingBracket, setIsDownloadingBracket] = useState(false);
   const matches = useQuery(
@@ -164,7 +205,8 @@ export function TournamentMatchesPage({
       setCancelOpen(false);
       setDecision(null);
       setConfirmedCancelled(false);
-      setIsBracketExpanded(true);
+      setIsBracketFullscreen(false);
+      setBracketZoomPercent(100);
       drawWeightClassRef.current = selectedId;
     }
   }, [selectedId]);
@@ -334,6 +376,7 @@ export function TournamentMatchesPage({
           queryKey: bracketQueryKeys.detail(tournament.id, selectedId ?? ''),
         }),
         qc.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournament.id) }),
+        qc.invalidateQueries({ queryKey: tournamentQueryKeys.weightClasses(tournament.id) }),
         qc.invalidateQueries({ queryKey: ['admin', 'matches', value.match.id] }),
       ]);
     },
@@ -364,6 +407,34 @@ export function TournamentMatchesPage({
       notifyMutationError(error, 'Không thể cập nhật số giám định.');
     },
   });
+  const roundRules = useMutation({
+    mutationFn: (input: {
+      weightClassId: string;
+      roundNumber: number;
+      regulationRoundCount: number;
+      roundDurationMs: number;
+    }) =>
+      adminManagementApi.updateBracketRoundStaffing(
+        tournament.id,
+        input.weightClassId,
+        input.roundNumber,
+        undefined,
+        undefined,
+        {
+          regulationRoundCount: input.regulationRoundCount,
+          roundDurationMs: input.roundDurationMs,
+        },
+      ),
+    onSuccess: (_, input) => {
+      void qc.invalidateQueries({
+        queryKey: bracketQueryKeys.detail(tournament.id, input.weightClassId),
+      });
+      notifyMutationSuccess('Đã cập nhật số hiệp và thời lượng thi đấu.');
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể cập nhật cấu hình thi đấu.');
+    },
+  });
   const counts = useMemo(
     () =>
       new Map(
@@ -375,6 +446,40 @@ export function TournamentMatchesPage({
     [matchCounts.data],
   );
   const unassigned = counts.get('__unassigned') ?? 0;
+  const section = parseMatchSection(params.get('view'));
+  const selectSection = (next: MatchSection) => {
+    setParams(
+      (old) => {
+        const updated = new URLSearchParams(old);
+        if (next === 'bracket') updated.delete('view');
+        else updated.set('view', next);
+        return updated;
+      },
+      { replace: true },
+    );
+  };
+  const activeBracket = !confirmedCancelled && !isNoBracket ? (bracket.data ?? null) : null;
+  const standaloneCount = matches.data?.matches.filter((match) => !match.bracketFixtureId).length;
+  const bracketDependentPlaceholder =
+    bracket.isPending && !confirmedCancelled ? (
+      <div className="h-48 animate-pulse rounded-xl bg-muted" />
+    ) : (
+      <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+        {confirmedCancelled || isNoBracket
+          ? 'Hạng cân này chưa có nhánh đấu. Hãy bốc thăm ở tab “Sơ đồ nhánh đấu”.'
+          : 'Không thể tải nhánh đấu. Xem chi tiết ở tab “Sơ đồ nhánh đấu”.'}
+      </p>
+    );
+  const standalonePanel = (
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <StandaloneMatchList matches={matches} />
+      <ManualMatchCreationForm
+        isReadOnly={isReadOnly}
+        tournament={tournament}
+        weightClass={selectedWeightClass ?? null}
+      />
+    </div>
+  );
   const blocked =
     !selectedId ||
     athletes.isPending ||
@@ -397,14 +502,27 @@ export function TournamentMatchesPage({
               : !selectedId
                 ? 'Chưa có hạng cân hoạt động.'
                 : 'Cần ít nhất hai vận động viên đang hoạt động.';
+  const drawButton = (
+    <Button
+      className={TOOLBAR_TEXT_BUTTON}
+      disabled={blocked || draw.isPending || setupDraw.isPending}
+      onClick={() => {
+        setConfirmedCancelled(false);
+        setDialogError(null);
+        setWorkflow('loadingSetup');
+        selectSection('bracket');
+        if (selectedId) setupDraw.mutate(beginWorkflow(selectedId));
+      }}
+      size="sm"
+      title={blocked ? reason : undefined}
+      type="button"
+    >
+      <Shuffle aria-hidden="true" className="size-3.5" />
+      {setupDraw.isPending ? 'Đang chia nhánh…' : 'Bốc thăm'}
+    </Button>
+  );
   return (
-    <section className="space-y-5 rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
-      <div>
-        <h2 className="text-xl font-black">Các trận đấu</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Nhánh đấu theo hạng cân và các trận riêng lẻ.
-        </p>
-      </div>
+    <div className="space-y-4">
       <WeightClassMatchTabs
         classes={active}
         counts={counts}
@@ -420,389 +538,461 @@ export function TournamentMatchesPage({
         selectedId={selectedId}
         unassignedCount={unassigned}
       />
-      {weights.isError ? (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4" role="alert">
-          <p className="text-sm text-destructive">
-            {getApiErrorMessage(weights.error, 'Không thể tải hạng cân.')}
-          </p>
-          <Button
-            className="mt-3"
-            onClick={() => void weights.refetch()}
-            size="sm"
-            type="button"
-            variant="outline"
+      <section className="space-y-5 rounded-2xl bg-card shadow-sm">
+        {/* <div>
+        <h2 className="text-xl font-black">Các trận đấu</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Nhánh đấu theo hạng cân và các trận riêng lẻ.
+        </p>
+      </div> */}
+        {weights.isError ? (
+          <div
+            className="rounded-xl border border-destructive/30 bg-destructive/5 p-4"
+            role="alert"
           >
-            Thử lại
-          </Button>
-        </div>
-      ) : null}
-      <div id="weight-class-match-panel" role="tabpanel">
-        {selectedId ? (
-          <>
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 p-3 pl-4">
-              <h3 className="text-lg font-black">
-                {active.find((x) => x.id === selectedId)?.name}
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {bracket.data?.bracket.status === 'ACTIVE' && !isReadOnly ? (
-                  <Button
-                    onClick={() => {
-                      setCancelOpen(true);
-                    }}
-                    type="button"
-                    variant="destructive-soft"
-                  >
-                    <RotateCcw aria-hidden="true" className="size-4" />
-                    Hủy / bốc thăm lại
-                  </Button>
-                ) : null}
-                <Button
-                  disabled={blocked || draw.isPending || setupDraw.isPending}
-                  onClick={() => {
-                    setConfirmedCancelled(false);
-                    setDialogError(null);
-                    setWorkflow('loadingSetup');
-                    if (selectedId) setupDraw.mutate(beginWorkflow(selectedId));
+            <p className="text-sm text-destructive">
+              {getApiErrorMessage(weights.error, 'Không thể tải hạng cân.')}
+            </p>
+            <Button
+              className="mt-3"
+              onClick={() => void weights.refetch()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Thử lại
+            </Button>
+          </div>
+        ) : null}
+        <div id="weight-class-match-panel" role="tabpanel">
+          {selectedId ? (
+            <div className="rounded-xl border border-border">
+              {/* <h3 className="text-lg font-black">{selectedWeightClass?.name}</h3> */}
+              <div className="rounded-t-xl bg-muted/30 px-2 pt-1 sm:px-3">
+                <MatchSectionTabs
+                  counts={{
+                    ...(activeBracket ? { schedule: activeBracket.fixtures.length } : {}),
+                    ...(standaloneCount === undefined ? {} : { standalone: standaloneCount }),
                   }}
-                  title={blocked ? reason : undefined}
-                  type="button"
-                >
-                  <Shuffle aria-hidden="true" className="size-4" />
-                  {setupDraw.isPending ? 'Đang chuẩn bị…' : 'Bốc thăm, chia nhánh đấu'}
-                </Button>
+                  onSelect={selectSection}
+                  selected={section}
+                />
               </div>
-            </div>
-            {preview && ['reviewingPreview', 'confirming'].includes(workflow) ? (
-              <BracketPreviewPanel
-                error={dialogError}
-                canConfirm={Boolean(confirmationKey) && !dialogError}
-                onCancel={() => {
-                  if (!confirm.isPending) {
-                    resetDraw();
-                  }
-                }}
-                onConfirm={() => {
-                  setWorkflow('confirming');
-                  if (selectedId && confirmationKey) {
-                    confirm.mutate({
-                      context: beginWorkflow(selectedId),
-                      previewToken: preview.previewToken,
-                      idempotencyKey: confirmationKey,
-                    });
-                  }
-                }}
-                onChangeDesignatedAthletes={() => {
-                  setPreview(null);
-                  setDialogError(null);
-                  setWorkflow('configuring');
-                }}
-                onEditAthlete={(athleteId) => {
-                  setSwapError(null);
-                  setSwapAthleteId(athleteId);
-                }}
-                onRedraw={() => {
-                  // The old randomized result must not remain visible during a redraw.
-                  setPreview(null);
-                  setConfirmationKey(null);
-                  setDialogError(null);
-                  setWorkflow('generatingPreview');
-                  if (selectedId && drawSetup) {
-                    draw.mutate({
-                      context: beginWorkflow(selectedId),
-                      setupToken: drawSetup.setupToken,
-                      designatedByeAthleteIds,
-                      byeStrategy,
-                    });
-                  }
-                }}
-                pending={draw.isPending || confirm.isPending || swap.isPending}
-                preview={preview}
-              />
-            ) : workflow === 'generatingPreview' ? (
-              <div
-                aria-label="Đang tạo bản xem trước nhánh đấu"
-                className="mt-5 h-72 animate-pulse rounded-xl bg-muted"
-                role="status"
-              >
-                <span className="sr-only">Đang tạo bản xem trước nhánh đấu.</span>
-              </div>
-            ) : workflow === 'error' && !drawSetup ? (
-              <div
-                className="mt-5 rounded-xl border border-destructive/30 bg-destructive/5 p-4"
-                role="alert"
-              >
-                <p className="text-sm text-destructive">{dialogError}</p>
-                <Button
-                  className="mt-3"
-                  onClick={() => {
-                    setWorkflow('loadingSetup');
-                    if (selectedId) setupDraw.mutate(beginWorkflow(selectedId));
-                  }}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  Thử lại
-                </Button>
-              </div>
-            ) : confirmedCancelled || isNoBracket ? (
-              <p className="mt-5 rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
-                Hạng cân này chưa được bốc thăm chia nhánh đấu
-              </p>
-            ) : bracket.data ? (
-              <>
-                <div className="mt-5 rounded-xl border border-border bg-muted/10">
-                  <div className="flex items-center justify-between gap-3 p-4">
-                    <h4 className="font-bold">Sơ đồ nhánh đấu</h4>
-                    <div className="flex items-center gap-2">
+              <div className="p-3 sm:p-4">
+                <MatchSectionPanel section="bracket" selected={section}>
+                  {preview && ['reviewingPreview', 'confirming'].includes(workflow) ? (
+                    <BracketPreviewPanel
+                      error={dialogError}
+                      canConfirm={Boolean(confirmationKey) && !dialogError}
+                      onCancel={() => {
+                        if (!confirm.isPending) {
+                          resetDraw();
+                        }
+                      }}
+                      onConfirm={() => {
+                        setWorkflow('confirming');
+                        if (selectedId && confirmationKey) {
+                          confirm.mutate({
+                            context: beginWorkflow(selectedId),
+                            previewToken: preview.previewToken,
+                            idempotencyKey: confirmationKey,
+                          });
+                        }
+                      }}
+                      onChangeDesignatedAthletes={() => {
+                        setPreview(null);
+                        setDialogError(null);
+                        setWorkflow('configuring');
+                      }}
+                      onEditAthlete={(athleteId) => {
+                        setSwapError(null);
+                        setSwapAthleteId(athleteId);
+                      }}
+                      onRedraw={() => {
+                        // The old randomized result must not remain visible during a redraw.
+                        setPreview(null);
+                        setConfirmationKey(null);
+                        setDialogError(null);
+                        setWorkflow('generatingPreview');
+                        if (selectedId && drawSetup) {
+                          draw.mutate({
+                            context: beginWorkflow(selectedId),
+                            setupToken: drawSetup.setupToken,
+                            designatedByeAthleteIds,
+                            byeStrategy,
+                          });
+                        }
+                      }}
+                      pending={draw.isPending || confirm.isPending || swap.isPending}
+                      preview={preview}
+                    />
+                  ) : workflow === 'generatingPreview' ? (
+                    <div
+                      aria-label="Đang tạo bản xem trước nhánh đấu"
+                      className="h-72 animate-pulse rounded-xl bg-muted"
+                      role="status"
+                    >
+                      <span className="sr-only">Đang tạo bản xem trước nhánh đấu.</span>
+                    </div>
+                  ) : workflow === 'error' && !drawSetup ? (
+                    <div
+                      className="rounded-xl border border-destructive/30 bg-destructive/5 p-4"
+                      role="alert"
+                    >
+                      <p className="text-sm text-destructive">{dialogError}</p>
                       <Button
-                        aria-label="Tải sơ đồ nhánh đấu PDF"
-                        aria-busy={isDownloadingBracket}
-                        disabled={isDownloadingBracket}
+                        className="mt-3"
                         onClick={() => {
-                          void (async () => {
-                            if (!bracketChartRef.current) return;
-                            setIsDownloadingBracket(true);
-                            try {
-                              await downloadBracketPdf(
-                                bracketChartRef.current,
-                                bracketPdfFileName({
-                                  tournamentName: tournament.name,
-                                  sportName: tournament.sport.name,
-                                  weightClassName: selectedWeightClass?.name ?? selectedId,
-                                }),
-                              );
-                            } catch (error) {
-                              notifyMutationError(
-                                error,
-                                'Không thể tải sơ đồ PDF. Vui lòng thử lại.',
-                              );
-                            } finally {
-                              setIsDownloadingBracket(false);
-                            }
-                          })();
+                          setWorkflow('loadingSetup');
+                          if (selectedId) setupDraw.mutate(beginWorkflow(selectedId));
                         }}
-                        size="icon"
-                        title="Tải sơ đồ nhánh đấu PDF"
+                        size="sm"
                         type="button"
                         variant="outline"
                       >
-                        <Download aria-hidden="true" />
-                      </Button>
-                      <Button
-                        disabled={isDownloadingBracket}
-                        aria-controls="bracket-chart"
-                        aria-expanded={isBracketExpanded}
-                        aria-label={isBracketExpanded ? 'Thu gọn sơ đồ' : 'Mở rộng sơ đồ'}
-                        onClick={() => {
-                          setIsBracketExpanded((expanded) => !expanded);
-                        }}
-                        size="icon"
-                        title={isBracketExpanded ? 'Thu gọn sơ đồ' : 'Mở rộng sơ đồ'}
-                        type="button"
-                        variant="outline"
-                      >
-                        {isBracketExpanded ? (
-                          <Minimize2 aria-hidden="true" />
-                        ) : (
-                          <Maximize2 aria-hidden="true" />
-                        )}
+                        Thử lại
                       </Button>
                     </div>
-                  </div>
-                  <div hidden={!isBracketExpanded} id="bracket-chart" ref={bracketChartRef}>
-                    <BracketChart
-                      data={bracket.data}
-                      decisionDisabled={isReadOnly}
-                      onDecideWinner={(fixture, entrantId) => {
-                        setDecision({ fixture, initialWinnerId: entrantId });
+                  ) : confirmedCancelled || isNoBracket ? (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-6">
+                      <p className="text-sm text-muted-foreground">
+                        Hạng cân này chưa được bốc thăm chia nhánh đấu
+                      </p>
+                      {drawButton}
+                    </div>
+                  ) : bracket.data ? (
+                    <div
+                      aria-label={isBracketFullscreen ? 'Sơ đồ nhánh đấu toàn màn hình' : undefined}
+                      aria-modal={isBracketFullscreen ? true : undefined}
+                      className={
+                        isBracketFullscreen
+                          ? 'fixed inset-0 z-50 flex flex-col gap-3 bg-background p-4 sm:p-6'
+                          : 'space-y-3'
+                      }
+                      ref={bracketFullscreenRef}
+                      role={isBracketFullscreen ? 'dialog' : undefined}
+                    >
+                      <div className="flex flex-wrap items-center justify-end gap-3">
+                        {isBracketFullscreen ? (
+                          <h3 className="mr-auto text-lg font-black">
+                            {selectedWeightClass?.name}
+                          </h3>
+                        ) : null}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* Dialogs render outside the fullscreen element, so their triggers stay in the page view. */}
+                          {!isBracketFullscreen &&
+                          bracket.data.bracket.status === 'ACTIVE' &&
+                          !isReadOnly ? (
+                            <Button
+                              className={TOOLBAR_TEXT_BUTTON}
+                              onClick={() => {
+                                setCancelOpen(true);
+                              }}
+                              size="sm"
+                              type="button"
+                              variant="destructive-soft"
+                            >
+                              <RotateCcw aria-hidden="true" className="size-3.5" />
+                              Bốc thăm lại
+                            </Button>
+                          ) : null}
+                          {isBracketFullscreen ? null : drawButton}
+                          <BracketZoomControls
+                            disabled={isDownloadingBracket}
+                            onChange={setBracketZoomPercent}
+                            zoomPercent={bracketZoomPercent}
+                          />
+                          {isBracketFullscreen ? null : (
+                            <Button
+                              aria-label="Tải sơ đồ nhánh đấu PDF"
+                              aria-busy={isDownloadingBracket}
+                              disabled={isDownloadingBracket}
+                              onClick={() => {
+                                void (async () => {
+                                  if (!bracketChartRef.current) return;
+                                  setIsDownloadingBracket(true);
+                                  try {
+                                    await downloadBracketPdf(
+                                      bracketChartRef.current,
+                                      bracketPdfFileName({
+                                        tournamentName: tournament.name,
+                                        sportName: tournament.sport.name,
+                                        weightClassName: selectedWeightClass?.name ?? selectedId,
+                                      }),
+                                    );
+                                  } catch (error) {
+                                    notifyMutationError(
+                                      error,
+                                      'Không thể tải sơ đồ PDF. Vui lòng thử lại.',
+                                    );
+                                  } finally {
+                                    setIsDownloadingBracket(false);
+                                  }
+                                })();
+                              }}
+                              className={TOOLBAR_ICON_BUTTON}
+                              size="icon-sm"
+                              title="Tải sơ đồ nhánh đấu PDF"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Download aria-hidden="true" />
+                            </Button>
+                          )}
+                          {isBracketFullscreen ? (
+                            <Button
+                              className={TOOLBAR_TEXT_BUTTON}
+                              onClick={exitBracketFullscreen}
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Minimize2 aria-hidden="true" className="size-3.5" />
+                              Thoát toàn màn hình
+                            </Button>
+                          ) : (
+                            <Button
+                              aria-label="Xem toàn màn hình"
+                              className={TOOLBAR_ICON_BUTTON}
+                              disabled={isDownloadingBracket}
+                              onClick={enterBracketFullscreen}
+                              size="icon-sm"
+                              title="Xem toàn màn hình"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Maximize2 aria-hidden="true" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      <div
+                        className={isBracketFullscreen ? 'min-h-0 flex-1 overflow-auto' : undefined}
+                        id="bracket-chart"
+                        ref={bracketChartRef}
+                      >
+                        <BracketChart
+                          data={bracket.data}
+                          decisionDisabled={isReadOnly}
+                          zoomPercent={bracketZoomPercent}
+                          onDecideWinner={(fixture, entrantId) => {
+                            // The decision dialog renders outside the fullscreen element.
+                            exitBracketFullscreen();
+                            setDecision({ fixture, initialWinnerId: entrantId });
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ) : bracket.isPending ? (
+                    <div className="h-48 animate-pulse rounded-xl bg-muted" />
+                  ) : athletes.isError ? (
+                    <div
+                      className="rounded-xl border border-destructive/30 bg-destructive/5 p-4"
+                      role="alert"
+                    >
+                      <p className="text-sm text-destructive">{reason}</p>
+                      <Button
+                        className="mt-3"
+                        onClick={() => void athletes.refetch()}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        Thử lại
+                      </Button>
+                    </div>
+                  ) : (
+                    <div
+                      className="rounded-xl border border-destructive/30 bg-destructive/5 p-4"
+                      role="alert"
+                    >
+                      <p className="text-sm text-destructive">{reason}</p>
+                      <Button
+                        className="mt-3"
+                        onClick={() => void bracket.refetch()}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        Thử lại
+                      </Button>
+                    </div>
+                  )}
+                </MatchSectionPanel>
+                <MatchSectionPanel section="schedule" selected={section}>
+                  {activeBracket ? (
+                    <FixtureList
+                      data={activeBracket}
+                      disabled={isReadOnly || prepare.isPending}
+                      onPrepare={(id) => {
+                        prepare.mutate(id);
+                      }}
+                      onDecide={(fixture) => {
+                        setDecision({ fixture, initialWinnerId: null });
                       }}
                     />
+                  ) : (
+                    bracketDependentPlaceholder
+                  )}
+                </MatchSectionPanel>
+                <MatchSectionPanel section="settings" selected={section}>
+                  <div className="space-y-5">
+                    {activeBracket ? (
+                      <>
+                        <BracketRoundRulesEditor
+                          data={activeBracket}
+                          disabled={isReadOnly || activeBracket.bracket.status !== 'ACTIVE'}
+                          pending={roundRules.isPending || staffing.isPending}
+                          onSave={(roundNumber, regulationRoundCount, roundDurationMs) => {
+                            roundRules.mutate({
+                              weightClassId: selectedId,
+                              roundNumber,
+                              regulationRoundCount,
+                              roundDurationMs,
+                            });
+                          }}
+                        />
+                        <BracketStaffingEditor
+                          data={activeBracket}
+                          disabled={isReadOnly || activeBracket.bracket.status !== 'ACTIVE'}
+                          pending={staffing.isPending || roundRules.isPending}
+                          onSave={(roundNumber, count) => {
+                            staffing.mutate({ weightClassId: selectedId, roundNumber, count });
+                          }}
+                        />
+                      </>
+                    ) : (
+                      bracketDependentPlaceholder
+                    )}
+                    <IntermissionDurationForm
+                      initialSeconds={selectedWeightClass?.intermissionDurationSeconds ?? 0}
+                      isReadOnly={isReadOnly}
+                      key={`${selectedId}:${String(selectedWeightClass?.intermissionDurationSeconds ?? 0)}`}
+                      tournamentId={tournament.id}
+                      weightClassId={selectedId}
+                    />
                   </div>
-                </div>
-                <BracketStaffingEditor
-                  data={bracket.data}
-                  disabled={isReadOnly || bracket.data.bracket.status !== 'ACTIVE'}
-                  pending={staffing.isPending}
-                  onSave={(roundNumber, count) => {
-                    staffing.mutate({ weightClassId: selectedId, roundNumber, count });
-                  }}
-                />
-                <IntermissionDurationForm
-                  initialSeconds={selectedWeightClass?.intermissionDurationSeconds ?? 0}
-                  isReadOnly={isReadOnly}
-                  key={`${selectedId}:${String(selectedWeightClass?.intermissionDurationSeconds ?? 0)}`}
-                  tournamentId={tournament.id}
-                  weightClassId={selectedId}
-                />
-                <FixtureList
-                  data={bracket.data}
-                  disabled={isReadOnly || prepare.isPending}
-                  onPrepare={(id) => {
-                    prepare.mutate(id);
-                  }}
-                  onDecide={(fixture) => {
-                    setDecision({ fixture, initialWinnerId: null });
-                  }}
-                />
-              </>
-            ) : bracket.isPending ? (
-              <div className="mt-5 h-48 animate-pulse rounded-xl bg-muted" />
-            ) : athletes.isError ? (
-              <div
-                className="mt-5 rounded-xl border border-destructive/30 bg-destructive/5 p-4"
-                role="alert"
-              >
-                <p className="text-sm text-destructive">{reason}</p>
-                <Button
-                  className="mt-3"
-                  onClick={() => void athletes.refetch()}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  Thử lại
-                </Button>
+                </MatchSectionPanel>
+                <MatchSectionPanel section="standalone" selected={section}>
+                  {standalonePanel}
+                </MatchSectionPanel>
               </div>
-            ) : (
-              <div
-                className="mt-5 rounded-xl border border-destructive/30 bg-destructive/5 p-4"
-                role="alert"
-              >
-                <p className="text-sm text-destructive">{reason}</p>
-                <Button
-                  className="mt-3"
-                  onClick={() => void bracket.refetch()}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  Thử lại
-                </Button>
-              </div>
-            )}
-          </>
-        ) : (
-          <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
-            Hạng cân chưa xác định.
-          </p>
-        )}
-      </div>
-      {drawSetup && ['configuring', 'generatingPreview', 'error'].includes(workflow) ? (
-        <BracketDrawSetupDialog
-          error={dialogError}
-          onClose={resetDraw}
-          onReload={() => {
-            setWorkflow('loadingSetup');
-            if (selectedId) setupDraw.mutate(beginWorkflow(selectedId));
-          }}
-          onSubmit={(ids, byeStrategy) => {
-            setDesignatedByeAthleteIds(ids);
-            setByeStrategy(byeStrategy);
-            setDialogError(null);
-            setPreview(null);
-            setWorkflow('generatingPreview');
-            if (selectedId) {
-              draw.mutate({
-                context: beginWorkflow(selectedId),
-                setupToken: drawSetup.setupToken,
-                designatedByeAthleteIds: ids,
-                byeStrategy,
-              });
-            }
-          }}
-          pending={workflow === 'generatingPreview'}
-          selectedIds={designatedByeAthleteIds}
-          setup={drawSetup}
-        />
-      ) : null}
-      {isDownloadingBracket ? (
-        <Dialog
-          title="Đang tạo file PDF nhánh đấu"
-          description="Vui lòng chờ trong khi tạo và tải file PDF."
-          pending
-          onClose={() => {
-            // This progress dialog closes when the PDF operation finishes.
-          }}
-        >
-          <div
-            className="mt-5 flex justify-center"
-            role="status"
-            aria-label="Đang tạo file PDF nhánh đấu"
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                Các trận chưa gắn với hạng cân nào.
+              </p>
+              {standalonePanel}
+            </div>
+          )}
+        </div>
+        {drawSetup && ['configuring', 'generatingPreview', 'error'].includes(workflow) ? (
+          <BracketDrawSetupDialog
+            error={dialogError}
+            onClose={resetDraw}
+            onReload={() => {
+              setWorkflow('loadingSetup');
+              if (selectedId) setupDraw.mutate(beginWorkflow(selectedId));
+            }}
+            onSubmit={(ids, byeStrategy) => {
+              setDesignatedByeAthleteIds(ids);
+              setByeStrategy(byeStrategy);
+              setDialogError(null);
+              setPreview(null);
+              setWorkflow('generatingPreview');
+              if (selectedId) {
+                draw.mutate({
+                  context: beginWorkflow(selectedId),
+                  setupToken: drawSetup.setupToken,
+                  designatedByeAthleteIds: ids,
+                  byeStrategy,
+                });
+              }
+            }}
+            pending={workflow === 'generatingPreview'}
+            selectedIds={designatedByeAthleteIds}
+            setup={drawSetup}
+          />
+        ) : null}
+        {isDownloadingBracket ? (
+          <Dialog
+            title="Đang tạo file PDF nhánh đấu"
+            description="Vui lòng chờ trong khi tạo và tải file PDF."
+            pending
+            onClose={() => {
+              // This progress dialog closes when the PDF operation finishes.
+            }}
           >
-            <Loader2 aria-hidden="true" className="size-8 animate-spin text-primary" />
-          </div>
-        </Dialog>
-      ) : null}
-      {decision && selectedId && bracket.data ? (
-        <WinnerDecisionDialog
-          bracketId={bracket.data.bracket.id}
-          fixture={decision.fixture}
-          initialWinnerId={decision.initialWinnerId}
-          key={decision.fixture.id}
-          onClose={() => {
-            setDecision(null);
-          }}
-          tournamentId={tournament.id}
-          weightClassId={selectedId}
-        />
-      ) : null}
-      {cancelOpen && selectedId ? (
-        <CancelBracketDialog
-          onCancelled={() => {
-            setCancelOpen(false);
-            setConfirmedCancelled(true);
-          }}
-          onClose={() => {
-            setCancelOpen(false);
-          }}
-          tournamentId={tournament.id}
-          weightClassId={selectedId}
-        />
-      ) : null}
-      {preview && swapAthleteId ? (
-        <BracketAthleteSwapDialog
-          athleteId={swapAthleteId}
-          error={swapError}
-          onClose={() => {
-            if (!swap.isPending) {
-              setSwapAthleteId(null);
-              setSwapError(null);
-            }
-          }}
-          onSubmit={(swapWithAthleteId) => {
-            swapVersionRef.current += 1;
-            swap.mutate({
-              athleteId: swapAthleteId,
-              swapWithAthleteId,
-              version: swapVersionRef.current,
-            });
-          }}
-          pending={swap.isPending}
-          preview={preview}
-        />
-      ) : null}
-      <p aria-atomic="true" aria-live="polite" className="sr-only">
-        {workflow === 'loadingSetup'
-          ? 'Đang chuẩn bị bốc thăm.'
-          : workflow === 'generatingPreview'
-            ? 'Đang tạo bản xem trước nhánh đấu.'
-            : workflow === 'reviewingPreview'
-              ? 'Bản xem trước nhánh đấu đã sẵn sàng.'
-              : confirmedCancelled
-                ? 'Đã hủy nhánh đấu.'
-                : ''}
-      </p>
-      <div className="grid items-start gap-6 border-t pt-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <StandaloneMatchList matches={matches} />
-        <ManualMatchCreationForm
-          isReadOnly={isReadOnly}
-          tournament={tournament}
-          weightClass={
-            selectedId ? (active.find((weight) => weight.id === selectedId) ?? null) : null
-          }
-        />
-      </div>
-    </section>
+            <div
+              className="mt-5 flex justify-center"
+              role="status"
+              aria-label="Đang tạo file PDF nhánh đấu"
+            >
+              <Loader2 aria-hidden="true" className="size-8 animate-spin text-primary" />
+            </div>
+          </Dialog>
+        ) : null}
+        {decision && selectedId && bracket.data ? (
+          <WinnerDecisionDialog
+            bracketId={bracket.data.bracket.id}
+            fixture={decision.fixture}
+            initialWinnerId={decision.initialWinnerId}
+            key={decision.fixture.id}
+            onClose={() => {
+              setDecision(null);
+            }}
+            tournamentId={tournament.id}
+            weightClassId={selectedId}
+          />
+        ) : null}
+        {cancelOpen && selectedId ? (
+          <CancelBracketDialog
+            onCancelled={() => {
+              setCancelOpen(false);
+              setConfirmedCancelled(true);
+            }}
+            onClose={() => {
+              setCancelOpen(false);
+            }}
+            tournamentId={tournament.id}
+            weightClassId={selectedId}
+          />
+        ) : null}
+        {preview && swapAthleteId ? (
+          <BracketAthleteSwapDialog
+            athleteId={swapAthleteId}
+            error={swapError}
+            onClose={() => {
+              if (!swap.isPending) {
+                setSwapAthleteId(null);
+                setSwapError(null);
+              }
+            }}
+            onSubmit={(swapWithAthleteId) => {
+              swapVersionRef.current += 1;
+              swap.mutate({
+                athleteId: swapAthleteId,
+                swapWithAthleteId,
+                version: swapVersionRef.current,
+              });
+            }}
+            pending={swap.isPending}
+            preview={preview}
+          />
+        ) : null}
+        <p aria-atomic="true" aria-live="polite" className="sr-only">
+          {workflow === 'loadingSetup'
+            ? 'Đang chuẩn bị bốc thăm.'
+            : workflow === 'generatingPreview'
+              ? 'Đang tạo bản xem trước nhánh đấu.'
+              : workflow === 'reviewingPreview'
+                ? 'Bản xem trước nhánh đấu đã sẵn sàng.'
+                : confirmedCancelled
+                  ? 'Đã hủy nhánh đấu.'
+                  : ''}
+        </p>
+      </section>
+    </div>
   );
 }

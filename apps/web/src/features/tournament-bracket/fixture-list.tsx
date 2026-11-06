@@ -38,8 +38,8 @@ export function FixtureList({
   );
 
   return (
-    <div className="mt-5 space-y-4">
-      <h3 className="font-black">Lịch fixture theo vòng</h3>
+    <div className="space-y-4">
+      {/* <h3 className="font-black">Danh sách trận đấu theo vòng</h3> */}
       {[...groups].map(([round, fixtures]) => (
         <section key={round}>
           <h4 className="text-sm font-bold">{roundLabel(round, data.bracket.roundCount)}</h4>
@@ -78,7 +78,10 @@ function FixtureItem({
   readonly referenceById: ReadonlyMap<string, string>;
 }) {
   const statuses = fixture.match
-    ? [presentLifecycle(fixture.match.lifecycle), presentPhase(fixture.match.phase)]
+    ? [
+        presentLifecycle(fixture.match.lifecycle),
+        presentPhase(fixture.match.phase, fixture.match.currentRound),
+      ]
     : [presentDisplayState(fixture.displayState)];
   const decisionType = manualWinnerDecisionType(fixture);
   const decidable = canDecideManually(fixture);

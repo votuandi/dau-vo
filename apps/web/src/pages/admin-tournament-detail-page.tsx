@@ -364,10 +364,46 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
         ? tail
         : 'info';
 
+  // Working tabs (matches) need vertical space for the bracket, so the header shrinks there.
+  const compactHeader = active === 'matches';
+  const copyCodeHandlers = {
+    onCopyError: () => {
+      toast({
+        title: 'Không thể sao chép mã. Vui lòng sao chép thủ công.',
+        variant: 'destructive',
+      });
+    },
+    onCopySuccess: () => {
+      toast({ title: 'Đã sao chép mã giải đấu.', variant: 'success' });
+    },
+  };
+
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-8">
-      <div className="space-y-5">
+    <div
+      className={
+        compactHeader ? 'mx-auto w-full max-w-6xl space-y-5' : 'mx-auto w-full max-w-6xl space-y-8'
+      }
+    >
+      <div className={compactHeader ? 'space-y-3' : 'space-y-5'}>
         <PageHeader
+          actions={
+            compactHeader ? (
+              <div className="flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 py-1 pl-3 pr-1">
+                <KeyRound aria-hidden="true" className="size-4 text-primary" />
+                <span className="text-xs font-semibold text-muted-foreground">Mã đăng nhập</span>
+                <code className="select-all font-mono text-sm font-black uppercase tracking-[0.12em] text-primary">
+                  {tournament.publicCode}
+                </code>
+                <ClipboardCopyButton
+                  accessibleLabel="Sao chép mã đăng nhập giải đấu"
+                  label="Sao chép"
+                  value={tournament.publicCode}
+                  variant="ghost"
+                  {...copyCodeHandlers}
+                />
+              </div>
+            ) : undefined
+          }
           backLabel="Tất cả giải đấu"
           backTo="/admin/tournaments"
           badge={<TournamentStatusBadge status={tournament.status} />}
@@ -386,9 +422,10 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
               </span>
             </p>
           }
+          compact={compactHeader}
           media={
             <TournamentImage
-              className="size-16 shrink-0"
+              className={compactHeader ? 'size-11 shrink-0' : 'size-16 shrink-0'}
               imagePath={tournament.imagePath}
               name={tournament.name}
             />
@@ -403,36 +440,30 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
             </p>
           </Alert>
         ) : null}
-        <section className="flex max-w-2xl flex-col gap-3 rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 to-white/60 p-4 sm:flex-row sm:items-center">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-md shadow-primary/20">
-            <KeyRound aria-hidden="true" className="size-5" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-bold">Mã đăng nhập giải đấu</h2>
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <code className="select-all rounded-lg border border-primary/20 bg-white px-3 py-1.5 font-mono text-lg font-black uppercase tracking-[0.12em] text-primary">
-                {tournament.publicCode}
-              </code>
-              <ClipboardCopyButton
-                accessibleLabel="Sao chép mã đăng nhập giải đấu"
-                label="Sao chép mã"
-                onCopyError={() => {
-                  toast({
-                    title: 'Không thể sao chép mã. Vui lòng sao chép thủ công.',
-                    variant: 'destructive',
-                  });
-                }}
-                onCopySuccess={() => {
-                  toast({ title: 'Đã sao chép mã giải đấu.', variant: 'success' });
-                }}
-                value={tournament.publicCode}
-              />
+        {compactHeader ? null : (
+          <section className="flex max-w-2xl flex-col gap-3 rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 to-white/60 p-4 sm:flex-row sm:items-center">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-md shadow-primary/20">
+              <KeyRound aria-hidden="true" className="size-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm font-bold">Mã đăng nhập giải đấu</h2>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <code className="select-all rounded-lg border border-primary/20 bg-white px-3 py-1.5 font-mono text-lg font-black uppercase tracking-[0.12em] text-primary">
+                  {tournament.publicCode}
+                </code>
+                <ClipboardCopyButton
+                  accessibleLabel="Sao chép mã đăng nhập giải đấu"
+                  label="Sao chép mã"
+                  value={tournament.publicCode}
+                  {...copyCodeHandlers}
+                />
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Giám định và giám sát sử dụng mã này cùng với mã bảo mật riêng để đăng nhập.
+              </p>
             </div>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Giám định và giám sát sử dụng mã này cùng với mã bảo mật riêng để đăng nhập.
-            </p>
-          </div>
-        </section>
+          </section>
+        )}
       </div>
 
       <TournamentTabs active={active} tournamentId={tournamentId} />

@@ -4,8 +4,9 @@ import type {
   BracketPreview,
 } from '@/services/api/admin-management';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Crown, Pencil, Star, ZoomIn, ZoomOut } from 'lucide-react';
+import { Crown, Pencil, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { BracketZoomControls } from './bracket-zoom-controls';
 import { isBracketPreview } from './bracket-graph';
 import { bracketChartPresentation } from './bracket-chart-presentation';
 import {
@@ -58,11 +59,14 @@ export function BracketChart({
   onEditAthlete,
   onDecideWinner,
   decisionDisabled = false,
+  zoomPercent: controlledZoomPercent,
 }: {
   readonly data: ChartData;
   readonly onEditAthlete?: (athleteId: string) => void;
   readonly onDecideWinner?: (fixture: ActiveBracket['fixtures'][number], entrantId: string) => void;
   readonly decisionDisabled?: boolean;
+  /** When set, the parent owns zoom and renders `BracketZoomControls` itself; the built-in toolbar is hidden. */
+  readonly zoomPercent?: number;
 }) {
   const isPreview = isBracketPreview(data);
   const graph = useMemo(() => bracketChartPresentation(data), [data]);
@@ -80,7 +84,8 @@ export function BracketChart({
   const slotRefs = useRef(new Map<string, HTMLElement>());
   const [paths, setPaths] = useState<readonly ConnectorPath[]>([]);
   const [rowPitch, setRowPitch] = useState<number>(BRACKET_LAYOUT.rowPitch);
-  const [zoomPercent, setZoomPercent] = useState(100);
+  const [internalZoomPercent, setInternalZoomPercent] = useState(100);
+  const zoomPercent = controlledZoomPercent ?? internalZoomPercent;
   const scale = zoomPercent / 100;
   const entrantById = new Map(
     isPreview
@@ -186,34 +191,11 @@ export function BracketChart({
 
   return (
     <div className="rounded-xl border bg-muted/20 p-3" aria-label="Sơ đồ nhánh đấu">
-      <div className="mb-2 flex justify-end gap-1">
-        <Button
-          aria-label="Thu nhỏ"
-          title="Thu nhỏ"
-          disabled={zoomPercent <= 50}
-          onClick={() => {
-            setZoomPercent((value) => Math.max(50, value - 10));
-          }}
-          size="icon"
-          type="button"
-          variant="outline"
-        >
-          <ZoomOut aria-hidden="true" className="size-4" />
-        </Button>
-        <Button
-          aria-label="Phóng to"
-          title="Phóng to"
-          disabled={zoomPercent >= 200}
-          onClick={() => {
-            setZoomPercent((value) => Math.min(200, value + 10));
-          }}
-          size="icon"
-          type="button"
-          variant="outline"
-        >
-          <ZoomIn aria-hidden="true" className="size-4" />
-        </Button>
-      </div>
+      {controlledZoomPercent === undefined ? (
+        <div className="mb-2 flex justify-end gap-1">
+          <BracketZoomControls onChange={setInternalZoomPercent} zoomPercent={zoomPercent} />
+        </div>
+      ) : null}
       <div className="overflow-x-auto">
         <div
           className="relative flex min-w-max items-stretch"
@@ -293,7 +275,10 @@ export function BracketChart({
                           const statuses = activeFixture.match
                             ? [
                                 presentLifecycle(activeFixture.match.lifecycle),
-                                presentPhase(activeFixture.match.phase),
+                                presentPhase(
+                                  activeFixture.match.phase,
+                                  activeFixture.match.currentRound,
+                                ),
                               ]
                             : [presentDisplayState(activeFixture.displayState)];
                           return (
@@ -410,7 +395,8 @@ export function BracketChart({
                               <Button
                                 aria-label={`Chỉ định VĐV chiến thắng trận: ${'name' in entrant ? entrant.name : entrant.snapshotName} (${activeFixture.displayReference})`}
                                 title="Chỉ định VĐV chiến thắng trận"
-                                className="absolute right-1.5 z-10 size-8 border border-yellow-400 bg-yellow-100 text-yellow-700 hover:border-yellow-500 hover:bg-yellow-200 hover:text-yellow-800 opacity-100"
+                                // Hidden until the athlete row is hovered or focused; touch screens without hover always show it.
+                                className="pointer-events-none absolute right-1.5 z-10 size-8 border border-yellow-400 bg-yellow-100 text-yellow-700 opacity-0 transition-opacity duration-150 hover:border-yellow-500 hover:bg-yellow-200 hover:text-yellow-800 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/athlete:pointer-events-auto group-hover/athlete:opacity-100 group-focus-within/athlete:pointer-events-auto group-focus-within/athlete:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
                                 disabled={decisionDisabled}
                                 onClick={() => {
                                   onDecideWinner(activeFixture, entrant.id);
