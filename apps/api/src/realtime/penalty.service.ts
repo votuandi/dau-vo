@@ -222,7 +222,8 @@ export class PenaltyService {
     ) {
       return null;
     }
-    const expectedRound = match.status === MatchStatus.ROUND_1_RUNNING ? 1 : 2;
+    const expectedRound =
+      match.status === MatchStatus.ROUND_1_RUNNING ? 1 : match.currentRound;
     if (match.currentRound !== expectedRound) {
       return null;
     }
@@ -353,8 +354,12 @@ export class PenaltyService {
     };
   }
 
-  private roundNumber(roundNumber: number): 1 | 2 {
-    if (roundNumber === 1 || roundNumber === 2) {
+  private roundNumber(roundNumber: number): number {
+    if (
+      Number.isInteger(roundNumber) &&
+      roundNumber >= 1 &&
+      roundNumber <= 20
+    ) {
       return roundNumber;
     }
     throw new Error(`Unsupported penalty round number: ${String(roundNumber)}`);

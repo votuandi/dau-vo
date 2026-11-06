@@ -135,7 +135,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
             scoreboardConnectedCount: snapshot.readiness.scoreboardConnectedCount,
           })
         : getParticipantsNotReadyMessage(undefined);
-  const startLabel = status === MatchStatus.BREAK ? 'BẮT ĐẦU HIỆP 2' : 'BẮT ĐẦU HIỆP 1';
+  const startLabel = `BẮT ĐẦU HIỆP ${String(status === MatchStatus.BREAK ? (snapshot?.match.currentRound ?? 1) + 1 : 1)}`;
   const redAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
   const blueAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
   const completionBlockedReasons = snapshot?.completion.blockedReasons;
@@ -216,7 +216,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
     appealValues.bluePenalty !== null;
   const appealTitle =
     status === MatchStatus.REGULATION_APPEAL
-      ? 'Phúc khảo sau hiệp 2'
+      ? 'Phúc khảo sau các hiệp chính'
       : `Phúc khảo hiệp phụ lần ${String(snapshot?.result.currentOvertimeAttempt?.attemptNumber ?? 1)}`;
   const tieBreak = snapshot?.result.tieBreak;
   const appealContext =
@@ -260,7 +260,9 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
           className={`rounded-3xl border px-4 py-4 text-center shadow-2xl backdrop-blur-xl sm:px-8 sm:py-8 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/30 shadow-amber-950/30' : 'border-white/15 bg-white/10 shadow-blue-950/20'}`}
         >
           <p className="text-sm font-black tracking-[0.2em] text-sky-200">
-            {status ? presentPhase(status).label.toUpperCase() : 'ĐANG ĐỒNG BỘ'}
+            {status
+              ? presentPhase(status, snapshot.match.currentRound).label.toUpperCase()
+              : 'ĐANG ĐỒNG BỘ'}
           </p>
           <p
             aria-label={`Thời gian còn lại ${formatCountdown(displayedRemaining ?? 0)}`}
@@ -277,7 +279,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
               : roundIsRunning
                 ? 'Thời gian chính thức do máy chủ xác định'
                 : status === MatchStatus.BREAK
-                  ? 'Chờ giám sát viên bắt đầu Hiệp 2'
+                  ? `Chờ giám sát viên bắt đầu Hiệp ${String((snapshot?.match.currentRound ?? 1) + 1)}`
                   : status === MatchStatus.FINISHED
                     ? 'Trận đấu đã kết thúc'
                     : 'Chờ trạng thái chính thức từ máy chủ'}
@@ -633,9 +635,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
                 {realtime.faultErrorMessage}
               </p>
             ) : !roundIsRunning ? (
-              <p className="text-sky-100/70">
-                Chỉ có thể ghi lỗi khi Hiệp 1 hoặc Hiệp 2 đang diễn ra.
-              </p>
+              <p className="text-sky-100/70">Chỉ có thể ghi lỗi khi hiệp đấu đang diễn ra.</p>
             ) : realtime.connectionStatus !== 'connected' ? (
               <p className="text-sky-100/70">Không thể ghi lỗi khi mất kết nối.</p>
             ) : null}

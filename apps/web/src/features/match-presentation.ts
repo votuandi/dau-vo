@@ -66,7 +66,7 @@ export function presentDisplayState(value: MatchDisplayState): MatchPresentation
   }
 }
 
-export function presentPhase(value: MatchPhase): MatchPresentation {
+export function presentPhase(value: MatchPhase, currentRound?: number | null): MatchPresentation {
   switch (value) {
     case MatchPhase.WAITING:
       return { label: 'Chờ bắt đầu', help: 'Chờ bắt đầu hiệp 1.', variant: 'neutral' };
@@ -75,11 +75,23 @@ export function presentPhase(value: MatchPhase): MatchPresentation {
     case MatchPhase.ROUND_1_PAUSED:
       return { label: 'Hiệp 1 tạm dừng', help: 'Đồng hồ đang dừng.', variant: 'warning' };
     case MatchPhase.BREAK:
-      return { label: 'Nghỉ giữa hiệp', help: 'Chờ bắt đầu hiệp 2.', variant: 'neutral' };
+      return {
+        label: 'Nghỉ giữa hiệp',
+        help: `Chờ bắt đầu hiệp ${String((currentRound ?? 1) + 1)}.`,
+        variant: 'neutral',
+      };
     case MatchPhase.ROUND_2_RUNNING:
-      return { label: 'Hiệp 2', help: 'Hiệp 2 đang diễn ra.', variant: 'info' };
+      return {
+        label: `Hiệp ${String(currentRound ?? 2)}`,
+        help: `Hiệp ${String(currentRound ?? 2)} đang diễn ra.`,
+        variant: 'info',
+      };
     case MatchPhase.ROUND_2_PAUSED:
-      return { label: 'Hiệp 2 tạm dừng', help: 'Đồng hồ đang dừng.', variant: 'warning' };
+      return {
+        label: `Hiệp ${String(currentRound ?? 2)} tạm dừng`,
+        help: 'Đồng hồ đang dừng.',
+        variant: 'warning',
+      };
     case MatchPhase.AWAITING_RESULT_SAVE:
       return {
         label: 'Chờ xác nhận kết quả',
@@ -88,7 +100,7 @@ export function presentPhase(value: MatchPhase): MatchPresentation {
       };
     case MatchPhase.REGULATION_APPEAL:
       return {
-        label: 'Phúc khảo sau hiệp 2',
+        label: 'Phúc khảo sau các hiệp chính',
         help: 'Chờ điều chỉnh điểm chính thức.',
         variant: 'warning',
       };

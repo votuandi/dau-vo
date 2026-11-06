@@ -166,6 +166,14 @@ export class BracketPreviewController {
       parsedRound,
       input.requiredJudgeCount,
       request.user.id,
+      {
+        ...(input.regulationRoundCount === undefined
+          ? {}
+          : { regulationRoundCount: input.regulationRoundCount }),
+        ...(input.roundDurationMs === undefined
+          ? {}
+          : { roundDurationMs: input.roundDurationMs }),
+      },
     );
   }
 }

@@ -101,6 +101,8 @@ export class RealtimeMatchStateService {
         id: true,
         publicId: true,
         rulesVersion: true,
+        regulationRoundCount: true,
+        roundDurationMs: true,
         rounds: {
           orderBy: { roundNumber: 'desc' },
           select: {
@@ -311,6 +313,8 @@ export class RealtimeMatchStateService {
       generatedAt: new Date().toISOString(),
       match: {
         currentRound: match.currentRound,
+        regulationRoundCount: match.regulationRoundCount,
+        roundDurationMs: match.roundDurationMs,
         finishedAt: match.finishedAt?.toISOString() ?? null,
         id: match.id,
         publicId: match.publicId,
@@ -330,7 +334,11 @@ export class RealtimeMatchStateService {
   }
 
   private resultCapability(
-    match: { lifecycle: MatchLifecycle; status: MatchStatus },
+    match: {
+      lifecycle: MatchLifecycle;
+      status: MatchStatus;
+      regulationRoundCount?: number;
+    },
     rounds: Array<{
       id: string;
       endedAt: Date | null;
@@ -395,7 +403,7 @@ export class RealtimeMatchStateService {
     };
     const regulationReasons = commonReasons();
     const hasRegulationSummaries =
-      regulationRoundIds.length === 2 &&
+      regulationRoundIds.length === (match.regulationRoundCount ?? 2) &&
       athletes.every((athlete) =>
         regulationRoundIds.every((roundId) =>
           validRoundResults.some(
@@ -558,7 +566,11 @@ export class RealtimeMatchStateService {
   }
 
   private completionCapability(
-    match: { lifecycle: MatchLifecycle; status: MatchStatus },
+    match: {
+      lifecycle: MatchLifecycle;
+      status: MatchStatus;
+      regulationRoundCount?: number;
+    },
     rounds: Array<{ endedAt: Date | null; roundNumber: number }>,
     unresolvedWindow: { id: string } | null,
   ): { canComplete: boolean; blockedReasons: MatchCompletionBlockedReason[] } {
@@ -567,10 +579,18 @@ export class RealtimeMatchStateService {
       blockedReasons.push('ALREADY_COMPLETED');
     if (match.lifecycle === MatchLifecycle.SUSPENDED)
       blockedReasons.push('MATCH_SUSPENDED');
-    const roundOne = rounds.find((round) => round.roundNumber === 1);
-    const roundTwo = rounds.find((round) => round.roundNumber === 2);
-    if (!roundOne?.endedAt) blockedReasons.push('ROUND_1_NOT_ENDED');
-    if (!roundTwo?.endedAt) blockedReasons.push('ROUND_2_NOT_ENDED');
+    const count = match.regulationRoundCount ?? 2;
+    const missingRounds = Array.from({ length: count }, (_, i) => i + 1).filter(
+      (number) =>
+        !rounds.some(
+          (round) => round.roundNumber === number && round.endedAt !== null,
+        ),
+    );
+    if (missingRounds.includes(1)) blockedReasons.push('ROUND_1_NOT_ENDED');
+    if (count === 2 && missingRounds.includes(2))
+      blockedReasons.push('ROUND_2_NOT_ENDED');
+    if (count > 2 && missingRounds.some((number) => number > 1))
+      blockedReasons.push('REGULATION_ROUNDS_NOT_ENDED');
     if (unresolvedWindow !== null)
       blockedReasons.push('UNRESOLVED_SCORING_WINDOW');
     if (match.status !== MatchStatus.AWAITING_RESULT_SAVE)
@@ -581,7 +601,11 @@ export class RealtimeMatchStateService {
   /** This projection is informational only; execute-time validation is repeated
    * under the locked Match row by MatchLifecycleService. */
   private exitCapability(
-    match: { lifecycle: MatchLifecycle; status: MatchStatus },
+    match: {
+      lifecycle: MatchLifecycle;
+      status: MatchStatus;
+      regulationRoundCount?: number;
+    },
     rounds: Array<{ endedAt: Date | null; roundNumber: number }>,
     unresolvedWindow: { id: string } | null,
   ): MatchExitCapability {
@@ -887,8 +911,9 @@ export class RealtimeMatchStateService {
 
     if (
       round.stage === 'REGULATION' &&
-      round.roundNumber !== 1 &&
-      round.roundNumber !== 2
+      (!Number.isInteger(round.roundNumber) ||
+        round.roundNumber < 1 ||
+        round.roundNumber > 20)
     ) {
       throw new Error(`Unsupported round number: ${String(round.roundNumber)}`);
     }
@@ -901,7 +926,7 @@ export class RealtimeMatchStateService {
       remainingDurationMs: round.remainingDurationMs,
       ...(round.stage === 'REGULATION'
         ? {
-            roundNumber: round.roundNumber as 1 | 2,
+            roundNumber: round.roundNumber,
             stage: 'REGULATION' as const,
             attemptNumber: 0,
           }
@@ -929,8 +954,9 @@ export class RealtimeMatchStateService {
     }
     if (
       window.round.stage === 'REGULATION' &&
-      window.roundNumber !== 1 &&
-      window.roundNumber !== 2
+      (!Number.isInteger(window.roundNumber) ||
+        window.roundNumber < 1 ||
+        window.roundNumber > 20)
     ) {
       throw new Error(
         `Unsupported scoring window round number: ${String(window.roundNumber)}`,
@@ -941,7 +967,7 @@ export class RealtimeMatchStateService {
       window.round.stage === 'REGULATION'
         ? {
             stage: 'REGULATION' as const,
-            roundNumber: window.roundNumber as 1 | 2,
+            roundNumber: window.roundNumber,
             attemptNumber: 0 as const,
           }
         : {

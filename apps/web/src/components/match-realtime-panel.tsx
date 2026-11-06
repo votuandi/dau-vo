@@ -7,6 +7,7 @@ import {
 } from '@/types/shared';
 import type { MatchRealtimeState } from '@/features/match-access/match-realtime';
 import { Button } from '@/components/ui/button';
+import { presentPhase } from '@/features/match-presentation';
 import { formatCountdown, useServerCountdown } from '@/features/match-timer/server-countdown';
 
 interface MatchRealtimePanelProps {
@@ -28,24 +29,6 @@ const accessRoleLabels: Record<MatchAccessRole, string> = {
   [MatchAccessRole.JUDGE_2]: 'Giám định 2',
   [MatchAccessRole.JUDGE_3]: 'Giám định 3',
   [MatchAccessRole.SUPERVISOR]: 'Giám sát',
-};
-
-const matchStatusLabels: Record<MatchStatus, string> = {
-  [MatchStatus.WAITING]: 'Đang chờ',
-  [MatchStatus.ROUND_1_RUNNING]: 'Hiệp 1 đang diễn ra',
-  [MatchStatus.ROUND_1_PAUSED]: 'Hiệp 1 đang tạm dừng',
-  [MatchStatus.BREAK]: 'Nghỉ giữa hiệp',
-  [MatchStatus.ROUND_2_RUNNING]: 'Hiệp 2 đang diễn ra',
-  [MatchStatus.ROUND_2_PAUSED]: 'Hiệp 2 đang tạm dừng',
-  [MatchStatus.AWAITING_RESULT_SAVE]: 'Chờ lưu kết quả',
-  [MatchStatus.REGULATION_APPEAL]: 'Phúc khảo sau hiệp 2',
-  [MatchStatus.OVERTIME_READY]: 'Sẵn sàng hiệp phụ',
-  [MatchStatus.OVERTIME_RUNNING]: 'Hiệp phụ đang diễn ra',
-  [MatchStatus.OVERTIME_PAUSED]: 'Hiệp phụ tạm dừng',
-  [MatchStatus.OVERTIME_APPEAL]: 'Phúc khảo hiệp phụ',
-  [MatchStatus.OVERTIME_TIEBREAK_DECISION]: 'Quyết định hòa hiệp phụ',
-  [MatchStatus.RESULT_PUBLICATION_READY]: 'Sẵn sàng công bố kết quả',
-  [MatchStatus.FINISHED]: 'Đã kết thúc',
 };
 
 const connectionPresentation = {
@@ -112,7 +95,7 @@ function MatchLifecycle({
     snapshot?.generatedAt,
   );
   const mayStartFromCurrentState = status === MatchStatus.WAITING || status === MatchStatus.BREAK;
-  const roundStartLabel = status === MatchStatus.BREAK ? 'Bắt đầu Hiệp 2' : 'Bắt đầu Hiệp 1';
+  const roundStartLabel = `Bắt đầu Hiệp ${String(status === MatchStatus.BREAK ? (snapshot?.match.currentRound ?? 1) + 1 : 1)}`;
 
   let phaseLabel = 'Đang đồng bộ trạng thái…';
   if (status === MatchStatus.WAITING) {
@@ -122,7 +105,7 @@ function MatchLifecycle({
   } else if (status === MatchStatus.BREAK) {
     phaseLabel = 'BREAK';
   } else if (status === MatchStatus.ROUND_2_RUNNING) {
-    phaseLabel = 'Hiệp 2';
+    phaseLabel = `Hiệp ${String(snapshot?.match.currentRound ?? 2)}`;
   } else if (status === MatchStatus.FINISHED) {
     phaseLabel = 'FINISHED';
   }
@@ -146,7 +129,7 @@ function MatchLifecycle({
               <p className="mt-1 text-xs text-slate-400">Thời gian kết thúc do máy chủ xác định</p>
             ) : status === MatchStatus.BREAK ? (
               <p className="mt-1 text-xs text-slate-400">
-                Giám sát viên bắt đầu Hiệp 2 khi sẵn sàng
+                Giám sát viên bắt đầu hiệp tiếp theo khi sẵn sàng
               </p>
             ) : null}
           </div>
@@ -238,7 +221,7 @@ function RefereeVoteControls({ realtime }: { readonly realtime: MatchRealtimeSta
 
       {!roundIsRunning ? (
         <p className="mt-3 text-xs text-muted-foreground">
-          Lựa chọn chỉ được mở trong Hiệp 1 hoặc Hiệp 2.
+          Lựa chọn chỉ được mở khi hiệp đấu đang diễn ra.
         </p>
       ) : null}
 
@@ -427,7 +410,14 @@ export function MatchRealtimePanel({
             <div className="flex flex-wrap justify-between gap-3 text-sm">
               <div>
                 <span className="text-muted-foreground">Trạng thái: </span>
-                <strong>{matchStatusLabels[realtime.snapshot.match.phase]}</strong>
+                <strong>
+                  {
+                    presentPhase(
+                      realtime.snapshot.match.phase,
+                      realtime.snapshot.match.currentRound,
+                    ).label
+                  }
+                </strong>
               </div>
               <div>
                 <span className="text-muted-foreground">Hiệp hiện tại: </span>

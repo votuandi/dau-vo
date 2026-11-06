@@ -557,6 +557,7 @@ model Match {
   rulesVersion         MatchRulesVersion         @default(FAULT_APPEAL_OVERTIME_V2) @map("rules_version")
   suspendedAt          DateTime?                 @map("suspended_at") @db.Timestamptz(3)
   currentRound         Int?                      @map("current_round") @db.SmallInt
+  regulationRoundCount Int                       @default(2) @map("regulation_round_count") @db.SmallInt
   roundDurationMs      Int                       @map("round_duration_ms")
   breakDurationMs      Int                       @map("break_duration_ms")
   intermissionEndsAt   DateTime?                 @map("intermission_ends_at") @db.Timestamptz(3)
@@ -627,6 +628,8 @@ model TournamentBracket {
 }
 
 model BracketRoundStaffing {
+  regulationRoundCount Int             @default(2) @map("regulation_round_count") @db.SmallInt
+  roundDurationMs      Int             @default(120000) @map("round_duration_ms")
   id                 String            @id(map: "bracket_round_staffing_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   bracketId          String            @map("bracket_id") @db.Uuid
   roundNumber        Int               @map("round_number") @db.SmallInt

@@ -707,7 +707,7 @@ export class ScoringService implements OnModuleDestroy {
       match.status === MatchStatus.ROUND_1_RUNNING
         ? 1
         : match.status === MatchStatus.ROUND_2_RUNNING
-          ? 2
+          ? match.currentRound
           : 1;
     if (match.currentRound !== expectedRound) {
       return null;
@@ -924,8 +924,12 @@ export class ScoringService implements OnModuleDestroy {
     this.scheduledResolutions.delete(windowId);
   }
 
-  private roundNumber(roundNumber: number): 1 | 2 {
-    if (roundNumber === 1 || roundNumber === 2) {
+  private roundNumber(roundNumber: number): number {
+    if (
+      Number.isInteger(roundNumber) &&
+      roundNumber >= 1 &&
+      roundNumber <= 20
+    ) {
       return roundNumber;
     }
     throw new Error(`Unsupported scoring round number: ${String(roundNumber)}`);

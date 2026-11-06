@@ -39,6 +39,7 @@ import request from 'supertest';
 
 import type { EnvironmentVariables } from '../config/environment';
 import { PrismaService } from '../prisma/prisma.service';
+import { ScoringService } from './scoring.service';
 
 const TEST_DATABASE_URL =
   process.env.DATABASE_URL ??
@@ -327,6 +328,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     label: string,
     roundDurationMs = 300,
     rulesVersion: MatchRulesVersion = MatchRulesVersion.LEGACY_SCORE_PENALTY_V1,
+    regulationRoundCount = 2,
   ): Promise<TestMatch> {
     const rawCodes = Object.fromEntries(
       ALL_ACCESS_ROLES.map((role) => [
@@ -361,6 +363,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
         },
         // Legacy lifecycle fixtures opt in; modern publication uses V2.
         rulesVersion,
+        regulationRoundCount,
         breakDurationMs: 60_000,
         publicId: randomBytes(6).toString('hex').slice(0, 8).toUpperCase(),
         roundDurationMs,
@@ -1072,6 +1075,156 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
       }),
     ).resolves.toBe(1);
   });
+
+  it.each([1, 3])(
+    'runs exactly %i configured regulation rounds before appeal and publication',
+    async (count) => {
+      const durationMs = count === 3 ? 2000 : 1000;
+      const match = await createMatch(
+        `configured-${count}`,
+        durationMs,
+        MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2,
+        count,
+      );
+      const inspector = await login(
+        match,
+        MatchAccessRole.SUPERVISOR,
+        `configured-${count}-inspector`,
+      );
+      const socket = await connect(inspector.cookie);
+      await connectRequiredPresence(match, socket, `configured-${count}-ready`);
+      for (let number = 1; number <= count; number += 1) {
+        const ended = waitForEvent<RoundEndedPayload>(
+          socket,
+          RealtimeEvent.ROUND_ENDED,
+          (payload) =>
+            payload.matchPublicId === match.publicId &&
+            payload.round.roundNumber === number,
+        );
+        const started = await startRound(socket);
+        expect(started).toMatchObject({
+          ok: true,
+          round: { roundNumber: number, stage: 'REGULATION' },
+        });
+        if (!started.ok) throw new Error('Configured round did not start');
+        expect(
+          new Date(started.round.endsAt).getTime() -
+            new Date(started.round.startedAt).getTime(),
+        ).toBe(durationMs);
+        if (number === 3) {
+          expect(
+            await controlRound(socket, RealtimeEvent.ROUND_PAUSE),
+          ).toMatchObject({ ok: true, round: { roundNumber: 3 } });
+          const reconnect = await connect(inspector.cookie);
+          expect(await requestSnapshot(reconnect)).toMatchObject({
+            match: {
+              currentRound: 3,
+              regulationRoundCount: 3,
+              roundDurationMs: durationMs,
+            },
+            activeRound: { roundNumber: 3, pausedAt: expect.any(String) },
+          });
+          expect(
+            await controlRound(socket, RealtimeEvent.ROUND_RESUME),
+          ).toMatchObject({ ok: true, round: { roundNumber: 3 } });
+          expect(
+            await emitCommand<{ ok: boolean }>(
+              socket,
+              RealtimeEvent.FAULT_RECORD,
+              { athlete: 'BLUE', severity: 'MINOR' },
+            ),
+          ).toMatchObject({ ok: true });
+          const referees = await prisma.matchSession.findMany({
+            where: { matchId: match.id, role: 'JUDGE', active: true },
+            take: 2,
+          });
+          for (const referee of referees) {
+            await app.get(ScoringService).submitVote({
+              athlete: AthleteColor.RED,
+              matchId: match.id,
+              judgeSlot: referee.judgeSlot!,
+              sessionId: referee.id,
+            });
+          }
+        }
+        expect((await ended).status).toBe(
+          number < count ? MatchStatus.BREAK : MatchStatus.REGULATION_APPEAL,
+        );
+      }
+      const snapshot = await requestSnapshot(socket);
+      expect(snapshot.result.regulationAppeal.canComplete).toBe(true);
+      if (count === 3) {
+        expect(
+          snapshot.athletes.find(
+            (athlete) => athlete.color === AthleteColor.RED,
+          )?.score,
+        ).toBe(1);
+        expect(
+          snapshot.athletes.find(
+            (athlete) => athlete.color === AthleteColor.BLUE,
+          )?.violations,
+        ).toBe(1);
+        const cancelled = await cancelResults(
+          socket,
+          RealtimeEvent.ROUND_CANCEL,
+        );
+        expect(cancelled).toMatchObject({
+          ok: true,
+          action: { roundNumbers: [3], status: 'BREAK' },
+        });
+        if (!cancelled.ok) throw new Error('Third round cancellation failed');
+        expect(await requestSnapshot(socket)).toMatchObject({
+          match: { currentRound: 2, phase: 'BREAK' },
+        });
+        expect(
+          await undoResultCancellation(socket, cancelled.action.actionId),
+        ).toMatchObject({ ok: true });
+        expect(await requestSnapshot(socket)).toMatchObject({
+          match: { currentRound: 3, phase: 'REGULATION_APPEAL' },
+        });
+      }
+      expect(await startRound(socket)).toMatchObject({
+        ok: false,
+        error: { code: 'ROUND_START_INVALID_STATE' },
+      });
+      expect(
+        await emitCommand<AppealCompleteResponse>(
+          socket,
+          RealtimeEvent.APPEAL_COMPLETE,
+          {
+            RED: { bonusPoints: 1, penaltyPoints: 0 },
+            BLUE: { bonusPoints: 0, penaltyPoints: 0 },
+            idempotencyKey: `${TEST_PREFIX}-${match.id}-configured-appeal`,
+          },
+        ),
+      ).toMatchObject({
+        ok: true,
+        appeal: { phase: 'RESULT_PUBLICATION_READY' },
+      });
+      const appeal = await prisma.matchAppeal.findFirstOrThrow({
+        where: { matchId: match.id },
+        include: { sourceRounds: true },
+      });
+      expect(appeal.sourceRounds).toHaveLength(count);
+      expect(
+        await emitCommand<ResultPublishResponse>(
+          socket,
+          RealtimeEvent.RESULT_PUBLISH,
+          {
+            idempotencyKey: `${TEST_PREFIX}-${match.id}-configured-publication`,
+          },
+        ),
+      ).toMatchObject({
+        ok: true,
+        publication: { outcome: { winner: 'RED' }, phase: 'FINISHED' },
+      });
+      expect(
+        await prisma.round.count({
+          where: { matchId: match.id, invalidatedAt: null },
+        }),
+      ).toBe(count);
+    },
+  );
 
   it('uses the match duration and never expires a round before its persisted endsAt', async () => {
     // Keep enough margin for a real database read on a busy CI/local machine.

@@ -145,12 +145,18 @@ function MatchEditor({
   return (
     <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
       <h2 className="text-xl font-black tracking-tight">Cấu hình trận đấu</h2>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Số hiệp chính: {match.regulationRoundCount}.
+        {match.bracketFixtureId !== null
+          ? ' Số hiệp và thời lượng được áp dụng từ cấu hình vòng đấu khi chuẩn bị trận.'
+          : ''}
+      </p>
       <form className="mt-5 space-y-6" noValidate onSubmit={handleSubmit}>
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
             <p className="text-sm font-semibold">Trạng thái</p>
             <div className="mt-2 flex h-11 items-center rounded-md border border-input bg-muted/40 px-3 text-sm font-bold">
-              {presentPhase(match.phase).label}
+              {presentPhase(match.phase, match.currentRound).label}
             </div>
             <p className="mt-1.5 text-xs text-muted-foreground">
               Trạng thái được điều khiển bởi giám sát viên trong trận đấu.
@@ -162,7 +168,7 @@ function MatchEditor({
             </label>
             <input
               className={inputClassName}
-              disabled={updateMutation.isPending || isReadOnly}
+              disabled={updateMutation.isPending || isReadOnly || match.bracketFixtureId !== null}
               id="round-duration"
               min={1}
               onChange={(event) => {
@@ -339,7 +345,13 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
           actions={
             <div className="flex flex-wrap gap-2">
               {!isReadOnly && match.athletes.length === 2 ? (
-                <Button type="button" variant="warning-soft" onClick={() => { setWinnerDialogOpen(true); }}>
+                <Button
+                  type="button"
+                  variant="warning-soft"
+                  onClick={() => {
+                    setWinnerDialogOpen(true);
+                  }}
+                >
                   {match.hasFinalOutcome ? 'Thay đổi người chiến thắng' : 'Chọn người chiến thắng'}
                 </Button>
               ) : null}
@@ -362,7 +374,7 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
               <span
                 className={`rounded-full border px-2.5 py-0.5 text-xs font-bold leading-5 ${matchVariantClassName[presentPhase(match.phase).variant]}`}
               >
-                {presentPhase(match.phase).label}
+                {presentPhase(match.phase, match.currentRound).label}
               </span>
             </span>
           }
@@ -405,7 +417,12 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
       <MatchEditor isReadOnly={isReadOnly} key={match.updatedAt} match={match} />
       <AdminMatchMonitoring live={shouldMonitorLiveMatch(match)} matchId={match.id} />
       {winnerDialogOpen ? (
-        <MatchWinnerDecisionDialog match={match} onClose={() => { setWinnerDialogOpen(false); }} />
+        <MatchWinnerDecisionDialog
+          match={match}
+          onClose={() => {
+            setWinnerDialogOpen(false);
+          }}
+        />
       ) : null}
     </div>
   );

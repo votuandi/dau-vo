@@ -54,7 +54,13 @@ const bracketInclude = {
         },
       },
       match: {
-        select: { id: true, publicId: true, status: true, lifecycle: true },
+        select: {
+          id: true,
+          publicId: true,
+          status: true,
+          lifecycle: true,
+          currentRound: true,
+        },
       },
       winnerEntrant: true,
     },
@@ -452,6 +458,7 @@ export class BracketConfirmationService {
                 publicId: fixture.match.publicId,
                 lifecycle: fixture.match.lifecycle,
                 phase: fixture.match.status,
+                currentRound: fixture.match.currentRound,
                 /** @deprecated compatibility alias; use phase. */
                 status: fixture.match.status,
               },

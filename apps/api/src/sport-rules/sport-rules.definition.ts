@@ -5,6 +5,7 @@ export interface SportRulesDefinition {
   readonly athleteColors: readonly AthleteColor[];
   readonly accessRoles: readonly MatchAccessRole[];
   readonly minimumScoreboardConnections: number;
+  /** Default regulation rounds; individual matches snapshot their bracket round settings. */
   readonly roundCount: number;
   /** Staffing policy used for brackets and manually prepared matches. */
   readonly defaultRequiredJudgeCount: number;
