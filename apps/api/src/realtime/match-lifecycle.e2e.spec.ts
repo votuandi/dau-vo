@@ -1953,7 +1953,7 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
     [
       MatchExitMode.CANCEL_RESULTS,
       0,
-      MatchLifecycle.NOT_STARTED,
+      MatchLifecycle.READY,
       MatchStatus.WAITING,
     ],
     [

@@ -1316,8 +1316,8 @@ export class RealtimeMatchStateService {
     lifecycle: MatchLifecycle,
   ): SharedMatchLifecycle {
     switch (lifecycle) {
-      case MatchLifecycle.NOT_STARTED:
-        return SharedMatchLifecycle.NOT_STARTED;
+      case MatchLifecycle.READY:
+        return SharedMatchLifecycle.READY;
       case MatchLifecycle.IN_PROGRESS:
         return SharedMatchLifecycle.IN_PROGRESS;
       case MatchLifecycle.SUSPENDED:

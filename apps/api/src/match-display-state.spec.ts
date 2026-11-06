@@ -4,7 +4,7 @@ import { projectMatchDisplayState } from './match-display-state';
 
 describe('projectMatchDisplayState', () => {
   it.each([
-    [MatchLifecycle.NOT_STARTED, MatchDisplayState.NOT_STARTED],
+    [MatchLifecycle.READY, MatchDisplayState.READY],
     [MatchLifecycle.IN_PROGRESS, MatchDisplayState.IN_PROGRESS],
     [MatchLifecycle.SUSPENDED, MatchDisplayState.SUSPENDED],
     [MatchLifecycle.COMPLETED, MatchDisplayState.COMPLETED],

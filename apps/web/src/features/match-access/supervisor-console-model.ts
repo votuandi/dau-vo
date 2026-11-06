@@ -19,7 +19,7 @@ export function exitOption(mode: MatchExitMode): ExitOption {
     case MatchExitMode.CANCEL_RESULTS:
       return {
         title: 'Hủy kết quả',
-        description: 'Toàn bộ kết quả hiện tại bị vô hiệu và trận trở về Chưa bắt đầu.',
+        description: 'Toàn bộ kết quả hiện tại bị vô hiệu và trận trở về Sẵn sàng.',
         destructive: true,
       };
     case MatchExitMode.SUSPEND_KEEP_ROUND_1:

@@ -45,8 +45,8 @@ export function projectMatchDisplayState(
 
 function lifecycleDisplayState(lifecycle: MatchLifecycle): MatchDisplayState {
   switch (lifecycle) {
-    case MatchLifecycle.NOT_STARTED:
-      return MatchDisplayState.NOT_STARTED;
+    case MatchLifecycle.READY:
+      return MatchDisplayState.READY;
     case MatchLifecycle.IN_PROGRESS:
       return MatchDisplayState.IN_PROGRESS;
     case MatchLifecycle.SUSPENDED:

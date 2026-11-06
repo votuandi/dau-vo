@@ -220,7 +220,7 @@ describe('BracketChart', () => {
   });
 
   it('fills a confirmed bye branch without offering a winner decision', () => {
-    const original = activeBracket(MatchPhase.WAITING, MatchLifecycle.NOT_STARTED);
+    const original = activeBracket(MatchPhase.WAITING, MatchLifecycle.READY);
     const fixture = required(original.fixtures[0]);
     const data: ActiveBracket = {
       ...original,
@@ -409,16 +409,14 @@ describe('BracketChart', () => {
   });
 
   it('marks only seeded athletes with an accessible label', () => {
-    render(<BracketChart data={activeBracket(MatchPhase.WAITING, MatchLifecycle.NOT_STARTED)} />);
+    render(<BracketChart data={activeBracket(MatchPhase.WAITING, MatchLifecycle.READY)} />);
 
     expect(screen.getByLabelText('VĐV hạt giống')).toBeInTheDocument();
     expect(screen.getAllByTitle('VĐV hạt giống')).toHaveLength(1);
   });
 
   it('does not mark athletes whose seed metadata is null', () => {
-    render(
-      <BracketChart data={activeBracket(MatchPhase.WAITING, MatchLifecycle.NOT_STARTED, null)} />,
-    );
+    render(<BracketChart data={activeBracket(MatchPhase.WAITING, MatchLifecycle.READY, null)} />);
 
     expect(screen.queryByLabelText('VĐV hạt giống')).not.toBeInTheDocument();
   });

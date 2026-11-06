@@ -14,11 +14,11 @@ const impossible = (value: never): never => {
 
 export function presentLifecycle(value: MatchLifecycle): MatchPresentation {
   switch (value) {
-    case MatchLifecycle.NOT_STARTED:
+    case MatchLifecycle.READY:
       return {
-        label: 'Chưa bắt đầu',
-        help: 'Trận đã được chuẩn bị và đang chờ bắt đầu.',
-        variant: 'neutral',
+        label: 'Sẵn sàng',
+        help: 'Đã đủ hai vận động viên, chờ giám sát chọn trận và giám định.',
+        variant: 'info',
       };
     case MatchLifecycle.IN_PROGRESS:
       return { label: 'Đang diễn ra', help: 'Trận đang được điều hành.', variant: 'info' };
@@ -44,12 +44,10 @@ export function presentDisplayState(value: MatchDisplayState): MatchPresentation
         variant: 'neutral',
       };
     case MatchDisplayState.READY:
-      return { label: 'Sẵn sàng', help: 'Có thể chuẩn bị trận.', variant: 'info' };
-    case MatchDisplayState.NOT_STARTED:
       return {
-        label: 'Chưa bắt đầu',
-        help: 'Trận đã được chuẩn bị và đang chờ bắt đầu.',
-        variant: 'neutral',
+        label: 'Sẵn sàng',
+        help: 'Đã đủ hai vận động viên, chờ giám sát chọn trận và giám định.',
+        variant: 'info',
       };
     case MatchDisplayState.IN_PROGRESS:
       return { label: 'Đang diễn ra', help: 'Trận đang được điều hành.', variant: 'info' };

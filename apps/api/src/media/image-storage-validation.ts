@@ -78,7 +78,7 @@ export async function canonicalizeImage(
     }).metadata();
     if (
       metadata.format !== expectedFormat ||
-      containsActivePayload(input.buffer)
+      containsActivePayload(input.buffer, metadata.format)
     )
       throw new Error('invalid image');
     buffer = await sharp(input.buffer, {
@@ -105,8 +105,29 @@ export async function canonicalizeImage(
   };
 }
 
-function containsActivePayload(buffer: Buffer): boolean {
+function containsActivePayload(buffer: Buffer, format: string): boolean {
   // Canonicalization removes benign metadata. Reject unmistakable executable
-  // markup explicitly so an image-plus-HTML/script polyglot is never accepted.
-  return /<(?:script|html|svg)\b|<\?php/i.test(buffer.toString('latin1'));
+  // markup outside PNG C2PA manifests, which can legitimately embed an SVG
+  // identity icon. Those caBX chunks are stripped by the WebP re-encode.
+  const activeMarkup = /<(?:script|html|svg)\b|<\?php/i;
+  let scanFrom = 0;
+  if (format === 'png') {
+    let offset = 8;
+    while (offset + 12 <= buffer.length) {
+      const length = buffer.readUInt32BE(offset);
+      const end = offset + 12 + length;
+      if (end > buffer.length) break;
+      const type = buffer.toString('ascii', offset + 4, offset + 8);
+      if (type === 'caBX') {
+        if (activeMarkup.test(buffer.toString('latin1', scanFrom, offset)))
+          return true;
+        scanFrom = end;
+      }
+      offset = end;
+      // Keep scanning anything appended after the PNG image, including fake
+      // caBX chunks there: trailing markup is not image metadata.
+      if (type === 'IEND') break;
+    }
+  }
+  return activeMarkup.test(buffer.toString('latin1', scanFrom));
 }

@@ -874,9 +874,9 @@ describe('Admin tournament and match management (integration)', () => {
     const fetchedMatch = (getResponse.body as MatchResponseBody).match;
     expect(fetchedMatch.id).toBe(creation.match.id);
     expect(fetchedMatch).toMatchObject({
-      lifecycle: MatchLifecycle.NOT_STARTED,
+      lifecycle: MatchLifecycle.READY,
       phase: MatchStatus.WAITING,
-      displayState: 'NOT_STARTED',
+      displayState: 'READY',
     });
     expectExactlyOneAthletePerColor(fetchedMatch.athletes);
     expect(Object.hasOwn(getResponse.body, 'accessCodes')).toBe(false);

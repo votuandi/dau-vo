@@ -12,8 +12,8 @@ export function bracketRoundLabel(roundNumber: number, roundCount: number): stri
 export function bracketFixtureStatusLabel(status: string): string {
   const labels: Record<BracketFixtureState, string> = {
     PENDING_PARTICIPANTS: 'Chờ xác định vận động viên',
-    READY: 'Sẵn sàng chuẩn bị',
-    MATCH_PREPARED: 'Đã chuẩn bị trận',
+    READY: 'Sẵn sàng',
+    MATCH_PREPARED: 'Sẵn sàng',
     AWAITING_WINNER: 'Chờ quyết định hòa',
     COMPLETED: 'Đã hoàn thành',
   };

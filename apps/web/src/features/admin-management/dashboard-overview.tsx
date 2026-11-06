@@ -178,7 +178,7 @@ export function DashboardOverview() {
                   index={1}
                   label="Tổng trận đấu"
                   value={summary.totalMatches}
-                  detail={`${number.format(summary.matches.IN_PROGRESS)} đang diễn ra · ${number.format(summary.matches.NOT_STARTED)} chờ thi đấu`}
+                  detail={`${number.format(summary.matches.IN_PROGRESS)} đang diễn ra · ${number.format(summary.matches.READY)} chờ thi đấu`}
                   icon={<Swords />}
                 />
                 <StatCard
@@ -517,7 +517,7 @@ export function DashboardOverview() {
                     <CalendarDays aria-hidden="true" className="mb-3 size-5 text-sky-600" />
                     <h3 className="text-sm font-bold">Chuẩn bị thi đấu</h3>
                     <p className="mt-2 text-2xl font-black tabular-nums text-sky-900">
-                      {number.format(summary.matches.NOT_STARTED)}{' '}
+                      {number.format(summary.matches.READY)}{' '}
                       <span className="text-sm font-medium">trận đang chờ</span>
                     </p>
                     <p className="mt-2 text-xs leading-5 text-sky-800/80">

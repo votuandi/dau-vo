@@ -1,6 +1,7 @@
 import {
   ConflictException,
   ForbiddenException,
+  forwardRef,
   Inject,
   Injectable,
   Logger,
@@ -8,6 +9,8 @@ import {
 } from '@nestjs/common';
 import {
   AuditEventType,
+  BracketFixtureStatus,
+  BracketStatus,
   MatchLifecycle,
   MatchOfficialAssignmentReleaseReason,
   TournamentOfficialRole,
@@ -19,6 +22,7 @@ import type { ValidatedOfficialSession } from '../official-access/official-acces
 import { assignmentError } from './match-official-assignments.errors';
 import { RealtimeOfficialRoutingService } from '../realtime/realtime-official-routing.service';
 import { inspectorReleaseReason } from './match-official-assignment-lifecycle.service';
+import { AdminManagementService } from '../admin-management/admin-management.service';
 
 type Tx = Prisma.TransactionClient;
 const unstarted = { status: 'WAITING' as const, startedAt: null };
@@ -30,6 +34,8 @@ export class MatchOfficialAssignmentsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RealtimeOfficialRoutingService)
     private readonly routing: RealtimeOfficialRoutingService,
+    @Inject(forwardRef(() => AdminManagementService))
+    private readonly management: AdminManagementService,
   ) {}
 
   async list(identity: ValidatedOfficialSession) {
@@ -38,7 +44,7 @@ export class MatchOfficialAssignmentsService {
       where: {
         tournamentId: identity.tournamentId,
         lifecycle: {
-          in: [MatchLifecycle.NOT_STARTED, MatchLifecycle.SUSPENDED],
+          in: [MatchLifecycle.READY, MatchLifecycle.SUSPENDED],
         },
         tournament: {
           softDeletedAt: null,
@@ -62,18 +68,145 @@ export class MatchOfficialAssignmentsService {
         },
       },
     });
+    // A resolved bracket fixture is immediately selectable. Materialize its
+    // operational match only when a supervisor atomically takes the full team.
+    const fixtures = await this.prisma.bracketFixture.findMany({
+      where: {
+        status: BracketFixtureStatus.READY,
+        match: null,
+        bracket: {
+          tournamentId: identity.tournamentId,
+          status: BracketStatus.ACTIVE,
+          tournament: {
+            softDeletedAt: null,
+            status: { not: TournamentStatus.ARCHIVED },
+          },
+        },
+      },
+      orderBy: [
+        { createdAt: 'asc' },
+        { roundNumber: 'asc' },
+        { position: 'asc' },
+        { id: 'asc' },
+      ],
+      include: {
+        slots: { orderBy: { side: 'asc' }, include: { resolvedEntrant: true } },
+        bracket: { select: { roundStaffing: true } },
+      },
+    });
+    const readyFixtures = fixtures.flatMap((fixture) => {
+      const staffing = fixture.bracket.roundStaffing.find(
+        (row) => row.roundNumber === fixture.roundNumber,
+      );
+      if (
+        !staffing ||
+        fixture.slots.length !== 2 ||
+        fixture.slots.some((slot) => !slot.resolvedEntrant)
+      )
+        return [];
+      return [
+        {
+          id: fixture.id,
+          fixtureId: fixture.id,
+          publicId: fixture.displayReference,
+          lifecycle: MatchLifecycle.READY,
+          status: 'WAITING' as const,
+          requiredJudgeCount: staffing.requiredJudgeCount,
+          athletes: fixture.slots.map((slot) => ({
+            color: slot.side,
+            name: slot.resolvedEntrant!.snapshotName,
+          })),
+          claimable: true,
+        },
+      ];
+    });
     return {
-      matches: matches.map((match) => ({
-        ...match,
-        claimable:
-          !match.officialAssignments.some(
-            (x) => x.role === TournamentOfficialRole.SUPERVISOR,
-          ) ||
-          match.officialAssignments.some(
-            (x) => x.officialId === identity.officialId,
-          ),
-      })),
+      matches: [
+        ...matches.map((match) => ({
+          ...match,
+          claimable:
+            !match.officialAssignments.some(
+              (x) => x.role === TournamentOfficialRole.SUPERVISOR,
+            ) ||
+            match.officialAssignments.some(
+              (x) => x.officialId === identity.officialId,
+            ),
+        })),
+        ...readyFixtures,
+      ],
     };
+  }
+
+  async fixtureState(fixtureId: string, identity: ValidatedOfficialSession) {
+    this.supervisor(identity);
+    const fixture = await this.prisma.bracketFixture.findFirst({
+      where: {
+        id: fixtureId,
+        status: BracketFixtureStatus.READY,
+        match: null,
+        bracket: {
+          tournamentId: identity.tournamentId,
+          status: BracketStatus.ACTIVE,
+          tournament: {
+            softDeletedAt: null,
+            status: { not: TournamentStatus.ARCHIVED },
+          },
+        },
+      },
+      include: { bracket: { select: { roundStaffing: true } }, slots: true },
+    });
+    if (
+      !fixture ||
+      fixture.slots.length !== 2 ||
+      fixture.slots.some((slot) => !slot.resolvedEntrantId)
+    )
+      throw new ConflictException(
+        assignmentError(
+          'MATCH_LIFECYCLE_MISMATCH',
+          'Fixture is no longer ready',
+        ),
+      );
+    const staffing = fixture.bracket.roundStaffing.find(
+      (row) => row.roundNumber === fixture.roundNumber,
+    );
+    if (!staffing)
+      throw new ConflictException(
+        assignmentError(
+          'BRACKET_ROUND_STAFFING_NOT_FOUND',
+          'Round staffing is missing',
+        ),
+      );
+    return {
+      match: {
+        id: fixture.id,
+        lifecycle: MatchLifecycle.READY,
+        requiredJudgeCount: staffing.requiredJudgeCount,
+        officialAssignments: [],
+      },
+      referees: await this.listReferees(identity.tournamentId),
+    };
+  }
+
+  async takeFixture(
+    fixtureId: string,
+    judgeIds: string[],
+    identity: ValidatedOfficialSession,
+  ) {
+    return this.take(fixtureId, judgeIds, identity, true);
+  }
+
+  private async listReferees(tournamentId: string) {
+    const referees = await this.prisma.tournamentOfficial.findMany({
+      where: { tournamentId, role: TournamentOfficialRole.JUDGE },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        assignments: { where: { releasedAt: null }, select: { matchId: true } },
+      },
+    });
+    return referees.map((referee) => this.officialStatus(referee, true));
   }
 
   async state(matchId: string, identity: ValidatedOfficialSession) {
@@ -155,6 +288,7 @@ export class MatchOfficialAssignmentsService {
     matchId: string,
     judgeIds: string[],
     identity: ValidatedOfficialSession,
+    fromFixture = false,
   ) {
     this.supervisor(identity);
     if (new Set(judgeIds).size !== judgeIds.length)
@@ -163,6 +297,30 @@ export class MatchOfficialAssignmentsService {
       );
     const result = await this.transaction(async (tx) => {
       await this.lockTournament(tx, identity.tournamentId);
+      if (fromFixture) {
+        const fixture = await tx.bracketFixture.findFirst({
+          where: {
+            id: matchId,
+            bracket: {
+              tournamentId: identity.tournamentId,
+              status: BracketStatus.ACTIVE,
+            },
+          },
+          select: { id: true, bracketId: true },
+        });
+        if (!fixture)
+          throw new NotFoundException(
+            assignmentError('BRACKET_FIXTURE_NOT_FOUND', 'Fixture not found'),
+          );
+        const created = await this.management.prepareBracketFixtureMatch(
+          identity.tournamentId,
+          fixture.bracketId,
+          fixture.id,
+          null,
+          { transaction: tx, officialId: identity.officialId },
+        );
+        matchId = created.match.id;
+      }
       await this.lockMatch(tx, matchId);
       const currentOfficialIds = await this.activeOfficialIds(tx, matchId);
       await this.lockOfficials(tx, [
@@ -222,6 +380,13 @@ export class MatchOfficialAssignmentsService {
           assignmentError('MATCH_ALREADY_CLAIMED', 'Match is already claimed', {
             officialId: currentInspector.officialId,
           }),
+        );
+      if (match.lifecycle === MatchLifecycle.IN_PROGRESS)
+        throw new ConflictException(
+          assignmentError(
+            'MATCH_LIFECYCLE_MISMATCH',
+            'Match is already in progress',
+          ),
         );
       if (current.length)
         throw new ConflictException(
@@ -317,11 +482,10 @@ export class MatchOfficialAssignmentsService {
           assignedBySupervisorId: identity.officialId,
         })),
       });
-      if (match.lifecycle === MatchLifecycle.SUSPENDED)
-        await tx.match.update({
-          where: { id: matchId },
-          data: { lifecycle: MatchLifecycle.IN_PROGRESS, suspendedAt: null },
-        });
+      await tx.match.update({
+        where: { id: matchId },
+        data: { lifecycle: MatchLifecycle.IN_PROGRESS, suspendedAt: null },
+      });
       await this.audit(
         tx,
         AuditEventType.MATCH_OFFICIAL_ASSIGNMENT_CONFIRMED,
@@ -828,7 +992,11 @@ export class MatchOfficialAssignmentsService {
         id,
         tournamentId,
         lifecycle: {
-          in: [MatchLifecycle.NOT_STARTED, MatchLifecycle.SUSPENDED],
+          in: [
+            MatchLifecycle.READY,
+            MatchLifecycle.SUSPENDED,
+            MatchLifecycle.IN_PROGRESS,
+          ],
         },
         tournament: {
           softDeletedAt: null,
@@ -890,6 +1058,7 @@ export class MatchOfficialAssignmentsService {
         tournamentId: true,
         publicId: true,
         status: true,
+        lifecycle: true,
         requiredJudgeCount: true,
         officialAssignments: {
           where: { releasedAt: null },
@@ -908,6 +1077,7 @@ export class MatchOfficialAssignmentsService {
       api: {
         match: {
           id: match.id,
+          lifecycle: match.lifecycle,
           requiredJudgeCount: match.requiredJudgeCount,
           officialAssignments: match.officialAssignments.map(
             ({ id: _id, ...assignment }) => assignment,

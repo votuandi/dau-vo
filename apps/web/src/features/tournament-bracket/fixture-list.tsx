@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ClipboardCheck, Crown, Eye } from 'lucide-react';
+import { Crown, Eye } from 'lucide-react';
 import { bracketRoundLabel as roundLabel } from '@martial-arts-scoring/shared-types';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,12 +23,10 @@ import {
 export function FixtureList({
   data,
   disabled,
-  onPrepare,
   onDecide,
 }: {
   readonly data: ActiveBracket;
   readonly disabled: boolean;
-  readonly onPrepare: (id: string) => void;
   readonly onDecide: (fixture: BracketFixture) => void;
 }) {
   const groups = useMemo(() => groupFixturesByRound(data.fixtures), [data.fixtures]);
@@ -51,7 +49,6 @@ export function FixtureList({
                 fixture={fixture}
                 key={fixture.id}
                 onDecide={onDecide}
-                onPrepare={onPrepare}
                 referenceById={referenceById}
               />
             ))}
@@ -67,14 +64,12 @@ function FixtureItem({
   disabled,
   fixture,
   onDecide,
-  onPrepare,
   referenceById,
 }: {
   readonly data: ActiveBracket;
   readonly disabled: boolean;
   readonly fixture: BracketFixture;
   readonly onDecide: (fixture: BracketFixture) => void;
-  readonly onPrepare: (id: string) => void;
   readonly referenceById: ReadonlyMap<string, string>;
 }) {
   const statuses = fixture.match
@@ -137,19 +132,6 @@ function FixtureItem({
           ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-          {fixture.status === 'READY' ? (
-            <Button
-              disabled={disabled}
-              onClick={() => {
-                onPrepare(fixture.id);
-              }}
-              size="sm"
-              type="button"
-            >
-              <ClipboardCheck aria-hidden="true" className="size-4" />
-              Chuẩn bị trận
-            </Button>
-          ) : null}
           {fixture.match &&
           (fixture.status === 'MATCH_PREPARED' ||
             fixture.match.lifecycle === MatchLifecycle.COMPLETED) ? (

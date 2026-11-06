@@ -19,6 +19,7 @@ describe('admin dashboard access and aggregation', () => {
   const prisma = {
     user: { findUnique: jest.fn() },
     tournament: { findMany: jest.fn() },
+    tournamentBracket: { findMany: jest.fn() },
     match: { groupBy: jest.fn(), findMany: jest.fn() },
     tournamentOfficial: { groupBy: jest.fn() },
     $transaction: jest.fn(),
@@ -62,6 +63,7 @@ describe('admin dashboard access and aggregation', () => {
       { tournamentId: 'one', lifecycle: 'SUSPENDED', _count: { _all: 1 } },
     ]);
     prisma.match.findMany.mockResolvedValue([]);
+    prisma.tournamentBracket.findMany.mockResolvedValue([]);
     prisma.tournamentOfficial.groupBy.mockResolvedValue([
       { tournamentId: 'one', role: 'JUDGE', _count: { _all: 6 } },
     ]);
@@ -81,7 +83,7 @@ describe('admin dashboard access and aggregation', () => {
     );
     expect(prisma.match.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { tournament: scope, lifecycle: { not: 'NOT_STARTED' } },
+        where: { tournament: scope, lifecycle: { not: 'READY' } },
       }),
     );
     expect(prisma.tournamentOfficial.groupBy).toHaveBeenCalledWith(
@@ -89,11 +91,11 @@ describe('admin dashboard access and aggregation', () => {
     );
     expect(result.tournaments[0]).toMatchObject({
       athleteCount: 20,
-      matches: { NOT_STARTED: 0, IN_PROGRESS: 2, SUSPENDED: 1, COMPLETED: 0 },
+      matches: { READY: 0, IN_PROGRESS: 2, SUSPENDED: 1, COMPLETED: 0 },
       officials: { JUDGE: 6, SUPERVISOR: 0 },
     });
     expect(result.tournaments[1]).toMatchObject({
-      matches: { NOT_STARTED: 0, IN_PROGRESS: 0, SUSPENDED: 0, COMPLETED: 0 },
+      matches: { READY: 0, IN_PROGRESS: 0, SUSPENDED: 0, COMPLETED: 0 },
       officials: { JUDGE: 0, SUPERVISOR: 0 },
     });
   });
@@ -107,6 +109,26 @@ describe('admin dashboard access and aggregation', () => {
     expect(prisma.match.groupBy).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { tournament: { softDeletedAt: null } },
+      }),
+    );
+  });
+
+  it('includes ready fixtures without double-counting materialized matches', async () => {
+    prisma.match.groupBy.mockResolvedValue([
+      { tournamentId: 'one', lifecycle: 'READY', _count: { _all: 1 } },
+    ]);
+    prisma.tournamentBracket.findMany.mockResolvedValue([
+      { tournamentId: 'one', _count: { fixtures: 2 } },
+    ]);
+    const result = await service.getDashboardFor(actor);
+    expect(result.tournaments[0]?.matches.READY).toBe(3);
+    expect(prisma.tournamentBracket.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          _count: {
+            select: { fixtures: { where: { status: 'READY', match: null } } },
+          },
+        }),
       }),
     );
   });

@@ -50,7 +50,7 @@ function errorMessage(e: unknown) {
 function isEligible(match: OfficialMatch): boolean {
   return (
     match.claimable &&
-    (match.lifecycle === MatchLifecycle.NOT_STARTED || match.lifecycle === MatchLifecycle.SUSPENDED)
+    (match.lifecycle === MatchLifecycle.READY || match.lifecycle === MatchLifecycle.SUSPENDED)
   );
 }
 
@@ -158,6 +158,7 @@ function SupervisorAssignment({
     queryKey: ['official-matches', session.tournament.id],
     queryFn: officialAccessApi.matches,
     staleTime: 0,
+    refetchInterval: 5_000,
   });
   useEffect(() => {
     if (
@@ -172,7 +173,9 @@ function SupervisorAssignment({
     queryKey: ['official-match', selected?.id],
     queryFn: () => {
       if (selected === null) throw new Error('A match must be selected before loading its state.');
-      return officialAccessApi.state(selected.id);
+      return selected.fixtureId
+        ? officialAccessApi.fixtureState(selected.fixtureId)
+        : officialAccessApi.state(selected.id);
     },
     enabled: !!selected,
     staleTime: 0,
@@ -187,7 +190,10 @@ function SupervisorAssignment({
       }),
       qc.query({
         queryKey: ['official-match', selected.id],
-        queryFn: () => officialAccessApi.state(selected.id),
+        queryFn: () =>
+          selected.fixtureId
+            ? officialAccessApi.fixtureState(selected.fixtureId)
+            : officialAccessApi.state(selected.id),
         staleTime: 0,
       }),
     ]);
@@ -215,7 +221,9 @@ function SupervisorAssignment({
   const take = useMutation({
     mutationFn: () => {
       if (selected === null) throw new Error('A match must be selected before taking it.');
-      return officialAccessApi.take(selected.id, picked);
+      return selected.fixtureId
+        ? officialAccessApi.takeFixture(selected.fixtureId, picked)
+        : officialAccessApi.take(selected.id, picked);
     },
     onSuccess: async () => {
       // A session snapshot is authoritative; the take response deliberately

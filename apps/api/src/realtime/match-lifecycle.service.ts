@@ -682,7 +682,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
                   : MatchStatus.AWAITING_RESULT_SAVE;
         const nextLifecycle =
           input.mode === MatchExitMode.CANCEL_RESULTS
-            ? MatchLifecycle.NOT_STARTED
+            ? MatchLifecycle.READY
             : MatchLifecycle.SUSPENDED;
         this.logger.log(
           {
@@ -1020,6 +1020,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
             currentRound: true,
             finishedAt: true,
             publicId: true,
+            lifecycle: true,
             startedAt: true,
             status: true,
           },
@@ -1138,6 +1139,14 @@ export class MatchLifecycleService implements OnModuleDestroy {
             : nextStatus === MatchStatus.OVERTIME_READY
               ? match.regulationRoundCount
               : Math.min(...roundNumbers) - 1;
+        // Resetting scores while retaining the assigned crew keeps the match
+        // in progress. Exiting/releasing the crew is what returns it to READY.
+        const resultingLifecycle =
+          nextStatus === MatchStatus.WAITING &&
+          (input.identity.kind === 'legacy' ||
+            match.status === MatchStatus.FINISHED)
+            ? MatchLifecycle.READY
+            : MatchLifecycle.IN_PROGRESS;
         const operation = await transaction.matchResultOperation.create({
           data: {
             auditLogId: audit.id,
@@ -1148,15 +1157,12 @@ export class MatchLifecycleService implements OnModuleDestroy {
                 : null,
             matchId: input.matchId,
             previousCurrentRound: match.currentRound,
-            previousLifecycle: this.lifecycleForPhase(match.status),
+            previousLifecycle: match.lifecycle,
             previousFinishedAt: match.finishedAt,
             previousStartedAt: match.startedAt,
             previousStatus: match.status,
             resultingCurrentRound,
-            resultingLifecycle:
-              nextStatus === MatchStatus.WAITING
-                ? MatchLifecycle.NOT_STARTED
-                : MatchLifecycle.IN_PROGRESS,
+            resultingLifecycle,
             resultingStatus: nextStatus,
             roundNumbers,
             type: entireMatch
@@ -1306,10 +1312,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
             currentRound: resultingCurrentRound,
             finishedAt: null,
             intermissionEndsAt: null,
-            lifecycle:
-              nextStatus === MatchStatus.WAITING
-                ? MatchLifecycle.NOT_STARTED
-                : MatchLifecycle.IN_PROGRESS,
+            lifecycle: resultingLifecycle,
             startedAt:
               nextStatus === MatchStatus.WAITING ? null : match.startedAt,
             status: nextStatus,
@@ -2164,34 +2167,6 @@ export class MatchLifecycleService implements OnModuleDestroy {
       default: {
         const exhaustiveStatus: never = status;
         throw new Error(`Unsupported match status: ${exhaustiveStatus}`);
-      }
-    }
-  }
-
-  private lifecycleForPhase(phase: MatchStatus): MatchLifecycle {
-    switch (phase) {
-      case MatchStatus.WAITING:
-        return MatchLifecycle.NOT_STARTED;
-      case MatchStatus.ROUND_1_RUNNING:
-      case MatchStatus.ROUND_1_PAUSED:
-      case MatchStatus.BREAK:
-      case MatchStatus.ROUND_2_RUNNING:
-      case MatchStatus.ROUND_2_PAUSED:
-      case MatchStatus.AWAITING_RESULT_SAVE:
-      case MatchStatus.REGULATION_APPEAL:
-      case MatchStatus.OVERTIME_READY:
-      case MatchStatus.RESULT_PUBLICATION_READY:
-        return MatchLifecycle.IN_PROGRESS;
-      case MatchStatus.OVERTIME_RUNNING:
-      case MatchStatus.OVERTIME_PAUSED:
-      case MatchStatus.OVERTIME_APPEAL:
-      case MatchStatus.OVERTIME_TIEBREAK_DECISION:
-        return MatchLifecycle.IN_PROGRESS;
-      case MatchStatus.FINISHED:
-        return MatchLifecycle.COMPLETED;
-      default: {
-        const exhaustivePhase: never = phase;
-        throw new Error(`Unsupported match phase: ${exhaustivePhase}`);
       }
     }
   }

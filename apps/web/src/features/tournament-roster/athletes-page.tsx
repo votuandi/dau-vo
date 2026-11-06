@@ -13,6 +13,7 @@ import { toast } from '@/components/ui/toast';
 import {
   inputClassName,
   selectClassName,
+  getApiErrorMessage,
   notifyMutationError,
   notifyMutationSuccess,
   textAreaClassName,
@@ -51,8 +52,9 @@ class AthleteImageUploadError extends Error {
   constructor(
     readonly athlete: TournamentAthlete,
     readonly draft: CreateAthleteInput & { readonly file: File },
+    cause: unknown,
   ) {
-    super('Athlete was saved but its image could not be uploaded.');
+    super('Athlete was saved but its image could not be uploaded.', { cause });
   }
 }
 
@@ -152,7 +154,11 @@ export function AthletesPage({
           await adminManagementApi.replaceAthleteImage(tournamentId, result.athlete.id, input.file);
         } catch (error) {
           if (!athlete)
-            throw new AthleteImageUploadError(result.athlete, { ...input, file: input.file });
+            throw new AthleteImageUploadError(
+              result.athlete,
+              { ...input, file: input.file },
+              error,
+            );
           throw error;
         }
       }
@@ -172,7 +178,7 @@ export function AthletesPage({
         setDraft({ ...e.draft, imageError: '' });
         notifyMutationError(
           e,
-          'Vận động viên đã được tạo, nhưng tải ảnh thất bại. Hãy thử tải ảnh lại.',
+          `Vận động viên đã được tạo, nhưng tải ảnh thất bại. ${getApiErrorMessage(e.cause, 'Hãy thử tải ảnh lại.')}`,
         );
         return;
       }

@@ -246,7 +246,7 @@ export class AdminManagementService {
       _count: { _all: true },
     });
     const performanceQuery = this.prisma.match.findMany({
-      where: { tournament: scope, lifecycle: { not: 'NOT_STARTED' } },
+      where: { tournament: scope, lifecycle: { not: 'READY' } },
       orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
       select: {
         id: true,
@@ -289,7 +289,7 @@ export class AdminManagementService {
         },
       },
     });
-    const [tournaments, matches, officials, performanceMatches] =
+    const [tournaments, matches, officials, performanceMatches, readyBrackets] =
       await this.prisma.$transaction(
         [
           this.prisma.tournament.findMany({
@@ -315,6 +315,19 @@ export class AdminManagementService {
           matchQuery,
           officialQuery,
           performanceQuery,
+          this.prisma.tournamentBracket.findMany({
+            where: { status: BracketStatus.ACTIVE, tournament: scope },
+            select: {
+              tournamentId: true,
+              _count: {
+                select: {
+                  fixtures: {
+                    where: { status: BracketFixtureStatus.READY, match: null },
+                  },
+                },
+              },
+            },
+          }),
         ],
         { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
       );
@@ -331,13 +344,23 @@ export class AdminManagementService {
     const matchCounts = new Map<string, Record<MatchLifecycle, number>>();
     for (const row of matches) {
       const counts = matchCounts.get(row.tournamentId) ?? {
-        NOT_STARTED: 0,
+        READY: 0,
         IN_PROGRESS: 0,
         SUSPENDED: 0,
         COMPLETED: 0,
       };
       counts[row.lifecycle] = row._count._all;
       matchCounts.set(row.tournamentId, counts);
+    }
+    for (const bracket of readyBrackets) {
+      const counts = matchCounts.get(bracket.tournamentId) ?? {
+        READY: 0,
+        IN_PROGRESS: 0,
+        SUSPENDED: 0,
+        COMPLETED: 0,
+      };
+      counts.READY += bracket._count.fixtures;
+      matchCounts.set(bracket.tournamentId, counts);
     }
     const officialCounts = new Map<
       string,
@@ -359,7 +382,7 @@ export class AdminManagementService {
         weightClassCount: _count.weightClasses,
         performance: performanceByTournament.get(tournament.id) ?? [],
         matches: matchCounts.get(tournament.id) ?? {
-          NOT_STARTED: 0,
+          READY: 0,
           IN_PROGRESS: 0,
           SUSPENDED: 0,
           COMPLETED: 0,
@@ -880,7 +903,11 @@ export class AdminManagementService {
     tournamentId: string,
     bracketId: string,
     fixtureId: string,
-    adminUserId: string,
+    adminUserId: string | null,
+    options?: {
+      transaction: Prisma.TransactionClient;
+      officialId: string;
+    },
   ): Promise<CreatedMatchResult> {
     for (
       let attempt = 1;
@@ -891,7 +918,7 @@ export class AdminManagementService {
         this.publicIdInitialLength,
       );
       try {
-        const result = await this.prisma.$transaction(async (tx) => {
+        const materialize = async (tx: Prisma.TransactionClient) => {
           // This order is shared by every fixture transition: tournament, bracket, fixture.
           await tx.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId}::uuid FOR UPDATE`;
           await tx.$queryRaw`SELECT id FROM tournament_brackets WHERE id = ${bracketId}::uuid FOR UPDATE`;
@@ -927,6 +954,7 @@ export class AdminManagementService {
               code: 'BRACKET_FIXTURE_NOT_FOUND',
               message: 'Fixture does not belong to this active bracket',
             });
+          if (fixture.match && options) return { createdId: fixture.match.id };
           if (fixture.match)
             throw new ConflictException({
               code: 'BRACKET_MATCH_ALREADY_PREPARED',
@@ -1018,6 +1046,7 @@ export class AdminManagementService {
                 bracketId,
                 fixtureId,
                 publicId,
+                ...(options ? { officialId: options.officialId } : {}),
                 entrantIds: [red.id, blue.id],
                 athleteIds: [red.athleteId, blue.athleteId],
               },
@@ -1025,9 +1054,24 @@ export class AdminManagementService {
             select: { id: true },
           });
           return { createdId: created.id };
-        });
-        return { match: await this.getMatch(result.createdId) };
+        };
+        const result = options
+          ? await materialize(options.transaction)
+          : await this.prisma.$transaction(materialize);
+        return {
+          match: options
+            ? matchView(
+                await options.transaction.match.findUniqueOrThrow({
+                  where: { id: result.createdId },
+                  select: matchSelect,
+                }),
+              )
+            : await this.getMatch(result.createdId),
+        };
       } catch (error: unknown) {
+        // A failed PostgreSQL statement aborts its transaction. The caller of
+        // the atomic take command must retry the complete transaction instead.
+        if (options) throw error;
         if (!this.isPublicIdCollision(error)) throw error;
         if (attempt === PUBLIC_ID_GENERATION_ATTEMPTS)
           throw new ConflictException(PUBLIC_MATCH_ID_COLLISION_ERROR);

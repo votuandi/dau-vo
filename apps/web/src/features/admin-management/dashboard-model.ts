@@ -41,7 +41,7 @@ export function summarizePerformance(tournaments: readonly AdminDashboardTournam
 export const matchSegments = [
   { key: 'COMPLETED', label: 'Hoàn thành', color: '#6366f1', className: 'bg-indigo-500' },
   { key: 'IN_PROGRESS', label: 'Đang diễn ra', color: '#10b981', className: 'bg-emerald-500' },
-  { key: 'NOT_STARTED', label: 'Chờ thi đấu', color: '#38bdf8', className: 'bg-sky-400' },
+  { key: 'READY', label: 'Sẵn sàng', color: '#38bdf8', className: 'bg-sky-400' },
   { key: 'SUSPENDED', label: 'Tạm dừng', color: '#f59e0b', className: 'bg-amber-500' },
 ] as const;
 
@@ -55,7 +55,7 @@ export function summarizeDashboard(tournaments: readonly AdminDashboardTournamen
     judges: 0,
     supervisors: 0,
     totalMatches: 0,
-    matches: { NOT_STARTED: 0, IN_PROGRESS: 0, SUSPENDED: 0, COMPLETED: 0 },
+    matches: { READY: 0, IN_PROGRESS: 0, SUSPENDED: 0, COMPLETED: 0 },
   };
   for (const tournament of tournaments) {
     if (tournament.status === TournamentStatus.ACTIVE) summary.active += 1;

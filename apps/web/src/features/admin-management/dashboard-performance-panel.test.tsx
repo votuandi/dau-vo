@@ -38,7 +38,7 @@ const tournament: AdminDashboardTournament = {
   athleteCount: 2,
   organizationCount: 1,
   weightClassCount: 1,
-  matches: { NOT_STARTED: 0, IN_PROGRESS: 0, SUSPENDED: 0, COMPLETED: 1 },
+  matches: { READY: 0, IN_PROGRESS: 0, SUSPENDED: 0, COMPLETED: 1 },
   officials: { JUDGE: 3, SUPERVISOR: 1 },
   performance: [match],
 };

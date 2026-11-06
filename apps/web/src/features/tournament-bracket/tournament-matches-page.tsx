@@ -363,27 +363,6 @@ export function TournamentMatchesPage({
       );
     },
   });
-  const prepare = useMutation({
-    mutationFn: async (fixtureId: string) => {
-      const bracketId = bracket.data?.bracket.id;
-      if (!bracketId) throw new Error('Bracket is unavailable');
-      return adminManagementApi.prepareBracketFixtureMatch(tournament.id, bracketId, fixtureId);
-    },
-    onSuccess: (value) => {
-      notifyMutationSuccess('Đã chuẩn bị trận đấu.');
-      void Promise.all([
-        qc.invalidateQueries({
-          queryKey: bracketQueryKeys.detail(tournament.id, selectedId ?? ''),
-        }),
-        qc.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournament.id) }),
-        qc.invalidateQueries({ queryKey: tournamentQueryKeys.weightClasses(tournament.id) }),
-        qc.invalidateQueries({ queryKey: ['admin', 'matches', value.match.id] }),
-      ]);
-    },
-    onError: (error) => {
-      notifyMutationError(error, 'Không thể chuẩn bị trận đấu.');
-    },
-  });
   const staffing = useMutation({
     mutationFn: (input: {
       readonly weightClassId: string;
@@ -823,10 +802,7 @@ export function TournamentMatchesPage({
                   {activeBracket ? (
                     <FixtureList
                       data={activeBracket}
-                      disabled={isReadOnly || prepare.isPending}
-                      onPrepare={(id) => {
-                        prepare.mutate(id);
-                      }}
+                      disabled={isReadOnly}
                       onDecide={(fixture) => {
                         setDecision({ fixture, initialWinnerId: null });
                       }}

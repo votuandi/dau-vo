@@ -7,6 +7,7 @@ import {
   MatchLifecycle,
   MatchOutcomeMethod,
   MatchOfficialAssignmentReleaseReason,
+  TournamentOfficialRole,
 } from '@prisma/client';
 import { Prisma, type AthleteColor } from '@prisma/client';
 import { createHash } from 'node:crypto';
@@ -246,7 +247,11 @@ export class BracketOutcomeService {
     }
     const fixture = await tx.bracketFixture.findUniqueOrThrow({
       where: { id: fixtureId },
-      include: { match: { select: { id: true, status: true } }, slots: true, bracket: true },
+      include: {
+        match: { select: { id: true, status: true } },
+        slots: true,
+        bracket: true,
+      },
     });
     const isTieDecision =
       decisionType === 'ADMIN_TIEBREAK' &&
@@ -299,7 +304,13 @@ export class BracketOutcomeService {
           code: 'BRACKET_WINNER_MATCH_ROSTER_MISMATCH',
           message: 'Selected entrant is not in the prepared match',
         });
-      await this.finalizeMatchManually(tx, fixture.match.id, athlete.id, actorId, reason);
+      await this.finalizeMatchManually(
+        tx,
+        fixture.match.id,
+        athlete.id,
+        actorId,
+        reason,
+      );
     }
     const result = await this.decide(tx, fixtureId, entrantId, {
       actorId,
@@ -355,8 +366,13 @@ export class BracketOutcomeService {
           message: 'Match athlete is not in the bracket fixture',
         });
       return this.manuallyDecide(
-        tx, match.bracketFixtureId, slot.resolvedEntrantId,
-        actorId, reason, idempotencyKey, 'ADMIN_OVERRIDE',
+        tx,
+        match.bracketFixtureId,
+        slot.resolvedEntrantId,
+        actorId,
+        reason,
+        idempotencyKey,
+        'ADMIN_OVERRIDE',
       );
     }
     const fingerprint = createHash('sha256')
@@ -451,13 +467,20 @@ export class BracketOutcomeService {
       where: { matchId, resolvedAt: null, invalidatedAt: null },
       data: { resolvedAt: now },
     });
-    await tx.matchOfficialAssignment.updateMany({
-      where: { matchId, releasedAt: null },
-      data: {
-        releasedAt: now,
-        releaseReason: MatchOfficialAssignmentReleaseReason.MATCH_FINISHED,
-      },
-    });
+    // Retire judges before their authorizing supervisor. The assignment
+    // trigger requires that supervisor to remain active on each judge UPDATE.
+    for (const role of [
+      TournamentOfficialRole.JUDGE,
+      TournamentOfficialRole.SUPERVISOR,
+    ]) {
+      await tx.matchOfficialAssignment.updateMany({
+        where: { matchId, releasedAt: null, role },
+        data: {
+          releasedAt: now,
+          releaseReason: MatchOfficialAssignmentReleaseReason.MATCH_FINISHED,
+        },
+      });
+    }
     await tx.auditLog.create({
       data: {
         eventType: AuditEventType.MATCH_ACTION,
@@ -560,11 +583,17 @@ export class BracketOutcomeService {
         typeof decision.actorId === 'string' ? decision.actorId : '',
         typeof decision.reason === 'string' ? decision.reason : '',
       );
-      if (fixture.roundNumber !== fixture.bracket.roundCount &&
-          fixture.bracket.status === BracketStatus.COMPLETED)
+      if (
+        fixture.roundNumber !== fixture.bracket.roundCount &&
+        fixture.bracket.status === BracketStatus.COMPLETED
+      )
         await tx.tournamentBracket.update({
           where: { id: fixture.bracketId },
-          data: { status: BracketStatus.ACTIVE, completedAt: null, championEntrantId: null },
+          data: {
+            status: BracketStatus.ACTIVE,
+            completedAt: null,
+            championEntrantId: null,
+          },
         });
     }
     await tx.bracketFixture.update({
@@ -635,7 +664,12 @@ export class BracketOutcomeService {
         ...(typeof decision.actorId === 'string'
           ? { adminUserId: decision.actorId }
           : {}),
-        metadata: { fixtureId, entrantId, previousWinnerEntrantId, ...decision },
+        metadata: {
+          fixtureId,
+          entrantId,
+          previousWinnerEntrantId,
+          ...decision,
+        },
       },
     });
     return {

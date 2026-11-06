@@ -23,6 +23,7 @@ export interface OfficialSession {
 }
 export interface OfficialMatch {
   readonly id: string;
+  readonly fixtureId?: string;
   readonly publicId: string;
   readonly lifecycle: MatchLifecycle;
   readonly status: MatchStatus;
@@ -35,6 +36,22 @@ export interface OfficialReferee {
   readonly name: string;
   readonly status: 'READY' | 'IN_MATCH' | 'DISABLED';
   readonly assignedMatchId: string | null;
+}
+
+interface OfficialMatchState {
+  match: {
+    id: string;
+    lifecycle: MatchLifecycle;
+    requiredJudgeCount: number;
+    officialAssignments: readonly {
+      officialId: string;
+      role: TournamentOfficialRole;
+      judgePosition: number | null;
+      official: { name: string; isActive: boolean };
+    }[];
+  };
+  referees: readonly OfficialReferee[];
+  varMonitoring?: VarMonitoring;
 }
 
 // The supervisor endpoint deliberately exposes only these read-only histories,
@@ -67,22 +84,14 @@ export const officialAccessApi = {
   logout: () => request<undefined>('official-access/logout', { method: 'POST' }),
   session: () => apiClient.get<{ session: OfficialSession }>('official-access/session'),
   matches: () => apiClient.get<{ matches: readonly OfficialMatch[] }>('official/matches'),
+  fixtureState: (fixtureId: string) =>
+    apiClient.get<OfficialMatchState>(`official/matches/fixtures/${fixtureId}`),
+  takeFixture: (fixtureId: string, judgeIds: readonly string[]) =>
+    apiClient.post(`official/matches/fixtures/${fixtureId}/take`, { judgeIds }),
   state: (matchId: string, options?: { readonly includeVarMonitoring?: boolean }) =>
-    apiClient.get<{
-      match: {
-        id: string;
-        lifecycle: MatchLifecycle;
-        requiredJudgeCount: number;
-        officialAssignments: readonly {
-          officialId: string;
-          role: TournamentOfficialRole;
-          judgePosition: number | null;
-          official: { name: string; isActive: boolean };
-        }[];
-      };
-      referees: readonly OfficialReferee[];
-      varMonitoring?: VarMonitoring;
-    }>(`official/matches/${matchId}${options?.includeVarMonitoring ? '?include=var' : ''}`),
+    apiClient.get<OfficialMatchState>(
+      `official/matches/${matchId}${options?.includeVarMonitoring ? '?include=var' : ''}`,
+    ),
   take: (matchId: string, judgeIds: readonly string[]) =>
     apiClient.post(`official/matches/${matchId}/take`, { judgeIds }),
 };

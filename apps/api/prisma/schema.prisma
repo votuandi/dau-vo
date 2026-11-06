@@ -94,7 +94,7 @@ enum MatchOutcomeMethod {
 }
 
 enum MatchLifecycle {
-  NOT_STARTED
+  READY
   IN_PROGRESS
   SUSPENDED
   COMPLETED
@@ -553,7 +553,7 @@ model Match {
   bracketFixtureId     String?                   @unique(map: "matches_bracket_fixture_id_key") @map("bracket_fixture_id") @db.Uuid
   requiredJudgeCount   Int                       @default(3) @map("required_judge_count") @db.SmallInt
   status               MatchStatus               @default(WAITING)
-  lifecycle            MatchLifecycle            @default(NOT_STARTED)
+  lifecycle            MatchLifecycle            @default(READY)
   rulesVersion         MatchRulesVersion         @default(FAULT_APPEAL_OVERTIME_V2) @map("rules_version")
   suspendedAt          DateTime?                 @map("suspended_at") @db.Timestamptz(3)
   currentRound         Int?                      @map("current_round") @db.SmallInt

@@ -20,7 +20,7 @@ const tournament: AdminDashboardTournament = {
   athleteCount: 20,
   organizationCount: 3,
   weightClassCount: 4,
-  matches: { NOT_STARTED: 4, IN_PROGRESS: 2, SUSPENDED: 1, COMPLETED: 3 },
+  matches: { READY: 4, IN_PROGRESS: 2, SUSPENDED: 1, COMPLETED: 3 },
   officials: { JUDGE: 6, SUPERVISOR: 2 },
   performance: [],
 };
@@ -67,7 +67,7 @@ describe('admin dashboard', () => {
           id: 'two',
           name: 'Giải Karate',
           status: 'FINISHED',
-          matches: { NOT_STARTED: 0, IN_PROGRESS: 0, SUSPENDED: 0, COMPLETED: 5 },
+          matches: { READY: 0, IN_PROGRESS: 0, SUSPENDED: 0, COMPLETED: 5 },
         },
       ],
     });
@@ -89,7 +89,7 @@ describe('admin dashboard', () => {
   it('handles tournaments without matches without NaN percentages', async () => {
     api.getDashboard.mockResolvedValue({
       tournaments: [
-        { ...tournament, matches: { NOT_STARTED: 0, IN_PROGRESS: 0, SUSPENDED: 0, COMPLETED: 0 } },
+        { ...tournament, matches: { READY: 0, IN_PROGRESS: 0, SUSPENDED: 0, COMPLETED: 0 } },
       ],
     });
     renderDashboard();

@@ -81,7 +81,7 @@ describe('PenaltyService (PostgreSQL integration)', () => {
         breakDurationMs: 60_000,
         lifecycle:
           status === MatchStatus.WAITING
-            ? MatchLifecycle.NOT_STARTED
+            ? MatchLifecycle.READY
             : status === MatchStatus.FINISHED
               ? MatchLifecycle.COMPLETED
               : MatchLifecycle.IN_PROGRESS,
