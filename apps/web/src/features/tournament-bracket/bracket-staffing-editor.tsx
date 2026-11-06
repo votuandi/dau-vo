@@ -22,7 +22,7 @@ export function BracketStaffingEditor({
   }, [rows]);
   const active = data.activeRefereeCount ?? 0;
   return (
-    <section className="mt-5 rounded-xl border p-4" aria-label="Cấu hình giám định theo vòng">
+    <section className="rounded-xl border p-4" aria-label="Cấu hình giám định theo vòng">
       <h3 className="font-bold">Giám định theo vòng</h3>
       <p className="mt-1 text-sm text-muted-foreground">
         Hiện có {active} giám định hoạt động. Mỗi trận cần ít nhất 3 giám định, số lẻ, và không vượt

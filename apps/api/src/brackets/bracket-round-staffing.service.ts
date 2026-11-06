@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -26,9 +27,19 @@ export class BracketRoundStaffingService {
     tournamentId: string,
     weightClassId: string,
     roundNumber: number,
-    requiredJudgeCount: number,
+    requiredJudgeCount: number | undefined,
     actorId: string,
+    settings: { regulationRoundCount?: number; roundDurationMs?: number } = {},
   ) {
+    if (
+      requiredJudgeCount === undefined &&
+      settings.regulationRoundCount === undefined &&
+      settings.roundDurationMs === undefined
+    )
+      throw new BadRequestException({
+        code: 'BRACKET_ROUND_SETTINGS_EMPTY',
+        message: 'Supply at least one round setting',
+      });
     return this.prisma.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId}::uuid FOR UPDATE`;
@@ -87,13 +98,18 @@ export class BracketRoundStaffingService {
           where: {
             bracketId: bracket.id,
             roundNumber,
-            status: {
-              in: [
-                BracketFixtureStatus.MATCH_PREPARED,
-                BracketFixtureStatus.AWAITING_WINNER,
-                BracketFixtureStatus.COMPLETED,
-              ],
-            },
+            OR: [
+              { match: { isNot: null } },
+              {
+                status: {
+                  in: [
+                    BracketFixtureStatus.MATCH_PREPARED,
+                    BracketFixtureStatus.AWAITING_WINNER,
+                    BracketFixtureStatus.COMPLETED,
+                  ],
+                },
+              },
+            ],
           },
           select: { id: true },
         });
@@ -101,7 +117,7 @@ export class BracketRoundStaffingService {
           throw new ConflictException({
             code: 'BRACKET_ROUND_STAFFING_LOCKED',
             message:
-              'Staffing is locked after a match in this round is prepared',
+              'Round settings are locked after a match in this round is prepared',
           });
         const activeRefereeCount = await tx.tournamentOfficial.count({
           where: {
@@ -111,9 +127,10 @@ export class BracketRoundStaffingService {
           },
         });
         if (
-          requiredJudgeCount < policy.minimumRequiredRefereeCount ||
-          (policy.requiresOddRefereeCount && requiredJudgeCount % 2 === 0) ||
-          requiredJudgeCount > activeRefereeCount
+          requiredJudgeCount !== undefined &&
+          (requiredJudgeCount < policy.minimumRequiredRefereeCount ||
+            (policy.requiresOddRefereeCount && requiredJudgeCount % 2 === 0) ||
+            requiredJudgeCount > activeRefereeCount)
         )
           throw new ConflictException({
             code: 'BRACKET_ROUND_STAFFING_INVALID',
@@ -127,7 +144,10 @@ export class BracketRoundStaffingService {
           });
         const updated = await tx.bracketRoundStaffing.update({
           where: { id: staffing.id },
-          data: { requiredJudgeCount },
+          data: {
+            ...(requiredJudgeCount === undefined ? {} : { requiredJudgeCount }),
+            ...settings,
+          },
         });
         await tx.auditLog.create({
           data: {
@@ -135,10 +155,19 @@ export class BracketRoundStaffingService {
             eventType: 'BRACKET_ROUND_STAFFING_UPDATED',
             metadata: {
               tournamentId,
+              action: 'ROUND_SETTINGS_UPDATED',
               bracketId: bracket.id,
               roundNumber,
-              before: staffing.requiredJudgeCount,
-              after: requiredJudgeCount,
+              before: {
+                requiredJudgeCount: staffing.requiredJudgeCount,
+                regulationRoundCount: staffing.regulationRoundCount,
+                roundDurationMs: staffing.roundDurationMs,
+              },
+              after: {
+                requiredJudgeCount: updated.requiredJudgeCount,
+                regulationRoundCount: updated.regulationRoundCount,
+                roundDurationMs: updated.roundDurationMs,
+              },
             },
           },
         });

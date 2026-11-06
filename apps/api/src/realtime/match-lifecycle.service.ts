@@ -228,6 +228,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
         const clock = await this.serverClock(transaction);
         const match = await transaction.match.findUniqueOrThrow({
           select: {
+            regulationRoundCount: true,
+            rulesVersion: true,
             currentRound: true,
             finishedAt: true,
             publicId: true,
@@ -254,6 +256,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
           match.status,
           match.currentRound,
           match.startedAt,
+          match.regulationRoundCount,
           await transaction.round.findMany({
             where: { matchId: input.matchId, stage: RoundStage.OVERTIME },
             select: { attemptNumber: true },
@@ -372,7 +375,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
           match.status === MatchStatus.ROUND_1_RUNNING
             ? 1
             : match.status === MatchStatus.ROUND_2_RUNNING
-              ? 2
+              ? match.currentRound
               : match.status === MatchStatus.OVERTIME_RUNNING
                 ? 1
                 : null;
@@ -460,7 +463,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
           match.status === MatchStatus.ROUND_1_PAUSED
             ? 1
             : match.status === MatchStatus.ROUND_2_PAUSED
-              ? 2
+              ? match.currentRound
               : match.status === MatchStatus.OVERTIME_PAUSED
                 ? 1
                 : null;
@@ -592,6 +595,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
         const match = await transaction.match.findUniqueOrThrow({
           where: { id: input.matchId },
           select: {
+            regulationRoundCount: true,
+            rulesVersion: true,
             currentRound: true,
             finishedAt: true,
             lifecycle: true,
@@ -645,20 +650,36 @@ export class MatchLifecycleService implements OnModuleDestroy {
             (!hasRoundOne || !hasRoundTwo || unresolved !== null))
         )
           throw new InvalidResultCancellationStateError(match.status);
-        const roundNumbers: Array<1 | 2> =
+        const retainedRoundCount =
+          input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 ? 1 : 2;
+        const roundNumbers: number[] =
           input.mode === MatchExitMode.CANCEL_RESULTS
-            ? [1, 2]
-            : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1
-              ? [2]
-              : [];
+            ? Array.from(
+                { length: match.regulationRoundCount },
+                (_, i) => i + 1,
+              )
+            : retainsV2Phase
+              ? []
+              : Array.from(
+                  {
+                    length: Math.max(
+                      0,
+                      match.regulationRoundCount - retainedRoundCount,
+                    ),
+                  },
+                  (_, i) => i + retainedRoundCount + 1,
+                );
         const nextStatus =
           input.mode === MatchExitMode.CANCEL_RESULTS
             ? MatchStatus.WAITING
             : retainsV2Phase
               ? match.status
-              : input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1
+              : retainedRoundCount < match.regulationRoundCount
                 ? MatchStatus.BREAK
-                : MatchStatus.AWAITING_RESULT_SAVE;
+                : match.rulesVersion ===
+                    MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2
+                  ? MatchStatus.REGULATION_APPEAL
+                  : MatchStatus.AWAITING_RESULT_SAVE;
         const nextLifecycle =
           input.mode === MatchExitMode.CANCEL_RESULTS
             ? MatchLifecycle.NOT_STARTED
@@ -872,6 +893,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
             finishedAt: true,
             lifecycle: true,
             publicId: true,
+            regulationRoundCount: true,
             status: true,
             tournamentId: true,
           },
@@ -914,11 +936,15 @@ export class MatchLifecycleService implements OnModuleDestroy {
         ]);
         if (
           unresolved !== null ||
-          !rounds.some(
-            (round) => round.roundNumber === 1 && round.endedAt !== null,
-          ) ||
-          !rounds.some(
-            (round) => round.roundNumber === 2 && round.endedAt !== null,
+          Array.from(
+            { length: match.regulationRoundCount },
+            (_, i) => i + 1,
+          ).some(
+            (number) =>
+              !rounds.some(
+                (round) =>
+                  round.roundNumber === number && round.endedAt !== null,
+              ),
           )
         ) {
           throw new MatchCompletionNotReadyError();
@@ -989,6 +1015,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
         const clock = await this.serverClock(transaction);
         const match = await transaction.match.findUniqueOrThrow({
           select: {
+            regulationRoundCount: true,
+            rulesVersion: true,
             currentRound: true,
             finishedAt: true,
             publicId: true,
@@ -1027,31 +1055,32 @@ export class MatchLifecycleService implements OnModuleDestroy {
             ? activeRounds.filter(
                 (round) =>
                   round.stage === RoundStage.REGULATION &&
-                  round.roundNumber === 2,
+                  round.roundNumber === match.currentRound,
               )
             : overtimePhase
               ? activeRounds
                   .filter((round) => round.stage === RoundStage.OVERTIME)
                   .slice(0, 1)
-              : match.status === MatchStatus.BREAK && match.currentRound === 1
+              : match.status === MatchStatus.BREAK &&
+                  match.currentRound !== null
                 ? activeRounds.filter(
                     (round) =>
                       round.stage === RoundStage.REGULATION &&
-                      round.roundNumber === 1,
+                      round.roundNumber === match.currentRound,
                   )
                 : (match.status === MatchStatus.FINISHED ||
                       match.status === MatchStatus.AWAITING_RESULT_SAVE) &&
-                    match.currentRound === 2
+                    match.currentRound !== null
                   ? activeRounds.filter(
                       (round) =>
                         round.stage === RoundStage.REGULATION &&
-                        round.roundNumber === 2,
+                        round.roundNumber === match.currentRound,
                     )
                   : [];
         const roundIds = selectedRounds.map((round) => round.id);
         const roundNumbers = [
           ...new Set(selectedRounds.map((round) => round.roundNumber)),
-        ] as Array<1 | 2>;
+        ];
         if (roundIds.length === 0) {
           throw new InvalidResultCancellationStateError(match.status);
         }
@@ -1104,7 +1133,11 @@ export class MatchLifecycleService implements OnModuleDestroy {
           select: { id: true },
         });
         const resultingCurrentRound =
-          nextStatus === MatchStatus.WAITING ? null : 1;
+          nextStatus === MatchStatus.WAITING
+            ? null
+            : nextStatus === MatchStatus.OVERTIME_READY
+              ? match.regulationRoundCount
+              : Math.min(...roundNumbers) - 1;
         const operation = await transaction.matchResultOperation.create({
           data: {
             auditLogId: audit.id,
@@ -1519,7 +1552,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
           payload: {
             matchPublicId: match.publicId,
             operationId: operation.id,
-            roundNumbers: operation.roundNumbers as Array<1 | 2>,
+            roundNumbers: operation.roundNumbers,
             status: this.sharedStatus(operation.previousStatus),
           },
         };
@@ -1629,6 +1662,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
         const [match, round] = await Promise.all([
           transaction.match.findUniqueOrThrow({
             select: {
+              regulationRoundCount: true,
               currentRound: true,
               intermissionEndsAt: true,
               publicId: true,
@@ -1672,7 +1706,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
         const nextStatus =
           round.stage === RoundStage.OVERTIME
             ? MatchStatus.OVERTIME_APPEAL
-            : round.roundNumber === 1
+            : round.roundNumber < match.regulationRoundCount
               ? MatchStatus.BREAK
               : match.rulesVersion ===
                   MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2
@@ -1681,7 +1715,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
         // The match lock makes this write idempotent: a duplicate expiration
         // observes the ended round and cannot move the deadline forward.
         const intermissionEndsAt =
-          round.stage === RoundStage.REGULATION && round.roundNumber === 1
+          round.stage === RoundStage.REGULATION &&
+          round.roundNumber < match.regulationRoundCount
             ? (match.intermissionEndsAt ??
               ((match.weightClass?.intermissionDurationSeconds ?? 0) > 0
                 ? new Date(
@@ -2015,8 +2050,9 @@ export class MatchLifecycleService implements OnModuleDestroy {
     status: MatchStatus,
     currentRound: number | null,
     startedAt: Date | null,
+    regulationRoundCount: number,
     overtimeRounds: Array<{ attemptNumber: number }>,
-  ): { stage: RoundStage; roundNumber: 1 | 2; attemptNumber: number } {
+  ): { stage: RoundStage; roundNumber: number; attemptNumber: number } {
     if (
       status === MatchStatus.WAITING &&
       currentRound === null &&
@@ -2027,10 +2063,16 @@ export class MatchLifecycleService implements OnModuleDestroy {
 
     if (
       status === MatchStatus.BREAK &&
-      currentRound === 1 &&
+      currentRound !== null &&
+      currentRound >= 1 &&
+      currentRound < regulationRoundCount &&
       startedAt !== null
     ) {
-      return { stage: RoundStage.REGULATION, roundNumber: 2, attemptNumber: 0 };
+      return {
+        stage: RoundStage.REGULATION,
+        roundNumber: currentRound + 1,
+        attemptNumber: 0,
+      };
     }
 
     if (status === MatchStatus.OVERTIME_READY)
@@ -2049,21 +2091,19 @@ export class MatchLifecycleService implements OnModuleDestroy {
     stage: RoundStage = RoundStage.REGULATION,
   ): MatchStatus | null {
     if (stage === RoundStage.OVERTIME) return MatchStatus.OVERTIME_RUNNING;
-    switch (roundNumber) {
-      case 1:
-        return MatchStatus.ROUND_1_RUNNING;
-      case 2:
-        return MatchStatus.ROUND_2_RUNNING;
-      default:
-        return null;
-    }
+    if (!Number.isInteger(roundNumber) || roundNumber < 1 || roundNumber > 20)
+      return null;
+    return roundNumber === 1
+      ? MatchStatus.ROUND_1_RUNNING
+      : MatchStatus.ROUND_2_RUNNING;
   }
 
   private sharedRound(round: LifecycleRound): MatchRoundState {
     if (
       round.stage === RoundStage.REGULATION &&
-      round.roundNumber !== 1 &&
-      round.roundNumber !== 2
+      (!Number.isInteger(round.roundNumber) ||
+        round.roundNumber < 1 ||
+        round.roundNumber > 20)
     ) {
       throw new Error(`Unsupported round number: ${String(round.roundNumber)}`);
     }
@@ -2076,7 +2116,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
       id: round.id,
       ...(round.stage === RoundStage.REGULATION
         ? {
-            roundNumber: round.roundNumber as 1 | 2,
+            roundNumber: round.roundNumber,
             stage: 'REGULATION' as const,
             attemptNumber: 0,
           }

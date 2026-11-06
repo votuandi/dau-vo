@@ -1,7 +1,7 @@
 /** Stable identity for a timed scoring segment. Never infer overtime from a
  * display round number: every restarted overtime attempt has its own identity. */
 export type RoundDescriptor =
-  | { stage: 'REGULATION'; roundNumber: 1 | 2; attemptNumber: 0 }
+  | { stage: 'REGULATION'; roundNumber: number; attemptNumber: 0 }
   | { stage: 'OVERTIME'; roundNumber: 1; attemptNumber: number };
 
 export function assertRoundDescriptor(
@@ -10,7 +10,9 @@ export function assertRoundDescriptor(
   if (
     descriptor.stage === 'REGULATION' &&
     descriptor.attemptNumber === 0 &&
-    (descriptor.roundNumber === 1 || descriptor.roundNumber === 2)
+    Number.isInteger(descriptor.roundNumber) &&
+    descriptor.roundNumber >= 1 &&
+    descriptor.roundNumber <= 20
   )
     return descriptor;
   if (

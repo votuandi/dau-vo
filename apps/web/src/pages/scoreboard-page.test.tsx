@@ -268,7 +268,7 @@ describe('ScoreboardPage', () => {
     });
     renderBoard('/bang-diem?match=A72K9P');
 
-    expect(screen.getByText('Điểm chung cuộc sau 2 hiệp: Đỏ 5 · Xanh 3')).toBeVisible();
+    expect(screen.getByText('Điểm chung cuộc sau các hiệp chính: Đỏ 5 · Xanh 3')).toBeVisible();
   });
 
   it('switches to another match and rejects the current one', () => {

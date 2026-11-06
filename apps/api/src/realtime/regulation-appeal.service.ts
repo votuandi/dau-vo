@@ -74,6 +74,7 @@ export class RegulationAppealService {
             lifecycle: true,
             publicId: true,
             rulesVersion: true,
+            regulationRoundCount: true,
             status: true,
           },
         });
@@ -179,9 +180,8 @@ export class RegulationAppealService {
         ]);
         if (
           unresolved ||
-          rounds.length !== 2 ||
-          rounds[0]?.roundNumber !== 1 ||
-          rounds[1]?.roundNumber !== 2 ||
+          rounds.length !== match.regulationRoundCount ||
+          rounds.some((round, index) => round.roundNumber !== index + 1) ||
           athletes.length !== 2 ||
           priorAppeal
         )
@@ -196,7 +196,7 @@ export class RegulationAppealService {
           },
           select: { athleteId: true, judgePoints: true, roundId: true },
         });
-        if (summaries.length !== 4)
+        if (summaries.length !== match.regulationRoundCount * athletes.length)
           throw new AppealStateError(
             'Valid regulation round summaries are required',
           );
@@ -223,7 +223,7 @@ export class RegulationAppealService {
             matchId: input.matchId,
             scope: MatchAppealScope.REGULATION,
             attemptNumber: 0,
-            sourceRoundId: rounds[1]!.id,
+            sourceRoundId: rounds[rounds.length - 1]!.id,
             idempotencyKey: input.payload.idempotencyKey,
             completedAt: clock[0]!.now,
             ...(input.identity.kind === 'official'

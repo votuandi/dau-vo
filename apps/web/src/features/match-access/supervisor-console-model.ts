@@ -25,13 +25,13 @@ export function exitOption(mode: MatchExitMode): ExitOption {
     case MatchExitMode.SUSPEND_KEEP_ROUND_1:
       return {
         title: 'Thoát và lưu kết quả hiệp 1',
-        description: 'Dữ liệu hiệp 2 (nếu có) bị bỏ; trận chuyển sang Tạm hoãn.',
+        description: 'Dữ liệu các hiệp sau hiệp 1 (nếu có) bị bỏ; trận chuyển sang Tạm hoãn.',
         destructive: false,
       };
     case MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2:
       return {
         title: 'Thoát và lưu kết quả 2 hiệp',
-        description: 'Giữ cả hai hiệp, chưa chốt kết quả; trận chuyển sang Tạm hoãn.',
+        description: 'Giữ hai hiệp đầu, bỏ dữ liệu các hiệp sau; trận chuyển sang Tạm hoãn.',
         destructive: false,
       };
     case MatchExitMode.SUSPEND_KEEP_V2_PHASE:
@@ -73,6 +73,7 @@ export const completionBlockedReasonLabels: Record<MatchCompletionBlockedReason,
   RESULT_DECISION_REQUIRED: 'Cần xác định kết quả trận đấu trước khi lưu.',
   ROUND_1_NOT_ENDED: 'Hiệp 1 chưa kết thúc.',
   ROUND_2_NOT_ENDED: 'Hiệp 2 chưa kết thúc.',
+  REGULATION_ROUNDS_NOT_ENDED: 'Các hiệp chính chưa kết thúc đầy đủ.',
   UNRESOLVED_SCORING_WINDOW: 'Đang chờ hoàn tất chấm điểm.',
 };
 
@@ -82,7 +83,7 @@ export const appealBlockedReasonLabels: Record<ResultCapabilityBlockedReason, st
   MATCH_SUSPENDED: 'Trận đấu đang tạm hoãn.',
   NOT_AWAITING_PUBLICATION: 'Trận đấu chưa ở bước công bố kết quả.',
   NOT_OVERTIME_READY: 'Trận đấu chưa sẵn sàng cho phúc khảo hiệp phụ.',
-  NOT_REGULATION_APPEAL: 'Trận đấu chưa ở bước phúc khảo sau hiệp 2.',
+  NOT_REGULATION_APPEAL: 'Trận đấu chưa ở bước phúc khảo sau các hiệp chính.',
   ROUND_SUMMARIES_MISSING: 'Thiếu dữ liệu chấm điểm đã chốt của các hiệp.',
   UNRESOLVED_SCORING_WINDOW: 'Đang chờ hoàn tất chấm điểm.',
 };

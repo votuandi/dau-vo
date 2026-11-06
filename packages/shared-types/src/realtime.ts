@@ -64,6 +64,7 @@ export type MatchCompletionBlockedReason =
   | 'MATCH_SUSPENDED'
   | 'ROUND_1_NOT_ENDED'
   | 'ROUND_2_NOT_ENDED'
+  | 'REGULATION_ROUNDS_NOT_ENDED'
   | 'INVALIDATED_ROUND'
   | 'UNRESOLVED_SCORING_WINDOW'
   | 'NOT_AWAITING_RESULT_SAVE'
@@ -121,6 +122,7 @@ export type MatchExitBlockedReason =
   | 'ALREADY_COMPLETED'
   | 'ROUND_1_NOT_ENDED'
   | 'ROUND_2_NOT_ENDED'
+  | 'REGULATION_ROUNDS_NOT_ENDED'
   | 'UNRESOLVED_SCORING_WINDOW'
   | 'NOT_ASSIGNED';
 
@@ -231,6 +233,8 @@ export type MatchReadiness = LegacyMatchReadiness | TournamentOfficialMatchReadi
 
 export interface MatchStateIdentity {
   currentRound: number | null;
+  regulationRoundCount?: number;
+  roundDurationMs?: number;
   finishedAt: string | null;
   id: string;
   publicId: string;
@@ -248,7 +252,7 @@ export interface MatchStateIdentity {
  * regulation rounds. `roundNumber` remains a temporary UI compatibility alias
  * and will be removed once legacy consoles render `descriptor` directly. */
 export type RoundDescriptor =
-  | { stage: 'REGULATION'; roundNumber: 1 | 2; attemptNumber: 0 }
+  | { stage: 'REGULATION'; roundNumber: number; attemptNumber: 0 }
   | { stage: 'OVERTIME'; roundNumber: number; attemptNumber: number };
 
 export type MatchRoundState = RoundDescriptor & {
@@ -447,7 +451,7 @@ export type RoundControlResponse =
 export interface ResultCancellationPayload {
   actionId: string;
   matchPublicId: string;
-  roundNumbers: Array<1 | 2>;
+  roundNumbers: Array<number>;
   status: MatchPhase;
 }
 
@@ -466,7 +470,7 @@ export type ResultCancellationResponse =
 export interface ResultCancellationUndoPayload {
   matchPublicId: string;
   operationId: string;
-  roundNumbers: Array<1 | 2>;
+  roundNumbers: Array<number>;
   status: MatchPhase;
 }
 
@@ -639,7 +643,7 @@ export interface ScoringWindowOpenedPayload {
   window: {
     endsAt: string;
     id: string;
-    roundNumber: 1 | 2;
+    roundNumber: number;
     startedAt: string;
   };
 }
@@ -657,7 +661,7 @@ export interface ScoringWindowResolvedPayload {
     endsAt: string;
     id: string;
     resolvedAt: string;
-    roundNumber: 1 | 2;
+    roundNumber: number;
     scoreAwarded: boolean;
     startedAt: string;
     winningColor: AthleteColor | null;
@@ -736,7 +740,7 @@ export interface PenaltyAddedPayload {
     athleteId: string;
     createdAt: string;
     id: string;
-    roundNumber: 1 | 2;
+    roundNumber: number;
     value: number;
     violationCount: number;
   };

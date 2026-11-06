@@ -17,10 +17,13 @@ export function TabScroller({
 export function TabCount({
   active,
   label,
+  variant = 'solid',
   children,
 }: {
   readonly active: boolean;
   readonly label?: string;
+  /** `solid` sits on a filled pill tab; `subtle` sits on chip or underline tabs. */
+  readonly variant?: 'solid' | 'subtle';
   readonly children: React.ReactNode;
 }) {
   return (
@@ -28,7 +31,11 @@ export function TabCount({
       aria-label={label}
       className={cn(
         'min-w-6 rounded-full px-1.5 text-center text-xs font-bold tabular-nums leading-5',
-        active ? 'bg-white/20 text-primary-foreground' : 'bg-muted text-muted-foreground',
+        active
+          ? variant === 'solid'
+            ? 'bg-white/20 text-primary-foreground'
+            : 'bg-primary/15 text-primary'
+          : 'bg-muted text-muted-foreground',
       )}
     >
       {children}

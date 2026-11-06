@@ -117,6 +117,7 @@ const matchSelect = {
   outcome: { select: { id: true } },
   publicId: true,
   requiredJudgeCount: true,
+  regulationRoundCount: true,
   roundDurationMs: true,
   startedAt: true,
   status: true,
@@ -253,6 +254,7 @@ export class AdminManagementService {
         tournamentId: true,
         lifecycle: true,
         status: true,
+        regulationRoundCount: true,
         roundDurationMs: true,
         athletes: { select: { color: true, name: true } },
         rounds: {
@@ -958,7 +960,11 @@ export class AdminManagementService {
                 roundNumber: fixture.roundNumber,
               },
             },
-            select: { requiredJudgeCount: true },
+            select: {
+              requiredJudgeCount: true,
+              regulationRoundCount: true,
+              roundDurationMs: true,
+            },
           });
           if (!staffing)
             throw new ConflictException({
@@ -971,7 +977,8 @@ export class AdminManagementService {
               tournamentId,
               weightClassId: fixture.bracket.weightClassId,
               bracketFixtureId: fixture.id,
-              roundDurationMs: this.roundDurationMs,
+              regulationRoundCount: staffing.regulationRoundCount,
+              roundDurationMs: staffing.roundDurationMs,
               breakDurationMs: this.breakDurationMs,
               requiredJudgeCount: staffing.requiredJudgeCount,
             },
@@ -1233,6 +1240,7 @@ export class AdminManagementService {
           status: true,
           weightClassId: true,
           bracketFixtureId: true,
+          roundDurationMs: true,
           athletes: { select: { athleteId: true } },
           tournament: {
             select: {
@@ -1272,6 +1280,16 @@ export class AdminManagementService {
 
       const data: Prisma.MatchUpdateInput = {};
 
+      if (
+        existing.bracketFixtureId !== null &&
+        input.roundDurationMs !== undefined &&
+        input.roundDurationMs !== existing.roundDurationMs
+      ) {
+        throw new ConflictException({
+          code: 'BRACKET_MATCH_RULES_IMMUTABLE',
+          message: 'Bracket match duration is fixed by its round settings',
+        });
+      }
       if (input.roundDurationMs !== undefined) {
         data.roundDurationMs = input.roundDurationMs;
       }

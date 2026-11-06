@@ -22,6 +22,7 @@ export enum MatchPhase {
   ROUND_1_RUNNING = 'ROUND_1_RUNNING',
   ROUND_1_PAUSED = 'ROUND_1_PAUSED',
   BREAK = 'BREAK',
+  /** Compatibility phase for regulation rounds 2 and later; use currentRound for the number. */
   ROUND_2_RUNNING = 'ROUND_2_RUNNING',
   ROUND_2_PAUSED = 'ROUND_2_PAUSED',
   AWAITING_RESULT_SAVE = 'AWAITING_RESULT_SAVE',

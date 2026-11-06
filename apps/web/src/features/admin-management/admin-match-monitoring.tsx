@@ -182,7 +182,7 @@ export function AdminMatchMonitoring({
               <p className="mt-2 font-black">
                 {snapshot.match.lifecycle === MatchLifecycle.SUSPENDED
                   ? presentLifecycle(snapshot.match.lifecycle).label
-                  : presentPhase(snapshot.match.phase).label}
+                  : presentPhase(snapshot.match.phase, snapshot.match.currentRound).label}
               </p>
             </div>
             <div className="rounded-xl bg-muted p-4">
@@ -265,7 +265,7 @@ export function AdminMatchMonitoring({
                 <strong>
                   {appeal.scope === 'OVERTIME'
                     ? `Kháng nghị hiệp phụ lần ${String(appeal.attemptNumber)}`
-                    : 'Kháng nghị sau 2 hiệp'}
+                    : 'Kháng nghị sau các hiệp chính'}
                 </strong>
                 {' · '}đã chốt {formatDateTime(appeal.completedAt)}
                 {appeal.invalidatedAt ? ' · Đã vô hiệu' : ''}

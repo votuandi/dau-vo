@@ -27,16 +27,16 @@ const connectionDotClasses: Record<RealtimeConnectionStatus, string> = {
   revoked: 'bg-red-500',
 };
 
-function displayPhase(status: MatchStatus | undefined): string {
+function displayPhase(status: MatchStatus | undefined, currentRound?: number | null): string {
   switch (status) {
     case MatchStatus.ROUND_1_RUNNING:
       return 'Hiệp 1';
     case MatchStatus.ROUND_1_PAUSED:
       return 'Hiệp 1 · TẠM DỪNG';
     case MatchStatus.ROUND_2_RUNNING:
-      return 'Hiệp 2';
+      return `Hiệp ${String(currentRound ?? 2)}`;
     case MatchStatus.ROUND_2_PAUSED:
-      return 'Hiệp 2 · TẠM DỪNG';
+      return `Hiệp ${String(currentRound ?? 2)} · TẠM DỪNG`;
     case MatchStatus.BREAK:
       return 'Nghỉ giữa hiệp';
     case MatchStatus.AWAITING_RESULT_SAVE:
@@ -179,7 +179,7 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
             className="text-sm font-black uppercase tracking-[0.2em] text-sky-200"
             id="referee-round-title"
           >
-            {displayPhase(status)}
+            {displayPhase(status, snapshot?.match.currentRound)}
           </p>
           <p
             aria-label={`Thời gian còn lại ${formatCountdown(displayedRemaining ?? 0)}`}

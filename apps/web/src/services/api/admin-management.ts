@@ -81,6 +81,7 @@ export interface AdminMatch {
   readonly hasFinalOutcome: boolean;
   readonly displayState: MatchDisplayState;
   readonly currentRound: number | null;
+  readonly regulationRoundCount: number;
   readonly roundDurationMs: number;
   readonly breakDurationMs: number;
   readonly startedAt: string | null;
@@ -212,8 +213,11 @@ export interface TournamentRosterItem {
   readonly createdAt: string;
   readonly updatedAt: string;
 }
+/** Coarse progress of a weight class's current bracket, for list badges. */
+export type WeightClassBracketProgress = 'NONE' | 'DRAWN' | 'IN_PROGRESS' | 'COMPLETED';
 export interface TournamentWeightClass extends TournamentRosterItem {
   readonly hasCurrentBracket: boolean;
+  readonly bracketProgress: WeightClassBracketProgress;
   readonly intermissionDurationSeconds: number;
 }
 export interface TournamentOrganization extends TournamentRosterItem {
@@ -439,6 +443,7 @@ export interface ActiveBracket {
       readonly publicId: string;
       readonly lifecycle: MatchLifecycle;
       readonly phase: MatchStatus;
+      readonly currentRound?: number | null;
       readonly status: MatchStatus;
     } | null;
     readonly winnerEntrant: { readonly id: string; readonly snapshotName: string } | null;
@@ -469,6 +474,8 @@ export interface ActiveBracket {
     readonly id: string;
     readonly roundNumber: number;
     readonly roundLabel: string;
+    readonly regulationRoundCount?: number;
+    readonly roundDurationMs?: number;
     readonly requiredJudgeCount: number;
   }[];
 }
@@ -586,8 +593,9 @@ export const adminManagementApi = {
     tournamentId: string,
     weightClassId: string,
     roundNumber: number,
-    requiredJudgeCount: number,
+    requiredJudgeCount: number | undefined,
     options?: ApiRequestWithoutBody,
+    settings?: { readonly regulationRoundCount: number; readonly roundDurationMs: number },
   ) =>
     apiClient.patch<{
       readonly staffing: {
@@ -599,7 +607,7 @@ export const adminManagementApi = {
       };
     }>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/staffing/${String(roundNumber)}`,
-      { requiredJudgeCount },
+      { requiredJudgeCount, ...settings },
       options,
     ),
   prepareBracketFixtureMatch: (tournamentId: string, bracketId: string, fixtureId: string) =>
@@ -624,10 +632,16 @@ export const adminManagementApi = {
     ),
   decideMatchWinner: (
     id: string,
-    input: { readonly winnerColor: AthleteColor; readonly reason: string; readonly idempotencyKey: string },
-  ) => apiClient.post<{ readonly matchId?: string; readonly winnerColor?: AthleteColor }>(
-    `admin/matches/${encodePathSegment(id)}/decide-winner`, input,
-  ),
+    input: {
+      readonly winnerColor: AthleteColor;
+      readonly reason: string;
+      readonly idempotencyKey: string;
+    },
+  ) =>
+    apiClient.post<{ readonly matchId?: string; readonly winnerColor?: AthleteColor }>(
+      `admin/matches/${encodePathSegment(id)}/decide-winner`,
+      input,
+    ),
   getMatch: (id: string) => apiClient.get<MatchResponse>(`admin/matches/${encodePathSegment(id)}`),
   getMatchMonitoring: (id: string) =>
     apiClient.get<AdminMatchMonitoring>(`admin/matches/${encodePathSegment(id)}/monitoring`),

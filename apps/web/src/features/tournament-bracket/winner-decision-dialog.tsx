@@ -60,6 +60,9 @@ export function WinnerDecisionDialog({
           queryKey: bracketQueryKeys.detail(tournamentId, weightClassId),
         }),
         queryClient.invalidateQueries({ queryKey: tournamentQueryKeys.matches(tournamentId) }),
+        queryClient.invalidateQueries({
+          queryKey: tournamentQueryKeys.weightClasses(tournamentId),
+        }),
         queryClient.invalidateQueries({ queryKey: ['admin', 'matches'] }),
       ]);
       onClose();
@@ -107,7 +110,8 @@ export function WinnerDecisionDialog({
       >
         {decisionType === 'ADMIN_OVERRIDE' ? (
           <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-            Nếu thay người thắng, các trận vòng sau đã chuẩn bị sẽ được tách khỏi nhánh đấu để giữ lịch sử và nhánh đấu được cập nhật lại.
+            Nếu thay người thắng, các trận vòng sau đã chuẩn bị sẽ được tách khỏi nhánh đấu để giữ
+            lịch sử và nhánh đấu được cập nhật lại.
           </p>
         ) : null}
         <fieldset className="mt-4">

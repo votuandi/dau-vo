@@ -69,7 +69,7 @@ export function committedScoresLabel(
   if (scores?.RED == null || scores.BLUE == null) return null;
   return scores.source === 'OVERTIME'
     ? `Điểm hiệp phụ lần ${String(scores.attemptNumber)}: Đỏ ${String(scores.RED)} · Xanh ${String(scores.BLUE)}`
-    : `Điểm chung cuộc sau 2 hiệp: Đỏ ${String(scores.RED)} · Xanh ${String(scores.BLUE)}`;
+    : `Điểm chung cuộc sau các hiệp chính: Đỏ ${String(scores.RED)} · Xanh ${String(scores.BLUE)}`;
 }
 
 /** How long a resolved window's votes stay lit on the board. */
@@ -138,7 +138,7 @@ export function buildScoreboardViewModel(
   const presentation = snapshot
     ? snapshot.match.lifecycle === MatchLifecycle.SUSPENDED
       ? presentLifecycle(snapshot.match.lifecycle)
-      : presentPhase(snapshot.match.phase)
+      : presentPhase(snapshot.match.phase, snapshot.match.currentRound)
     : null;
   const round = roundLabel(snapshot?.activeRound);
 

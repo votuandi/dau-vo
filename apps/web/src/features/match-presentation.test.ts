@@ -51,6 +51,12 @@ describe('match presentation', () => {
     expect(typeof presentation.variant).toBe('string');
   });
 
+  it('uses the actual regulation round number and the next round during breaks', () => {
+    expect(presentPhase(MatchPhase.ROUND_2_RUNNING, 3).label).toBe('Hiệp 3');
+    expect(presentPhase(MatchPhase.ROUND_2_PAUSED, 3).label).toBe('Hiệp 3 tạm dừng');
+    expect(presentPhase(MatchPhase.BREAK, 2).help).toBe('Chờ bắt đầu hiệp 3.');
+  });
+
   it.each(['READY', 'IN_MATCH', 'DISABLED'] as const)('presents official status %s', (value) => {
     expect(presentOfficialStatus(value).label).toMatch(/Sẵn sàng|Trong trận|Đình chỉ/u);
   });

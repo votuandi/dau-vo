@@ -588,6 +588,136 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
       });
   });
 
+  it('configures independent round rules, snapshots prepared matches and locks prepared rounds', async () => {
+    const { tournamentId, weightClassId } = await setup(4);
+    const previewBody = (await preview(tournamentId, weightClassId))
+      .body as PreviewResponse;
+    const path = `/api/admin/tournaments/${tournamentId}/weight-classes/${weightClassId}/bracket`;
+    const confirmed = await authenticated(
+      request(app.getHttpServer()).post(`${path}/confirm`),
+    )
+      .send({
+        idempotencyKey: `${prefix}-round-rules`,
+        previewToken: previewBody.previewToken,
+      })
+      .expect(201);
+    const bracketId = (confirmed.body as { bracket: { id: string } }).bracket
+      .id;
+    for (const invalid of [
+      {},
+      { regulationRoundCount: 0 },
+      { regulationRoundCount: 21 },
+      { regulationRoundCount: 1.5 },
+      { regulationRoundCount: null },
+      { roundDurationMs: 0 },
+      { roundDurationMs: 3600001 },
+      { roundDurationMs: null },
+    ]) {
+      await authenticated(
+        request(app.getHttpServer()).patch(`${path}/staffing/1`),
+      )
+        .send(invalid)
+        .expect(400);
+    }
+    // Rule changes do not require the tournament to have a full referee roster yet.
+    await authenticated(
+      request(app.getHttpServer()).patch(`${path}/staffing/1`),
+    )
+      .send({ regulationRoundCount: 1, roundDurationMs: 90000 })
+      .expect(200);
+    await authenticated(
+      request(app.getHttpServer()).patch(`${path}/staffing/2`),
+    )
+      .send({ regulationRoundCount: 3, roundDurationMs: 180000 })
+      .expect(200);
+    await authenticated(
+      request(app.getHttpServer()).patch(`${path}/staffing/99`),
+    )
+      .send({ regulationRoundCount: 3 })
+      .expect(404);
+    const roundOne = await prisma.bracketFixture.findMany({
+      where: { bracketId, roundNumber: 1 },
+    });
+    for (const fixture of roundOne) {
+      await authenticated(
+        request(app.getHttpServer()).post(
+          `/api/admin/tournaments/${tournamentId}/brackets/${bracketId}/fixtures/${fixture.id}/prepare-match`,
+        ),
+      )
+        .expect(201)
+        .expect((response) => {
+          expect(response.body.match).toMatchObject({
+            regulationRoundCount: 1,
+            roundDurationMs: 90000,
+          });
+        });
+    }
+    await authenticated(
+      request(app.getHttpServer()).patch(`${path}/staffing/1`),
+    )
+      .send({ regulationRoundCount: 2, roundDurationMs: 120000 })
+      .expect(409);
+    await authenticated(
+      request(app.getHttpServer()).patch(`${path}/staffing/2`),
+    )
+      .send({ roundDurationMs: 150000 })
+      .expect(200);
+    const saved = await prisma.bracketRoundStaffing.findUniqueOrThrow({
+      where: { bracketId_roundNumber: { bracketId, roundNumber: 2 } },
+    });
+    expect(saved).toMatchObject({
+      regulationRoundCount: 3,
+      roundDurationMs: 150000,
+    });
+  });
+
+  it('reports weight class bracket progress from none to drawn to in progress', async () => {
+    const { tournamentId, weightClassId } = await setup(4);
+    const progress = async () => {
+      const response = await authenticated(
+        request(app.getHttpServer()).get(
+          `/api/admin/tournaments/${tournamentId}/weight-classes`,
+        ),
+      ).expect(200);
+      const rows = (
+        response.body as {
+          weightClasses: {
+            id: string;
+            hasCurrentBracket: boolean;
+            bracketProgress: string;
+          }[];
+        }
+      ).weightClasses;
+      const row = rows.find(({ id }) => id === weightClassId);
+      return [row?.hasCurrentBracket, row?.bracketProgress];
+    };
+    expect(await progress()).toEqual([false, 'NONE']);
+    const previewBody = (await preview(tournamentId, weightClassId))
+      .body as PreviewResponse;
+    const confirmed = await authenticated(
+      request(app.getHttpServer()).post(
+        `/api/admin/tournaments/${tournamentId}/weight-classes/${weightClassId}/bracket/confirm`,
+      ),
+    )
+      .send({
+        idempotencyKey: `${prefix}-progress`,
+        previewToken: previewBody.previewToken,
+      })
+      .expect(201);
+    expect(await progress()).toEqual([true, 'DRAWN']);
+    const bracketId = (confirmed.body as { bracket: { id: string } }).bracket
+      .id;
+    const fixture = await prisma.bracketFixture.findFirstOrThrow({
+      where: { bracketId, roundNumber: 1 },
+    });
+    await authenticated(
+      request(app.getHttpServer()).post(
+        `/api/admin/tournaments/${tournamentId}/brackets/${bracketId}/fixtures/${fixture.id}/prepare-match`,
+      ),
+    ).expect(201);
+    expect(await progress()).toEqual([true, 'IN_PROGRESS']);
+  });
+
   it('lists operational matches before requiring an explicit forced cancellation', async () => {
     const { tournamentId, weightClassId } = await setup(2);
     const previewBody = (await preview(tournamentId, weightClassId))

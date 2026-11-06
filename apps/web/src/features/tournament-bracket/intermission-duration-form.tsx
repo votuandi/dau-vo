@@ -46,7 +46,7 @@ export function IntermissionDurationForm({
 
   return (
     <form
-      className="mt-5 rounded-xl border border-border bg-muted/20 p-4"
+      className="rounded-xl border border-border bg-muted/20 p-4"
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
