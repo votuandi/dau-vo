@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import {
   AdminEntitlementStatus,
   AuditEventType,
+  BracketStatus,
   MatchLifecycle,
   MatchStatus,
   TournamentOfficialRole,
@@ -11,6 +12,9 @@ import {
 import { hash } from 'bcryptjs';
 import Redis from 'ioredis';
 import request, { type Test as SupertestRequest } from 'supertest';
+
+import { MatchOfficialAssignmentsService } from '../match-official-assignments/match-official-assignments.service';
+import type { ValidatedOfficialSession } from '../official-access/official-access.types';
 
 import { DEFAULT_SPORT } from '../../prisma/default-sport';
 import type { EnvironmentVariables } from '../config/environment';
@@ -890,6 +894,78 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
       ),
     ).expect(201);
     expect(await progress()).toEqual([true, 'IN_PROGRESS']);
+  });
+
+  it('excludes retained matches from cancelled brackets from supervisor access', async () => {
+    const { tournamentId, weightClassId } = await setup(2);
+    const previewBody = (await preview(tournamentId, weightClassId))
+      .body as PreviewResponse;
+    const confirmation = await authenticated(
+      request(app.getHttpServer()).post(
+        `/api/admin/tournaments/${tournamentId}/weight-classes/${weightClassId}/bracket/confirm`,
+      ),
+    )
+      .send({
+        idempotencyKey: `${prefix}-legacy-cancelled`,
+        previewToken: previewBody.previewToken,
+      })
+      .expect(201);
+    const bracketId = (confirmation.body as { bracket: { id: string } }).bracket
+      .id;
+    const fixture = await prisma.bracketFixture.findFirstOrThrow({
+      where: { bracketId },
+    });
+    const service = app.get(MatchOfficialAssignmentsService);
+    const identity = {
+      officialId: '00000000-0000-4000-8000-000000000001',
+      tournamentId,
+      official: { role: TournamentOfficialRole.SUPERVISOR },
+    } as ValidatedOfficialSession;
+    const grouping = {
+      weightClass: { id: weightClassId, name: expect.any(String) },
+      roundNumber: fixture.roundNumber,
+      position: fixture.position,
+    };
+    expect((await service.list(identity)).matches).toContainEqual(
+      expect.objectContaining({
+        id: fixture.id,
+        fixtureId: fixture.id,
+        ...grouping,
+      }),
+    );
+    const prepared = await authenticated(
+      request(app.getHttpServer()).post(
+        `/api/admin/tournaments/${tournamentId}/brackets/${bracketId}/fixtures/${fixture.id}/prepare-match`,
+      ),
+    ).expect(201);
+    const matchId = (prepared.body as { match: { id: string } }).match.id;
+    expect(
+      (await service.list(identity)).matches.some(
+        (match) => match.id === matchId,
+      ),
+    ).toBe(true);
+    expect((await service.list(identity)).matches).toContainEqual(
+      expect.objectContaining({ id: matchId, ...grouping }),
+    );
+    // Older cancellations preserved linked matches instead of deleting them.
+    await prisma.tournamentBracket.update({
+      where: { id: bracketId },
+      data: { status: BracketStatus.CANCELLED, cancelledAt: new Date() },
+    });
+    expect(
+      (await service.list(identity)).matches.some(
+        (match) => match.id === matchId,
+      ),
+    ).toBe(false);
+    await expect(service.state(matchId, identity)).rejects.toMatchObject({
+      response: { code: 'MATCH_NOT_FOUND' },
+    });
+    await expect(service.take(matchId, [], identity)).rejects.toMatchObject({
+      response: { code: 'MATCH_LIFECYCLE_MISMATCH' },
+    });
+    expect(
+      await prisma.match.findUnique({ where: { id: matchId } }),
+    ).not.toBeNull();
   });
 
   it('lists operational matches before requiring an explicit forced cancellation', async () => {

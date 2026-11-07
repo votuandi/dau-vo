@@ -30,6 +30,9 @@ export interface OfficialMatch {
   readonly requiredJudgeCount: number;
   readonly athletes: readonly { readonly color: string; readonly name: string }[];
   readonly claimable: boolean;
+  readonly weightClass?: { readonly id: string; readonly name: string } | null;
+  readonly roundNumber?: number | null;
+  readonly position?: number | null;
 }
 export interface OfficialReferee {
   readonly id: string;

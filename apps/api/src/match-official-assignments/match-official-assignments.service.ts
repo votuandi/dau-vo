@@ -26,6 +26,15 @@ import { AdminManagementService } from '../admin-management/admin-management.ser
 
 type Tx = Prisma.TransactionClient;
 const unstarted = { status: 'WAITING' as const, startedAt: null };
+// Cancelled brackets retain operational matches for history only.
+const availableBracket: Prisma.MatchWhereInput = {
+  OR: [
+    { bracketFixture: null },
+    {
+      bracketFixture: { bracket: { status: { not: BracketStatus.CANCELLED } } },
+    },
+  ],
+};
 
 @Injectable()
 export class MatchOfficialAssignmentsService {
@@ -44,6 +53,7 @@ export class MatchOfficialAssignmentsService {
       where: {
         tournamentId: identity.tournamentId,
         deletedAt: null,
+        ...availableBracket,
         lifecycle: {
           in: [MatchLifecycle.READY, MatchLifecycle.SUSPENDED],
         },
@@ -59,6 +69,8 @@ export class MatchOfficialAssignmentsService {
         lifecycle: true,
         status: true,
         requiredJudgeCount: true,
+        weightClass: { select: { id: true, name: true } },
+        bracketFixture: { select: { roundNumber: true, position: true } },
         athletes: {
           orderBy: { color: 'asc' },
           select: { color: true, name: true },
@@ -92,7 +104,12 @@ export class MatchOfficialAssignmentsService {
       ],
       include: {
         slots: { orderBy: { side: 'asc' }, include: { resolvedEntrant: true } },
-        bracket: { select: { roundStaffing: true } },
+        bracket: {
+          select: {
+            roundStaffing: true,
+            weightClass: { select: { id: true, name: true } },
+          },
+        },
       },
     });
     const readyFixtures = fixtures.flatMap((fixture) => {
@@ -113,6 +130,9 @@ export class MatchOfficialAssignmentsService {
           lifecycle: MatchLifecycle.READY,
           status: 'WAITING' as const,
           requiredJudgeCount: staffing.requiredJudgeCount,
+          weightClass: fixture.bracket.weightClass,
+          roundNumber: fixture.roundNumber,
+          position: fixture.position,
           athletes: fixture.slots.map((slot) => ({
             color: slot.side,
             name: slot.resolvedEntrant!.snapshotName,
@@ -125,6 +145,8 @@ export class MatchOfficialAssignmentsService {
       matches: [
         ...matches.map((match) => ({
           ...match,
+          roundNumber: match.bracketFixture?.roundNumber ?? null,
+          position: match.bracketFixture?.position ?? null,
           claimable:
             !match.officialAssignments.some(
               (x) => x.role === TournamentOfficialRole.SUPERVISOR,
@@ -217,6 +239,7 @@ export class MatchOfficialAssignmentsService {
         id: matchId,
         tournamentId: identity.tournamentId,
         deletedAt: null,
+        ...availableBracket,
       },
       select: {
         id: true,
@@ -975,6 +998,7 @@ export class MatchOfficialAssignmentsService {
         id,
         tournamentId,
         deletedAt: null,
+        ...availableBracket,
         ...unstarted,
         tournament: {
           softDeletedAt: null,
@@ -998,6 +1022,7 @@ export class MatchOfficialAssignmentsService {
         id,
         tournamentId,
         deletedAt: null,
+        ...availableBracket,
         lifecycle: {
           in: [
             MatchLifecycle.READY,
