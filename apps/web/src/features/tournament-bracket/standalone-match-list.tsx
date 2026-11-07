@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Trash2 } from 'lucide-react';
+import { MatchLifecycle } from '@martial-arts-scoring/shared-types';
 import { useMutation, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
@@ -88,7 +89,9 @@ export function StandaloneMatchList({
                 aria-label={`Xóa trận ${match.publicId}`}
                 className="shrink-0"
                 disabled={deleteMutation.isPending}
-                onClick={() => setPendingDelete(match)}
+                onClick={() => {
+                  setPendingDelete(match);
+                }}
                 size="sm"
                 title="Xóa trận"
                 type="button"
@@ -109,11 +112,15 @@ export function StandaloneMatchList({
             .join(
               ' — ',
             )}) sẽ bị ẩn khỏi danh sách, trang công khai và không thể đăng nhập điều hành nữa. Lịch sử chấm điểm vẫn được lưu để tra cứu.`}
-          onCancel={() => setPendingDelete(null)}
-          onConfirm={() => deleteMutation.mutate(pendingDelete)}
+          onCancel={() => {
+            setPendingDelete(null);
+          }}
+          onConfirm={() => {
+            deleteMutation.mutate(pendingDelete);
+          }}
           title="Xóa trận riêng lẻ?"
           warning={
-            pendingDelete.lifecycle === 'IN_PROGRESS'
+            pendingDelete.lifecycle === MatchLifecycle.IN_PROGRESS
               ? 'Trận đang diễn ra. Các phiên điều hành và chấm điểm sẽ bị ngắt ngay.'
               : 'Thao tác này không thể hoàn tác trên giao diện.'
           }
