@@ -20,7 +20,7 @@ export function BracketRoundRulesEditor({
       <h3 className="font-bold">Số hiệp và thời lượng theo vòng</h3>
       <p className="mt-1 text-sm text-muted-foreground">
         Áp dụng cho mọi trận trong cùng vòng của hạng cân này. Thời lượng tính cho mỗi hiệp. Cấu
-        hình khóa khi có trận trong vòng được chuẩn bị.
+        hình khóa khi Giám sát nhận một trận trong vòng.
       </p>
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
         {(data.staffing ?? []).map((row) => {

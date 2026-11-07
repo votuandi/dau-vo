@@ -39,8 +39,10 @@ export const oneOnOneCombatRules: SportRulesDefinition = Object.freeze({
         : AthleteColor.BLUE,
   minimumScoreboardConnections: 1,
   defaultRequiredJudgeCount: 3,
-  minimumRequiredRefereeCount: 3,
-  requiresOddRefereeCount: true,
+  // Any positive judge count is allowed per round. A point needs a strict
+  // majority (floor(n/2)+1), so with an even count a split vote awards nothing.
+  minimumRequiredRefereeCount: 1,
+  requiresOddRefereeCount: false,
   judgeMajority: (judgeCount: number) => Math.floor(judgeCount / 2) + 1,
   judgePointValue: 1,
   roundCount: 2,

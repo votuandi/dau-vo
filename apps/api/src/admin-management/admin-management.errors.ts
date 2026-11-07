@@ -104,6 +104,12 @@ export const MATCH_NOT_FOUND_ERROR: AdminManagementErrorBody = {
   message: 'Match not found',
 };
 
+export const BRACKET_MATCH_DELETE_NOT_ALLOWED_ERROR: AdminManagementErrorBody =
+  {
+    code: 'BRACKET_MATCH_DELETE_NOT_ALLOWED',
+    message: 'Bracket-linked matches are removed by cancelling their bracket',
+  };
+
 export const MATCH_ACCESS_CODE_NOT_FOUND_ERROR: AdminManagementErrorBody = {
   code: 'MATCH_ACCESS_CODE_NOT_FOUND',
   message: 'Match access code not found',

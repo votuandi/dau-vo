@@ -4,12 +4,17 @@ import { Test } from '@nestjs/testing';
 import {
   AdminEntitlementStatus,
   AuditEventType,
+  BracketStatus,
   MatchLifecycle,
   MatchStatus,
+  TournamentOfficialRole,
 } from '@prisma/client';
 import { hash } from 'bcryptjs';
 import Redis from 'ioredis';
 import request, { type Test as SupertestRequest } from 'supertest';
+
+import { MatchOfficialAssignmentsService } from '../match-official-assignments/match-official-assignments.service';
+import type { ValidatedOfficialSession } from '../official-access/official-access.types';
 
 import { DEFAULT_SPORT } from '../../prisma/default-sport';
 import type { EnvironmentVariables } from '../config/environment';
@@ -372,6 +377,179 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
     ).resolves.toBe(0);
   });
 
+  it('lists resolved fixtures immediately and atomically takes a full crew without preparation', async () => {
+    const { tournamentId, weightClassId } = await setup(4);
+    const previewBody = (await preview(tournamentId, weightClassId))
+      .body as PreviewResponse;
+    const confirmed = await authenticated(
+      request(app.getHttpServer()).post(
+        `/api/admin/tournaments/${tournamentId}/weight-classes/${weightClassId}/bracket/confirm`,
+      ),
+    )
+      .send({
+        idempotencyKey: `${prefix}-automatic-ready`,
+        previewToken: previewBody.previewToken,
+      })
+      .expect(201);
+    const bracketId = (confirmed.body as { bracket: { id: string } }).bracket
+      .id;
+    const fixtures = await prisma.bracketFixture.findMany({
+      where: { bracketId },
+      orderBy: [{ roundNumber: 'asc' }, { position: 'asc' }],
+      include: { slots: true },
+    });
+    const first = fixtures[0]!;
+    const pending = fixtures.find(
+      (fixture) => fixture.status === 'PENDING_PARTICIPANTS',
+    )!;
+    const publicCode = (
+      await prisma.tournament.findUniqueOrThrow({ where: { id: tournamentId } })
+    ).publicCode;
+    const createOfficial = async (
+      role: TournamentOfficialRole,
+      name: string,
+    ) => {
+      const response = await authenticated(
+        request(app.getHttpServer()).post(
+          `/api/admin/tournaments/${tournamentId}/officials`,
+        ),
+      )
+        .send({ role, name })
+        .expect(201);
+      return response.body as { official: { id: string }; passcode: string };
+    };
+    const supervisors = await Promise.all(
+      [1, 2].map((index) =>
+        createOfficial(
+          TournamentOfficialRole.SUPERVISOR,
+          `Ready supervisor ${index}`,
+        ),
+      ),
+    );
+    const staffing = await prisma.bracketRoundStaffing.findUniqueOrThrow({
+      where: {
+        bracketId_roundNumber: { bracketId, roundNumber: first.roundNumber },
+      },
+    });
+    const judges = await Promise.all(
+      Array.from({ length: staffing.requiredJudgeCount }, (_, index) =>
+        createOfficial(TournamentOfficialRole.JUDGE, `Ready judge ${index}`),
+      ),
+    );
+    const supervisorCookies = await Promise.all(
+      supervisors.map(async (supervisor, index) => {
+        const response = await request(app.getHttpServer())
+          .post('/api/official-access/login')
+          .send({
+            tournamentCode: publicCode,
+            privatePasscode: supervisor.passcode,
+            deviceId: `${prefix}-ready-supervisor-${index}`,
+            expectedRole: TournamentOfficialRole.SUPERVISOR,
+          })
+          .expect(200);
+        return cookie(response.headers);
+      }),
+    );
+    const list = await request(app.getHttpServer())
+      .get('/api/official/matches')
+      .set('Cookie', supervisorCookies[0]!)
+      .expect(200);
+    const candidates = (
+      list.body as {
+        matches: Array<{ id: string; fixtureId?: string; lifecycle: string }>;
+      }
+    ).matches;
+    expect(candidates).toHaveLength(2);
+    expect(candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: first.id,
+          fixtureId: first.id,
+          lifecycle: 'READY',
+        }),
+      ]),
+    );
+    expect(candidates.some((match) => match.id === pending.id)).toBe(false);
+    expect(await prisma.match.count({ where: { tournamentId } })).toBe(0);
+
+    const endpoint = `/api/official/matches/fixtures/${first.id}/take`;
+    await request(app.getHttpServer())
+      .get(`/api/official/matches/fixtures/${first.id}`)
+      .set('Cookie', supervisorCookies[0]!)
+      .expect(200)
+      .expect((response) =>
+        expect(response.body.match.lifecycle).toBe('READY'),
+      );
+    await request(app.getHttpServer())
+      .post(endpoint)
+      .set('Cookie', supervisorCookies[0]!)
+      .send({ judgeIds: [judges[0]!.official.id] })
+      .expect(409);
+    expect(await prisma.match.count({ where: { tournamentId } })).toBe(0);
+    await request(app.getHttpServer())
+      .post(`/api/official/matches/fixtures/${pending.id}/take`)
+      .set('Cookie', supervisorCookies[0]!)
+      .send({ judgeIds: judges.map((judge) => judge.official.id) })
+      .expect(409);
+
+    const judgeIds = judges.map((judge) => judge.official.id);
+    const races = await Promise.all(
+      supervisorCookies.map((sessionCookie) =>
+        request(app.getHttpServer())
+          .post(endpoint)
+          .set('Cookie', sessionCookie)
+          .send({ judgeIds }),
+      ),
+    );
+    expect(races.map((response) => response.status).sort()).toEqual([201, 409]);
+    const winnerIndex = races.findIndex((response) => response.status === 201);
+    expect(races[winnerIndex]!.body.match.lifecycle).toBe('IN_PROGRESS');
+    const match = await prisma.match.findUniqueOrThrow({
+      where: { bracketFixtureId: first.id },
+    });
+    expect(match.lifecycle).toBe(MatchLifecycle.IN_PROGRESS);
+    expect(match.status).toBe(MatchStatus.WAITING);
+    expect(
+      await prisma.matchOfficialAssignment.count({
+        where: { matchId: match.id, releasedAt: null },
+      }),
+    ).toBe(judgeIds.length + 1);
+    await request(app.getHttpServer())
+      .post(endpoint)
+      .set('Cookie', supervisorCookies[winnerIndex]!)
+      .send({ judgeIds })
+      .expect(201);
+    expect(await prisma.match.count({ where: { tournamentId } })).toBe(1);
+
+    // Advancing both winners makes the next round selectable without any prepare call.
+    for (const fixture of fixtures.filter((row) => row.roundNumber === 1)) {
+      await authenticated(
+        request(app.getHttpServer()).post(
+          `/api/admin/tournaments/${tournamentId}/brackets/${bracketId}/fixtures/${fixture.id}/decide-winner`,
+        ),
+      )
+        .send({
+          entrantId: fixture.slots[0]!.resolvedEntrantId,
+          decisionType: 'ADMIN_OVERRIDE',
+          reason: 'Ready workflow regression',
+          idempotencyKey: `${prefix}-advance-${fixture.id}`,
+        })
+        .expect(201);
+    }
+    await request(app.getHttpServer())
+      .get('/api/official/matches')
+      .set('Cookie', supervisorCookies[0]!)
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.matches).toEqual([
+          expect.objectContaining({
+            fixtureId: pending.id,
+            lifecycle: 'READY',
+          }),
+        ]);
+      });
+  });
+
   it('rejects a roster changed after preview without partial writes', async () => {
     const { athleteIds, tournamentId, weightClassId } = await setup();
     const previewBody = (await preview(tournamentId, weightClassId))
@@ -716,6 +894,78 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
       ),
     ).expect(201);
     expect(await progress()).toEqual([true, 'IN_PROGRESS']);
+  });
+
+  it('excludes retained matches from cancelled brackets from supervisor access', async () => {
+    const { tournamentId, weightClassId } = await setup(2);
+    const previewBody = (await preview(tournamentId, weightClassId))
+      .body as PreviewResponse;
+    const confirmation = await authenticated(
+      request(app.getHttpServer()).post(
+        `/api/admin/tournaments/${tournamentId}/weight-classes/${weightClassId}/bracket/confirm`,
+      ),
+    )
+      .send({
+        idempotencyKey: `${prefix}-legacy-cancelled`,
+        previewToken: previewBody.previewToken,
+      })
+      .expect(201);
+    const bracketId = (confirmation.body as { bracket: { id: string } }).bracket
+      .id;
+    const fixture = await prisma.bracketFixture.findFirstOrThrow({
+      where: { bracketId },
+    });
+    const service = app.get(MatchOfficialAssignmentsService);
+    const identity = {
+      officialId: '00000000-0000-4000-8000-000000000001',
+      tournamentId,
+      official: { role: TournamentOfficialRole.SUPERVISOR },
+    } as ValidatedOfficialSession;
+    const grouping = {
+      weightClass: { id: weightClassId, name: expect.any(String) },
+      roundNumber: fixture.roundNumber,
+      position: fixture.position,
+    };
+    expect((await service.list(identity)).matches).toContainEqual(
+      expect.objectContaining({
+        id: fixture.id,
+        fixtureId: fixture.id,
+        ...grouping,
+      }),
+    );
+    const prepared = await authenticated(
+      request(app.getHttpServer()).post(
+        `/api/admin/tournaments/${tournamentId}/brackets/${bracketId}/fixtures/${fixture.id}/prepare-match`,
+      ),
+    ).expect(201);
+    const matchId = (prepared.body as { match: { id: string } }).match.id;
+    expect(
+      (await service.list(identity)).matches.some(
+        (match) => match.id === matchId,
+      ),
+    ).toBe(true);
+    expect((await service.list(identity)).matches).toContainEqual(
+      expect.objectContaining({ id: matchId, ...grouping }),
+    );
+    // Older cancellations preserved linked matches instead of deleting them.
+    await prisma.tournamentBracket.update({
+      where: { id: bracketId },
+      data: { status: BracketStatus.CANCELLED, cancelledAt: new Date() },
+    });
+    expect(
+      (await service.list(identity)).matches.some(
+        (match) => match.id === matchId,
+      ),
+    ).toBe(false);
+    await expect(service.state(matchId, identity)).rejects.toMatchObject({
+      response: { code: 'MATCH_NOT_FOUND' },
+    });
+    await expect(service.take(matchId, [], identity)).rejects.toMatchObject({
+      response: { code: 'MATCH_LIFECYCLE_MISMATCH' },
+    });
+    expect(
+      await prisma.match.findUnique({ where: { id: matchId } }),
+    ).not.toBeNull();
   });
 
   it('lists operational matches before requiring an explicit forced cancellation', async () => {

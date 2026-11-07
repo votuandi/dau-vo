@@ -21,4 +21,11 @@ describe('SportRulesRegistry', () => {
       SportGroupRulesNotImplementedError,
     );
   });
+
+  it('allows any positive judge count, including even counts', () => {
+    const rules = registry.resolve('ONE_ON_ONE_COMBAT');
+    expect(rules.minimumRequiredRefereeCount).toBe(1);
+    expect(rules.requiresOddRefereeCount).toBe(false);
+    expect([1, 2, 3, 4].map(rules.judgeMajority)).toEqual([1, 2, 2, 3]);
+  });
 });

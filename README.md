@@ -290,6 +290,14 @@ for migration and operator checks.
 
 ## Tournament official authentication and operations
 
+Every bracket fixture with two resolved athletes is immediately `READY` and
+appears in the supervisor's match selection. No preparation button is required.
+Selecting a match and confirming the full judge team atomically creates its
+operational data, snapshots round rules/staffing, assigns the officials, and
+changes lifecycle from `READY` to `IN_PROGRESS`. The first-round clock starts
+only when the supervisor explicitly starts the round. Exiting and cancelling
+all results releases the crew and returns the match to `READY`.
+
 Display the tournament public code to staff, create referee and inspector records
 from the tournament administration page, and distribute each one-time private
 passcode over a secure out-of-band channel. Referees sign in at `/trong-tai` and

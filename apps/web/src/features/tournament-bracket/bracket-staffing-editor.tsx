@@ -25,8 +25,8 @@ export function BracketStaffingEditor({
     <section className="rounded-xl border p-4" aria-label="Cấu hình giám định theo vòng">
       <h3 className="font-bold">Giám định theo vòng</h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        Hiện có {active} giám định hoạt động. Mỗi trận cần ít nhất 3 giám định, số lẻ, và không vượt
-        quá số đang hoạt động. Giám biên luôn là 1.
+        Hiện có {active} giám định hoạt động. Mỗi trận cần ít nhất 1 giám định và không vượt quá số
+        đang hoạt động. Giám biên luôn là 1.
       </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {rows.map((staffing) => {
@@ -44,8 +44,9 @@ export function BracketStaffingEditor({
                   className="mt-1 w-full rounded border px-2 py-1"
                   disabled={disabled || locked || pending}
                   inputMode="numeric"
-                  min="3"
-                  step="2"
+                  max={active || undefined}
+                  min="1"
+                  step="1"
                   type="number"
                   value={values[staffing.roundNumber] ?? ''}
                   onChange={(event) => {
@@ -58,7 +59,8 @@ export function BracketStaffingEditor({
                   disabled ||
                   locked ||
                   pending ||
-                  !Number.isInteger(Number(values[staffing.roundNumber]))
+                  !Number.isInteger(Number(values[staffing.roundNumber])) ||
+                  Number(values[staffing.roundNumber]) < 1
                 }
                 onClick={() => {
                   onSave(staffing.roundNumber, Number(values[staffing.roundNumber]));

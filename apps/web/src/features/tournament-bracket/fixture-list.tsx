@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ClipboardCheck, Crown, Eye } from 'lucide-react';
+import { Crown, Eye } from 'lucide-react';
 import { bracketRoundLabel as roundLabel } from '@martial-arts-scoring/shared-types';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,6 +13,7 @@ import type { ActiveBracket } from '@/services/api/admin-management';
 import { MatchDisplayState, MatchLifecycle } from '@/types/shared';
 import {
   canDecideManually,
+  fixtureScore,
   fixtureSideLabel,
   fixtureSurfaceClassName,
   groupFixturesByRound,
@@ -23,12 +24,10 @@ import {
 export function FixtureList({
   data,
   disabled,
-  onPrepare,
   onDecide,
 }: {
   readonly data: ActiveBracket;
   readonly disabled: boolean;
-  readonly onPrepare: (id: string) => void;
   readonly onDecide: (fixture: BracketFixture) => void;
 }) {
   const groups = useMemo(() => groupFixturesByRound(data.fixtures), [data.fixtures]);
@@ -51,7 +50,6 @@ export function FixtureList({
                 fixture={fixture}
                 key={fixture.id}
                 onDecide={onDecide}
-                onPrepare={onPrepare}
                 referenceById={referenceById}
               />
             ))}
@@ -67,14 +65,12 @@ function FixtureItem({
   disabled,
   fixture,
   onDecide,
-  onPrepare,
   referenceById,
 }: {
   readonly data: ActiveBracket;
   readonly disabled: boolean;
   readonly fixture: BracketFixture;
   readonly onDecide: (fixture: BracketFixture) => void;
-  readonly onPrepare: (id: string) => void;
   readonly referenceById: ReadonlyMap<string, string>;
 }) {
   const statuses = fixture.match
@@ -85,6 +81,7 @@ function FixtureItem({
     : [presentDisplayState(fixture.displayState)];
   const decisionType = manualWinnerDecisionType(fixture);
   const decidable = canDecideManually(fixture);
+  const score = fixtureScore(fixture);
 
   return (
     <li className={`rounded-xl border p-3 ${fixtureSurfaceClassName(fixture)}`}>
@@ -105,7 +102,15 @@ function FixtureItem({
           </div>
           <p className="mt-1 break-words text-sm font-medium">
             <span className="text-red-700">{fixtureSideLabel(fixture, 'RED', referenceById)}</span>
-            <span className="px-2 text-muted-foreground">vs</span>
+            {score ? (
+              <span aria-label={`Tỉ số ${String(score.RED)} - ${String(score.BLUE)}`}>
+                <span className="pl-2 font-black text-red-700">{score.RED}</span>
+                <span className="px-1.5 text-muted-foreground">vs</span>
+                <span className="pr-2 font-black text-blue-700">{score.BLUE}</span>
+              </span>
+            ) : (
+              <span className="px-2 text-muted-foreground">vs</span>
+            )}
             <span className="text-blue-700">
               {fixtureSideLabel(fixture, 'BLUE', referenceById)}
             </span>
@@ -137,19 +142,6 @@ function FixtureItem({
           ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-          {fixture.status === 'READY' ? (
-            <Button
-              disabled={disabled}
-              onClick={() => {
-                onPrepare(fixture.id);
-              }}
-              size="sm"
-              type="button"
-            >
-              <ClipboardCheck aria-hidden="true" className="size-4" />
-              Chuẩn bị trận
-            </Button>
-          ) : null}
           {fixture.match &&
           (fixture.status === 'MATCH_PREPARED' ||
             fixture.match.lifecycle === MatchLifecycle.COMPLETED) ? (

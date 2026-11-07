@@ -445,6 +445,8 @@ export interface ActiveBracket {
       readonly phase: MatchStatus;
       readonly currentRound?: number | null;
       readonly status: MatchStatus;
+      /** Published final score by corner; null until a scored result exists. */
+      readonly score?: { readonly RED: number; readonly BLUE: number } | null;
     } | null;
     readonly winnerEntrant: { readonly id: string; readonly snapshotName: string } | null;
     readonly winnerDecision?: {
@@ -647,6 +649,8 @@ export const adminManagementApi = {
     apiClient.get<AdminMatchMonitoring>(`admin/matches/${encodePathSegment(id)}/monitoring`),
   updateMatch: (id: string, input: UpdateMatchInput) =>
     apiClient.patch<MatchResponse>(`admin/matches/${encodePathSegment(id)}`, input),
+  deleteMatch: (id: string) =>
+    apiClient.delete<undefined>(`admin/matches/${encodePathSegment(id)}`),
   listOrganizations: (tournamentId: string, includeInactive = true) =>
     apiClient.get<OrganizationsResponse>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/organizations?includeInactive=${String(includeInactive)}`,

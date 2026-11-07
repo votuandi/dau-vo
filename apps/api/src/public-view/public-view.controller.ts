@@ -92,7 +92,7 @@ export class PublicViewController {
           },
         },
         matches: {
-          where: { status: { not: MatchStatus.WAITING } },
+          where: { status: { not: MatchStatus.WAITING }, deletedAt: null },
           orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
           select: {
             id: true,
@@ -142,6 +142,7 @@ export class PublicViewController {
     const match = await this.prisma.match.findFirst({
       where: {
         id,
+        deletedAt: null,
         tournament: { status: { in: visibleStatuses }, softDeletedAt: null },
       },
       select: {

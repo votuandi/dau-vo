@@ -2,7 +2,9 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Inject,
   Param,
   ParseUUIDPipe,
@@ -70,5 +72,15 @@ export class AdminMatchesController {
     return {
       match: await this.management.updateMatch(id, input, request.user.id),
     };
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  async remove(
+    @Param('id', uuidPipe) id: string,
+    @Req() request: AuthenticatedUserRequest,
+  ): Promise<void> {
+    await this.management.assertMatchAccess(id, request.user, true);
+    await this.management.deleteMatch(id, request.user.id);
   }
 }

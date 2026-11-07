@@ -148,7 +148,7 @@ function MatchEditor({
       <p className="mt-2 text-sm text-muted-foreground">
         Số hiệp chính: {match.regulationRoundCount}.
         {match.bracketFixtureId !== null
-          ? ' Số hiệp và thời lượng được áp dụng từ cấu hình vòng đấu khi chuẩn bị trận.'
+          ? ' Số hiệp và thời lượng được áp dụng từ cấu hình vòng đấu khi Giám sát nhận trận.'
           : ''}
       </p>
       <form className="mt-5 space-y-6" noValidate onSubmit={handleSubmit}>

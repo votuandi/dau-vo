@@ -3,6 +3,12 @@ import { ApiClientError } from '@/services/api/client';
 import { toast } from '@/components/ui/toast';
 
 const apiErrorMessages: Readonly<Record<string, string>> = {
+  IMAGE_FILE_REQUIRED: 'Hãy chọn một tệp ảnh để tải lên.',
+  IMAGE_TOO_LARGE: 'Ảnh không được vượt quá 2 MiB.',
+  IMAGE_UNSUPPORTED_TYPE: 'Ảnh phải là JPEG, PNG hoặc WebP.',
+  IMAGE_INVALID_CONTENT:
+    'Không thể đọc ảnh. Hãy xuất lại dưới dạng JPEG, PNG hoặc WebP với độ phân giải tối đa 16 megapixel.',
+  IMAGE_STORAGE_FAILURE: 'Không thể lưu ảnh lúc này. Hãy thử lại sau.',
   INVALID_ACCESS_ROLE: 'Vai trò truy cập không hợp lệ.',
   INVALID_DATE: 'Ngày đã nhập không hợp lệ.',
   INVALID_ID: 'Mã định danh không hợp lệ.',

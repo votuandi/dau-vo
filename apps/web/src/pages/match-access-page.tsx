@@ -50,7 +50,7 @@ function errorMessage(e: unknown) {
 function isEligible(match: OfficialMatch): boolean {
   return (
     match.claimable &&
-    (match.lifecycle === MatchLifecycle.NOT_STARTED || match.lifecycle === MatchLifecycle.SUSPENDED)
+    (match.lifecycle === MatchLifecycle.READY || match.lifecycle === MatchLifecycle.SUSPENDED)
   );
 }
 
@@ -151,13 +151,29 @@ function SupervisorAssignment({
 }) {
   const qc = useQueryClient();
   const [selected, setSelected] = useState<OfficialMatch | null>(null);
+  const [weightClassId, setWeightClassId] = useState<string | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [conflict, setConflict] = useState<string | null>(null);
   const [refreshAnnouncement, setRefreshAnnouncement] = useState('');
+  const assignmentPanelRef = useRef<HTMLElement>(null);
+  const selectedMatchRef = useRef<HTMLButtonElement>(null);
+  const selectedId = selected?.id;
+  useEffect(() => {
+    // Desktop keeps the picker beside the list; mobile still needs to reveal it.
+    if (!selectedId) return;
+    if (typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 1024px)').matches)
+      return;
+    const panel = assignmentPanelRef.current;
+    if (panel && typeof panel.scrollIntoView === 'function') {
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    panel?.focus({ preventScroll: true });
+  }, [selectedId]);
   const matches = useQuery({
     queryKey: ['official-matches', session.tournament.id],
     queryFn: officialAccessApi.matches,
     staleTime: 0,
+    refetchInterval: 5_000,
   });
   useEffect(() => {
     if (
@@ -172,11 +188,28 @@ function SupervisorAssignment({
     queryKey: ['official-match', selected?.id],
     queryFn: () => {
       if (selected === null) throw new Error('A match must be selected before loading its state.');
-      return officialAccessApi.state(selected.id);
+      return selected.fixtureId
+        ? officialAccessApi.fixtureState(selected.fixtureId)
+        : officialAccessApi.state(selected.id);
     },
     enabled: !!selected,
     staleTime: 0,
+    refetchInterval: 5_000,
   });
+  const { refetch: refetchState } = state;
+  useEffect(() => {
+    if (!selected) return;
+    const current = matches.data?.matches.find((match) => match.id === selected.id);
+    if (current && current.requiredJudgeCount !== selected.requiredJudgeCount) {
+      setSelected(current);
+      void refetchState();
+    }
+  }, [matches.data, selected, refetchState]);
+  useEffect(() => {
+    const count = state.data?.match.requiredJudgeCount;
+    if (count === undefined) return;
+    setPicked((previous) => (previous.length > count ? previous.slice(0, count) : previous));
+  }, [state.data?.match.requiredJudgeCount]);
   const refresh = async () => {
     if (selected === null) return;
     const [matchesResult, stateResult] = await Promise.all([
@@ -187,7 +220,10 @@ function SupervisorAssignment({
       }),
       qc.query({
         queryKey: ['official-match', selected.id],
-        queryFn: () => officialAccessApi.state(selected.id),
+        queryFn: () =>
+          selected.fixtureId
+            ? officialAccessApi.fixtureState(selected.fixtureId)
+            : officialAccessApi.state(selected.id),
         staleTime: 0,
       }),
     ]);
@@ -215,7 +251,9 @@ function SupervisorAssignment({
   const take = useMutation({
     mutationFn: () => {
       if (selected === null) throw new Error('A match must be selected before taking it.');
-      return officialAccessApi.take(selected.id, picked);
+      return selected.fixtureId
+        ? officialAccessApi.takeFixture(selected.fixtureId, picked)
+        : officialAccessApi.take(selected.id, picked);
     },
     onSuccess: async () => {
       // A session snapshot is authoritative; the take response deliberately
@@ -244,8 +282,29 @@ function SupervisorAssignment({
   });
   const refreshing = state.isFetching || matches.isFetching;
   const required = state.data?.match.requiredJudgeCount ?? 0;
+  const weightClasses = new Map<string, { name: string; matches: OfficialMatch[] }>();
+  for (const match of matches.data?.matches ?? []) {
+    const id = match.weightClass?.id ?? 'unclassified';
+    if (!weightClasses.has(id)) {
+      weightClasses.set(id, { name: match.weightClass?.name ?? 'Chưa phân hạng cân', matches: [] });
+    }
+    weightClasses.get(id)?.matches.push(match);
+  }
+  const tabs = [...weightClasses.entries()].sort((a, b) =>
+    a[1].name.localeCompare(b[1].name, 'vi'),
+  );
+  const activeTab =
+    weightClassId && weightClasses.has(weightClassId) ? weightClassId : (tabs[0]?.[0] ?? '');
+  const rounds = new Map<number, OfficialMatch[]>();
+  for (const match of weightClasses.get(activeTab)?.matches ?? []) {
+    const round = match.roundNumber ?? 0;
+    if (!rounds.has(round)) rounds.set(round, []);
+    rounds.get(round)?.push(match);
+  }
+  const roundGroups = [...rounds.entries()].sort((a, b) => a[0] - b[0]);
+
   return (
-    <main className="mx-auto w-full max-w-5xl p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-7xl p-4 sm:p-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-primary">{session.tournament.name}</p>
@@ -263,108 +322,251 @@ function SupervisorAssignment({
       <p aria-live="polite" className="sr-only">
         {refreshAnnouncement}
       </p>
-      {matches.isPending ? <MatchListSkeleton /> : null}
-      {matches.data?.matches.length === 0 ? (
-        <p className="mt-5 rounded-xl border p-5 text-muted-foreground">
-          Chưa có trận nào sẵn sàng để nhận.
-        </p>
-      ) : null}
-      <section aria-label="Danh sách trận" className="mt-5 grid gap-3 md:grid-cols-2">
-        {matches.data?.matches.map((m) => (
-          <button
-            aria-pressed={selected?.id === m.id}
-            className="min-h-28 rounded-xl border p-4 text-left focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 bg-white hover:bg-cyan-50"
-            disabled={!isEligible(m)}
-            key={m.id}
-            onClick={() => {
-              setSelected(m);
-              setConflict(null);
-            }}
-            type="button"
-          >
-            <strong>{m.publicId}</strong>
-            <p className="mt-1 text-sm">
-              {m.athletes.map((a) => a.name).join(' · ')} · Cần {m.requiredJudgeCount} giám định
+      <div className="mt-5 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_26rem]">
+        <div className="min-w-0">
+          {matches.isPending ? <MatchListSkeleton /> : null}
+          {matches.data?.matches.length === 0 ? (
+            <p className="mt-5 rounded-xl border p-5 text-muted-foreground">
+              Chưa có trận nào sẵn sàng để nhận.
             </p>
-            <p className="mt-2 text-xs font-semibold">{presentLifecycle(m.lifecycle).label}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{claimabilityMessage(m)}</p>
-          </button>
-        ))}
-      </section>
-      {matches.isError ? (
-        <p role="alert">
-          Không tải được danh sách.{' '}
-          <button className="underline" onClick={() => void matches.refetch()} type="button">
-            Thử lại
-          </button>
-        </p>
-      ) : null}
-      {selected ? (
-        <section className="mt-6 rounded-2xl border p-5 bg-white">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <h2 className="min-w-0 break-words text-xl font-black">
-              Chọn giám định · {selected.publicId}
-            </h2>
-            <Button
-              disabled={refreshing || take.isPending}
-              onClick={() => {
-                void refresh();
-              }}
-              variant="secondary"
-              type="button"
-            >
-              {refreshing ? 'Đang cập nhật…' : 'Cập nhật'}
-            </Button>
-          </div>
-          <p aria-live="polite" className="mt-2 text-sm">
-            Đã chọn {picked.length}/{required} giám định.
-          </p>
-          <fieldset className="mt-4 grid gap-2" disabled={take.isPending || refreshing}>
-            <legend className="sr-only">Chọn giám định</legend>
-            {state.data?.referees.map((r) => {
-              const unavailable = r.status !== 'READY';
-              return (
-                <label
-                  className="flex min-h-12 items-center justify-between gap-3 rounded border p-3"
-                  key={r.id}
-                >
-                  <span className="min-w-0 break-words">
-                    {r.name} ·{' '}
-                    <span className="font-semibold">{presentOfficialStatus(r.status).label}</span>
-                  </span>
-                  <input
-                    checked={picked.includes(r.id)}
-                    aria-label={`Chọn giám định ${r.name}`}
-                    disabled={unavailable || (!picked.includes(r.id) && picked.length >= required)}
-                    onChange={() => {
-                      setPicked((old) =>
-                        old.includes(r.id)
-                          ? old.filter((id) => id !== r.id)
-                          : old.length < required
-                            ? [...old, r.id]
-                            : old,
-                      );
+          ) : null}
+          {tabs.length > 0 ? (
+            <>
+              <div
+                aria-label="Hạng cân"
+                className="mt-5 flex gap-2 overflow-x-auto border-b pb-2"
+                role="tablist"
+                onKeyDown={(event) => {
+                  const buttons = Array.from(
+                    event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+                  );
+                  const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+                  const next =
+                    event.key === 'ArrowRight'
+                      ? (index + 1) % buttons.length
+                      : event.key === 'ArrowLeft'
+                        ? (index - 1 + buttons.length) % buttons.length
+                        : event.key === 'Home'
+                          ? 0
+                          : event.key === 'End'
+                            ? buttons.length - 1
+                            : null;
+                  if (next === null) return;
+                  event.preventDefault();
+                  buttons[next]?.focus();
+                  buttons[next]?.click();
+                }}
+              >
+                {tabs.map(([id, group]) => (
+                  <button
+                    aria-controls={`official-weight-panel-${id}`}
+                    aria-selected={activeTab === id}
+                    className={`shrink-0 rounded-lg px-4 py-2 text-sm font-bold focus-visible:ring-2 focus-visible:ring-ring ${activeTab === id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
+                    id={`official-weight-tab-${id}`}
+                    key={id}
+                    onClick={() => {
+                      setWeightClassId(id);
+                      setSelected(null);
+                      setPicked([]);
+                      setConflict(null);
                     }}
-                    type="checkbox"
-                  />
-                </label>
-              );
-            })}
-          </fieldset>
-          <Button
-            className="mt-4"
-            disabled={
-              take.isPending || refreshing || !isEligible(selected) || picked.length !== required
-            }
-            onClick={() => {
-              take.mutate();
-            }}
-            type="button"
-          >
-            {take.isPending ? 'Đang nhận trận…' : 'Nhận trận'}
-          </Button>
-        </section>
-      ) : null}
+                    role="tab"
+                    tabIndex={activeTab === id ? 0 : -1}
+                    type="button"
+                  >
+                    {group.name} ({group.matches.length})
+                  </button>
+                ))}
+              </div>
+              <section
+                aria-label="Danh sách trận"
+                aria-labelledby={`official-weight-tab-${activeTab}`}
+                id={`official-weight-panel-${activeTab}`}
+                role="tabpanel"
+                tabIndex={0}
+              >
+                {roundGroups.map(([round, group]) => (
+                  <section
+                    className="mt-5"
+                    key={round}
+                    aria-label={round ? `Vòng ${String(round)}` : 'Trận ngoài nhánh đấu'}
+                  >
+                    <h2 className="mb-3 border-b pb-2 text-lg font-bold">
+                      {round ? `Vòng ${String(round)}` : 'Trận ngoài nhánh đấu'}
+                      <span className="ml-2 text-sm font-normal text-muted-foreground">
+                        {group.length} trận
+                      </span>
+                    </h2>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {[...group]
+                        .sort(
+                          (a, b) =>
+                            (a.position ?? 0) - (b.position ?? 0) ||
+                            a.publicId.localeCompare(b.publicId),
+                        )
+                        .map((m) => (
+                          <button
+                            ref={selected?.id === m.id ? selectedMatchRef : undefined}
+                            aria-pressed={selected?.id === m.id}
+                            className={`min-h-28 rounded-xl border p-4 text-left focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 ${selected?.id === m.id ? 'border-primary bg-cyan-50 ring-2 ring-primary' : 'bg-white hover:bg-cyan-50'}`}
+                            disabled={!isEligible(m)}
+                            key={m.id}
+                            onClick={() => {
+                              setPicked([]);
+                              setSelected(m);
+                              setConflict(null);
+                            }}
+                            type="button"
+                          >
+                            <strong>{m.publicId}</strong>
+                            <p className="mt-1 text-sm">
+                              {m.athletes.map((athlete, index) => (
+                                <span key={athlete.color}>
+                                  {index > 0 ? ' · ' : null}
+                                  <span
+                                    className={
+                                      athlete.color === 'RED'
+                                        ? 'font-semibold text-red-700'
+                                        : athlete.color === 'BLUE'
+                                          ? 'font-semibold text-blue-700'
+                                          : 'font-semibold'
+                                    }
+                                  >
+                                    {athlete.name}
+                                  </span>
+                                </span>
+                              ))}
+                              {' · '}Cần {m.requiredJudgeCount} giám định
+                            </p>
+                            <p className="mt-2 text-xs font-semibold">
+                              {presentLifecycle(m.lifecycle).label}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {claimabilityMessage(m)}
+                            </p>
+                          </button>
+                        ))}
+                    </div>
+                  </section>
+                ))}
+              </section>
+            </>
+          ) : null}
+          {matches.isError ? (
+            <p role="alert">
+              Không tải được danh sách.{' '}
+              <button className="underline" onClick={() => void matches.refetch()} type="button">
+                Thử lại
+              </button>
+            </p>
+          ) : null}
+        </div>
+        <aside className="min-w-0 lg:sticky lg:top-6" aria-label="Phân công giám định">
+          {selected ? (
+            <section
+              aria-label={`Chọn giám định cho trận ${selected.publicId}`}
+              className="scroll-mt-4 rounded-2xl border bg-white p-5 outline-none"
+              ref={assignmentPanelRef}
+              tabIndex={-1}
+            >
+              <p className="mb-3 text-sm text-muted-foreground">
+                {selected.weightClass?.name ?? 'Chưa phân hạng cân'}
+                {selected.roundNumber ? ` · Vòng ${String(selected.roundNumber)}` : ''}
+              </p>
+              <Button
+                className="mb-3 lg:hidden"
+                variant="secondary"
+                type="button"
+                onClick={() => {
+                  selectedMatchRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  selectedMatchRef.current?.focus({ preventScroll: true });
+                }}
+              >
+                Chọn trận khác
+              </Button>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <h2 className="min-w-0 break-words text-xl font-black">
+                  Chọn giám định · {selected.publicId}
+                </h2>
+                <Button
+                  disabled={refreshing || take.isPending}
+                  onClick={() => {
+                    void refresh();
+                  }}
+                  variant="secondary"
+                  type="button"
+                >
+                  {refreshing ? 'Đang cập nhật…' : 'Cập nhật'}
+                </Button>
+              </div>
+              <p aria-live="polite" className="mt-2 text-sm">
+                Đã chọn {picked.length}/{required} giám định.
+              </p>
+              <fieldset
+                className="mt-4 grid max-h-[50dvh] gap-2 overflow-y-auto overscroll-contain pr-1"
+                disabled={take.isPending || refreshing}
+              >
+                <legend className="sr-only">Chọn giám định</legend>
+                {state.data?.referees.map((r) => {
+                  const unavailable = r.status !== 'READY';
+                  return (
+                    <label
+                      className="flex min-h-12 items-center justify-between gap-3 rounded border p-3"
+                      key={r.id}
+                    >
+                      <span className="min-w-0 break-words">
+                        {r.name} ·{' '}
+                        <span className="font-semibold">
+                          {presentOfficialStatus(r.status).label}
+                        </span>
+                      </span>
+                      <input
+                        checked={picked.includes(r.id)}
+                        aria-label={`Chọn giám định ${r.name}`}
+                        disabled={
+                          unavailable || (!picked.includes(r.id) && picked.length >= required)
+                        }
+                        onChange={() => {
+                          setPicked((old) =>
+                            old.includes(r.id)
+                              ? old.filter((id) => id !== r.id)
+                              : old.length < required
+                                ? [...old, r.id]
+                                : old,
+                          );
+                        }}
+                        type="checkbox"
+                      />
+                    </label>
+                  );
+                })}
+              </fieldset>
+              <Button
+                className="mt-4"
+                disabled={
+                  take.isPending ||
+                  refreshing ||
+                  !isEligible(selected) ||
+                  picked.length !== required
+                }
+                onClick={() => {
+                  take.mutate();
+                }}
+                type="button"
+              >
+                {take.isPending ? 'Đang nhận trận…' : 'Nhận trận'}
+              </Button>
+            </section>
+          ) : (
+            <section className="rounded-2xl border border-dashed bg-muted/30 p-6 text-center">
+              <h2 className="text-lg font-bold">Chọn giám định</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Chọn một trận trong danh sách để phân công giám định và nhận trận.
+              </p>
+            </section>
+          )}
+        </aside>
+      </div>
       {conflict ? (
         <ConfirmationDialog
           actionLabel="Đã hiểu"

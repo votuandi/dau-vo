@@ -68,7 +68,7 @@ describe('manual winner decisions', () => {
       match: {
         id: 'm',
         publicId: 'M-1',
-        lifecycle: MatchLifecycle.NOT_STARTED,
+        lifecycle: MatchLifecycle.READY,
         phase: MatchPhase.WAITING,
         status: MatchPhase.WAITING,
       },

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, MemoryRouter, RouterProvider, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,6 +13,8 @@ const officialAccessApiMock = vi.hoisted(() => ({
   matches: vi.fn(),
   state: vi.fn(),
   take: vi.fn(),
+  fixtureState: vi.fn(),
+  takeFixture: vi.fn(),
   login: vi.fn(),
   tokenLogin: vi.fn(),
   logout: vi.fn(),
@@ -833,63 +835,253 @@ describe('MatchAccessPage official login', () => {
     expect(await screen.findByText('Referee console ready')).toBeVisible();
   });
 
-  it('takes a match once with the selected available referees and enters the authoritative console', async () => {
+  it.each([false, true])(
+    'takes a ready match (unmaterialized fixture: %s) with its team and enters the authoritative console',
+    async (fromFixture) => {
+      const user = userEvent.setup();
+      const match = {
+        athletes: [
+          { color: 'BLUE', name: 'Võ sĩ X' },
+          { color: 'RED', name: 'Võ sĩ Y' },
+        ],
+        claimable: true,
+        id: 'match-1',
+        ...(fromFixture ? { fixtureId: 'fixture-1' } : {}),
+        lifecycle: 'READY' as const,
+        publicId: 'M-001',
+        requiredJudgeCount: 2,
+        status: 'WAITING',
+      };
+      officialAccessApiMock.session
+        .mockResolvedValueOnce({ session: inspectorSession })
+        .mockResolvedValueOnce({ session: inspectorSession })
+        .mockResolvedValueOnce({
+          session: {
+            ...inspectorSession,
+            activeAssignment: {
+              id: 'assignment-inspector',
+              match: { id: match.id, publicId: match.publicId, status: 'WAITING' },
+              judgePosition: null,
+              role: TournamentOfficialRole.SUPERVISOR,
+            },
+            status: 'IN_MATCH',
+          },
+        });
+      officialAccessApiMock.matches.mockResolvedValue({ matches: [match] });
+      const loadState = fromFixture
+        ? officialAccessApiMock.fixtureState
+        : officialAccessApiMock.state;
+      const takeMatch = fromFixture
+        ? officialAccessApiMock.takeFixture
+        : officialAccessApiMock.take;
+      loadState.mockResolvedValue({
+        match: {
+          id: match.id,
+          lifecycle: match.lifecycle,
+          officialAssignments: [],
+          requiredJudgeCount: 2,
+        },
+        referees: [
+          { assignedMatchId: null, id: 'referee-1', name: 'Trọng tài 1', status: 'READY' },
+          { assignedMatchId: null, id: 'referee-2', name: 'Trọng tài 2', status: 'READY' },
+          { assignedMatchId: null, id: 'referee-3', name: 'Trọng tài 3', status: 'IN_MATCH' },
+        ],
+      });
+      takeMatch.mockResolvedValue({ match: { id: match.id } });
+      renderPage(TournamentOfficialRole.SUPERVISOR);
+
+      await user.click(await screen.findByRole('button', { name: /M-001/ }));
+      expect(screen.getByRole('button', { name: 'Nhận trận' })).toBeDisabled();
+      expect(screen.getByLabelText('Chọn giám định Trọng tài 3')).toBeDisabled();
+      await user.click(screen.getByLabelText('Chọn giám định Trọng tài 1'));
+      await user.click(screen.getByLabelText('Chọn giám định Trọng tài 2'));
+      await user.click(screen.getByRole('button', { name: 'Nhận trận' }));
+
+      await waitFor(() => {
+        expect(takeMatch).toHaveBeenCalledTimes(1);
+        expect(takeMatch).toHaveBeenCalledWith(fromFixture ? 'fixture-1' : match.id, [
+          'referee-1',
+          'referee-2',
+        ]);
+      });
+      if (fromFixture) expect(officialAccessApiMock.take).not.toHaveBeenCalled();
+      expect(await screen.findByText('Inspector console ready')).toBeVisible();
+    },
+  );
+
+  it('separates weight classes into tabs and ready matches into ordered rounds', async () => {
+    const user = userEvent.setup();
+    const match = (id: string, weight: string, round: number, position: number) => ({
+      id,
+      fixtureId: id,
+      publicId: id,
+      athletes: [],
+      claimable: true,
+      lifecycle: 'READY' as const,
+      status: 'WAITING',
+      requiredJudgeCount: 1,
+      weightClass: { id: weight, name: `${weight} kg` },
+      roundNumber: round,
+      position,
+    });
+    officialAccessApiMock.session.mockResolvedValue({ session: inspectorSession });
+    const initial = [
+      match('ROUND2', '50', 2, 1),
+      match('SECOND', '50', 1, 2),
+      match('FIRST', '50', 1, 1),
+      match('OTHER', '60', 1, 1),
+    ];
+    officialAccessApiMock.matches.mockResolvedValue({ matches: initial });
+    officialAccessApiMock.fixtureState.mockResolvedValue({
+      match: { id: 'FIRST', lifecycle: 'READY', officialAssignments: [], requiredJudgeCount: 1 },
+      referees: [],
+    });
+    const { queryClient } = renderPage(TournamentOfficialRole.SUPERVISOR);
+    expect(await screen.findByRole('tab', { name: '50 kg (3)' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    const round1 = screen.getByRole('region', { name: 'Vòng 1' });
+    expect(
+      within(round1)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual([expect.stringContaining('FIRST'), expect.stringContaining('SECOND')]);
+    expect(
+      within(screen.getByRole('region', { name: 'Vòng 2' })).getByRole('button', {
+        name: /ROUND2/,
+      }),
+    ).toBeVisible();
+    expect(screen.queryByRole('button', { name: /OTHER/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /FIRST/ }));
+    expect(
+      await screen.findByRole('region', { name: 'Chọn giám định cho trận FIRST' }),
+    ).toBeVisible();
+    await user.click(screen.getByRole('tab', { name: '60 kg (1)' }));
+    expect(screen.getByRole('button', { name: /OTHER/ })).toBeVisible();
+    expect(screen.queryByRole('region', { name: 'Vòng 2' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('region', { name: 'Chọn giám định cho trận FIRST' }),
+    ).not.toBeInTheDocument();
+    officialAccessApiMock.matches.mockResolvedValue({
+      matches: [...initial, match('NEW', '50', 2, 2)],
+    });
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['official-matches'] });
+    });
+    expect(screen.getByRole('tab', { name: '60 kg (1)' })).toHaveAttribute('aria-selected', 'true');
+    screen.getByRole('tab', { name: '60 kg (1)' }).focus();
+    await user.keyboard('{ArrowLeft}');
+    expect(screen.getByRole('tab', { name: '50 kg (4)' })).toHaveAttribute('aria-selected', 'true');
+    expect(
+      within(screen.getByRole('region', { name: 'Vòng 2' })).getByRole('button', { name: /NEW/ }),
+    ).toBeVisible();
+  });
+
+  it('refreshes the selected fixture staffing after the round requirement changes', async () => {
     const user = userEvent.setup();
     const match = {
-      athletes: [
-        { color: 'BLUE', name: 'Võ sĩ X' },
-        { color: 'RED', name: 'Võ sĩ Y' },
-      ],
+      athletes: [],
       claimable: true,
-      id: 'match-1',
-      lifecycle: 'NOT_STARTED' as const,
+      id: 'fixture-1',
+      fixtureId: 'fixture-1',
+      lifecycle: 'READY' as const,
       publicId: 'M-001',
-      requiredJudgeCount: 2,
+      requiredJudgeCount: 3,
       status: 'WAITING',
     };
-    officialAccessApiMock.session
-      .mockResolvedValueOnce({ session: inspectorSession })
-      .mockResolvedValueOnce({ session: inspectorSession })
-      .mockResolvedValueOnce({
-        session: {
-          ...inspectorSession,
-          activeAssignment: {
-            id: 'assignment-inspector',
-            match: { id: match.id, publicId: match.publicId, status: 'WAITING' },
-            judgePosition: null,
-            role: TournamentOfficialRole.SUPERVISOR,
-          },
-          status: 'IN_MATCH',
-        },
-      });
+    officialAccessApiMock.session.mockResolvedValue({ session: inspectorSession });
     officialAccessApiMock.matches.mockResolvedValue({ matches: [match] });
-    officialAccessApiMock.state.mockResolvedValue({
+    const fixtureState = (count: number) => ({
       match: {
         id: match.id,
         lifecycle: match.lifecycle,
         officialAssignments: [],
-        requiredJudgeCount: 2,
+        requiredJudgeCount: count,
       },
-      referees: [
-        { assignedMatchId: null, id: 'referee-1', name: 'Trọng tài 1', status: 'READY' },
-        { assignedMatchId: null, id: 'referee-2', name: 'Trọng tài 2', status: 'READY' },
-        { assignedMatchId: null, id: 'referee-3', name: 'Trọng tài 3', status: 'IN_MATCH' },
-      ],
+      referees: [1, 2, 3].map((id) => ({
+        assignedMatchId: null,
+        id: `referee-${String(id)}`,
+        name: `Trọng tài ${String(id)}`,
+        status: 'READY',
+      })),
     });
-    officialAccessApiMock.take.mockResolvedValue({ match: { id: match.id } });
-    renderPage(TournamentOfficialRole.SUPERVISOR);
-
+    officialAccessApiMock.fixtureState.mockResolvedValue(fixtureState(3));
+    const { queryClient } = renderPage(TournamentOfficialRole.SUPERVISOR);
     await user.click(await screen.findByRole('button', { name: /M-001/ }));
-    expect(screen.getByRole('button', { name: 'Nhận trận' })).toBeDisabled();
-    expect(screen.getByLabelText('Chọn giám định Trọng tài 3')).toBeDisabled();
-    await user.click(screen.getByLabelText('Chọn giám định Trọng tài 1'));
+    await user.click(await screen.findByLabelText('Chọn giám định Trọng tài 1'));
     await user.click(screen.getByLabelText('Chọn giám định Trọng tài 2'));
-    await user.click(screen.getByRole('button', { name: 'Nhận trận' }));
-
-    await waitFor(() => {
-      expect(officialAccessApiMock.take).toHaveBeenCalledTimes(1);
-      expect(officialAccessApiMock.take).toHaveBeenCalledWith(match.id, ['referee-1', 'referee-2']);
+    expect(screen.getByText('Đã chọn 2/3 giám định.')).toBeVisible();
+    officialAccessApiMock.fixtureState.mockResolvedValue(fixtureState(1));
+    officialAccessApiMock.matches.mockResolvedValue({
+      matches: [{ ...match, requiredJudgeCount: 1 }],
     });
-    expect(await screen.findByText('Inspector console ready')).toBeVisible();
+    await queryClient.invalidateQueries({ queryKey: ['official-matches'] });
+    expect(await screen.findByText('Đã chọn 1/1 giám định.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Nhận trận' })).toBeEnabled();
+  });
+
+  it.each([false, true])('keeps match selection accessible (desktop: %s)', async (desktop) => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: desktop })),
+    );
+    const user = userEvent.setup();
+    const scrollIntoView = vi.fn();
+    // Preserve the prototype method for restoration after this test.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      officialAccessApiMock.session.mockResolvedValue({ session: inspectorSession });
+      officialAccessApiMock.matches.mockResolvedValue({
+        matches: [
+          {
+            athletes: [
+              { color: 'BLUE', name: 'Võ sĩ X' },
+              { color: 'RED', name: 'Võ sĩ Y' },
+            ],
+            claimable: true,
+            id: 'match-1',
+            lifecycle: 'READY' as const,
+            publicId: 'M-001',
+            requiredJudgeCount: 2,
+            status: 'WAITING',
+          },
+        ],
+      });
+      officialAccessApiMock.state.mockResolvedValue({
+        match: {
+          id: 'match-1',
+          lifecycle: 'READY',
+          officialAssignments: [],
+          requiredJudgeCount: 2,
+        },
+        referees: [],
+      });
+      renderPage(TournamentOfficialRole.SUPERVISOR);
+
+      const card = await screen.findByRole('button', { name: /M-001/ });
+      await user.click(card);
+
+      expect(card).toHaveAttribute('aria-pressed', 'true');
+      expect(card).toHaveClass('ring-primary');
+      const panel = screen.getByRole('region', { name: 'Chọn giám định cho trận M-001' });
+      if (desktop) {
+        expect(scrollIntoView).not.toHaveBeenCalled();
+        expect(card).toHaveFocus();
+      } else {
+        await waitFor(() => {
+          expect(panel).toHaveFocus();
+        });
+        expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+        await user.click(screen.getByRole('button', { name: 'Chọn trận khác' }));
+        expect(scrollIntoView).toHaveBeenLastCalledWith({ behavior: 'smooth', block: 'center' });
+        expect(card).toHaveFocus();
+      }
+    } finally {
+      Element.prototype.scrollIntoView = original;
+      vi.unstubAllGlobals();
+    }
   });
 });

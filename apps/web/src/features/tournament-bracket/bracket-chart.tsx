@@ -23,7 +23,7 @@ import {
   fixtureTopOffsets,
   measuredFixtureRowPitch,
 } from './bracket-chart-layout';
-import { manualWinnerCandidates } from './fixture-presentation';
+import { fixtureScore, manualWinnerCandidates } from './fixture-presentation';
 
 type ChartData = Pick<BracketPreview, 'rounds' | 'initialEntrants'> | ActiveBracket;
 interface ConnectorPath {
@@ -252,6 +252,7 @@ export function BracketChart({
                   const activeFixture =
                     isPreview || isBye ? null : (fixture as ActiveBracket['fixtures'][number]);
                   const winnerSide = activeFixture ? winnerSideOfFixture(activeFixture) : null;
+                  const score = activeFixture ? fixtureScore(activeFixture) : null;
                   return (
                     <article
                       className={`absolute left-0 w-full overflow-hidden rounded-lg border bg-card shadow-sm ${winnerBorderClassName(winnerSide)}`}
@@ -388,6 +389,15 @@ export function BracketChart({
                                 </p>
                               ) : null}
                             </div>
+                            {score && entrant ? (
+                              <span
+                                aria-label={`Điểm ${String(score[slot.side])}`}
+                                className={`shrink-0 px-1 text-sm font-black tabular-nums ${isWinner ? 'text-white' : slot.side === 'RED' ? 'text-red-700 dark:text-red-300' : 'text-blue-700 dark:text-blue-300'}`}
+                                data-fixture-score={`${fixture.id}:${slot.side}`}
+                              >
+                                {score[slot.side]}
+                              </span>
+                            ) : null}
                             {activeFixture &&
                             entrant &&
                             onDecideWinner &&

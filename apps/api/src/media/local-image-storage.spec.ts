@@ -10,6 +10,22 @@ import {
 } from './image-storage-validation';
 import { LocalImageStorage } from './local-image-storage';
 
+function pngChunk(type: string, data: Buffer): Buffer {
+  const chunk = Buffer.alloc(data.length + 12);
+  chunk.writeUInt32BE(data.length);
+  chunk.write(type, 4, 4, 'ascii');
+  data.copy(chunk, 8);
+  let crc = 0xffffffff;
+  for (const byte of chunk.subarray(4, -4)) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  chunk.writeUInt32BE((crc ^ 0xffffffff) >>> 0, chunk.length - 4);
+  return chunk;
+}
+
 describe('LocalImageStorage', () => {
   let root: string;
   let storage: LocalImageStorage;
@@ -82,6 +98,40 @@ describe('LocalImageStorage', () => {
         resource: 'tournaments',
       }),
     ).rejects.toBeInstanceOf(PayloadTooLargeException);
+  });
+
+  it('strips PNG C2PA metadata with an SVG icon while rejecting trailing markup', async () => {
+    const manifest = pngChunk(
+      'caBX',
+      Buffer.from(
+        'c2pa.icon\0image/svg+xml\0<svg xmlns="http://www.w3.org/2000/svg"><path/></svg>',
+      ),
+    );
+    // Place the ancillary metadata after IHDR, before the image data.
+    const signedPng = Buffer.concat([
+      png.subarray(0, 33),
+      manifest,
+      png.subarray(33),
+    ]);
+    const stored = await storage.save({
+      buffer: signedPng,
+      declaredContentType: 'image/png',
+      resource: 'athletes',
+    });
+    const disk = await readFile(path.join(root, stored.key));
+    expect((await sharp(disk).metadata()).format).toBe('webp');
+    expect(disk.includes(Buffer.from('c2pa.icon'))).toBe(false);
+    expect(disk.includes(Buffer.from('<svg'))).toBe(false);
+
+    for (const tail of [Buffer.from('<script>alert(1)</script>'), manifest]) {
+      await expect(
+        storage.save({
+          buffer: Buffer.concat([signedPng, tail]),
+          declaredContentType: 'image/png',
+          resource: 'athletes',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    }
   });
 
   it('rejects fake, corrupt, mismatched, polyglot, oversized-pixel, and traversal input', async () => {

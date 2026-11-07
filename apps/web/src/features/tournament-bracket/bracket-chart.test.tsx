@@ -220,7 +220,7 @@ describe('BracketChart', () => {
   });
 
   it('fills a confirmed bye branch without offering a winner decision', () => {
-    const original = activeBracket(MatchPhase.WAITING, MatchLifecycle.NOT_STARTED);
+    const original = activeBracket(MatchPhase.WAITING, MatchLifecycle.READY);
     const fixture = required(original.fixtures[0]);
     const data: ActiveBracket = {
       ...original,
@@ -310,6 +310,27 @@ describe('BracketChart', () => {
     expect(screen.queryByText('BLUE')).not.toBeInTheDocument();
     expect(screen.getByText('Bên đỏ')).toHaveClass('sr-only');
     expect(screen.getByText('Bên xanh')).toHaveClass('sr-only');
+  });
+
+  it('shows each athlete final score once the match has a scored result', () => {
+    const data = activeBracket(MatchPhase.FINISHED, MatchLifecycle.COMPLETED);
+    const fixture = required(data.fixtures[0]);
+    const scored: ActiveBracket = {
+      ...data,
+      fixtures: [{ ...fixture, match: { ...required(fixture.match), score: { RED: 5, BLUE: 8 } } }],
+    };
+    const { container } = render(<BracketChart data={scored} />);
+
+    expect(container.querySelector('[data-fixture-score="fixture-1:RED"]')).toHaveTextContent('5');
+    expect(container.querySelector('[data-fixture-score="fixture-1:BLUE"]')).toHaveTextContent('8');
+  });
+
+  it('shows no score before a scored result exists', () => {
+    const { container } = render(
+      <BracketChart data={activeBracket(MatchPhase.ROUND_1_PAUSED, MatchLifecycle.SUSPENDED)} />,
+    );
+
+    expect(container.querySelector('[data-fixture-score]')).toBeNull();
   });
 
   it('uses lifecycle and final-phase labels from the match enum data', () => {
@@ -409,16 +430,14 @@ describe('BracketChart', () => {
   });
 
   it('marks only seeded athletes with an accessible label', () => {
-    render(<BracketChart data={activeBracket(MatchPhase.WAITING, MatchLifecycle.NOT_STARTED)} />);
+    render(<BracketChart data={activeBracket(MatchPhase.WAITING, MatchLifecycle.READY)} />);
 
     expect(screen.getByLabelText('VĐV hạt giống')).toBeInTheDocument();
     expect(screen.getAllByTitle('VĐV hạt giống')).toHaveLength(1);
   });
 
   it('does not mark athletes whose seed metadata is null', () => {
-    render(
-      <BracketChart data={activeBracket(MatchPhase.WAITING, MatchLifecycle.NOT_STARTED, null)} />,
-    );
+    render(<BracketChart data={activeBracket(MatchPhase.WAITING, MatchLifecycle.READY, null)} />);
 
     expect(screen.queryByLabelText('VĐV hạt giống')).not.toBeInTheDocument();
   });

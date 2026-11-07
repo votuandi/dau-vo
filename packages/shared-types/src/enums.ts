@@ -40,7 +40,7 @@ export enum MatchPhase {
 export { MatchPhase as MatchStatus };
 
 export enum MatchLifecycle {
-  NOT_STARTED = 'NOT_STARTED',
+  READY = 'READY',
   IN_PROGRESS = 'IN_PROGRESS',
   SUSPENDED = 'SUSPENDED',
   COMPLETED = 'COMPLETED',
@@ -57,7 +57,6 @@ export enum MatchExitMode {
 export enum MatchDisplayState {
   NOT_READY = 'NOT_READY',
   READY = 'READY',
-  NOT_STARTED = 'NOT_STARTED',
   IN_PROGRESS = 'IN_PROGRESS',
   SUSPENDED = 'SUSPENDED',
   COMPLETED = 'COMPLETED',

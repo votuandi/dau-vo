@@ -30,6 +30,25 @@ export class MatchOfficialAssignmentsController {
   @Get() list(@Req() request: AuthenticatedOfficialRequest) {
     return this.assignments.list(request.officialSession);
   }
+  @Get('fixtures/:fixtureId')
+  fixtureState(
+    @Param('fixtureId', new ParseUUIDPipe()) fixtureId: string,
+    @Req() request: AuthenticatedOfficialRequest,
+  ) {
+    return this.assignments.fixtureState(fixtureId, request.officialSession);
+  }
+  @Post('fixtures/:fixtureId/take')
+  takeFixture(
+    @Param('fixtureId', new ParseUUIDPipe()) fixtureId: string,
+    @Body() body: TakeMatchDto,
+    @Req() request: AuthenticatedOfficialRequest,
+  ) {
+    return this.assignments.takeFixture(
+      fixtureId,
+      body.judgeIds,
+      request.officialSession,
+    );
+  }
   @Get(':matchId')
   async state(
     @Param('matchId', new ParseUUIDPipe()) matchId: string,

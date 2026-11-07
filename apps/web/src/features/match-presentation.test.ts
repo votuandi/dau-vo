@@ -9,7 +9,7 @@ import {
 
 describe('match presentation', () => {
   const lifecycles: readonly MatchLifecycle[] = [
-    MatchLifecycle.NOT_STARTED,
+    MatchLifecycle.READY,
     MatchLifecycle.IN_PROGRESS,
     MatchLifecycle.SUSPENDED,
     MatchLifecycle.COMPLETED,
@@ -17,7 +17,6 @@ describe('match presentation', () => {
   const displayStates: readonly MatchDisplayState[] = [
     MatchDisplayState.NOT_READY,
     MatchDisplayState.READY,
-    MatchDisplayState.NOT_STARTED,
     MatchDisplayState.IN_PROGRESS,
     MatchDisplayState.SUSPENDED,
     MatchDisplayState.COMPLETED,

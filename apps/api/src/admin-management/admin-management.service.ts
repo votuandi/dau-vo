@@ -11,6 +11,7 @@ import {
   AuditEventType,
   BracketFixtureStatus,
   BracketStatus,
+  MatchOfficialAssignmentReleaseReason,
   Prisma,
   TournamentStatus,
   UserRole,
@@ -27,6 +28,7 @@ import {
 } from '../subscriptions/admin-access.policy';
 import type { AuthenticatedUser } from '../auth/admin-auth.types';
 import { RealtimeMatchStateService } from '../realtime/realtime-match-state.service';
+import { RealtimeSessionRegistryService } from '../realtime/realtime-session-registry.service';
 import {
   INVALID_MATCH_ATHLETES_ERROR,
   DUPLICATE_MATCH_ATHLETE_ERROR,
@@ -34,6 +36,7 @@ import {
   MATCH_ATHLETE_NOT_FOUND_ERROR,
   MATCH_ATHLETE_REPLACEMENT_UNSAFE_ERROR,
   BRACKET_MATCH_PARTICIPANTS_IMMUTABLE_ERROR,
+  BRACKET_MATCH_DELETE_NOT_ALLOWED_ERROR,
   MATCH_ATHLETE_ORGANIZATION_ERROR,
   MATCH_ATHLETE_WEIGHT_CLASS_ERROR,
   INVALID_MATCH_ERROR,
@@ -194,6 +197,8 @@ export class AdminManagementService {
     private readonly matchState: RealtimeMatchStateService,
     @Inject(SportRulesRegistry)
     private readonly sportRules: SportRulesRegistry,
+    @Inject(RealtimeSessionRegistryService)
+    private readonly realtimeSessions: RealtimeSessionRegistryService,
   ) {
     this.breakDurationMs = config.getOrThrow('BREAK_DURATION_MS', {
       infer: true,
@@ -237,7 +242,7 @@ export class AdminManagementService {
     // Aggregate in the database; never load roster records or official credentials.
     const matchQuery = this.prisma.match.groupBy({
       by: ['tournamentId', 'lifecycle'],
-      where: { tournament: scope },
+      where: { tournament: scope, deletedAt: null },
       _count: { _all: true },
     });
     const officialQuery = this.prisma.tournamentOfficial.groupBy({
@@ -246,7 +251,11 @@ export class AdminManagementService {
       _count: { _all: true },
     });
     const performanceQuery = this.prisma.match.findMany({
-      where: { tournament: scope, lifecycle: { not: 'NOT_STARTED' } },
+      where: {
+        tournament: scope,
+        deletedAt: null,
+        lifecycle: { not: 'READY' },
+      },
       orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
       select: {
         id: true,
@@ -289,7 +298,7 @@ export class AdminManagementService {
         },
       },
     });
-    const [tournaments, matches, officials, performanceMatches] =
+    const [tournaments, matches, officials, performanceMatches, readyBrackets] =
       await this.prisma.$transaction(
         [
           this.prisma.tournament.findMany({
@@ -315,6 +324,19 @@ export class AdminManagementService {
           matchQuery,
           officialQuery,
           performanceQuery,
+          this.prisma.tournamentBracket.findMany({
+            where: { status: BracketStatus.ACTIVE, tournament: scope },
+            select: {
+              tournamentId: true,
+              _count: {
+                select: {
+                  fixtures: {
+                    where: { status: BracketFixtureStatus.READY, match: null },
+                  },
+                },
+              },
+            },
+          }),
         ],
         { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
       );
@@ -331,13 +353,23 @@ export class AdminManagementService {
     const matchCounts = new Map<string, Record<MatchLifecycle, number>>();
     for (const row of matches) {
       const counts = matchCounts.get(row.tournamentId) ?? {
-        NOT_STARTED: 0,
+        READY: 0,
         IN_PROGRESS: 0,
         SUSPENDED: 0,
         COMPLETED: 0,
       };
       counts[row.lifecycle] = row._count._all;
       matchCounts.set(row.tournamentId, counts);
+    }
+    for (const bracket of readyBrackets) {
+      const counts = matchCounts.get(bracket.tournamentId) ?? {
+        READY: 0,
+        IN_PROGRESS: 0,
+        SUSPENDED: 0,
+        COMPLETED: 0,
+      };
+      counts.READY += bracket._count.fixtures;
+      matchCounts.set(bracket.tournamentId, counts);
     }
     const officialCounts = new Map<
       string,
@@ -359,7 +391,7 @@ export class AdminManagementService {
         weightClassCount: _count.weightClasses,
         performance: performanceByTournament.get(tournament.id) ?? [],
         matches: matchCounts.get(tournament.id) ?? {
-          NOT_STARTED: 0,
+          READY: 0,
           IN_PROGRESS: 0,
           SUSPENDED: 0,
           COMPLETED: 0,
@@ -446,8 +478,12 @@ export class AdminManagementService {
     const isSuperAdmin = await this.assertAdminAccess(actor, mutation);
     const match = await this.prisma.match.findFirst({
       where: isSuperAdmin
-        ? { id, tournament: { softDeletedAt: null } }
-        : { id, tournament: { ownerUserId: actor.id, softDeletedAt: null } },
+        ? { id, deletedAt: null, tournament: { softDeletedAt: null } }
+        : {
+            id,
+            deletedAt: null,
+            tournament: { ownerUserId: actor.id, softDeletedAt: null },
+          },
       select: { id: true },
     });
     if (match === null) throw new NotFoundException(MATCH_NOT_FOUND_ERROR);
@@ -760,6 +796,7 @@ export class AdminManagementService {
       select: matchSelect,
       where: {
         tournamentId,
+        deletedAt: null,
         ...(query.weightClassId ? { weightClassId: query.weightClassId } : {}),
         ...(query.unassigned === 'true' ? { weightClassId: null } : {}),
       },
@@ -774,7 +811,7 @@ export class AdminManagementService {
     const counts = await this.prisma.match.groupBy({
       by: ['weightClassId'],
       _count: { _all: true },
-      where: { tournamentId },
+      where: { tournamentId, deletedAt: null },
     });
     return counts.map((item) => ({
       weightClassId: item.weightClassId,
@@ -880,7 +917,11 @@ export class AdminManagementService {
     tournamentId: string,
     bracketId: string,
     fixtureId: string,
-    adminUserId: string,
+    adminUserId: string | null,
+    options?: {
+      transaction: Prisma.TransactionClient;
+      officialId: string;
+    },
   ): Promise<CreatedMatchResult> {
     for (
       let attempt = 1;
@@ -891,7 +932,7 @@ export class AdminManagementService {
         this.publicIdInitialLength,
       );
       try {
-        const result = await this.prisma.$transaction(async (tx) => {
+        const materialize = async (tx: Prisma.TransactionClient) => {
           // This order is shared by every fixture transition: tournament, bracket, fixture.
           await tx.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId}::uuid FOR UPDATE`;
           await tx.$queryRaw`SELECT id FROM tournament_brackets WHERE id = ${bracketId}::uuid FOR UPDATE`;
@@ -927,6 +968,7 @@ export class AdminManagementService {
               code: 'BRACKET_FIXTURE_NOT_FOUND',
               message: 'Fixture does not belong to this active bracket',
             });
+          if (fixture.match && options) return { createdId: fixture.match.id };
           if (fixture.match)
             throw new ConflictException({
               code: 'BRACKET_MATCH_ALREADY_PREPARED',
@@ -1018,6 +1060,7 @@ export class AdminManagementService {
                 bracketId,
                 fixtureId,
                 publicId,
+                ...(options ? { officialId: options.officialId } : {}),
                 entrantIds: [red.id, blue.id],
                 athleteIds: [red.athleteId, blue.athleteId],
               },
@@ -1025,9 +1068,24 @@ export class AdminManagementService {
             select: { id: true },
           });
           return { createdId: created.id };
-        });
-        return { match: await this.getMatch(result.createdId) };
+        };
+        const result = options
+          ? await materialize(options.transaction)
+          : await this.prisma.$transaction(materialize);
+        return {
+          match: options
+            ? matchView(
+                await options.transaction.match.findUniqueOrThrow({
+                  where: { id: result.createdId },
+                  select: matchSelect,
+                }),
+              )
+            : await this.getMatch(result.createdId),
+        };
       } catch (error: unknown) {
+        // A failed PostgreSQL statement aborts its transaction. The caller of
+        // the atomic take command must retry the complete transaction instead.
+        if (options) throw error;
         if (!this.isPublicIdCollision(error)) throw error;
         if (attempt === PUBLIC_ID_GENERATION_ATTEMPTS)
           throw new ConflictException(PUBLIC_MATCH_ID_COLLISION_ERROR);
@@ -1037,9 +1095,9 @@ export class AdminManagementService {
   }
 
   async getMatch(id: string): Promise<MatchView> {
-    const match = await this.prisma.match.findUnique({
+    const match = await this.prisma.match.findFirst({
       select: matchSelect,
-      where: { id },
+      where: { id, deletedAt: null },
     });
 
     if (match === null) {
@@ -1248,7 +1306,7 @@ export class AdminManagementService {
             },
           },
         },
-        where: { id },
+        where: { id, deletedAt: null },
       });
 
       if (existing === null) {
@@ -1354,6 +1412,62 @@ export class AdminManagementService {
         })
         .then(matchView);
     });
+  }
+
+  /**
+   * Soft-deletes a standalone match. The row and its scoring history are kept
+   * for audit, but every list and entry point ignores it from now on. Open
+   * match sessions are revoked and official assignments released so nobody
+   * can keep operating it. Bracket matches are removed only by cancelling the
+   * bracket, which keeps the bracket graph consistent.
+   */
+  async deleteMatch(id: string, adminUserId: string): Promise<void> {
+    const now = new Date();
+    const revokedSessionIds = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM matches WHERE id = ${id}::uuid FOR UPDATE`;
+      const match = await tx.match.findFirst({
+        where: { id, deletedAt: null },
+        select: {
+          id: true,
+          publicId: true,
+          bracketFixtureId: true,
+          status: true,
+        },
+      });
+      if (match === null) throw new NotFoundException(MATCH_NOT_FOUND_ERROR);
+      if (match.bracketFixtureId !== null)
+        throw new ConflictException(BRACKET_MATCH_DELETE_NOT_ALLOWED_ERROR);
+
+      const sessions = await tx.matchSession.findMany({
+        where: { matchId: id, revokedAt: null },
+        select: { id: true },
+      });
+      await tx.matchSession.updateMany({
+        where: { matchId: id, revokedAt: null },
+        data: { active: false, revokedAt: now },
+      });
+      await tx.matchOfficialAssignment.updateMany({
+        where: { matchId: id, releasedAt: null },
+        data: {
+          releasedAt: now,
+          releaseReason:
+            MatchOfficialAssignmentReleaseReason.OPERATIONAL_CANCELLED,
+        },
+      });
+      await tx.match.update({ where: { id }, data: { deletedAt: now } });
+      await tx.auditLog.create({
+        data: {
+          adminUserId,
+          eventType: AuditEventType.MATCH_DELETED,
+          matchId: id,
+          metadata: { publicId: match.publicId, status: match.status },
+        },
+        select: { id: true },
+      });
+      return sessions.map((session) => session.id);
+    });
+    if (revokedSessionIds.length > 0)
+      this.realtimeSessions.revokeSessions(revokedSessionIds);
   }
 
   private resolveRules(sportGroupCode: string) {
@@ -1477,9 +1591,9 @@ export class AdminManagementService {
   }
 
   private async requireMatch(id: string): Promise<void> {
-    const match = await this.prisma.match.findUnique({
+    const match = await this.prisma.match.findFirst({
       select: { id: true },
-      where: { id },
+      where: { id, deletedAt: null },
     });
 
     if (match === null) {
