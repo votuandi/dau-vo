@@ -246,6 +246,70 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
     if (app) await app.close();
   });
 
+  it('allocates stable viewing codes and keeps scoreboard access valid after passcode regeneration', async () => {
+    const tournamentId = await createTournament();
+    const tournament = await prisma.tournament.findUniqueOrThrow({
+      where: { id: tournamentId },
+    });
+    const create = (name: string) =>
+      authenticated(
+        request(app.getHttpServer()).post(
+          `/api/admin/tournaments/${tournamentId}/officials`,
+        ),
+      )
+        .send({ name, role: 'SUPERVISOR' })
+        .expect(201);
+    const created = await Promise.all([
+      create('Supervisor A'),
+      create('Supervisor B'),
+    ]);
+    const officials = created.map(
+      (response) =>
+        (response.body as { official: { id: string; scoreboardCode: string } })
+          .official,
+    );
+    expect(
+      officials.map(({ scoreboardCode }) => scoreboardCode).sort(),
+    ).toEqual(['GS01', 'GS02']);
+    const official = officials.find(
+      ({ scoreboardCode }) => scoreboardCode === 'GS01',
+    )!;
+    const login = () =>
+      request(app.getHttpServer())
+        .post('/api/official-access/scoreboard/login')
+        .send({ tournamentCode: tournament.publicCode, scoreboardCode: 'gs01' })
+        .expect(200);
+    const access = await login();
+    expect(access.headers['set-cookie']).toBeUndefined();
+    expect(access.body).toMatchObject({
+      tournamentName: tournament.name,
+      matchPublicId: null,
+    });
+    const { token } = access.body as { token: string };
+    const rotated = await authenticated(
+      request(app.getHttpServer()).post(
+        `/api/admin/tournaments/${tournamentId}/officials/${official.id}/passcode/regenerate`,
+      ),
+    ).expect(201);
+    expect(
+      (rotated.body as { official: { scoreboardCode: string } }).official
+        .scoreboardCode,
+    ).toBe('GS01');
+    const state = await request(app.getHttpServer())
+      .post('/api/official-access/scoreboard/state')
+      .send({ token })
+      .expect(200);
+    expect(state.body).toMatchObject({
+      tournamentName: tournament.name,
+      matchPublicId: null,
+    });
+    await login();
+    await request(app.getHttpServer())
+      .post('/api/official-access/scoreboard/login')
+      .send({ tournamentCode: tournament.publicCode, scoreboardCode: 'GS99' })
+      .expect(401);
+  });
+
   it('authorizes preview, returns no-store, includes the eligible roster, and persists nothing', async () => {
     const { athleteIds, tournamentId, weightClassId } = await setup();
     await request(app.getHttpServer())

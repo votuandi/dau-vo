@@ -2,6 +2,7 @@ import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { Button } from './button';
+import { cn } from '@/lib/utils';
 
 /** A small, dependency-free modal primitive used where a form dialog is needed. */
 export function Dialog({
@@ -26,10 +27,23 @@ export function Dialog({
   const titleId = useId();
   const descriptionId = useId();
   const panel = useRef<HTMLDivElement>(null);
+  // Capture before children with autoFocus mount, and restore only on unmount.
+  const returnFocus = useRef(document.activeElement as HTMLElement | null);
 
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    initialFocusRef?.current?.focus();
+    const previous = returnFocus.current;
+    return () => {
+      previous?.focus();
+    };
+  }, []);
+
+  useEffect(() => {
+    const initial =
+      initialFocusRef?.current ??
+      panel.current?.querySelector<HTMLElement>(
+        'input:not([disabled]), button:not([disabled]), [tabindex="0"]',
+      );
+    if (!panel.current?.contains(document.activeElement)) initial?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !pending) {
         event.preventDefault();
@@ -43,7 +57,10 @@ export function Dialog({
       if (!focusable?.length) return;
       const first = focusable.item(0);
       const last = focusable.item(focusable.length - 1);
-      if (event.shiftKey && document.activeElement === first) {
+      if (!panel.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
       } else if (!event.shiftKey && document.activeElement === last) {
@@ -54,7 +71,6 @@ export function Dialog({
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      previous?.focus();
     };
   }, [initialFocusRef, onClose, pending]);
 
@@ -68,7 +84,7 @@ export function Dialog({
     >
       <div className="grid min-h-full place-items-center py-4">
         <div
-          className={`w-full max-w-md rounded-2xl bg-card p-5 shadow-2xl sm:p-7 ${className}`}
+          className={cn('w-full max-w-md rounded-2xl bg-card p-5 shadow-2xl sm:p-7', className)}
           ref={panel}
         >
           <div className="flex items-start justify-between gap-3">

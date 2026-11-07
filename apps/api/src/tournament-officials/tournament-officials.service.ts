@@ -42,6 +42,7 @@ const officialSelect = {
   tournamentId: true,
   role: true,
   name: true,
+  scoreboardCode: true,
   isActive: true,
   deactivatedAt: true,
   createdAt: true,
@@ -126,6 +127,21 @@ export class TournamentOfficialsService {
       try {
         const official = await this.prisma.$transaction(async (tx) => {
           await this.lockMutableTournament(tx, tournamentId);
+          let scoreboardCode: string | null = null;
+          if (input.role === TournamentOfficialRole.SUPERVISOR) {
+            // The tournament lock serializes allocation, including concurrent creates.
+            const existing = await tx.tournamentOfficial.findMany({
+              where: { tournamentId, role: TournamentOfficialRole.SUPERVISOR },
+              select: { scoreboardCode: true },
+            });
+            const next =
+              existing.reduce(
+                (maximum, row) =>
+                  Math.max(maximum, Number(row.scoreboardCode?.slice(2) ?? 0)),
+                0,
+              ) + 1;
+            scoreboardCode = `GS${String(next).padStart(2, '0')}`;
+          }
           const created = await tx.tournamentOfficial.create({
             data: {
               tournamentId,
@@ -134,6 +150,7 @@ export class TournamentOfficialsService {
               normalizedName: this.normalized(name),
               passcodeHash: await hash(passcode, PASSCODE_HASH_COST),
               passcodeLookupDigest: this.digest(passcode),
+              scoreboardCode,
             },
             select: officialSelect,
           });
@@ -394,6 +411,7 @@ export class TournamentOfficialsService {
       tournamentId: row.tournamentId,
       role: row.role,
       name: row.name,
+      scoreboardCode: row.scoreboardCode,
       isActive: row.isActive,
       deactivatedAt: row.deactivatedAt,
       createdAt: row.createdAt,

@@ -471,6 +471,23 @@ is restored.
 
 ## Public scoreboard and admin monitoring
 
+At `/bang-diem`, viewers can choose a match code or **Mã giám sát**. Both modes
+use the same **Đổi mã** dialog to switch to another match or another supervisor,
+including while a supervisor is waiting for their first match. Supervisor
+tracking requires the tournament code and a permanent viewing code such as `GS01`,
+shown beside the supervisor in tournament administration. Each tournament allocates
+`GS01`, `GS02`, … independently. Existing supervisors receive codes during migration.
+This code stays unchanged when private login credentials are regenerated. It creates
+a separate read-only token (valid for seven days), without signing in as the
+supervisor or replacing their session. The board checks the supervisor's latest
+assignment every two seconds; score updates still arrive over Socket.IO. Before
+the first assignment it shows the tournament name and “Trận đấu chưa bắt đầu”.
+After the supervisor exits, the last match stays visible until they enter another
+match, including when the last match already has a published result. Reopening
+with the same credentials also restores that latest match. Disabled supervisors,
+archived/deleted tournaments, and expired tokens require fresh
+access. Deleted matches are excluded. Tokens and passcodes are never put in URLs.
+
 Open `/bang-diem?match=A72K9P` (or `/bang-diem/A72K9P`) for the television/projector
 scoreboard. It uses an isolated read-only Socket.IO room and receives only a
 filtered `scoreboard:state` snapshot: public match identity, status, active-round

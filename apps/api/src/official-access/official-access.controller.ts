@@ -30,6 +30,8 @@ import {
 // Nest reads design:paramtypes at runtime; type-only imports erase DTOs.
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import {
+  ScoreboardSupervisorLoginDto,
+  ScoreboardSupervisorStateDto,
   OfficialAccessLoginDto,
   OfficialAccessTokenLoginDto,
   OfficialAccessTakeoverDto,
@@ -51,6 +53,27 @@ export class OfficialAccessController {
       secure: config.getOrThrow('NODE_ENV', { infer: true }) === 'production',
     };
   }
+  @Post('scoreboard/login')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  scoreboardLogin(
+    @Body() body: ScoreboardSupervisorLoginDto,
+    @Req() request: Request,
+  ) {
+    return this.access.createScoreboardAccess(
+      body.tournamentCode,
+      body.scoreboardCode,
+      getClientAddress(request),
+    );
+  }
+
+  @Post('scoreboard/state')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  scoreboardState(@Body() body: ScoreboardSupervisorStateDto) {
+    return this.access.scoreboardState(body.token);
+  }
+
   @Post('login')
   @HttpCode(200)
   @Header('Cache-Control', 'no-store')

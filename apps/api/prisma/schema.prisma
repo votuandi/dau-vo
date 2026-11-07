@@ -653,6 +653,7 @@ model TournamentOfficial {
   name                  String                      @db.VarChar(255)
   normalizedName        String                      @map("normalized_name") @db.VarChar(255)
   passcodeHash          String                      @map("passcode_hash") @db.VarChar(255)
+  scoreboardCode        String?                     @map("scoreboard_code") @db.VarChar(32)
   passcodeLookupDigest  String                      @map("passcode_lookup_digest") @db.Char(64)
   isActive              Boolean                     @default(true) @map("is_active")
   deactivatedAt         DateTime?                   @map("deactivated_at") @db.Timestamptz(3)
@@ -665,6 +666,7 @@ model TournamentOfficial {
 
   @@unique([id, tournamentId], map: "tournament_officials_id_tournament_id_key")
   @@unique([tournamentId, role, normalizedName], map: "tournament_officials_tournament_id_role_normalized_name_key")
+  @@unique([tournamentId, scoreboardCode], map: "tournament_officials_tournament_id_scoreboard_code_key")
   @@unique([tournamentId, passcodeLookupDigest], map: "tournament_officials_tournament_id_passcode_lookup_digest_key")
   @@index([tournamentId, role, isActive], map: "tournament_officials_tournament_id_role_is_active_idx")
   @@map("tournament_officials")

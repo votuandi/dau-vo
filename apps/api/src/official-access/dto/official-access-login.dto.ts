@@ -32,3 +32,13 @@ export class OfficialAccessTokenLoginDto {
   @MaxLength(2048)
   takeoverToken?: string;
 }
+
+/** Read-only scoreboard access does not create an official session. */
+export class ScoreboardSupervisorLoginDto {
+  @IsString() @MinLength(1) @MaxLength(32) tournamentCode!: string;
+  @IsString() @MinLength(1) @MaxLength(32) scoreboardCode!: string;
+}
+
+export class ScoreboardSupervisorStateDto {
+  @IsString() @MinLength(1) @MaxLength(2048) token!: string;
+}

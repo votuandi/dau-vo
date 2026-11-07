@@ -123,6 +123,115 @@ export class OfficialAccessService {
     this.dummyHash = hash(randomBytes(TOKEN_BYTES).toString('base64url'), 12);
   }
 
+  async createScoreboardAccess(
+    code: string,
+    scoreboardCode: string,
+    clientIp: string,
+  ) {
+    const input = this.normalize(
+      code,
+      scoreboardCode.toUpperCase(),
+      'scoreboard',
+    );
+    await this.rateLimit(input, clientIp);
+    const official = await this.prisma.tournamentOfficial.findFirst({
+      where: {
+        scoreboardCode: input.passcode,
+        role: 'SUPERVISOR',
+        isActive: true,
+        tournament: {
+          publicCode: input.code,
+          softDeletedAt: null,
+          status: { not: TournamentStatus.ARCHIVED },
+        },
+      },
+      select: { id: true, tournamentId: true, scoreboardCode: true },
+    });
+    if (!official)
+      throw new UnauthorizedException(INVALID_OFFICIAL_CREDENTIALS_ERROR);
+    const encoded = Buffer.from(
+      JSON.stringify({
+        officialId: official.id,
+        tournamentId: official.tournamentId,
+        scoreboardCode: official.scoreboardCode,
+        expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+      }),
+    ).toString('base64url');
+    const token = `${encoded}.${this.scoreboardSignature(encoded)}`;
+    return { token, ...(await this.scoreboardState(token)) };
+  }
+
+  /** Separate signature domain: this token cannot authenticate an official session. */
+  private scoreboardSignature(value: string) {
+    return createHmac('sha256', this.sessionSecret)
+      .update('scoreboard-supervisor\0')
+      .update(value)
+      .digest('base64url');
+  }
+
+  async scoreboardState(token: string) {
+    const invalid = () =>
+      new UnauthorizedException(INVALID_OFFICIAL_CREDENTIALS_ERROR);
+    const [encoded, signature, extra] = token.split('.');
+    if (!encoded || !signature || extra || token.length > 2048) throw invalid();
+    const expected = Buffer.from(
+      this.scoreboardSignature(encoded),
+      'base64url',
+    );
+    const actual = Buffer.from(signature, 'base64url');
+    if (actual.length !== expected.length || !timingSafeEqual(actual, expected))
+      throw invalid();
+    let payload: {
+      officialId: string;
+      tournamentId: string;
+      scoreboardCode: string;
+      expiresAt: number;
+    };
+    try {
+      payload = JSON.parse(
+        Buffer.from(encoded, 'base64url').toString('utf8'),
+      ) as typeof payload;
+      if (
+        !UUID.test(payload.officialId) ||
+        !UUID.test(payload.tournamentId) ||
+        typeof payload.scoreboardCode !== 'string' ||
+        typeof payload.expiresAt !== 'number' ||
+        payload.expiresAt <= Date.now()
+      )
+        throw invalid();
+    } catch {
+      throw invalid();
+    }
+    const official = await this.prisma.tournamentOfficial.findFirst({
+      where: {
+        id: payload.officialId,
+        scoreboardCode: payload.scoreboardCode,
+        tournamentId: payload.tournamentId,
+        role: 'SUPERVISOR',
+        isActive: true,
+        tournament: {
+          softDeletedAt: null,
+          status: { not: TournamentStatus.ARCHIVED },
+        },
+      },
+      select: {
+        tournament: { select: { name: true } },
+        // Include released assignments so leaving a match keeps its board on screen.
+        assignments: {
+          where: { role: 'SUPERVISOR', match: { deletedAt: null } },
+          orderBy: [{ assignedAt: 'desc' }, { id: 'desc' }],
+          take: 1,
+          select: { match: { select: { publicId: true } } },
+        },
+      },
+    });
+    if (!official) throw invalid();
+    return {
+      tournamentName: official.tournament.name,
+      matchPublicId: official.assignments[0]?.match.publicId ?? null,
+    };
+  }
+
   async createLoginToken(tournamentId: string, officialId: string) {
     const official = await this.prisma.tournamentOfficial.findFirst({
       where: {

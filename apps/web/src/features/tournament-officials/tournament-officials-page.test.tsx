@@ -27,6 +27,24 @@ function renderPage(role = TournamentOfficialRole.JUDGE, readOnly = false): void
 }
 
 describe('TournamentOfficialsPage credentials', () => {
+  it('shows the permanent scoreboard viewing code separately from private credentials', async () => {
+    api.listOfficials.mockResolvedValue({
+      officials: [
+        {
+          id: 'supervisor',
+          name: 'Giám sát 001',
+          role: TournamentOfficialRole.SUPERVISOR,
+          scoreboardCode: 'GS01',
+          isActive: true,
+          status: 'READY',
+        },
+      ],
+    });
+    renderPage(TournamentOfficialRole.SUPERVISOR);
+    expect(await screen.findByText('GS01')).toBeVisible();
+    expect(screen.getByText(/Mã xem bảng điểm:/)).toBeVisible();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     api.listOfficials.mockResolvedValue({ officials: [] });

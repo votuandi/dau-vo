@@ -324,6 +324,12 @@ export function TournamentOfficialsPage({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="font-bold">{official.name}</h3>
+                {official.scoreboardCode ? (
+                  <p className="mt-1 text-sm">
+                    Mã xem bảng điểm:{' '}
+                    <code className="select-all font-bold">{official.scoreboardCode}</code>
+                  </p>
+                ) : null}
                 <p className="text-sm text-muted-foreground">
                   {labels[official.role]} ·{' '}
                   {official.currentMatch
