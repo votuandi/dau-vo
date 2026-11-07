@@ -306,6 +306,7 @@ export interface AthleteImportRow {
   readonly organizationLocation: string;
 }
 export interface TournamentOfficial {
+  readonly scoreboardCode: string | null;
   readonly id: string;
   readonly tournamentId: string;
   readonly role: TournamentOfficialRole;

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import {
   AthleteColor,
@@ -6,7 +6,8 @@ import {
   MatchStatus,
   type PublicMatchStatePayload,
 } from '@martial-arts-scoring/shared-types';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { supervisorScoreboardApi } from '@/services/api/scoreboard';
 import { ScoreboardPage } from './scoreboard-page';
 
 const toastMock = vi.hoisted(() => vi.fn());
@@ -69,7 +70,29 @@ const snapshot: PublicMatchStatePayload = {
   },
 };
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe('ScoreboardPage', () => {
+  it('lets viewers choose supervisor credentials and return to match code entry', () => {
+    render(
+      <MemoryRouter initialEntries={['/bang-diem']}>
+        <Routes>
+          <Route element={<ScoreboardPage />} path="/bang-diem" />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Mã giám sát' }));
+    expect(screen.getByLabelText('Mã giải đấu')).toBeVisible();
+    expect(screen.getByLabelText('Mã xem bảng điểm của giám sát')).toHaveAttribute(
+      'placeholder',
+      'VD: GS01',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Mã trận đấu' }));
+    expect(screen.getByLabelText('Mã trận đấu')).toBeVisible();
+  });
+
   it('renders its connecting state before a realtime snapshot arrives', () => {
     realtimeMock.mockReturnValue({ connectionStatus: 'connecting', snapshot: null });
     render(
@@ -276,26 +299,194 @@ describe('ScoreboardPage', () => {
     realtimeMock.mockReturnValue({ connectionStatus: 'connected', snapshot });
     renderBoard('/bang-diem?match=A72K9P');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Chuyển đổi mã trận đấu' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Lưu mã trận đấu' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Đổi mã theo dõi' }));
+    fireEvent.click(screen.getByRole('button', { name: 'LƯU MÃ THEO DÕI' }));
     expect(toastMock).toHaveBeenCalledWith({
       title: 'Đây là mã trận đấu cũ',
       variant: 'destructive',
     });
 
     fireEvent.change(screen.getByLabelText('Mã trận đấu'), { target: { value: 'b55x' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Lưu mã trận đấu' }));
+    fireEvent.click(screen.getByRole('button', { name: 'LƯU MÃ THEO DÕI' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/bang-diem?match=B55X');
+  });
+
+  it('uses one switcher for all four transitions between match and supervisor tracking', async () => {
+    realtimeMock.mockReturnValue({ connectionStatus: 'connected', snapshot });
+    vi.spyOn(supervisorScoreboardApi, 'login').mockImplementation((_tournament, code) =>
+      Promise.resolve({
+        token: code,
+        tournamentName: 'Giải võ thuật',
+        matchPublicId: code === 'GS01' ? null : 'MATCH2',
+      }),
+    );
+    vi.spyOn(supervisorScoreboardApi, 'state').mockImplementation((token) =>
+      Promise.resolve({
+        tournamentName: 'Giải võ thuật',
+        matchPublicId: token === 'GS01' ? null : 'MATCH2',
+      }),
+    );
+    renderBoard('/bang-diem?match=A72K9P');
+    const open = () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Đổi mã theo dõi' }));
+    };
+    const save = () => {
+      fireEvent.click(screen.getByRole('button', { name: 'LƯU MÃ THEO DÕI' }));
+    };
+    // Match -> another match.
+    open();
+    fireEvent.change(screen.getByLabelText('Mã trận đấu'), { target: { value: 'B55X' } });
+    save();
+    expect(screen.getByTestId('location')).toHaveTextContent('match=B55X');
+    // Match -> supervisor with no current match.
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Mã giám sát' }));
+    fireEvent.change(screen.getByLabelText('Mã giải đấu'), { target: { value: 'GIAI' } });
+    fireEvent.change(screen.getByLabelText('Mã xem bảng điểm của giám sát'), {
+      target: { value: 'GS01' },
+    });
+    save();
+    expect(await screen.findByText('Trận đấu chưa bắt đầu')).toBeVisible();
+    expect(screen.getAllByLabelText('Thông tin bảng điểm')).toHaveLength(1);
+    expect(screen.getByText('GS01')).toBeVisible();
+    // Supervisor -> another supervisor, keeping tournament prefilled.
+    open();
+    expect(screen.getByLabelText('Mã giải đấu')).toHaveValue('GIAI');
+    fireEvent.change(screen.getByLabelText('Mã xem bảng điểm của giám sát'), {
+      target: { value: 'GS02' },
+    });
+    save();
+    expect(await screen.findByText('GS02')).toBeVisible();
+    await waitFor(() => {
+      expect(realtimeMock).toHaveBeenLastCalledWith('MATCH2');
+    });
+    expect(screen.queryByText('Trận đấu chưa bắt đầu')).not.toBeInTheDocument();
+    // Supervisor -> match.
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Mã trận đấu' }));
+    fireEvent.change(screen.getByLabelText('Mã trận đấu'), { target: { value: 'C77X' } });
+    save();
+    expect(screen.getByTestId('location')).toHaveTextContent('match=C77X');
+    expect(screen.getByText('C77X')).toBeVisible();
+    expect(screen.queryByText('GS02')).not.toBeInTheDocument();
+  });
+
+  it('uses exactly one shared header for supervisor tracking and shows tracking connection loss there', async () => {
+    realtimeMock.mockReturnValue({ connectionStatus: 'connected', snapshot });
+    vi.spyOn(supervisorScoreboardApi, 'login').mockResolvedValue({
+      token: 'GS01',
+      tournamentName: 'Giải',
+      matchPublicId: 'A72K9P',
+    });
+    vi.spyOn(supervisorScoreboardApi, 'state').mockRejectedValue(new Error('offline'));
+    renderBoard('/bang-diem');
+    fireEvent.click(screen.getByRole('button', { name: 'Mã giám sát' }));
+    fireEvent.change(screen.getByLabelText('Mã giải đấu'), { target: { value: 'GIAI' } });
+    fireEvent.change(screen.getByLabelText('Mã xem bảng điểm của giám sát'), {
+      target: { value: 'GS01' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'MỞ BẢNG ĐIỂM' }));
+    expect(await screen.findByText('GS01')).toBeVisible();
+    expect(screen.getAllByLabelText('Thông tin bảng điểm')).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Đổi mã theo dõi' })).toHaveLength(1);
+    expect(screen.getByText('Võ sĩ Đỏ')).toBeVisible();
+    expect(await screen.findByText('ĐANG KẾT NỐI LẠI')).toBeVisible();
+    expect(screen.getByRole('main')).toHaveClass('min-h-dvh');
+    expect(screen.queryByText(/Theo dõi giám sát/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the current match visible when supervisor access fails and when the dialog is cancelled', async () => {
+    realtimeMock.mockReturnValue({ connectionStatus: 'connected', snapshot });
+    vi.spyOn(supervisorScoreboardApi, 'login').mockRejectedValue(new Error('invalid code'));
+    renderBoard('/bang-diem?match=A72K9P');
+    fireEvent.click(screen.getByRole('button', { name: 'Đổi mã theo dõi' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mã giám sát' }));
+    fireEvent.change(screen.getByLabelText('Mã giải đấu'), { target: { value: 'GIAI' } });
+    fireEvent.change(screen.getByLabelText('Mã xem bảng điểm của giám sát'), {
+      target: { value: 'BAD' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'LƯU MÃ THEO DÕI' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('kiểm tra mã giải đấu, mã giám sát');
+    expect(screen.getByText('Võ sĩ Đỏ')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Hủy' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('match=A72K9P');
+  });
+
+  it('keeps the dialog open while validating a supervisor code, then switches after success', async () => {
+    realtimeMock.mockReturnValue({ connectionStatus: 'connected', snapshot });
+    let complete:
+      ((value: { token: string; tournamentName: string; matchPublicId: null }) => void) | undefined;
+    vi.spyOn(supervisorScoreboardApi, 'login').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    vi.spyOn(supervisorScoreboardApi, 'state').mockResolvedValue({
+      tournamentName: 'Giải',
+      matchPublicId: null,
+    });
+    renderBoard('/bang-diem?match=A72K9P');
+    fireEvent.click(screen.getByRole('button', { name: 'Đổi mã theo dõi' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mã giám sát' }));
+    fireEvent.change(screen.getByLabelText('Mã giải đấu'), { target: { value: 'GIAI' } });
+    fireEvent.change(screen.getByLabelText('Mã xem bảng điểm của giám sát'), {
+      target: { value: 'GS01' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'LƯU MÃ THEO DÕI' }));
+    expect(screen.getByRole('button', { name: 'Hủy' })).toBeDisabled();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByRole('dialog')).toBeVisible();
+    expect(screen.getByText('Võ sĩ Đỏ')).toBeVisible();
+    await act(async () => {
+      complete?.({ token: 'GS01', tournamentName: 'Giải', matchPublicId: null });
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('Trận đấu chưa bắt đầu')).toBeVisible();
+  });
+
+  it('restores supervisor tracking if a manually entered match code is invalid', async () => {
+    vi.spyOn(supervisorScoreboardApi, 'login').mockResolvedValue({
+      token: 'GS01',
+      tournamentName: 'Giải',
+      matchPublicId: null,
+    });
+    vi.spyOn(supervisorScoreboardApi, 'state').mockResolvedValue({
+      tournamentName: 'Giải',
+      matchPublicId: null,
+    });
+    renderBoard('/bang-diem');
+    fireEvent.click(screen.getByRole('button', { name: 'Mã giám sát' }));
+    fireEvent.change(screen.getByLabelText('Mã giải đấu'), { target: { value: 'GIAI' } });
+    fireEvent.change(screen.getByLabelText('Mã xem bảng điểm của giám sát'), {
+      target: { value: 'GS01' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'MỞ BẢNG ĐIỂM' }));
+    expect(await screen.findByText('GS01')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Đổi mã theo dõi' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mã trận đấu' }));
+    fireEvent.change(screen.getByLabelText('Mã trận đấu'), { target: { value: 'INVALID' } });
+    realtimeMock.mockReturnValue({ connectionStatus: 'disconnected', snapshot: null });
+    fireEvent.click(screen.getByRole('button', { name: 'LƯU MÃ THEO DÕI' }));
+    expect(await screen.findByText('GS01')).toBeVisible();
+    expect(screen.getByText('Trận đấu chưa bắt đầu')).toBeVisible();
+    expect(screen.getByTestId('location')).toHaveTextContent('/bang-diem');
+    expect(screen.getByTestId('location')).not.toHaveTextContent('match=INVALID');
   });
 
   it('cancels match editing with Escape', () => {
     realtimeMock.mockReturnValue({ connectionStatus: 'connected', snapshot });
     renderBoard('/bang-diem?match=A72K9P');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Chuyển đổi mã trận đấu' }));
+    const switchButton = screen.getByRole('button', { name: 'Đổi mã theo dõi' });
+    switchButton.focus();
+    fireEvent.click(switchButton);
     fireEvent.keyDown(screen.getByLabelText('Mã trận đấu'), { key: 'Escape' });
 
     expect(screen.queryByLabelText('Mã trận đấu')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Đổi mã theo dõi' })).toHaveFocus();
     expect(screen.getByText('A72K9P')).toBeVisible();
   });
 
