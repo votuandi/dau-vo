@@ -154,6 +154,16 @@ function SupervisorAssignment({
   const [picked, setPicked] = useState<string[]>([]);
   const [conflict, setConflict] = useState<string | null>(null);
   const [refreshAnnouncement, setRefreshAnnouncement] = useState('');
+  const assignmentPanelRef = useRef<HTMLElement>(null);
+  const selectedId = selected?.id;
+  useEffect(() => {
+    // The judge picker renders below a list that is often taller than the
+    // screen; bring it into view so selecting a match visibly does something.
+    if (!selectedId) return;
+    const panel = assignmentPanelRef.current;
+    panel?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    panel?.focus({ preventScroll: true });
+  }, [selectedId]);
   const matches = useQuery({
     queryKey: ['official-matches', session.tournament.id],
     queryFn: officialAccessApi.matches,
@@ -281,7 +291,7 @@ function SupervisorAssignment({
         {matches.data?.matches.map((m) => (
           <button
             aria-pressed={selected?.id === m.id}
-            className="min-h-28 rounded-xl border p-4 text-left focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 bg-white hover:bg-cyan-50"
+            className={`min-h-28 rounded-xl border p-4 text-left focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 ${selected?.id === m.id ? 'border-primary bg-cyan-50 ring-2 ring-primary' : 'bg-white hover:bg-cyan-50'}`}
             disabled={!isEligible(m)}
             key={m.id}
             onClick={() => {
@@ -308,7 +318,12 @@ function SupervisorAssignment({
         </p>
       ) : null}
       {selected ? (
-        <section className="mt-6 rounded-2xl border p-5 bg-white">
+        <section
+          aria-label={`Chọn giám định cho trận ${selected.publicId}`}
+          className="mt-6 scroll-mt-4 rounded-2xl border p-5 bg-white outline-none"
+          ref={assignmentPanelRef}
+          tabIndex={-1}
+        >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <h2 className="min-w-0 break-words text-xl font-black">
               Chọn giám định · {selected.publicId}

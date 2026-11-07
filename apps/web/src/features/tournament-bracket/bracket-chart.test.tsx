@@ -312,6 +312,27 @@ describe('BracketChart', () => {
     expect(screen.getByText('Bên xanh')).toHaveClass('sr-only');
   });
 
+  it('shows each athlete final score once the match has a scored result', () => {
+    const data = activeBracket(MatchPhase.FINISHED, MatchLifecycle.COMPLETED);
+    const fixture = required(data.fixtures[0]);
+    const scored: ActiveBracket = {
+      ...data,
+      fixtures: [{ ...fixture, match: { ...required(fixture.match), score: { RED: 5, BLUE: 8 } } }],
+    };
+    const { container } = render(<BracketChart data={scored} />);
+
+    expect(container.querySelector('[data-fixture-score="fixture-1:RED"]')).toHaveTextContent('5');
+    expect(container.querySelector('[data-fixture-score="fixture-1:BLUE"]')).toHaveTextContent('8');
+  });
+
+  it('shows no score before a scored result exists', () => {
+    const { container } = render(
+      <BracketChart data={activeBracket(MatchPhase.ROUND_1_PAUSED, MatchLifecycle.SUSPENDED)} />,
+    );
+
+    expect(container.querySelector('[data-fixture-score]')).toBeNull();
+  });
+
   it('uses lifecycle and final-phase labels from the match enum data', () => {
     render(<BracketChart data={activeBracket(MatchPhase.FINISHED, MatchLifecycle.COMPLETED)} />);
 

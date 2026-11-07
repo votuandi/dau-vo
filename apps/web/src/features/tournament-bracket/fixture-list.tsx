@@ -13,6 +13,7 @@ import type { ActiveBracket } from '@/services/api/admin-management';
 import { MatchDisplayState, MatchLifecycle } from '@/types/shared';
 import {
   canDecideManually,
+  fixtureScore,
   fixtureSideLabel,
   fixtureSurfaceClassName,
   groupFixturesByRound,
@@ -80,6 +81,7 @@ function FixtureItem({
     : [presentDisplayState(fixture.displayState)];
   const decisionType = manualWinnerDecisionType(fixture);
   const decidable = canDecideManually(fixture);
+  const score = fixtureScore(fixture);
 
   return (
     <li className={`rounded-xl border p-3 ${fixtureSurfaceClassName(fixture)}`}>
@@ -100,7 +102,15 @@ function FixtureItem({
           </div>
           <p className="mt-1 break-words text-sm font-medium">
             <span className="text-red-700">{fixtureSideLabel(fixture, 'RED', referenceById)}</span>
-            <span className="px-2 text-muted-foreground">vs</span>
+            {score ? (
+              <span aria-label={`Tỉ số ${String(score.RED)} - ${String(score.BLUE)}`}>
+                <span className="pl-2 font-black text-red-700">{score.RED}</span>
+                <span className="px-1.5 text-muted-foreground">vs</span>
+                <span className="pr-2 font-black text-blue-700">{score.BLUE}</span>
+              </span>
+            ) : (
+              <span className="px-2 text-muted-foreground">vs</span>
+            )}
             <span className="text-blue-700">
               {fixtureSideLabel(fixture, 'BLUE', referenceById)}
             </span>

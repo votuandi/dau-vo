@@ -61,6 +61,13 @@ export function fixtureSideLabel(
   return 'Chờ xác định';
 }
 
+/** Published final score of the fixture's match, or null when there is no scored result yet. */
+export function fixtureScore(
+  fixture: BracketFixture,
+): { readonly RED: number; readonly BLUE: number } | null {
+  return fixture.match?.score ?? null;
+}
+
 const fileTimestampFormat = new Intl.DateTimeFormat('sv-SE', {
   timeZone: 'Asia/Ho_Chi_Minh',
   year: 'numeric',

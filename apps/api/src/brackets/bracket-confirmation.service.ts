@@ -26,6 +26,7 @@ import {
   type GeneratedSingleEliminationBracket,
 } from './single-elimination-bracket.generator';
 import { projectMatchDisplayState } from '../match-display-state';
+import { matchFinalScore, matchFinalScoreSelect } from './match-final-score';
 
 const fail = (code: string, message: string) =>
   new ConflictException({ code, message });
@@ -58,8 +59,8 @@ const bracketInclude = {
           id: true,
           publicId: true,
           status: true,
-          lifecycle: true,
           currentRound: true,
+          ...matchFinalScoreSelect,
         },
       },
       winnerEntrant: true,
@@ -461,6 +462,8 @@ export class BracketConfirmationService {
                 currentRound: fixture.match.currentRound,
                 /** @deprecated compatibility alias; use phase. */
                 status: fixture.match.status,
+                /** Published final score by corner; null until a scored result exists. */
+                score: matchFinalScore(fixture.match),
               },
       })),
       staffing: b.roundStaffing.map((staffing) => ({

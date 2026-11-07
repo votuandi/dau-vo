@@ -4,6 +4,7 @@ import type { EnvironmentVariables } from '../config/environment';
 import type { AuthenticatedUser } from '../auth/admin-auth.types';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { RealtimeMatchStateService } from '../realtime/realtime-match-state.service';
+import type { RealtimeSessionRegistryService } from '../realtime/realtime-session-registry.service';
 import type { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
 import type { MatchCredentialGeneratorService } from './match-credential-generator.service';
 import { AdminManagementService } from './admin-management.service';
@@ -33,6 +34,7 @@ describe('admin dashboard access and aggregation', () => {
     {} as MatchCredentialGeneratorService,
     {} as RealtimeMatchStateService,
     {} as SportRulesRegistry,
+    {} as RealtimeSessionRegistryService,
   );
 
   beforeEach(() => {
@@ -79,11 +81,17 @@ describe('admin dashboard access and aggregation', () => {
       expect.objectContaining({ where: scope }),
     );
     expect(prisma.match.groupBy).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { tournament: scope } }),
+      expect.objectContaining({
+        where: { tournament: scope, deletedAt: null },
+      }),
     );
     expect(prisma.match.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { tournament: scope, lifecycle: { not: 'READY' } },
+        where: {
+          tournament: scope,
+          deletedAt: null,
+          lifecycle: { not: 'READY' },
+        },
       }),
     );
     expect(prisma.tournamentOfficial.groupBy).toHaveBeenCalledWith(
@@ -108,7 +116,7 @@ describe('admin dashboard access and aggregation', () => {
     );
     expect(prisma.match.groupBy).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { tournament: { softDeletedAt: null } },
+        where: { tournament: { softDeletedAt: null }, deletedAt: null },
       }),
     );
   });

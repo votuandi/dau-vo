@@ -211,6 +211,7 @@ enum AuditEventType {
   MATCH_OFFICIAL_ASSIGNMENT_REPLACED
   MATCH_OFFICIAL_ASSIGNMENT_RELEASED
   BRACKET_ROUND_STAFFING_UPDATED
+  MATCH_DELETED
 
   @@map("audit_event_type")
 }
@@ -563,6 +564,8 @@ model Match {
   intermissionEndsAt   DateTime?                 @map("intermission_ends_at") @db.Timestamptz(3)
   startedAt            DateTime?                 @map("started_at") @db.Timestamptz(3)
   finishedAt           DateTime?                 @map("finished_at") @db.Timestamptz(3)
+  /// Soft deletion of a standalone match: hidden from every list and entry point, history is kept.
+  deletedAt            DateTime?                 @map("deleted_at") @db.Timestamptz(3)
   createdAt            DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   tournament           Tournament                @relation(fields: [tournamentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "matches_tournament_id_fkey")
@@ -593,6 +596,7 @@ model Match {
   @@index([tournamentId, weightClassId], map: "matches_tournament_id_weight_class_id_idx")
   @@index([status], map: "matches_status_idx")
   @@index([lifecycle], map: "matches_lifecycle_idx")
+  @@index([tournamentId, deletedAt], map: "matches_tournament_id_deleted_at_idx")
   @@map("matches")
 }
 

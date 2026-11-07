@@ -43,6 +43,7 @@ export class MatchOfficialAssignmentsService {
     const matches = await this.prisma.match.findMany({
       where: {
         tournamentId: identity.tournamentId,
+        deletedAt: null,
         lifecycle: {
           in: [MatchLifecycle.READY, MatchLifecycle.SUSPENDED],
         },
@@ -212,7 +213,11 @@ export class MatchOfficialAssignmentsService {
   async state(matchId: string, identity: ValidatedOfficialSession) {
     this.supervisor(identity);
     const match = await this.prisma.match.findFirst({
-      where: { id: matchId, tournamentId: identity.tournamentId },
+      where: {
+        id: matchId,
+        tournamentId: identity.tournamentId,
+        deletedAt: null,
+      },
       select: {
         id: true,
         publicId: true,
@@ -969,6 +974,7 @@ export class MatchOfficialAssignmentsService {
       where: {
         id,
         tournamentId,
+        deletedAt: null,
         ...unstarted,
         tournament: {
           softDeletedAt: null,
@@ -991,6 +997,7 @@ export class MatchOfficialAssignmentsService {
       where: {
         id,
         tournamentId,
+        deletedAt: null,
         lifecycle: {
           in: [
             MatchLifecycle.READY,

@@ -522,7 +522,11 @@ export class MatchAccessService {
         },
         publicId: true,
       },
-      where: { publicId: matchPublicId, tournament: { softDeletedAt: null } },
+      where: {
+        publicId: matchPublicId,
+        deletedAt: null,
+        tournament: { softDeletedAt: null },
+      },
     });
     const codeFitsBcrypt =
       Buffer.byteLength(securityCode, 'utf8') <= BCRYPT_MAX_INPUT_BYTES;

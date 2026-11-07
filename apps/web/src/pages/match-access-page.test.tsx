@@ -908,4 +908,53 @@ describe('MatchAccessPage official login', () => {
       expect(await screen.findByText('Inspector console ready')).toBeVisible();
     },
   );
+
+  it('highlights the selected match and brings the judge picker into view', async () => {
+    const user = userEvent.setup();
+    const scrollIntoView = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      officialAccessApiMock.session.mockResolvedValue({ session: inspectorSession });
+      officialAccessApiMock.matches.mockResolvedValue({
+        matches: [
+          {
+            athletes: [
+              { color: 'BLUE', name: 'Võ sĩ X' },
+              { color: 'RED', name: 'Võ sĩ Y' },
+            ],
+            claimable: true,
+            id: 'match-1',
+            lifecycle: 'READY' as const,
+            publicId: 'M-001',
+            requiredJudgeCount: 2,
+            status: 'WAITING',
+          },
+        ],
+      });
+      officialAccessApiMock.state.mockResolvedValue({
+        match: {
+          id: 'match-1',
+          lifecycle: 'READY',
+          officialAssignments: [],
+          requiredJudgeCount: 2,
+        },
+        referees: [],
+      });
+      renderPage(TournamentOfficialRole.SUPERVISOR);
+
+      const card = await screen.findByRole('button', { name: /M-001/ });
+      await user.click(card);
+
+      expect(card).toHaveAttribute('aria-pressed', 'true');
+      expect(card).toHaveClass('ring-primary');
+      const panel = screen.getByRole('region', { name: 'Chọn giám định cho trận M-001' });
+      await waitFor(() => {
+        expect(panel).toHaveFocus();
+      });
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
 });
