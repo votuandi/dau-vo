@@ -655,7 +655,12 @@ export class RealtimeMatchStateService {
     publicMatchId: string,
   ): Promise<PublicMatchStatePayload> {
     const match = await this.prisma.match.findUnique({
-      select: { id: true, requiredJudgeCount: true },
+      select: {
+        id: true,
+        requiredJudgeCount: true,
+        tournament: { select: { name: true, location: true, imagePath: true } },
+        weightClass: { select: { name: true } },
+      },
       where: { publicId: publicMatchId },
     });
 
@@ -691,34 +696,38 @@ export class RealtimeMatchStateService {
         },
       }),
     ]);
-    return this.toPublicSnapshot(snapshot, outcome, {
-      judgeCount: match.requiredJudgeCount,
-      lastResolvedWindow:
-        lastResolvedWindow?.resolvedAt == null
-          ? null
-          : {
-              resolvedAt: lastResolvedWindow.resolvedAt.toISOString(),
-              winningColor:
-                lastResolvedWindow.winningColor === null
-                  ? null
-                  : this.sharedAthleteColor(lastResolvedWindow.winningColor),
-              votes: lastResolvedWindow.judgeVotes.flatMap((vote) => {
-                const judgePosition =
-                  vote.assignment?.judgePosition ??
-                  (vote.judgeSlot === null
+    return {
+      tournament: match.tournament,
+      weightClass: match.weightClass,
+      ...this.toPublicSnapshot(snapshot, outcome, {
+        judgeCount: match.requiredJudgeCount,
+        lastResolvedWindow:
+          lastResolvedWindow?.resolvedAt == null
+            ? null
+            : {
+                resolvedAt: lastResolvedWindow.resolvedAt.toISOString(),
+                winningColor:
+                  lastResolvedWindow.winningColor === null
                     ? null
-                    : LEGACY_JUDGE_POSITION[vote.judgeSlot]);
-                return judgePosition == null
-                  ? []
-                  : [
-                      {
-                        judgePosition,
-                        athlete: this.sharedAthleteColor(vote.athleteColor),
-                      },
-                    ];
-              }),
-            },
-    });
+                    : this.sharedAthleteColor(lastResolvedWindow.winningColor),
+                votes: lastResolvedWindow.judgeVotes.flatMap((vote) => {
+                  const judgePosition =
+                    vote.assignment?.judgePosition ??
+                    (vote.judgeSlot === null
+                      ? null
+                      : LEGACY_JUDGE_POSITION[vote.judgeSlot]);
+                  return judgePosition == null
+                    ? []
+                    : [
+                        {
+                          judgePosition,
+                          athlete: this.sharedAthleteColor(vote.athleteColor),
+                        },
+                      ];
+                }),
+              },
+      }),
+    };
   }
 
   toPublicSnapshot(

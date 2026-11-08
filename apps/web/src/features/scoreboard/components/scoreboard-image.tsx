@@ -38,7 +38,7 @@ export function ScoreboardImage({
   const src = imagePath ? tournamentImageUrl(imagePath) : null;
   // Track which source failed so a new image path is retried automatically.
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const classes = cn('shrink-0', SIZE_CLASSES[kind], className);
+  const classes = cn('shrink-0', `scoreboard-image-${kind}`, SIZE_CLASSES[kind], className);
 
   if (src && failedSrc !== src) {
     return (
@@ -75,7 +75,7 @@ export function ScoreboardImage({
           x="50"
           y="52"
         >
-          {kind === 'athlete' ? initials(name) : 'CLB'}
+          {kind === 'athlete' ? initials(name) : initials(alt.replace('Logo ', ''))}
         </text>
       </svg>
     </div>

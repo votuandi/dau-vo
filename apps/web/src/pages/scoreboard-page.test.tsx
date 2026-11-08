@@ -75,6 +75,35 @@ afterEach(() => {
 });
 
 describe('ScoreboardPage', () => {
+  it('shows public tournament identity and weight class', () => {
+    realtimeMock.mockReturnValue({
+      connectionStatus: 'connected',
+      snapshot: {
+        ...snapshot,
+        tournament: {
+          name: 'Giải Vô địch Võ thuật',
+          location: 'Nhà thi đấu Quận 7',
+          imagePath: 'events/logo.webp',
+        },
+        weightClass: { name: 'Nam 60–65 kg' },
+      },
+    });
+    render(
+      <MemoryRouter initialEntries={['/bang-diem?match=A72K9P']}>
+        <Routes>
+          <Route element={<ScoreboardPage />} path="/bang-diem" />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('heading', { name: 'Giải Vô địch Võ thuật' })).toBeVisible();
+    expect(screen.getByText('Nhà thi đấu Quận 7')).toBeVisible();
+    expect(screen.getByText('Nam 60–65 kg')).toBeVisible();
+    expect(screen.getByRole('img', { name: 'Logo Giải Vô địch Võ thuật' })).toHaveAttribute(
+      'src',
+      expect.stringContaining('events/logo.webp'),
+    );
+  });
+
   it('lets viewers choose supervisor credentials and return to match code entry', () => {
     render(
       <MemoryRouter initialEntries={['/bang-diem']}>
@@ -124,7 +153,7 @@ describe('ScoreboardPage', () => {
     expect(screen.getByLabelText('Điểm Xanh: 2')).toHaveTextContent('2');
     expect(screen.getByRole('group', { name: 'Lỗi nhẹ: 1 · Lỗi nặng: 0' })).toBeVisible();
     expect(screen.getByRole('group', { name: 'Lỗi nhẹ: 2 · Lỗi nặng: 1' })).toBeVisible();
-    expect(screen.getByText(/Chưa công bố kết quả/u)).toBeVisible();
+    expect(screen.queryByText(/Chưa công bố kết quả/u)).not.toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Ảnh của Võ sĩ Đỏ' })).toHaveAttribute(
       'src',
       '/api/media/athletes/red.webp',
@@ -291,7 +320,9 @@ describe('ScoreboardPage', () => {
     });
     renderBoard('/bang-diem?match=A72K9P');
 
-    expect(screen.getByText('Điểm chung cuộc sau các hiệp chính: Đỏ 5 · Xanh 3')).toBeVisible();
+    expect(
+      screen.queryByText('Điểm chung cuộc sau các hiệp chính: Đỏ 5 · Xanh 3'),
+    ).not.toBeInTheDocument();
   });
 
   it('switches to another match and rejects the current one', () => {
@@ -391,7 +422,7 @@ describe('ScoreboardPage', () => {
     expect(screen.getAllByRole('button', { name: 'Đổi mã theo dõi' })).toHaveLength(1);
     expect(screen.getByText('Võ sĩ Đỏ')).toBeVisible();
     expect(await screen.findByText('ĐANG KẾT NỐI LẠI')).toBeVisible();
-    expect(screen.getByRole('main')).toHaveClass('min-h-dvh');
+    expect(screen.getByRole('main')).toHaveClass('scoreboard-screen');
     expect(screen.queryByText(/Theo dõi giám sát/)).not.toBeInTheDocument();
   });
 
