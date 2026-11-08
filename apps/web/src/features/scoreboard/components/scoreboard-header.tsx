@@ -40,7 +40,7 @@ export function ScoreboardHeader({
         <div className="min-w-0">
           <ScoreboardSourceSwitcher
             source={source}
-            matchPublicId={matchPublicId}
+            matchPublicId={matchPublicId ?? ""}
             onSelect={onSelect}
           />
         </div>
