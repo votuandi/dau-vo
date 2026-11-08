@@ -149,3 +149,343 @@
     animation: none;
   }
 }
+
+/* The board owns the viewport. Children may shrink within the remaining space. */
+.scoreboard-screen {
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+.scoreboard-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: clamp(0.375rem, 1vmin, 1rem);
+  flex-shrink: 0;
+}
+.scoreboard-event {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.5rem, 1.4vmin, 1rem);
+  min-width: 0;
+  flex: 1 1 35%;
+}
+.scoreboard-event-logo {
+  width: clamp(2rem, 6vmin, 4rem);
+  height: clamp(2rem, 6vmin, 4rem);
+}
+.scoreboard-event-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: clamp(0.875rem, 2.5vmin, 1.75rem);
+  font-weight: 900;
+  line-height: 1.15;
+}
+.scoreboard-event-location {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  margin-top: 0.25rem;
+  color: #dbeafe;
+  font-size: clamp(0.75rem, 1.6vmin, 1rem);
+}
+.scoreboard-weight {
+  min-width: 0;
+  max-width: 28%;
+  padding: 0.25rem clamp(0.5rem, 1.5vmin, 1.25rem);
+  border-left: 1px solid rgb(255 255 255 / 0.2);
+}
+.scoreboard-weight span {
+  display: block;
+  color: #bfdbfe;
+  font-size: clamp(0.6875rem, 1.4vmin, 0.875rem);
+}
+.scoreboard-weight strong {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: clamp(0.875rem, 2.5vmin, 1.75rem);
+}
+.scoreboard-controls {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.375rem 0.75rem;
+}
+.scoreboard-athletes {
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+.scoreboard-athletes > section {
+  min-height: 0;
+  container-type: size;
+  gap: clamp(0.25rem, 2cqh, 1rem);
+  padding: clamp(0.375rem, 3cqh, 1.5rem);
+}
+.scoreboard-athletes h2 {
+  font-size: clamp(1rem, min(4.4vmin, 12cqh), 4.25rem);
+  -webkit-line-clamp: 2;
+}
+.scoreboard-athletes [aria-label^='Điểm'] {
+  font-size: clamp(2rem, min(21vmin, 40cqh), 15rem);
+}
+.scoreboard-athletes img,
+.scoreboard-athletes [role='img'] {
+  max-height: 28cqh;
+  max-width: 25%;
+  object-fit: contain;
+}
+@media (max-width: 767px) and (orientation: portrait) {
+  .scoreboard-controls {
+    width: 100%;
+  }
+  .scoreboard-athletes {
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+  .scoreboard-athletes > section {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+  .scoreboard-athletes > section > :first-child {
+    grid-column: 1 / -1;
+  }
+  .scoreboard-athletes > section > :last-child {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .scoreboard-athletes [aria-label^='Điểm'] {
+    font-size: clamp(2rem, 32cqh, 6rem);
+  }
+  .scoreboard-result-notice {
+    font-size: 0.6875rem;
+    padding: 0.25rem;
+  }
+  .scoreboard-match-state {
+    padding-block: 0.375rem;
+  }
+  .scoreboard-match-state [role='timer'] {
+    font-size: clamp(2.5rem, 12vmin, 4rem);
+  }
+}
+@media (max-height: 512px) {
+  .scoreboard-screen {
+    gap: 0.375rem;
+    padding: 0.375rem;
+  }
+  .scoreboard-header {
+    padding-block: 0.25rem;
+  }
+  .scoreboard-event-name {
+    -webkit-line-clamp: 1;
+  }
+  .scoreboard-match-state {
+    flex-direction: row;
+    justify-content: center;
+    gap: 1rem;
+    padding-block: 0.25rem;
+  }
+  .scoreboard-match-state [role='timer'] {
+    font-size: clamp(2rem, 10vmin, 3rem);
+  }
+  .scoreboard-athletes > section {
+    border-width: 2px;
+  }
+}
+.scoreboard-athletes .scoreboard-image-athlete {
+  width: min(17vmin, 28cqh);
+  height: min(17vmin, 28cqh);
+  max-width: none;
+  object-fit: cover;
+}
+.scoreboard-athletes .scoreboard-image-organization {
+  width: min(7vmin, 14cqh);
+  height: min(7vmin, 14cqh);
+  max-width: none;
+}
+@media (max-width: 767px) {
+  .scoreboard-controls {
+    gap: 0.25rem;
+  }
+  .scoreboard-controls > :first-child {
+    flex: 1;
+  }
+  .scoreboard-controls > :first-child > div {
+    gap: 0.375rem;
+  }
+  .scoreboard-controls .font-mono {
+    font-size: 0.875rem;
+  }
+  .scoreboard-controls button {
+    min-height: 44px;
+  }
+  .scoreboard-controls button[aria-haspopup] {
+    padding-inline: 0.5rem;
+    font-size: 0;
+    gap: 0;
+  }
+  .scoreboard-controls [aria-live] {
+    font-size: 0.625rem;
+    padding-inline: 0.5rem;
+    gap: 0.25rem;
+  }
+  .scoreboard-controls > :last-child {
+    gap: 0.375rem;
+  }
+}
+.scoreboard-screen [aria-label='Giám định chấm điểm'] > p:empty {
+  display: none;
+}
+@media (max-width: 767px) and (max-height: 650px) and (orientation: portrait) {
+  .scoreboard-screen {
+    gap: 0.375rem;
+  }
+  .scoreboard-match-state > p {
+    display: none;
+  }
+  .scoreboard-match-state [role='timer'] {
+    font-size: 2.5rem;
+  }
+  .scoreboard-result-notice {
+    font-size: 0.625rem;
+    line-height: 1.2;
+  }
+  .scoreboard-screen [aria-label='Giám định chấm điểm'] {
+    gap: 0.25rem;
+    padding: 0.25rem;
+  }
+  .scoreboard-screen [aria-label='Giám định chấm điểm'] ul {
+    gap: 0.25rem;
+  }
+  .scoreboard-screen [aria-label='Giám định chấm điểm'] li {
+    min-width: 2.5rem;
+    padding: 0.25rem;
+  }
+  .scoreboard-athletes > section > :first-child {
+    gap: 0.25rem;
+  }
+  .scoreboard-athletes [role='group'] {
+    font-size: 0.625rem;
+    gap: 0.25rem;
+  }
+  .scoreboard-athletes [role='group'] > span {
+    padding-inline: 0.375rem;
+  }
+}
+@media (max-width: 359px) {
+  .scoreboard-athletes > section > :first-child > p {
+    font-size: 0.625rem;
+    letter-spacing: 0.08em;
+  }
+  .scoreboard-athletes > section > :nth-child(2) {
+    gap: 0.5rem;
+  }
+  .scoreboard-athletes > section > :nth-child(2) > div > div {
+    margin-top: 0.125rem;
+    font-size: 0.75rem;
+  }
+}
+.scoreboard-screen > [aria-label='Kết quả đã công bố'] {
+  container-type: size;
+  gap: clamp(0.5rem, 3vmin, 2rem);
+  padding-block: clamp(0.5rem, 2vmin, 1.5rem);
+}
+.scoreboard-screen .winner-reveal-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  font-size: clamp(1.25rem, min(10vmin, 12cqh), 8rem);
+}
+@media (orientation: portrait) {
+  .scoreboard-screen .winner-reveal-portrait .scoreboard-image-athlete {
+    width: min(55vw, 35cqh);
+    height: min(55vw, 35cqh);
+  }
+  .scoreboard-screen .winner-reveal-label {
+    font-size: clamp(0.75rem, 2.5vmin, 1.25rem);
+  }
+}
+
+/* Event identity flanks the clock, with equal side columns to keep it centered. */
+.scoreboard-controls {
+  width: 100%;
+}
+.scoreboard-match-state {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(0.5rem, 2vmin, 2rem);
+}
+.scoreboard-event-slot {
+  min-width: 0;
+  text-align: left;
+}
+.scoreboard-weight-slot {
+  min-width: 0;
+  text-align: right;
+}
+.scoreboard-weight-slot .scoreboard-weight {
+  max-width: none;
+  border: 0;
+  padding: 0;
+}
+.scoreboard-event-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.scoreboard-event-summary > :first-child {
+  flex: 1;
+}
+.scoreboard-event-summary > :last-child {
+  max-width: 35%;
+}
+@media (max-width: 600px) {
+  .scoreboard-match-state {
+    gap: 0.375rem;
+    padding-inline: 0.5rem;
+  }
+  .scoreboard-match-state .scoreboard-event {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+  .scoreboard-match-state .scoreboard-event-logo {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+  .scoreboard-match-state .scoreboard-event-name {
+    font-size: 0.75rem;
+    -webkit-line-clamp: 3;
+  }
+  .scoreboard-match-state .scoreboard-event-location {
+    font-size: 0.625rem;
+  }
+  .scoreboard-match-state .scoreboard-weight strong {
+    font-size: 0.75rem;
+    -webkit-line-clamp: 3;
+  }
+  .scoreboard-clock-column > :first-child > p {
+    font-size: 0.875rem;
+    letter-spacing: 0.08em;
+  }
+  .scoreboard-clock-column > p {
+    display: none;
+  }
+  .scoreboard-match-state [role='timer'] {
+    font-size: clamp(2rem, 10vw, 3.5rem);
+  }
+}

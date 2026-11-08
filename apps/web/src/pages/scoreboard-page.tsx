@@ -15,6 +15,10 @@ import { SupervisorScoreboard } from '@/features/scoreboard/supervisor-scoreboar
 import { AthletePanel } from '@/features/scoreboard/components/athlete-panel';
 import { JudgeVoteStrip } from '@/features/scoreboard/components/judge-vote-strip';
 import { ScoreboardAccessForm } from '@/features/scoreboard/components/scoreboard-access-form';
+import {
+  ScoreboardEvent,
+  ScoreboardWeightClass,
+} from '@/features/scoreboard/components/scoreboard-event';
 import { ScoreboardHeader } from '@/features/scoreboard/components/scoreboard-header';
 import type { ScoreboardSource } from '@/features/scoreboard/scoreboard-source';
 import { ScoreboardClock } from '@/features/scoreboard/components/scoreboard-clock';
@@ -140,7 +144,7 @@ function ScoreboardContent({
     <main
       className={cn(
         'flex flex-col gap-[clamp(0.5rem,1.6vmin,1.25rem)] p-[clamp(0.5rem,1.6vmin,1.25rem)] text-white transition-colors duration-500',
-        'min-h-dvh',
+        'scoreboard-screen',
         THEME_BACKGROUND[view.theme],
       )}
     >
@@ -154,66 +158,66 @@ function ScoreboardContent({
       />
 
       {view.winner ? (
-        <WinnerPresentation athlete={view.winner} note={view.winnerNote} />
+        <>
+          <div className="scoreboard-event-summary">
+            <ScoreboardEvent tournament={snapshot?.tournament} />
+            <ScoreboardWeightClass weightClass={snapshot?.weightClass} />
+          </div>
+          <WinnerPresentation athlete={view.winner} note={view.winnerNote} />
+        </>
       ) : (
         <>
           <section
             aria-label="Trạng thái trận đấu"
             className={cn(
-              'flex flex-col items-center rounded-[clamp(1rem,3vmin,2rem)] border px-4 py-[clamp(0.5rem,2vmin,1.5rem)] text-center shadow-2xl backdrop-blur-xl',
+              'scoreboard-match-state flex flex-col items-center rounded-[clamp(1rem,3vmin,2rem)] border px-4 py-[clamp(0.5rem,2vmin,1.5rem)] text-center shadow-2xl backdrop-blur-xl',
               attention
                 ? 'border-amber-200/40 bg-amber-950/30 shadow-amber-950/30'
                 : 'border-white/15 bg-white/10 shadow-blue-950/20',
             )}
           >
-            <div className="flex flex-wrap items-baseline justify-center gap-x-4 gap-y-1">
-              <p className="text-[clamp(1.125rem,4vmin,2.25rem)] font-black uppercase tracking-[0.18em] text-sky-100">
-                {view.presentation?.label ?? 'ĐANG KẾT NỐI'}
-              </p>
-              {view.roundLabel ? (
-                <p className="text-[clamp(0.875rem,2.6vmin,1.375rem)] font-black tracking-[0.12em] text-amber-200">
-                  {view.roundLabel}
+            <ScoreboardEvent tournament={snapshot?.tournament} />
+            <div className="scoreboard-clock-column">
+              <div className="flex flex-wrap items-baseline justify-center gap-x-4 gap-y-1">
+                <p className="text-[clamp(1.125rem,4vmin,2.25rem)] font-black uppercase tracking-[0.18em] text-sky-100">
+                  {view.presentation?.label ?? 'ĐANG KẾT NỐI'}
+                </p>
+                {view.roundLabel ? (
+                  <p className="text-[clamp(0.875rem,2.6vmin,1.375rem)] font-black tracking-[0.12em] text-amber-200">
+                    {view.roundLabel}
+                  </p>
+                ) : null}
+              </div>
+              {view.presentation ? (
+                <p className="mt-1 text-[clamp(0.75rem,1.8vmin,1rem)] text-sky-100/85 short:hidden">
+                  {view.presentation.help}
                 </p>
               ) : null}
+              {intermission.active ? null : (
+                <div className="mt-[clamp(0.25rem,1vmin,0.75rem)]">
+                  <ScoreboardClock
+                    endsAt={activeRound?.endsAt}
+                    generatedAt={snapshot?.generatedAt}
+                    pausedRemainingMs={
+                      view.paused ? (activeRound?.remainingDurationMs ?? null) : null
+                    }
+                    running={view.running}
+                  />
+                </div>
+              )}
+              <IntermissionCountdown
+                endsAt={view.intermissionEndsAt}
+                generatedAt={snapshot?.generatedAt}
+              />
             </div>
-            {view.presentation ? (
-              <p className="mt-1 text-[clamp(0.75rem,1.8vmin,1rem)] text-sky-100/85 short:hidden">
-                {view.presentation.help}
-              </p>
-            ) : null}
-            {intermission.active ? null : (
-              <div className="mt-[clamp(0.25rem,1vmin,0.75rem)]">
-                <ScoreboardClock
-                  endsAt={activeRound?.endsAt}
-                  generatedAt={snapshot?.generatedAt}
-                  pausedRemainingMs={
-                    view.paused ? (activeRound?.remainingDurationMs ?? null) : null
-                  }
-                  running={view.running}
-                />
-              </div>
-            )}
-            <IntermissionCountdown
-              endsAt={view.intermissionEndsAt}
-              generatedAt={snapshot?.generatedAt}
-            />
+            <ScoreboardWeightClass weightClass={snapshot?.weightClass} />
           </section>
-
-          <p
-            className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-xl border short:hidden border-amber-200/30 bg-amber-100/10 px-4 py-2 text-center text-[clamp(0.75rem,1.9vmin,1.125rem)] font-bold text-amber-100 backdrop-blur"
-            role="status"
-          >
-            <span>Chưa công bố kết quả — chưa có người chiến thắng được xác nhận.</span>
-            {view.committedScoresLabel ? (
-              <span className="text-amber-50">{view.committedScoresLabel}</span>
-            ) : null}
-          </p>
 
           <JudgeVoteStrip generatedAt={snapshot?.generatedAt} judgeVotes={snapshot?.judgeVotes} />
 
           <section
             aria-label="Điểm số hai góc"
-            className="grid flex-1 gap-[clamp(0.5rem,1.6vmin,1.25rem)] md:grid-cols-2 landscape:grid-cols-2"
+            className="scoreboard-athletes grid flex-1 gap-[clamp(0.5rem,1.6vmin,1.25rem)] md:grid-cols-2 landscape:grid-cols-2"
           >
             <AthletePanel athlete={view.red} />
             <AthletePanel athlete={view.blue} />

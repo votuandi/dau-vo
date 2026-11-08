@@ -355,6 +355,9 @@ export interface PublicJudgeVotes {
  * judge votes appear only by position, after their window has resolved.
  */
 export interface PublicMatchStatePayload {
+  /** Public event identity; optional for compatibility with older servers. */
+  tournament?: { name: string; location: string | null; imagePath: string | null };
+  weightClass?: { name: string } | null;
   activeRound: Omit<MatchRoundState, 'id'> | null;
   /** Authoritative end timestamp for the round-one intermission, if enabled. */
   intermissionEndsAt: string | null;
