@@ -9,7 +9,7 @@ import type {
 } from '@martial-arts-scoring/shared-types';
 import { apiClient } from '@/services/api/client';
 import type { ApiRequestOptions } from '@/services/api/client';
-import type { TournamentOfficialRole } from '@martial-arts-scoring/shared-types';
+import type { ScoringMethod, TournamentOfficialRole } from '@martial-arts-scoring/shared-types';
 
 type ApiRequestWithoutBody = Omit<ApiRequestOptions<never>, 'body' | 'method'>;
 
@@ -484,8 +484,16 @@ export interface ActiveBracket {
     readonly roundLabel: string;
     readonly regulationRoundCount?: number;
     readonly roundDurationMs?: number;
+    readonly scoringMethod?: ScoringMethod;
     readonly requiredJudgeCount: number;
   }[];
+}
+
+/** Per bracket round match rules; every prepared match snapshots them. */
+export interface BracketRoundRuleSettings {
+  readonly regulationRoundCount: number;
+  readonly roundDurationMs: number;
+  readonly scoringMethod: ScoringMethod;
 }
 
 function encodePathSegment(value: string): string {
@@ -603,7 +611,7 @@ export const adminManagementApi = {
     roundNumber: number,
     requiredJudgeCount: number | undefined,
     options?: ApiRequestWithoutBody,
-    settings?: { readonly regulationRoundCount: number; readonly roundDurationMs: number },
+    settings?: BracketRoundRuleSettings,
   ) =>
     apiClient.patch<{
       readonly staffing: {

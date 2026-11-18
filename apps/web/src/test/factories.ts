@@ -6,6 +6,7 @@ import {
   MatchRole,
   MatchStatus,
   JudgeSlot,
+  ScoringMethod,
   type MatchStatePayload,
   type VoteAcceptedPayload,
 } from '@martial-arts-scoring/shared-types';
@@ -114,6 +115,7 @@ export function createMatchSnapshot(overrides: Partial<MatchStatePayload> = {}):
       phase: MatchStatus.ROUND_1_RUNNING,
       publicId: refereeSession.matchPublicId,
       rulesVersion: 'FAULT_APPEAL_OVERTIME_V2',
+      scoringMethod: ScoringMethod.JUDGE_FREE_WINDOW,
       startedAt: '2026-09-01T12:00:00.000Z',
       status: MatchStatus.ROUND_1_RUNNING,
     },
@@ -163,6 +165,7 @@ export function createRealtimeState(
     readinessFresh: true,
     pauseRound: vi.fn(() => Promise.resolve(true)),
     resumeRound: vi.fn(() => Promise.resolve(true)),
+    startScoring: vi.fn(() => Promise.resolve(true)),
     controllingRound: false,
     roundControlErrorMessage: null,
     cancelRoundResult: vi.fn(() => Promise.resolve(true)),

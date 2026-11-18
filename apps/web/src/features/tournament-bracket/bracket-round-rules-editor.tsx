@@ -1,8 +1,20 @@
 import { useState } from 'react';
+import { ScoringMethod } from '@martial-arts-scoring/shared-types';
 import { Button } from '@/components/ui/button';
-import type { ActiveBracket } from '@/services/api/admin-management';
+import type { ActiveBracket, BracketRoundRuleSettings } from '@/services/api/admin-management';
 
 type Settings = NonNullable<ActiveBracket['staffing']>[number];
+
+const scoringMethodLabels: Record<ScoringMethod, string> = {
+  [ScoringMethod.JUDGE_FREE_WINDOW]: 'Giám định chấm điểm tự do trong 1.5 giây',
+  [ScoringMethod.REFEREE_COMMAND]: 'Giám định chấm điểm theo hiệu lệnh trọng tài',
+};
+
+const scoringMethods = [ScoringMethod.JUDGE_FREE_WINDOW, ScoringMethod.REFEREE_COMMAND] as const;
+
+function isScoringMethod(value: string): value is ScoringMethod {
+  return (scoringMethods as readonly string[]).includes(value);
+}
 
 export function BracketRoundRulesEditor({
   data,
@@ -13,7 +25,7 @@ export function BracketRoundRulesEditor({
   readonly data: ActiveBracket;
   readonly disabled: boolean;
   readonly pending: boolean;
-  readonly onSave: (roundNumber: number, count: number, durationMs: number) => void;
+  readonly onSave: (roundNumber: number, settings: BracketRoundRuleSettings) => void;
 }) {
   return (
     <section className="rounded-xl border p-4" aria-label="Cấu hình thi đấu theo vòng">
@@ -32,7 +44,7 @@ export function BracketRoundRulesEditor({
           );
           return (
             <RoundRulesForm
-              key={`${row.id}:${String(row.regulationRoundCount)}:${String(row.roundDurationMs)}`}
+              key={`${row.id}:${String(row.regulationRoundCount)}:${String(row.roundDurationMs)}:${String(row.scoringMethod)}`}
               row={row}
               disabled={disabled || pending || locked}
               locked={locked}
@@ -54,10 +66,13 @@ function RoundRulesForm({
   readonly row: Settings;
   readonly disabled: boolean;
   readonly locked: boolean;
-  readonly onSave: (roundNumber: number, count: number, durationMs: number) => void;
+  readonly onSave: (roundNumber: number, settings: BracketRoundRuleSettings) => void;
 }) {
   const [count, setCount] = useState(String(row.regulationRoundCount ?? 2));
   const [seconds, setSeconds] = useState(String((row.roundDurationMs ?? 120000) / 1000));
+  const [scoringMethod, setScoringMethod] = useState<ScoringMethod>(
+    row.scoringMethod ?? ScoringMethod.JUDGE_FREE_WINDOW,
+  );
   const valid =
     Number.isInteger(Number(count)) &&
     Number(count) >= 1 &&
@@ -71,10 +86,33 @@ function RoundRulesForm({
       aria-label={`Cấu hình ${row.roundLabel}`}
       onSubmit={(event) => {
         event.preventDefault();
-        if (valid && !disabled) onSave(row.roundNumber, Number(count), Number(seconds) * 1000);
+        if (valid && !disabled)
+          onSave(row.roundNumber, {
+            regulationRoundCount: Number(count),
+            roundDurationMs: Number(seconds) * 1000,
+            scoringMethod,
+          });
       }}
     >
       <h4 className="font-semibold">{row.roundLabel}</h4>
+      <label className="block text-sm">
+        Hình thức cho điểm
+        <select
+          className="mt-1 w-full rounded border px-2 py-1"
+          aria-label={`${row.roundLabel}: hình thức cho điểm`}
+          disabled={disabled}
+          value={scoringMethod}
+          onChange={(event) => {
+            if (isScoringMethod(event.target.value)) setScoringMethod(event.target.value);
+          }}
+        >
+          {scoringMethods.map((method) => (
+            <option key={method} value={method}>
+              {scoringMethodLabels[method]}
+            </option>
+          ))}
+        </select>
+      </label>
       <div className="flex flex-wrap items-end gap-3">
         <label className="min-w-24 flex-1 text-sm">
           Số hiệp mỗi trận

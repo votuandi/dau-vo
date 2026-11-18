@@ -118,6 +118,11 @@ export const VOTE_SCORING_WINDOW_PENDING_ERROR = {
   message: 'The previous scoring window is still resolving',
 } as const;
 
+export const VOTE_SCORING_CLOSED_ERROR = {
+  code: 'VOTE_SCORING_CLOSED',
+  message: 'Votes are only accepted while the supervisor has scoring open',
+} as const;
+
 export const VOTE_FAILED_ERROR = {
   code: 'VOTE_FAILED',
   message: 'The vote could not be accepted',

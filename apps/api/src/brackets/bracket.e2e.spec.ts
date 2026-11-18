@@ -854,6 +854,8 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
       { roundDurationMs: 0 },
       { roundDurationMs: 3600001 },
       { roundDurationMs: null },
+      { scoringMethod: 'UNKNOWN' },
+      { scoringMethod: null },
     ]) {
       await authenticated(
         request(app.getHttpServer()).patch(`${path}/staffing/1`),
@@ -861,12 +863,31 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
         .send(invalid)
         .expect(400);
     }
+    // Every round starts on the free 1.5 s judge window.
+    await expect(
+      prisma.bracketRoundStaffing.findMany({
+        select: { scoringMethod: true },
+        where: { bracketId },
+      }),
+    ).resolves.toEqual([
+      { scoringMethod: 'JUDGE_FREE_WINDOW' },
+      { scoringMethod: 'JUDGE_FREE_WINDOW' },
+    ]);
     // Rule changes do not require the tournament to have a full referee roster yet.
     await authenticated(
       request(app.getHttpServer()).patch(`${path}/staffing/1`),
     )
-      .send({ regulationRoundCount: 1, roundDurationMs: 90000 })
-      .expect(200);
+      .send({
+        regulationRoundCount: 1,
+        roundDurationMs: 90000,
+        scoringMethod: 'REFEREE_COMMAND',
+      })
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.staffing).toMatchObject({
+          scoringMethod: 'REFEREE_COMMAND',
+        });
+      });
     await authenticated(
       request(app.getHttpServer()).patch(`${path}/staffing/2`),
     )
@@ -894,6 +915,19 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
           });
         });
     }
+    await expect(
+      prisma.match.findMany({
+        select: { scoringMethod: true },
+        where: { bracketFixture: { bracketId, roundNumber: 1 } },
+      }),
+    ).resolves.toEqual(
+      roundOne.map(() => ({ scoringMethod: 'REFEREE_COMMAND' })),
+    );
+    await authenticated(
+      request(app.getHttpServer()).patch(`${path}/staffing/1`),
+    )
+      .send({ scoringMethod: 'JUDGE_FREE_WINDOW' })
+      .expect(409);
     await authenticated(
       request(app.getHttpServer()).patch(`${path}/staffing/1`),
     )
@@ -910,6 +944,19 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
     expect(saved).toMatchObject({
       regulationRoundCount: 3,
       roundDurationMs: 150000,
+      scoringMethod: 'JUDGE_FREE_WINDOW',
+    });
+    const audit = await prisma.auditLog.findFirstOrThrow({
+      orderBy: { createdAt: 'desc' },
+      select: { metadata: true },
+      where: {
+        eventType: 'BRACKET_ROUND_STAFFING_UPDATED',
+        metadata: { path: ['bracketId'], equals: bracketId },
+      },
+    });
+    expect(audit.metadata).toMatchObject({
+      after: { scoringMethod: 'JUDGE_FREE_WINDOW' },
+      before: { scoringMethod: 'JUDGE_FREE_WINDOW' },
     });
   });
 

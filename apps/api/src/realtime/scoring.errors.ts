@@ -39,3 +39,12 @@ export class PriorScoringWindowPendingError extends Error {
     this.name = PriorScoringWindowPendingError.name;
   }
 }
+
+/** Referee-command scoring accepts votes only while the supervisor has a
+ * scoring window open for the current stop. */
+export class ScoringClosedForVoteError extends Error {
+  constructor() {
+    super('Votes are only accepted while the supervisor has scoring open');
+    this.name = ScoringClosedForVoteError.name;
+  }
+}

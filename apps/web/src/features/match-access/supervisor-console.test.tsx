@@ -8,6 +8,8 @@ import {
   MatchAccessRole,
   MatchExitMode,
   MatchStatus,
+  ScoringMethod,
+  type MatchStatePayload,
 } from '@martial-arts-scoring/shared-types';
 import { SupervisorConsole } from './supervisor-console';
 import { createMatchSnapshot, createRealtimeState } from '@/test/factories';
@@ -588,5 +590,102 @@ describe('SupervisorConsole', () => {
     expect(screen.getByText(/Xác nhận lưu kết quả chính thức/)).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Lưu kết quả' }));
     expect(publishResult).toHaveBeenCalledOnce();
+  });
+});
+
+function refereeCommandSnapshot(
+  status: MatchStatus,
+  activeScoringWindow: MatchStatePayload['activeScoringWindow'] = null,
+): MatchStatePayload {
+  const snapshot = snapshotFor(status);
+  return {
+    ...snapshot,
+    activeScoringWindow,
+    match: { ...snapshot.match, scoringMethod: ScoringMethod.REFEREE_COMMAND },
+  };
+}
+
+const openRefereeWindow = {
+  attemptNumber: 0,
+  endsAt: null,
+  id: 'window-referee',
+  roundNumber: 1,
+  stage: 'REGULATION',
+  startedAt: '2026-09-01T12:01:00.000Z',
+} as const;
+
+describe('SupervisorConsole referee-command scoring', () => {
+  it('never offers CHẤM ĐIỂM for a free 1.5 s window match', () => {
+    render(
+      <SupervisorConsole
+        realtime={createRealtimeState({ snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING) })}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'TẠM DỪNG' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'CHẤM ĐIỂM' })).not.toBeInTheDocument();
+  });
+
+  it('offers CHẤM ĐIỂM beside TẠM DỪNG while a referee-command round runs', async () => {
+    const user = userEvent.setup();
+    const startScoring = vi.fn(() => Promise.resolve(true));
+    render(
+      <SupervisorConsole
+        realtime={createRealtimeState({
+          snapshot: refereeCommandSnapshot(MatchStatus.ROUND_1_RUNNING),
+          startScoring,
+        })}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'TẠM DỪNG' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'CHẤM ĐIỂM' }));
+    expect(startScoring).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'TIẾP TỤC' })).not.toBeInTheDocument();
+  });
+
+  it('shows only TIẾP TỤC while judges score, which closes the scoring', async () => {
+    const user = userEvent.setup();
+    const resumeRound = vi.fn(() => Promise.resolve(true));
+    render(
+      <SupervisorConsole
+        realtime={createRealtimeState({
+          resumeRound,
+          snapshot: refereeCommandSnapshot(MatchStatus.ROUND_1_PAUSED, openRefereeWindow),
+        })}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'CHẤM ĐIỂM' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'TẠM DỪNG' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Giám định đang chấm điểm/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'TIẾP TỤC' }));
+    expect(resumeRound).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an ordinary pause without CHẤM ĐIỂM in referee-command mode', () => {
+    render(
+      <SupervisorConsole
+        realtime={createRealtimeState({
+          snapshot: refereeCommandSnapshot(MatchStatus.ROUND_1_PAUSED),
+        })}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'TIẾP TỤC' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'CHẤM ĐIỂM' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Giám định đang chấm điểm/)).not.toBeInTheDocument();
+  });
+
+  it('disables CHẤM ĐIỂM while disconnected or while a round command is pending', () => {
+    const snapshot = refereeCommandSnapshot(MatchStatus.ROUND_1_RUNNING);
+    const { rerender } = render(
+      <SupervisorConsole
+        realtime={createRealtimeState({ connectionStatus: 'reconnecting', snapshot })}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'CHẤM ĐIỂM' })).toBeDisabled();
+    rerender(
+      <SupervisorConsole realtime={createRealtimeState({ controllingRound: true, snapshot })} />,
+    );
+    expect(screen.getAllByRole('button', { name: 'ĐANG XỬ LÝ…' })).toHaveLength(2);
+    for (const button of screen.getAllByRole('button', { name: 'ĐANG XỬ LÝ…' }))
+      expect(button).toBeDisabled();
   });
 });

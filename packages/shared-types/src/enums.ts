@@ -39,6 +39,16 @@ export enum MatchPhase {
 /** @deprecated Use MatchPhase. Kept temporarily for source compatibility. */
 export { MatchPhase as MatchStatus };
 
+/**
+ * How judges award a point. `JUDGE_FREE_WINDOW`: the first vote opens a 1.5 s
+ * window. `REFEREE_COMMAND`: the supervisor opens a window on the referee's
+ * stop signal (round paused) and closes it by resuming the round.
+ */
+export enum ScoringMethod {
+  JUDGE_FREE_WINDOW = 'JUDGE_FREE_WINDOW',
+  REFEREE_COMMAND = 'REFEREE_COMMAND',
+}
+
 export enum MatchLifecycle {
   READY = 'READY',
   IN_PROGRESS = 'IN_PROGRESS',

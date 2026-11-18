@@ -6,6 +6,7 @@ import type {
   MatchExitMode,
   MatchPhase,
   JudgeSlot,
+  ScoringMethod,
 } from './enums';
 
 export const RealtimeEvent = {
@@ -45,6 +46,8 @@ export const RealtimeEvent = {
   ROUND_START: 'round:start',
   ROUND_STARTED: 'round:started',
   SCORE_UPDATED: 'score:updated',
+  /** Supervisor command: pause the round and open a referee-command window. */
+  SCORING_START: 'scoring:start',
   SCORING_WINDOW_OPENED: 'scoring-window:opened',
   SCORING_WINDOW_RESOLVED: 'scoring-window:resolved',
   SESSION_REVOKED: 'session:revoked',
@@ -244,6 +247,7 @@ export interface MatchStateIdentity {
   lifecycle: MatchLifecycle;
   phase: MatchPhase;
   rulesVersion: 'LEGACY_SCORE_PENALTY_V1' | 'FAULT_APPEAL_OVERTIME_V2';
+  scoringMethod: ScoringMethod;
   /** @deprecated Use phase. */
   status: MatchPhase;
 }
@@ -269,7 +273,8 @@ export type MatchRoundState = RoundDescriptor & {
  * safe to include in ordinary room broadcasts.
  */
 export type MatchScoringWindowState = RoundDescriptor & {
-  endsAt: string;
+  /** Null while a referee-command window waits for the supervisor to resume. */
+  endsAt: string | null;
   id: string;
   startedAt: string;
 };
@@ -382,7 +387,7 @@ export interface PublicMatchStatePayload {
   };
   generatedAt: string;
   judgeVotes: PublicJudgeVotes;
-  match: Omit<MatchStateIdentity, 'id' | 'startedAt'> & {
+  match: Omit<MatchStateIdentity, 'id' | 'startedAt' | 'scoringMethod'> & {
     outcome: {
       winner: AthleteColor;
       method: 'REGULATION_SCORE' | 'OVERTIME_SCORE' | 'MANUAL_AFTER_OVERTIME_TIE' | 'ADMIN_MANUAL';
@@ -597,6 +602,7 @@ export type VoteSubmitErrorCode =
   | 'VOTE_MATCH_NOT_RUNNING'
   | 'ROUND_PAUSED'
   | 'VOTE_ROUND_ENDED'
+  | 'VOTE_SCORING_CLOSED'
   | 'VOTE_SCORING_WINDOW_PENDING';
 
 export interface VoteSubmitError {
@@ -645,7 +651,8 @@ export interface VoteRejectedPayload {
 export interface ScoringWindowOpenedPayload {
   matchPublicId: string;
   window: {
-    endsAt: string;
+    /** Null for a referee-command window: it closes when the round resumes. */
+    endsAt: string | null;
     id: string;
     roundNumber: number;
     startedAt: string;

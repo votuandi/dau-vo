@@ -22,6 +22,7 @@ import {
   MatchExitMode,
   type PresenceUpdatedPayload,
   JudgeSlot as SharedJudgeSlot,
+  ScoringMethod as SharedScoringMethod,
 } from '@martial-arts-scoring/shared-types';
 import {
   AthleteColor,
@@ -30,6 +31,7 @@ import {
   MatchStatus,
   MatchRulesVersion,
   JudgeSlot,
+  ScoringMethod,
 } from '@prisma/client';
 import {
   RoundStage,
@@ -103,6 +105,7 @@ export class RealtimeMatchStateService {
         rulesVersion: true,
         regulationRoundCount: true,
         roundDurationMs: true,
+        scoringMethod: true,
         rounds: {
           orderBy: { roundNumber: 'desc' },
           select: {
@@ -321,6 +324,7 @@ export class RealtimeMatchStateService {
         lifecycle: this.sharedMatchLifecycle(match.lifecycle),
         phase: this.sharedMatchStatus(match.status),
         rulesVersion: match.rulesVersion,
+        scoringMethod: this.sharedScoringMethod(match.scoringMethod),
         startedAt: match.startedAt?.toISOString() ?? null,
         intermissionEndsAt: match.intermissionEndsAt?.toISOString() ?? null,
         status: this.sharedMatchStatus(match.status),
@@ -822,7 +826,7 @@ export class RealtimeMatchStateService {
       | { assignmentId: string; kind: 'official'; judgePosition: number }
       | undefined,
     unresolvedWindow: {
-      endsAt: Date;
+      endsAt: Date | null;
       id: string;
       roundNumber: number;
       startedAt: Date;
@@ -951,7 +955,7 @@ export class RealtimeMatchStateService {
   }
 
   private scoringWindowState(window: {
-    endsAt: Date;
+    endsAt: Date | null;
     id: string;
     roundNumber: number;
     round: {
@@ -988,7 +992,7 @@ export class RealtimeMatchStateService {
           };
 
     return {
-      endsAt: window.endsAt.toISOString(),
+      endsAt: window.endsAt?.toISOString() ?? null,
       id: window.id,
       ...descriptor,
       startedAt: window.startedAt.toISOString(),
@@ -1340,5 +1344,11 @@ export class RealtimeMatchStateService {
         throw new Error(`Unsupported match lifecycle: ${exhaustiveLifecycle}`);
       }
     }
+  }
+
+  private sharedScoringMethod(method: ScoringMethod): SharedScoringMethod {
+    return method === ScoringMethod.REFEREE_COMMAND
+      ? SharedScoringMethod.REFEREE_COMMAND
+      : SharedScoringMethod.JUDGE_FREE_WINDOW;
   }
 }

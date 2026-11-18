@@ -26,6 +26,7 @@ import {
   type FaultRecordedPayload,
   type RoundStartResponse,
   type RoundControlResponse,
+  type ScoringWindowOpenedPayload,
   type ResultCancellationResponse,
   type ResultCancellationUndoResponse,
   type MatchCompletionResponse,
@@ -106,6 +107,7 @@ import {
   PriorScoringWindowPendingError,
   RoundEndedForVoteError,
   RoundPausedForVoteError,
+  ScoringClosedForVoteError,
 } from './scoring.errors';
 import {
   ScoringService,
@@ -155,6 +157,7 @@ import {
   VOTE_INVALID_ATHLETE_ERROR,
   VOTE_MATCH_NOT_RUNNING_ERROR,
   VOTE_ROUND_ENDED_ERROR,
+  VOTE_SCORING_CLOSED_ERROR,
   VOTE_SCORING_WINDOW_PENDING_ERROR,
   matchRoom,
   officialRoom,
@@ -1019,9 +1022,17 @@ export class RealtimeGateway
     return this.controlRound(client, 'resume');
   }
 
+  /** Referee-command scoring: pause the round and open judge scoring. */
+  @SubscribeMessage(RealtimeEvent.SCORING_START)
+  async scoringStart(
+    @ConnectedSocket() client: RealtimeSocket,
+  ): Promise<RoundControlResponse> {
+    return this.controlRound(client, 'score');
+  }
+
   private async controlRound(
     client: RealtimeSocket,
-    action: 'pause' | 'resume',
+    action: 'pause' | 'resume' | 'score',
   ): Promise<RoundControlResponse> {
     if (this.isScoreboardSocket(client))
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
@@ -1032,15 +1043,22 @@ export class RealtimeGateway
     )
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
     let transition: RoundControlTransition;
+    let opened: ScoringWindowOpenedPayload | null = null;
     try {
       const input = {
         matchId: command.matchId,
         identity: command.identity,
       };
-      transition =
-        action === 'pause'
-          ? await this.lifecycle.pauseRound(input)
-          : await this.lifecycle.resumeRound(input);
+      if (action === 'score') {
+        const started = await this.lifecycle.startRefereeScoring(input);
+        transition = started;
+        opened = started.opened;
+      } else {
+        transition =
+          action === 'pause'
+            ? await this.lifecycle.pauseRound(input)
+            : await this.lifecycle.resumeRound(input);
+      }
     } catch (error: unknown) {
       if (error instanceof SportGroupRulesNotImplementedError)
         return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
@@ -1060,13 +1078,20 @@ export class RealtimeGateway
       );
       return { error: ROUND_CONTROL_FAILED_ERROR, ok: false };
     }
-    const event =
-      action === 'pause'
-        ? RealtimeEvent.ROUND_PAUSED
-        : RealtimeEvent.ROUND_RESUMED;
-    this.server
-      .to(matchRoom(command.publicMatchId))
-      .emit(event, transition.payload);
+    const room = this.server.to(matchRoom(command.publicMatchId));
+    room.emit(
+      action === 'resume'
+        ? RealtimeEvent.ROUND_RESUMED
+        : RealtimeEvent.ROUND_PAUSED,
+      transition.payload,
+    );
+    if (opened !== null) room.emit(RealtimeEvent.SCORING_WINDOW_OPENED, opened);
+    if (transition.scoringResolution) {
+      const { payload, scoreUpdated } = transition.scoringResolution;
+      room.emit(RealtimeEvent.SCORING_WINDOW_RESOLVED, payload);
+      if (scoreUpdated !== null)
+        room.emit(RealtimeEvent.SCORE_UPDATED, scoreUpdated);
+    }
     await this.broadcastMatchState(
       transition.matchId,
       command.publicMatchId,
@@ -1253,6 +1278,8 @@ export class RealtimeGateway
           return { error: VOTE_ROUND_ENDED_ERROR, ok: false };
         if (error instanceof PriorScoringWindowPendingError)
           return { error: VOTE_SCORING_WINDOW_PENDING_ERROR, ok: false };
+        if (error instanceof ScoringClosedForVoteError)
+          return { error: VOTE_SCORING_CLOSED_ERROR, ok: false };
         this.logger.error(
           { error, assignmentId: assignment.id },
           'Assigned referee vote failed',
@@ -1347,6 +1374,13 @@ export class RealtimeGateway
           client,
           identity.publicMatchId,
           VOTE_SCORING_WINDOW_PENDING_ERROR,
+        );
+      }
+      if (error instanceof ScoringClosedForVoteError) {
+        return this.rejectVote(
+          client,
+          identity.publicMatchId,
+          VOTE_SCORING_CLOSED_ERROR,
         );
       }
 

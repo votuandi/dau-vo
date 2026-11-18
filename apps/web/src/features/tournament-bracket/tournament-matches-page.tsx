@@ -22,6 +22,7 @@ import {
   type AdminTournament,
   type BracketPreview,
   type BracketDrawSetup,
+  type BracketRoundRuleSettings,
 } from '@/services/api/admin-management';
 import { TournamentStatus } from '@/types/shared';
 import { BracketChart } from './bracket-chart';
@@ -390,8 +391,7 @@ export function TournamentMatchesPage({
     mutationFn: (input: {
       weightClassId: string;
       roundNumber: number;
-      regulationRoundCount: number;
-      roundDurationMs: number;
+      settings: BracketRoundRuleSettings;
     }) =>
       adminManagementApi.updateBracketRoundStaffing(
         tournament.id,
@@ -399,16 +399,13 @@ export function TournamentMatchesPage({
         input.roundNumber,
         undefined,
         undefined,
-        {
-          regulationRoundCount: input.regulationRoundCount,
-          roundDurationMs: input.roundDurationMs,
-        },
+        input.settings,
       ),
     onSuccess: (_, input) => {
       void qc.invalidateQueries({
         queryKey: bracketQueryKeys.detail(tournament.id, input.weightClassId),
       });
-      notifyMutationSuccess('Đã cập nhật số hiệp và thời lượng thi đấu.');
+      notifyMutationSuccess('Đã cập nhật cấu hình thi đấu.');
     },
     onError: (error) => {
       notifyMutationError(error, 'Không thể cập nhật cấu hình thi đấu.');
@@ -819,13 +816,8 @@ export function TournamentMatchesPage({
                           data={activeBracket}
                           disabled={isReadOnly || activeBracket.bracket.status !== 'ACTIVE'}
                           pending={roundRules.isPending || staffing.isPending}
-                          onSave={(roundNumber, regulationRoundCount, roundDurationMs) => {
-                            roundRules.mutate({
-                              weightClassId: selectedId,
-                              roundNumber,
-                              regulationRoundCount,
-                              roundDurationMs,
-                            });
+                          onSave={(roundNumber, settings) => {
+                            roundRules.mutate({ weightClassId: selectedId, roundNumber, settings });
                           }}
                         />
                         <BracketStaffingEditor

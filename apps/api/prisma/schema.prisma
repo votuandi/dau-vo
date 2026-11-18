@@ -93,6 +93,15 @@ enum MatchOutcomeMethod {
   @@map("match_outcome_method")
 }
 
+/// How judges award a point: a self-opening 1.5 s window started by the first
+/// vote, or a window the supervisor opens and closes on the referee's signal.
+enum ScoringMethod {
+  JUDGE_FREE_WINDOW
+  REFEREE_COMMAND
+
+  @@map("scoring_method")
+}
+
 enum MatchLifecycle {
   READY
   IN_PROGRESS
@@ -556,6 +565,7 @@ model Match {
   status               MatchStatus               @default(WAITING)
   lifecycle            MatchLifecycle            @default(READY)
   rulesVersion         MatchRulesVersion         @default(FAULT_APPEAL_OVERTIME_V2) @map("rules_version")
+  scoringMethod        ScoringMethod             @default(JUDGE_FREE_WINDOW) @map("scoring_method")
   suspendedAt          DateTime?                 @map("suspended_at") @db.Timestamptz(3)
   currentRound         Int?                      @map("current_round") @db.SmallInt
   regulationRoundCount Int                       @default(2) @map("regulation_round_count") @db.SmallInt
@@ -634,6 +644,7 @@ model TournamentBracket {
 model BracketRoundStaffing {
   regulationRoundCount Int             @default(2) @map("regulation_round_count") @db.SmallInt
   roundDurationMs      Int             @default(120000) @map("round_duration_ms")
+  scoringMethod        ScoringMethod   @default(JUDGE_FREE_WINDOW) @map("scoring_method")
   id                 String            @id(map: "bracket_round_staffing_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   bracketId          String            @map("bracket_id") @db.Uuid
   roundNumber        Int               @map("round_number") @db.SmallInt
@@ -934,7 +945,8 @@ model ScoringWindow {
   roundId              String?       @map("round_id") @db.Uuid
   roundElapsedMs       Int?          @map("round_elapsed_ms")
   startedAt            DateTime      @map("started_at") @db.Timestamptz(3)
-  endsAt               DateTime      @map("ends_at") @db.Timestamptz(3)
+  /// Null only while a referee-command window is open; set when it closes.
+  endsAt               DateTime?     @map("ends_at") @db.Timestamptz(3)
   resolvedAt           DateTime?     @map("resolved_at") @db.Timestamptz(3)
   winningColor         AthleteColor? @map("winning_color")
   scoreAwarded         Boolean       @default(false) @map("score_awarded")

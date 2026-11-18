@@ -11,6 +11,7 @@ import {
   type ResultPublishPayload,
   type ResultPublishResponse,
   MatchExitMode,
+  ScoringMethod,
   type MatchExitResponse,
   type MatchParticipantsNotReadyDetails,
   type MatchPresenceEntry,
@@ -125,6 +126,8 @@ export interface MatchRealtimeState {
   readonly completionErrorMessage: string | null;
   readonly pauseRound: () => Promise<boolean>;
   readonly resumeRound: () => Promise<boolean>;
+  /** Referee-command scoring: pause the round and open judge scoring. */
+  readonly startScoring: () => Promise<boolean>;
   readonly controllingRound: boolean;
   readonly roundControlErrorMessage: string | null;
   readonly cancelRoundResult: () => Promise<boolean>;
@@ -198,6 +201,20 @@ function getRoundStartErrorMessage(
       return fallback;
   }
 }
+
+type RoundControlAction = 'pause' | 'resume' | 'score';
+
+const roundControlEvents = {
+  pause: RealtimeEvent.ROUND_PAUSE,
+  resume: RealtimeEvent.ROUND_RESUME,
+  score: RealtimeEvent.SCORING_START,
+} as const satisfies Record<RoundControlAction, string>;
+
+const roundControlToasts: Record<RoundControlAction, { failed: string; succeeded: string }> = {
+  pause: { failed: 'Không thể tạm dừng hiệp đấu.', succeeded: 'Đã tạm dừng hiệp đấu.' },
+  resume: { failed: 'Không thể tiếp tục hiệp đấu.', succeeded: 'Đã tiếp tục hiệp đấu.' },
+  score: { failed: 'Không thể bắt đầu chấm điểm.', succeeded: 'Đã bắt đầu chấm điểm.' },
+};
 
 function getRoundControlErrorMessage(code: RoundControlErrorCode, fallback: string): string {
   switch (code) {
@@ -274,6 +291,8 @@ function getVoteSubmitErrorMessage(code: VoteSubmitErrorCode, fallback: string):
       return 'Lựa chọn của giám định cho cửa sổ chấm điểm này đã được ghi nhận.';
     case 'VOTE_SCORING_WINDOW_PENDING':
       return 'Cửa sổ chấm điểm trước đang được xử lý. Vui lòng thử lại sau giây lát.';
+    case 'VOTE_SCORING_CLOSED':
+      return 'Chỉ có thể chấm điểm khi Giám sát đã bấm Chấm điểm.';
     case 'VOTE_FAILED':
       return fallback;
   }
@@ -341,6 +360,7 @@ export function useMatchRealtime({
   const [submittingResultAction, setSubmittingResultAction] = useState(false);
   const [resultActionErrorMessage, setResultActionErrorMessage] = useState<string | null>(null);
   const acceptedVoteRef = useRef<VoteAcceptedPayload | null>(null);
+  const scoringMethodRef = useRef<ScoringMethod | undefined>(undefined);
   const refereeIdentityRef = useRef(refereeIdentity);
   const onAuthenticationRequiredRef = useRef(onAuthenticationRequired);
   const onSessionRevokedRef = useRef(onSessionRevoked);
@@ -360,6 +380,11 @@ export function useMatchRealtime({
   useEffect(() => {
     refereeIdentityRef.current = refereeIdentity;
   }, [refereeIdentity]);
+
+  const scoringMethod = snapshot?.match.scoringMethod;
+  useEffect(() => {
+    scoringMethodRef.current = scoringMethod;
+  }, [scoringMethod]);
 
   const requestSnapshot = useCallback(() => {
     const socket = getSocketClient();
@@ -537,7 +562,7 @@ export function useMatchRealtime({
     }
   }, [onMatchExitAcknowledged]);
 
-  const controlRound = useCallback(async (action: 'pause' | 'resume'): Promise<boolean> => {
+  const controlRound = useCallback(async (action: RoundControlAction): Promise<boolean> => {
     const socket = getSocketClient();
     if (roundControlInFlightRef.current) return false;
     if (!socket.connected) {
@@ -545,7 +570,7 @@ export function useMatchRealtime({
         'Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi điều khiển hiệp đấu.';
       setRoundControlErrorMessage(message);
       toast({
-        title: action === 'pause' ? 'Không thể tạm dừng hiệp đấu.' : 'Không thể tiếp tục hiệp đấu.',
+        title: roundControlToasts[action].failed,
         variant: 'destructive',
       });
       return false;
@@ -554,7 +579,7 @@ export function useMatchRealtime({
     setControllingRound(true);
     setRoundControlErrorMessage(null);
     try {
-      const event = action === 'pause' ? RealtimeEvent.ROUND_PAUSE : RealtimeEvent.ROUND_RESUME;
+      const event = roundControlEvents[action];
       const response = await new Promise<RoundControlResponse>((resolve, reject) => {
         socket
           .timeout(10_000)
@@ -570,8 +595,7 @@ export function useMatchRealtime({
         const message = getRoundControlErrorMessage(response.error.code, response.error.message);
         setRoundControlErrorMessage(message);
         toast({
-          title:
-            action === 'pause' ? 'Không thể tạm dừng hiệp đấu.' : 'Không thể tiếp tục hiệp đấu.',
+          title: roundControlToasts[action].failed,
           description: message,
           variant: 'destructive',
         });
@@ -584,7 +608,7 @@ export function useMatchRealtime({
         return false;
       }
       toast({
-        title: action === 'pause' ? 'Đã tạm dừng hiệp đấu.' : 'Đã tiếp tục hiệp đấu.',
+        title: roundControlToasts[action].succeeded,
         variant: 'success',
       });
       socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
@@ -593,7 +617,7 @@ export function useMatchRealtime({
       const message = 'Máy chủ không phản hồi. Vui lòng kiểm tra trạng thái hiệp đấu và thử lại.';
       setRoundControlErrorMessage(message);
       toast({
-        title: action === 'pause' ? 'Không thể tạm dừng hiệp đấu.' : 'Không thể tiếp tục hiệp đấu.',
+        title: roundControlToasts[action].failed,
         description: message,
         variant: 'destructive',
       });
@@ -605,6 +629,7 @@ export function useMatchRealtime({
   }, []);
   const pauseRound = useCallback(() => controlRound('pause'), [controlRound]);
   const resumeRound = useCallback(() => controlRound('resume'), [controlRound]);
+  const startScoring = useCallback(() => controlRound('score'), [controlRound]);
 
   const undoResultCancellation = useCallback(async (operationId: string): Promise<boolean> => {
     const socket = getSocketClient();
@@ -838,7 +863,12 @@ export function useMatchRealtime({
 
   const submitVote = useCallback(async (athlete: AthleteColor) => {
     const socket = getSocketClient();
-    if (voteSubmissionInFlightRef.current || acceptedVoteRef.current !== null) {
+    const accepted = acceptedVoteRef.current;
+    // Referee-command scoring lets a judge change their choice while scoring
+    // is open; the free window accepts exactly one choice per judge.
+    const canChangeChoice =
+      scoringMethodRef.current === ScoringMethod.REFEREE_COMMAND && accepted?.athlete !== athlete;
+    if (voteSubmissionInFlightRef.current || (accepted !== null && !canChangeChoice)) {
       return;
     }
     if (!socket.connected) {
@@ -1423,6 +1453,7 @@ export function useMatchRealtime({
     readinessFresh,
     pauseRound,
     resumeRound,
+    startScoring,
     controllingRound,
     roundControlErrorMessage,
     cancelRoundResult,

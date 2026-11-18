@@ -9,6 +9,7 @@ import {
   BracketFixtureStatus,
   BracketStatus,
   Prisma,
+  type ScoringMethod,
   TournamentOfficialRole,
   TournamentStatus,
 } from '@prisma/client';
@@ -29,12 +30,17 @@ export class BracketRoundStaffingService {
     roundNumber: number,
     requiredJudgeCount: number | undefined,
     actorId: string,
-    settings: { regulationRoundCount?: number; roundDurationMs?: number } = {},
+    settings: {
+      regulationRoundCount?: number;
+      roundDurationMs?: number;
+      scoringMethod?: ScoringMethod;
+    } = {},
   ) {
     if (
       requiredJudgeCount === undefined &&
       settings.regulationRoundCount === undefined &&
-      settings.roundDurationMs === undefined
+      settings.roundDurationMs === undefined &&
+      settings.scoringMethod === undefined
     )
       throw new BadRequestException({
         code: 'BRACKET_ROUND_SETTINGS_EMPTY',
@@ -162,11 +168,13 @@ export class BracketRoundStaffingService {
                 requiredJudgeCount: staffing.requiredJudgeCount,
                 regulationRoundCount: staffing.regulationRoundCount,
                 roundDurationMs: staffing.roundDurationMs,
+                scoringMethod: staffing.scoringMethod,
               },
               after: {
                 requiredJudgeCount: updated.requiredJudgeCount,
                 regulationRoundCount: updated.regulationRoundCount,
                 roundDurationMs: updated.roundDurationMs,
+                scoringMethod: updated.scoringMethod,
               },
             },
           },

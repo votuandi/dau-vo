@@ -16,6 +16,7 @@ import {
   type MatchExitPayload,
   type RoundEndedPayload,
   type RoundStartedPayload,
+  type ScoringWindowOpenedPayload,
 } from '@martial-arts-scoring/shared-types';
 import {
   AuditEventType,
@@ -28,6 +29,7 @@ import {
   MatchRulesVersion,
   RoundStage,
   ScoreEventType,
+  ScoringMethod,
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 
@@ -38,7 +40,10 @@ import { MatchOfficialAssignmentLifecycleService } from '../match-official-assig
 import { RealtimeOfficialRoutingService } from './realtime-official-routing.service';
 import { RealtimeSessionRegistryService } from './realtime-session-registry.service';
 import { auditActor, type SupervisorCommandIdentity } from './command-identity';
-import { ScoringService } from './scoring.service';
+import {
+  ScoringService,
+  type ScoringResolutionTransition,
+} from './scoring.service';
 import {
   InactiveRoundStartSessionError,
   InactiveRoundControlSessionError,
@@ -127,6 +132,12 @@ export interface MatchCompletionTransition {
 export interface RoundControlTransition {
   matchId: string;
   payload: RoundPausedPayload | RoundResumedPayload;
+  /** The referee-command window closed by a resume, if one was open. */
+  scoringResolution?: ScoringResolutionTransition | null;
+}
+
+export interface RefereeScoringStartTransition extends RoundControlTransition {
+  opened: ScoringWindowOpenedPayload;
 }
 
 export interface ResultCancellationTransition {
@@ -362,87 +373,149 @@ export class MatchLifecycleService implements OnModuleDestroy {
     identity: SupervisorCommandIdentity;
   }): Promise<RoundControlTransition> {
     const result = await this.prisma.$transaction(
-      async (transaction) => {
-        await this.lockMatch(transaction, input.matchId);
-        await this.rulesForMatch(transaction, input.matchId);
-        await this.lockActiveControlSession(transaction, input);
-        const clock = await this.serverClock(transaction);
-        const match = await transaction.match.findUniqueOrThrow({
-          select: { currentRound: true, publicId: true, status: true },
-          where: { id: input.matchId },
-        });
-        const roundNumber =
-          match.status === MatchStatus.ROUND_1_RUNNING
-            ? 1
-            : match.status === MatchStatus.ROUND_2_RUNNING
-              ? match.currentRound
-              : match.status === MatchStatus.OVERTIME_RUNNING
-                ? 1
-                : null;
-        if (roundNumber === null || match.currentRound !== roundNumber) {
-          throw new InvalidRoundControlStateError(match.status);
-        }
-        const round = await transaction.round.findFirstOrThrow({
-          orderBy: { createdAt: 'desc' },
-          where: {
-            invalidatedAt: null,
-            matchId: input.matchId,
-            roundNumber,
-            endedAt: null,
-          },
-        });
-        const remainingDurationMs = Math.max(
-          0,
-          round.endsAt.getTime() - clock.serverNow.getTime(),
-        );
-        if (remainingDurationMs === 0) {
-          throw new InvalidRoundControlStateError(match.status);
-        }
-        const status =
-          match.status === MatchStatus.OVERTIME_RUNNING
-            ? MatchStatus.OVERTIME_PAUSED
-            : roundNumber === 1
-              ? MatchStatus.ROUND_1_PAUSED
-              : MatchStatus.ROUND_2_PAUSED;
-        const pausedRound = await transaction.round.update({
-          data: { pausedAt: clock.serverNow, remainingDurationMs },
-          where: { id: round.id },
-        });
-        await transaction.match.update({
-          data: { status },
-          where: { id: input.matchId },
-        });
-        await transaction.auditLog.create({
-          data: {
-            eventType: AuditEventType.ROUND_PAUSED,
-            matchId: input.matchId,
-            ...auditActor(input.identity),
-            metadata: {
-              fromStatus: match.status,
-              pausedAt: clock.serverNow.toISOString(),
-              remainingDurationMs,
-              roundId: round.id,
-              roundNumber,
-              toStatus: status,
-              ...(input.identity.kind === 'official'
-                ? { assignmentId: input.identity.assignmentId }
-                : {}),
-            },
-          },
-        });
-        return {
-          matchId: input.matchId,
-          payload: {
-            matchPublicId: match.publicId,
-            round: this.sharedRound(pausedRound),
-            status: this.sharedStatus(status),
-          },
-        };
-      },
+      (transaction) =>
+        this.pauseRunningRoundLocked(transaction, input, {
+          openScoringWindow: false,
+        }),
       { maxWait: TRANSACTION_MAX_WAIT_MS, timeout: TRANSACTION_TIMEOUT_MS },
     );
     this.cancelExpiration(input.matchId);
-    return result;
+    return { matchId: result.matchId, payload: result.payload };
+  }
+
+  /**
+   * Referee-command scoring: on the referee's stop signal the supervisor
+   * freezes the round clock and opens a judge scoring window atomically. The
+   * window stays open until {@link resumeRound} closes it and awards the point.
+   */
+  async startRefereeScoring(input: {
+    matchId: string;
+    identity: SupervisorCommandIdentity;
+  }): Promise<RefereeScoringStartTransition> {
+    const result = await this.prisma.$transaction(
+      (transaction) =>
+        this.pauseRunningRoundLocked(transaction, input, {
+          openScoringWindow: true,
+        }),
+      { maxWait: TRANSACTION_MAX_WAIT_MS, timeout: TRANSACTION_TIMEOUT_MS },
+    );
+    this.cancelExpiration(input.matchId);
+    if (result.opened === null) {
+      throw new Error('Referee scoring committed without a scoring window');
+    }
+    return {
+      matchId: result.matchId,
+      opened: result.opened,
+      payload: result.payload,
+    };
+  }
+
+  private async pauseRunningRoundLocked(
+    transaction: Prisma.TransactionClient,
+    input: { matchId: string; identity: SupervisorCommandIdentity },
+    options: { openScoringWindow: boolean },
+  ): Promise<{
+    matchId: string;
+    opened: ScoringWindowOpenedPayload | null;
+    payload: RoundPausedPayload;
+  }> {
+    await this.lockMatch(transaction, input.matchId);
+    await this.rulesForMatch(transaction, input.matchId);
+    await this.lockActiveControlSession(transaction, input);
+    const clock = await this.serverClock(transaction);
+    const match = await transaction.match.findUniqueOrThrow({
+      select: {
+        currentRound: true,
+        publicId: true,
+        scoringMethod: true,
+        status: true,
+      },
+      where: { id: input.matchId },
+    });
+    const roundNumber =
+      match.status === MatchStatus.ROUND_1_RUNNING
+        ? 1
+        : match.status === MatchStatus.ROUND_2_RUNNING
+          ? match.currentRound
+          : match.status === MatchStatus.OVERTIME_RUNNING
+            ? 1
+            : null;
+    if (
+      roundNumber === null ||
+      match.currentRound !== roundNumber ||
+      (options.openScoringWindow &&
+        match.scoringMethod !== ScoringMethod.REFEREE_COMMAND)
+    ) {
+      throw new InvalidRoundControlStateError(match.status);
+    }
+    const round = await transaction.round.findFirstOrThrow({
+      orderBy: { createdAt: 'desc' },
+      where: {
+        invalidatedAt: null,
+        matchId: input.matchId,
+        roundNumber,
+        endedAt: null,
+      },
+    });
+    const remainingDurationMs = Math.max(
+      0,
+      round.endsAt.getTime() - clock.serverNow.getTime(),
+    );
+    if (remainingDurationMs === 0) {
+      throw new InvalidRoundControlStateError(match.status);
+    }
+    const status =
+      match.status === MatchStatus.OVERTIME_RUNNING
+        ? MatchStatus.OVERTIME_PAUSED
+        : roundNumber === 1
+          ? MatchStatus.ROUND_1_PAUSED
+          : MatchStatus.ROUND_2_PAUSED;
+    const pausedRound = await transaction.round.update({
+      data: { pausedAt: clock.serverNow, remainingDurationMs },
+      where: { id: round.id },
+    });
+    await transaction.match.update({
+      data: { status },
+      where: { id: input.matchId },
+    });
+    const opened = options.openScoringWindow
+      ? await this.scoring.openRefereeCommandWindowLocked(transaction, {
+          matchId: input.matchId,
+          matchPublicId: match.publicId,
+          round: pausedRound,
+          serverNow: clock.serverNow,
+        })
+      : null;
+    await transaction.auditLog.create({
+      data: {
+        eventType: AuditEventType.ROUND_PAUSED,
+        matchId: input.matchId,
+        ...auditActor(input.identity),
+        metadata: {
+          fromStatus: match.status,
+          pausedAt: clock.serverNow.toISOString(),
+          remainingDurationMs,
+          roundId: round.id,
+          roundNumber,
+          toStatus: status,
+          ...(opened === null
+            ? {}
+            : { reason: 'REFEREE_SCORING', scoringWindowId: opened.window.id }),
+          ...(input.identity.kind === 'official'
+            ? { assignmentId: input.identity.assignmentId }
+            : {}),
+        },
+      },
+    });
+    return {
+      matchId: input.matchId,
+      opened,
+      payload: {
+        matchPublicId: match.publicId,
+        round: this.sharedRound(pausedRound),
+        status: this.sharedStatus(status),
+      },
+    };
   }
 
   async resumeRound(input: {
@@ -456,7 +529,12 @@ export class MatchLifecycleService implements OnModuleDestroy {
         await this.lockActiveControlSession(transaction, input);
         const clock = await this.serverClock(transaction);
         const match = await transaction.match.findUniqueOrThrow({
-          select: { currentRound: true, publicId: true, status: true },
+          select: {
+            currentRound: true,
+            publicId: true,
+            scoringMethod: true,
+            status: true,
+          },
           where: { id: input.matchId },
         });
         const roundNumber =
@@ -480,6 +558,17 @@ export class MatchLifecycleService implements OnModuleDestroy {
         });
         if (round.pausedAt === null || round.remainingDurationMs === null)
           throw new InvalidRoundControlStateError(match.status);
+        // Resuming ends the referee's stop: the open scoring window closes at
+        // the same server instant and awards its point before the clock runs.
+        const scoringResolution =
+          match.scoringMethod === ScoringMethod.REFEREE_COMMAND
+            ? await this.scoring.resolveRefereeCommandWindowLocked(
+                transaction,
+                input.matchId,
+                match.publicId,
+                clock.serverNow,
+              )
+            : null;
         const endsAt = new Date(
           clock.serverNow.getTime() + round.remainingDurationMs,
         );
@@ -509,6 +598,9 @@ export class MatchLifecycleService implements OnModuleDestroy {
               roundId: round.id,
               roundNumber,
               toStatus: status,
+              ...(scoringResolution === null
+                ? {}
+                : { scoringWindowId: scoringResolution.payload.window.id }),
               ...(input.identity.kind === 'official'
                 ? { assignmentId: input.identity.assignmentId }
                 : {}),
@@ -522,6 +614,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
             round: this.sharedRound(resumedRound),
             status: this.sharedStatus(status),
           },
+          scoringResolution,
           serverNow: clock.serverNow,
         };
       },
@@ -533,7 +626,11 @@ export class MatchLifecycleService implements OnModuleDestroy {
       result.payload.round.endsAt,
       result.serverNow,
     );
-    return { matchId: result.matchId, payload: result.payload };
+    return {
+      matchId: result.matchId,
+      payload: result.payload,
+      scoringResolution: result.scoringResolution,
+    };
   }
 
   async cancelCurrentRoundResult(input: {

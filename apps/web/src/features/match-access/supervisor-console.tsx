@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { MatchReadinessHover } from './match-readiness-hover';
-import { CirclePause, CirclePlay, LogOut, History, Save, Trophy } from 'lucide-react';
+import { CirclePause, CirclePlay, Gavel, LogOut, History, Save, Trophy } from 'lucide-react';
 import {
   AthleteColor,
   FaultSeverity,
   MatchExitMode,
   MatchStatus,
+  ScoringMethod,
 } from '@martial-arts-scoring/shared-types';
 import { SupervisorMatchListDialog } from './supervisor-match-list-dialog';
 import { Button } from '@/components/ui/button';
@@ -48,6 +49,10 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
     status === MatchStatus.ROUND_1_PAUSED ||
     status === MatchStatus.ROUND_2_PAUSED ||
     status === MatchStatus.OVERTIME_PAUSED;
+  const refereeCommandScoring = snapshot?.match.scoringMethod === ScoringMethod.REFEREE_COMMAND;
+  // An open referee-command window has no deadline until "Tiếp tục" closes it.
+  const refereeScoringOpen =
+    refereeCommandScoring && roundIsPaused && snapshot.activeScoringWindow?.endsAt === null;
   const remainingTime = useServerCountdown(
     roundIsRunning ? snapshot?.activeRound?.endsAt : undefined,
     snapshot?.generatedAt,
@@ -332,15 +337,17 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
               : '--:--'}
           </p>
           <p className="mt-2 text-xs text-sky-100/75 sm:mt-3 sm:text-sm">
-            {roundIsPaused
-              ? 'Đồng hồ đang tạm dừng theo trạng thái chính thức từ máy chủ'
-              : roundIsRunning
-                ? 'Thời gian chính thức do máy chủ xác định'
-                : status === MatchStatus.BREAK
-                  ? `Chờ giám sát viên bắt đầu Hiệp ${String((snapshot?.match.currentRound ?? 1) + 1)}`
-                  : status === MatchStatus.FINISHED
-                    ? 'Trận đấu đã kết thúc'
-                    : 'Chờ trạng thái chính thức từ máy chủ'}
+            {refereeScoringOpen
+              ? 'Giám định đang chấm điểm. Bấm Tiếp tục để ghi nhận điểm và chạy lại đồng hồ.'
+              : roundIsPaused
+                ? 'Đồng hồ đang tạm dừng theo trạng thái chính thức từ máy chủ'
+                : roundIsRunning
+                  ? 'Thời gian chính thức do máy chủ xác định'
+                  : status === MatchStatus.BREAK
+                    ? `Chờ giám sát viên bắt đầu Hiệp ${String((snapshot?.match.currentRound ?? 1) + 1)}`
+                    : status === MatchStatus.FINISHED
+                      ? 'Trận đấu đã kết thúc'
+                      : 'Chờ trạng thái chính thức từ máy chủ'}
           </p>
           <IntermissionCountdown
             endsAt={status === MatchStatus.BREAK ? snapshot?.match.intermissionEndsAt : null}
@@ -374,7 +381,21 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
                 <CirclePause aria-hidden="true" className="size-6" strokeWidth={2.5} />
                 <span>{realtime.controllingRound ? 'ĐANG XỬ LÝ…' : 'TẠM DỪNG'}</span>
               </Button>
-            ) : roundIsPaused ? (
+            ) : null}
+            {roundIsRunning && refereeCommandScoring ? (
+              <Button
+                className="h-16 w-full touch-manipulation border border-sky-200/50 bg-sky-600 text-lg font-black text-white shadow-lg shadow-sky-950/25 hover:bg-sky-500"
+                disabled={realtime.connectionStatus !== 'connected' || realtime.controllingRound}
+                onClick={() => {
+                  void realtime.startScoring();
+                }}
+                type="button"
+              >
+                <Gavel aria-hidden="true" className="size-6" strokeWidth={2.5} />
+                <span>{realtime.controllingRound ? 'ĐANG XỬ LÝ…' : 'CHẤM ĐIỂM'}</span>
+              </Button>
+            ) : null}
+            {roundIsPaused ? (
               <Button
                 className="h-16 w-full touch-manipulation border border-emerald-200/50 bg-emerald-600 text-lg font-black text-white shadow-lg shadow-emerald-950/25 hover:bg-emerald-500"
                 disabled={realtime.connectionStatus !== 'connected' || realtime.controllingRound}

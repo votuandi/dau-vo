@@ -1007,6 +1007,7 @@ export class AdminManagementService {
               requiredJudgeCount: true,
               regulationRoundCount: true,
               roundDurationMs: true,
+              scoringMethod: true,
             },
           });
           if (!staffing)
@@ -1022,6 +1023,7 @@ export class AdminManagementService {
               bracketFixtureId: fixture.id,
               regulationRoundCount: staffing.regulationRoundCount,
               roundDurationMs: staffing.roundDurationMs,
+              scoringMethod: staffing.scoringMethod,
               breakDurationMs: this.breakDurationMs,
               requiredJudgeCount: staffing.requiredJudgeCount,
             },

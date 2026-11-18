@@ -93,6 +93,8 @@ export interface ClientToServerEvents {
   'round:start': (acknowledge: (response: RoundStartResponse) => void) => void;
   'round:pause': (acknowledge: (response: RoundControlResponse) => void) => void;
   'round:resume': (acknowledge: (response: RoundControlResponse) => void) => void;
+  /** Referee-command scoring: pause the round and open judge scoring. */
+  'scoring:start': (acknowledge: (response: RoundControlResponse) => void) => void;
   'round:cancel': (acknowledge: (response: ResultCancellationResponse) => void) => void;
   'match:reset': (acknowledge: (response: ResultCancellationResponse) => void) => void;
   'match:complete': (acknowledge: (response: MatchCompletionResponse) => void) => void;

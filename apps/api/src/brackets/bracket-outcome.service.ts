@@ -463,6 +463,11 @@ export class BracketOutcomeService {
       where: { matchId, endedAt: null, invalidatedAt: null },
       data: { endedAt: now },
     });
+    // An open referee-command window has no end yet; close it at `now` too.
+    await tx.scoringWindow.updateMany({
+      where: { matchId, resolvedAt: null, invalidatedAt: null, endsAt: null },
+      data: { endsAt: now, resolvedAt: now },
+    });
     await tx.scoringWindow.updateMany({
       where: { matchId, resolvedAt: null, invalidatedAt: null },
       data: { resolvedAt: now },

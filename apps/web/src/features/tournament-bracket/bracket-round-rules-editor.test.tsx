@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { MatchDisplayState } from '@martial-arts-scoring/shared-types';
+import { MatchDisplayState, ScoringMethod } from '@martial-arts-scoring/shared-types';
 import type { ActiveBracket } from '@/services/api/admin-management';
 import { BracketRoundRulesEditor } from './bracket-round-rules-editor';
 
@@ -33,6 +33,7 @@ function bracket(): ActiveBracket {
         requiredJudgeCount: 3,
         regulationRoundCount: 3,
         roundDurationMs: 180000,
+        scoringMethod: ScoringMethod.REFEREE_COMMAND,
       },
     ],
   };
@@ -51,8 +52,66 @@ describe('BracketRoundRulesEditor', () => {
       target: { value: '120' },
     });
     fireEvent.submit(screen.getByRole('form', { name: 'Cấu hình Bán kết' }));
-    expect(save).toHaveBeenCalledWith(1, 2, 120000);
+    expect(save).toHaveBeenCalledWith(1, {
+      regulationRoundCount: 2,
+      roundDurationMs: 120000,
+      scoringMethod: ScoringMethod.JUDGE_FREE_WINDOW,
+    });
     expect(screen.getByLabelText('Chung kết: thời lượng mỗi hiệp (giây)')).toHaveValue(180);
+  });
+
+  it('offers both scoring methods per round, defaulting to the free 1.5 s window', () => {
+    render(
+      <BracketRoundRulesEditor
+        data={bracket()}
+        disabled={false}
+        pending={false}
+        onSave={vi.fn()}
+      />,
+    );
+    const semi = screen.getByLabelText('Bán kết: hình thức cho điểm');
+    expect(semi).toHaveValue(ScoringMethod.JUDGE_FREE_WINDOW);
+    expect(screen.getByLabelText('Chung kết: hình thức cho điểm')).toHaveValue(
+      ScoringMethod.REFEREE_COMMAND,
+    );
+    expect(
+      within(semi)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual([
+      'Giám định chấm điểm tự do trong 1.5 giây',
+      'Giám định chấm điểm theo hiệu lệnh trọng tài',
+    ]);
+  });
+
+  it('saves the selected scoring method with the round settings', () => {
+    const save = vi.fn();
+    render(
+      <BracketRoundRulesEditor data={bracket()} disabled={false} pending={false} onSave={save} />,
+    );
+    fireEvent.change(screen.getByLabelText('Bán kết: hình thức cho điểm'), {
+      target: { value: ScoringMethod.REFEREE_COMMAND },
+    });
+    fireEvent.submit(screen.getByRole('form', { name: 'Cấu hình Bán kết' }));
+    expect(save).toHaveBeenCalledWith(1, {
+      regulationRoundCount: 1,
+      roundDurationMs: 90000,
+      scoringMethod: ScoringMethod.REFEREE_COMMAND,
+    });
+  });
+
+  it('ignores an unknown scoring method value', () => {
+    const save = vi.fn();
+    render(
+      <BracketRoundRulesEditor data={bracket()} disabled={false} pending={false} onSave={save} />,
+    );
+    const select = screen.getByLabelText('Chung kết: hình thức cho điểm');
+    fireEvent.change(select, { target: { value: 'UNKNOWN' } });
+    fireEvent.submit(screen.getByRole('form', { name: 'Cấu hình Chung kết' }));
+    expect(save).toHaveBeenCalledWith(
+      2,
+      expect.objectContaining({ scoringMethod: ScoringMethod.REFEREE_COMMAND }),
+    );
   });
 
   it('locks a prepared round while leaving other rounds editable', () => {
@@ -76,7 +135,9 @@ describe('BracketRoundRulesEditor', () => {
       <BracketRoundRulesEditor data={data} disabled={false} pending={false} onSave={vi.fn()} />,
     );
     expect(screen.getByLabelText('Bán kết: số hiệp')).toBeDisabled();
+    expect(screen.getByLabelText('Bán kết: hình thức cho điểm')).toBeDisabled();
     expect(screen.getByLabelText('Chung kết: số hiệp')).toBeEnabled();
+    expect(screen.getByLabelText('Chung kết: hình thức cho điểm')).toBeEnabled();
   });
 
   it.each(['0', '21', '1.5', ''])('rejects invalid round count %s', (value) => {

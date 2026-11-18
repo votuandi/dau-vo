@@ -173,6 +173,9 @@ export class BracketPreviewController {
         ...(input.roundDurationMs === undefined
           ? {}
           : { roundDurationMs: input.roundDurationMs }),
+        ...(input.scoringMethod === undefined
+          ? {}
+          : { scoringMethod: input.scoringMethod }),
       },
     );
   }

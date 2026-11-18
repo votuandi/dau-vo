@@ -1,5 +1,6 @@
+import { ScoringMethod } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsInt, Min, Max, ValidateIf } from 'class-validator';
+import { IsEnum, IsInt, Min, Max, ValidateIf } from 'class-validator';
 
 export class UpdateBracketRoundStaffingDto {
   @ValidateIf((_object, value: unknown) => value !== undefined)
@@ -21,4 +22,8 @@ export class UpdateBracketRoundStaffingDto {
   @Min(1000)
   @Max(3600000)
   roundDurationMs?: number;
+
+  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @IsEnum(ScoringMethod)
+  scoringMethod?: ScoringMethod;
 }
