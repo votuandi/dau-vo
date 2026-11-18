@@ -35,8 +35,10 @@ export function ScoreboardEvent({
 }
 export function ScoreboardWeightClass({
   weightClass,
+  bracketRoundNumber,
 }: {
   readonly weightClass: PublicMatchStatePayload['weightClass'];
+  readonly bracketRoundNumber?: number | null | undefined;
 }) {
   return (
     <div className="scoreboard-weight-slot">
@@ -45,6 +47,9 @@ export function ScoreboardWeightClass({
           <span>Hạng cân</span>
           <strong>{weightClass.name}</strong>
         </p>
+      ) : null}
+      {bracketRoundNumber != null ? (
+        <p className="mt-1 text-lg font-bold text-sky-100">Vòng {bracketRoundNumber}</p>
       ) : null}
     </div>
   );

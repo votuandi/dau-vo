@@ -110,9 +110,13 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
   const snapshot = realtime.snapshot;
   const status = snapshot?.match.phase;
   const roundIsRunning =
-    status === MatchStatus.ROUND_1_RUNNING || status === MatchStatus.ROUND_2_RUNNING;
+    status === MatchStatus.ROUND_1_RUNNING ||
+    status === MatchStatus.ROUND_2_RUNNING ||
+    status === MatchStatus.OVERTIME_RUNNING;
   const roundIsPaused =
-    status === MatchStatus.ROUND_1_PAUSED || status === MatchStatus.ROUND_2_PAUSED;
+    status === MatchStatus.ROUND_1_PAUSED ||
+    status === MatchStatus.ROUND_2_PAUSED ||
+    status === MatchStatus.OVERTIME_PAUSED;
   const remainingTime = useServerCountdown(
     roundIsRunning ? snapshot?.activeRound?.endsAt : undefined,
     snapshot?.generatedAt,
@@ -131,7 +135,7 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
   const blueAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
   const controlsDisabled =
     realtime.connectionStatus !== 'connected' ||
-    !roundIsRunning ||
+    !(roundIsRunning || roundIsPaused) ||
     realtime.submittingVote !== null ||
     realtime.lastAcceptedVote !== null;
   const pendingVote = realtime.submittingVote;
@@ -251,7 +255,7 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
             </p>
           ) : realtime.connectionStatus !== 'connected' ? (
             <p className="px-4 py-3 text-sky-100/70">Không thể gửi lựa chọn khi mất kết nối.</p>
-          ) : !roundIsRunning ? (
+          ) : !(roundIsRunning || roundIsPaused) ? (
             <p className="px-4 py-3 text-sky-100/70">Lựa chọn chỉ mở khi hiệp đấu đang diễn ra.</p>
           ) : null}
         </section>

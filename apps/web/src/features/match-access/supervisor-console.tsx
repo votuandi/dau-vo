@@ -1,18 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
-import { CirclePause, CirclePlay, LogOut, Monitor, Save, Trophy } from 'lucide-react';
+import { MatchReadinessHover } from './match-readiness-hover';
+import { CirclePause, CirclePlay, LogOut, History, Save, Trophy } from 'lucide-react';
 import {
   AthleteColor,
   FaultSeverity,
   MatchExitMode,
   MatchStatus,
 } from '@martial-arts-scoring/shared-types';
+import { SupervisorMatchListDialog } from './supervisor-match-list-dialog';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { getParticipantsNotReadyMessage, type MatchRealtimeState } from './match-realtime';
 import { presentPhase } from '@/features/match-presentation';
 import { IntermissionCountdown, useIntermissionActive } from '@/components/intermission-countdown';
 import { VarMonitoringDialog } from './var-monitoring-dialog';
-import { AthleteScoreCard, FaultButton } from './supervisor-console-parts';
+import {
+  AthleteScoreCard,
+  FaultButton,
+  athleteActionButtonClassName,
+} from './supervisor-console-parts';
 import {
   type AppealDraft,
   appealBlockedReasonLabels,
@@ -31,6 +37,7 @@ interface SupervisorConsoleProps {
 }
 
 export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
+  const [matchListOpen, setMatchListOpen] = useState(false);
   const snapshot = realtime.snapshot;
   const status = snapshot?.match.phase;
   const roundIsRunning =
@@ -50,8 +57,6 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
     severity: FaultSeverity;
   } | null>(null);
   const [confirmation, setConfirmation] = useState<
-    | 'pause'
-    | 'resume'
     | 'cancel-round'
     | 'complete'
     | 'appeal'
@@ -81,7 +86,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
     : remainingTime;
   const faultControlsDisabled =
     realtime.connectionStatus !== 'connected' ||
-    !roundIsRunning ||
+    !(roundIsRunning || roundIsPaused) ||
     realtime.submittingFault !== null;
   const canStartRound = status === MatchStatus.WAITING || status === MatchStatus.BREAK;
   const varDisabled = snapshot === null || roundIsRunning;
@@ -115,7 +120,10 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
           },
         ];
   const scoreboardConnectedCount = snapshot?.readiness.scoreboardConnectedCount ?? 0;
-  const participantsReady = realtime.readinessFresh && (snapshot?.readiness.canStartRound ?? false);
+  const participantsReady =
+    realtime.connectionStatus === 'connected' &&
+    realtime.readinessFresh &&
+    (snapshot?.readiness.canStartRound ?? false);
   const readinessMessage =
     snapshot?.readiness.kind === 'TOURNAMENT_OFFICIALS'
       ? getParticipantsNotReadyMessage({
@@ -172,10 +180,10 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
   }, [armedFault]);
 
   useEffect(() => {
-    if (!roundIsRunning) {
+    if (!roundIsRunning && !roundIsPaused) {
       setArmedFault(null);
     }
-  }, [roundIsRunning]);
+  }, [roundIsRunning, roundIsPaused]);
 
   useEffect(() => {
     if (!exitMenuOpen) return;
@@ -234,7 +242,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
     >
       <main className="mx-auto w-full max-w-6xl space-y-3 px-3 py-3 sm:space-y-5 sm:px-5 sm:py-5">
         <header
-          className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5 sm:py-3 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/45' : 'border-white/15 bg-blue-950/35'}`}
+          className={`relative z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5 sm:py-3 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/45' : 'border-white/15 bg-blue-950/35'}`}
         >
           <div className="flex min-w-0 items-baseline gap-2 sm:block">
             <p className="shrink-0 text-xs font-bold uppercase tracking-[0.18em] text-sky-200/80">
@@ -244,17 +252,67 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
               {snapshot?.match.publicId ?? 'Đang đồng bộ'}
             </p>
           </div>
-          <div
-            aria-live="polite"
-            className="flex shrink-0 items-center gap-2 rounded-full bg-black/20 px-3 py-1 text-xs font-semibold text-sky-100/85"
-          >
-            <span
-              aria-hidden="true"
-              className={`size-2.5 rounded-full ${connectionDotClasses[realtime.connectionStatus]}`}
-            />
-            {connectionLabels[realtime.connectionStatus]}
+          <div className="flex flex-wrap items-center gap-2">
+            <div
+              aria-live="polite"
+              className="flex shrink-0 items-center gap-2 rounded-full bg-black/20 px-3 py-1 text-xs font-semibold text-sky-100/85"
+            >
+              <span
+                aria-hidden="true"
+                className={`size-2.5 rounded-full ${connectionDotClasses[realtime.connectionStatus]}`}
+              />
+              {connectionLabels[realtime.connectionStatus]}
+            </div>
+            <MatchReadinessHover ready={participantsReady}>
+              <section
+                aria-labelledby="match-readiness-title"
+                className="rounded-2xl border border-white/20 bg-blue-950 p-4 text-left text-white shadow-2xl"
+              >
+                <h2 className="font-black" id="match-readiness-title">
+                  Sẵn sàng trận đấu
+                </h2>
+                <ul className="mt-3 grid gap-2 text-sm font-semibold">
+                  {judgeReadiness.map((referee) => (
+                    <li
+                      className={referee.connected ? 'text-emerald-200' : 'text-red-200'}
+                      key={referee.label}
+                    >
+                      <span aria-hidden="true">{referee.connected ? '✓' : '✗'}</span>{' '}
+                      {referee.label} {referee.connected ? 'đã kết nối' : 'chưa kết nối'}
+                    </li>
+                  ))}
+                  <li
+                    className={scoreboardConnectedCount > 0 ? 'text-emerald-200' : 'text-red-200'}
+                  >
+                    <span aria-hidden="true">{scoreboardConnectedCount > 0 ? '✓' : '✗'}</span> Bảng
+                    điểm{' '}
+                    {scoreboardConnectedCount > 0
+                      ? `đã kết nối (${String(scoreboardConnectedCount)})`
+                      : 'chưa kết nối'}
+                  </li>
+                </ul>
+              </section>
+            </MatchReadinessHover>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-6 min-h-0 rounded-full px-3 py-0 text-xs font-semibold leading-4"
+              onClick={() => {
+                setMatchListOpen(true);
+              }}
+            >
+              Danh sách trận
+            </Button>
           </div>
         </header>
+        {matchListOpen ? (
+          <SupervisorMatchListDialog
+            currentId={snapshot?.match.publicId}
+            onClose={() => {
+              setMatchListOpen(false);
+            }}
+          />
+        ) : null}
 
         <section
           className={`rounded-3xl border px-4 py-4 text-center shadow-2xl backdrop-blur-xl sm:px-8 sm:py-8 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/30 shadow-amber-950/30' : 'border-white/15 bg-white/10 shadow-blue-950/20'}`}
@@ -288,34 +346,6 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
             endsAt={status === MatchStatus.BREAK ? snapshot?.match.intermissionEndsAt : null}
             generatedAt={snapshot?.generatedAt}
           />
-          {canStartRound ? (
-            <section
-              aria-labelledby="match-readiness-title"
-              className="mx-auto mt-4 max-w-md rounded-2xl border border-white/15 bg-blue-950/30 p-4 text-left sm:mt-6"
-            >
-              <h2 className="font-black" id="match-readiness-title">
-                Sẵn sàng trận đấu
-              </h2>
-              <ul className="mt-3 grid gap-2 text-sm font-semibold">
-                {judgeReadiness.map((referee) => (
-                  <li
-                    className={referee.connected ? 'text-emerald-200' : 'text-red-200'}
-                    key={referee.label}
-                  >
-                    <span aria-hidden="true">{referee.connected ? '✓' : '✗'}</span> {referee.label}{' '}
-                    {referee.connected ? 'đã kết nối' : 'chưa kết nối'}
-                  </li>
-                ))}
-                <li className={scoreboardConnectedCount > 0 ? 'text-emerald-200' : 'text-red-200'}>
-                  <span aria-hidden="true">{scoreboardConnectedCount > 0 ? '✓' : '✗'}</span> Bảng
-                  điểm{' '}
-                  {scoreboardConnectedCount > 0
-                    ? `đã kết nối (${String(scoreboardConnectedCount)})`
-                    : 'chưa kết nối'}
-                </li>
-              </ul>
-            </section>
-          ) : null}
 
           <div className="mx-auto mt-4 grid w-full max-w-md gap-3 empty:hidden sm:mt-6">
             {canStartRound ? (
@@ -337,7 +367,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
                 className="h-16 w-full touch-manipulation border border-amber-200/60 bg-amber-500 text-lg font-black text-amber-950 shadow-lg shadow-amber-950/25 hover:bg-amber-400"
                 disabled={realtime.connectionStatus !== 'connected' || realtime.controllingRound}
                 onClick={() => {
-                  setConfirmation('pause');
+                  void realtime.pauseRound();
                 }}
                 type="button"
               >
@@ -349,7 +379,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
                 className="h-16 w-full touch-manipulation border border-emerald-200/50 bg-emerald-600 text-lg font-black text-white shadow-lg shadow-emerald-950/25 hover:bg-emerald-500"
                 disabled={realtime.connectionStatus !== 'connected' || realtime.controllingRound}
                 onClick={() => {
-                  setConfirmation('resume');
+                  void realtime.resumeRound();
                 }}
                 type="button"
               >
@@ -428,7 +458,10 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
                     pattern="[0-9]*"
                     value={appealDraft[field]}
                     onChange={(event) => {
-                      setAppealDraft((draft) => ({ ...draft, [field]: event.target.value }));
+                      setAppealDraft((draft) => ({
+                        ...draft,
+                        [field]: event.target.value,
+                      }));
                     }}
                   />
                   {appealNumber(appealDraft[field]) === null ? (
@@ -569,12 +602,12 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
           className="rounded-3xl border border-white/15 bg-white/10 p-3 shadow-xl shadow-blue-950/15 backdrop-blur-xl sm:p-6"
         >
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-1">
-            <h1 className="text-lg font-black" id="inspector-fault-title">
+            {/* <h1 className="text-lg font-black" id="inspector-fault-title">
               Ghi nhận lỗi
-            </h1>
-            <p className="text-sm font-semibold text-sky-100/85">
-              Hiệp: {snapshot?.match.currentRound ?? 'Chưa bắt đầu'}
-            </p>
+            </h1> */}
+            {/* <p className="text-sm font-semibold text-sky-100/85">
+              Hiệp: {snapshot?.match.currentRound ?? "Chưa bắt đầu"}
+            </p> */}
             <p className="w-full text-xs text-sky-100/75 sm:text-sm">
               Nhấn hai lần cùng một nút trong 1,8 giây để xác nhận, giúp tránh chạm nhầm.
             </p>
@@ -591,7 +624,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
                 [AthleteColor.BLUE, blueAthlete, 'Võ sĩ Xanh'],
               ] as const
             ).map(([color, athlete, placeholderName]) => (
-              <div className="flex min-w-0 flex-col gap-2 sm:gap-3" key={color}>
+              <div className="row-span-2 grid min-w-0 grid-rows-subgrid gap-2 sm:gap-3" key={color}>
                 <AthleteScoreCard
                   athlete={
                     athlete ?? {
@@ -604,7 +637,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
                     }
                   }
                 />
-                <div className="grid gap-2 sm:grid-cols-2 sm:gap-3">
+                <div className="grid grid-flow-col grid-cols-2 grid-rows-2 gap-2 sm:gap-3 lg:grid-flow-row lg:grid-cols-4 lg:grid-rows-1">
                   {([FaultSeverity.MINOR, FaultSeverity.MAJOR] as const).map((severity) => (
                     <FaultButton
                       athlete={color}
@@ -615,6 +648,18 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
                       onPress={handleFaultPress}
                       severity={severity}
                     />
+                  ))}
+                  {([1, -1] as const).map((value) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      aria-label={`${value === 1 ? 'Cộng' : 'Trừ'} 1 điểm VĐV ${color === AthleteColor.RED ? 'đỏ' : 'xanh'}`}
+                      className={`${athleteActionButtonClassName} ${value === 1 ? 'border-emerald-300/70 bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-950 shadow-lg shadow-emerald-950/30 hover:from-emerald-700 hover:via-emerald-800 hover:to-emerald-950 focus-visible:ring-emerald-300' : 'border-rose-300/70 bg-gradient-to-br from-rose-600 via-rose-700 to-rose-950 shadow-lg shadow-rose-950/30 hover:from-rose-700 hover:via-rose-800 hover:to-rose-950 focus-visible:ring-rose-300'}`}
+                      disabled={faultControlsDisabled || !realtime.adjustScore}
+                      onClick={() => void realtime.adjustScore?.(color, value)}
+                    >
+                      {value === 1 ? '+1 điểm' : '−1 điểm'}
+                    </Button>
                   ))}
                 </div>
               </div>
@@ -634,7 +679,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
               >
                 {realtime.faultErrorMessage}
               </p>
-            ) : !roundIsRunning ? (
+            ) : !(roundIsRunning || roundIsPaused) ? (
               <p className="text-sky-100/70">Chỉ có thể ghi lỗi khi hiệp đấu đang diễn ra.</p>
             ) : realtime.connectionStatus !== 'connected' ? (
               <p className="text-sky-100/70">Không thể ghi lỗi khi mất kết nối.</p>
@@ -652,8 +697,8 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
               }}
               type="button"
             >
-              <Monitor aria-hidden="true" className="size-6 sm:size-7" strokeWidth={2.5} />
-              <span>CHECK VAR</span>
+              <History aria-hidden="true" className="size-6 sm:size-7" strokeWidth={2.5} />
+              <span>LỊCH SỬ CHẤM ĐIỂM</span>
             </Button>
             <Button
               aria-describedby={saveResultDisabled ? 'save-result-help' : undefined}
@@ -727,25 +772,21 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
       {confirmation ? (
         <ConfirmationDialog
           actionLabel={
-            confirmation === 'pause'
-              ? 'Tạm dừng'
-              : confirmation === 'resume'
-                ? 'Tiếp tục'
-                : confirmation === 'cancel-round'
-                  ? 'Hủy kết quả hiệp'
-                  : confirmation === 'appeal'
-                    ? 'Xác nhận phúc khảo'
-                    : confirmation === 'start-overtime'
-                      ? 'Bắt đầu hiệp phụ'
-                      : confirmation === 'restart-overtime'
-                        ? 'Đấu lại hiệp phụ'
-                        : confirmation === 'manual-red'
-                          ? `Chọn ĐỎ — ${redAthlete?.name ?? 'VĐV đỏ'}`
-                          : confirmation === 'manual-blue'
-                            ? `Chọn XANH — ${blueAthlete?.name ?? 'VĐV xanh'}`
-                            : confirmation === 'publish-result'
-                              ? 'Công bố kết quả'
-                              : 'Lưu kết quả'
+            confirmation === 'cancel-round'
+              ? 'Hủy kết quả hiệp'
+              : confirmation === 'appeal'
+                ? 'Xác nhận phúc khảo'
+                : confirmation === 'start-overtime'
+                  ? 'Bắt đầu hiệp phụ'
+                  : confirmation === 'restart-overtime'
+                    ? 'Đấu lại hiệp phụ'
+                    : confirmation === 'manual-red'
+                      ? `Chọn ĐỎ — ${redAthlete?.name ?? 'VĐV đỏ'}`
+                      : confirmation === 'manual-blue'
+                        ? `Chọn XANH — ${blueAthlete?.name ?? 'VĐV xanh'}`
+                        : confirmation === 'publish-result'
+                          ? 'Công bố kết quả'
+                          : 'Lưu kết quả'
           }
           busy={
             realtime.controllingRound ||
@@ -754,58 +795,50 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
             realtime.submittingResultAction
           }
           description={
-            confirmation === 'pause'
-              ? 'Bạn có chắc muốn tạm dừng hiệp đấu hiện tại?'
-              : confirmation === 'resume'
-                ? 'Bạn có chắc muốn tiếp tục hiệp đấu?'
-                : confirmation === 'cancel-round'
-                  ? `Hủy kết quả Hiệp ${status === MatchStatus.BREAK ? '1' : '2'}?`
-                  : confirmation === 'appeal'
-                    ? 'Phúc khảo này sẽ được khóa sau khi cam kết. Hãy kiểm tra kỹ các điều chỉnh trước khi xác nhận.'
-                    : confirmation === 'start-overtime'
-                      ? 'Hiệp phụ sẽ bắt đầu theo trạng thái chính thức từ máy chủ. Không thể hoàn tác việc bắt đầu hiệp đang diễn ra.'
-                      : confirmation === 'restart-overtime'
-                        ? 'Kết quả hiệp phụ hòa sẽ bị thay bằng một hiệp phụ mới.'
-                        : confirmation === 'manual-red' || confirmation === 'manual-blue'
-                          ? `Điểm chung cuộc hiệp phụ đang hòa. Chọn người chiến thắng chính thức: ${confirmation === 'manual-red' ? `ĐỎ — ${redAthlete?.name ?? 'VĐV đỏ'}` : `XANH — ${blueAthlete?.name ?? 'VĐV xanh'}`}.`
-                          : confirmation === 'publish-result'
-                            ? 'Công bố kết quả sẽ phát hành người chiến thắng cho bảng điểm công khai và luồng nhánh đấu. Không thể hoàn tác tại đây.'
-                            : 'Xác nhận lưu kết quả chính thức. Kết quả có thể làm nhánh đấu chuyển tiếp.'
+            confirmation === 'cancel-round'
+              ? `Hủy kết quả Hiệp ${status === MatchStatus.BREAK ? '1' : '2'}?`
+              : confirmation === 'appeal'
+                ? 'Phúc khảo này sẽ được khóa sau khi cam kết. Hãy kiểm tra kỹ các điều chỉnh trước khi xác nhận.'
+                : confirmation === 'start-overtime'
+                  ? 'Hiệp phụ sẽ bắt đầu theo trạng thái chính thức từ máy chủ. Không thể hoàn tác việc bắt đầu hiệp đang diễn ra.'
+                  : confirmation === 'restart-overtime'
+                    ? 'Kết quả hiệp phụ hòa sẽ bị thay bằng một hiệp phụ mới.'
+                    : confirmation === 'manual-red' || confirmation === 'manual-blue'
+                      ? `Điểm chung cuộc hiệp phụ đang hòa. Chọn người chiến thắng chính thức: ${confirmation === 'manual-red' ? `ĐỎ — ${redAthlete?.name ?? 'VĐV đỏ'}` : `XANH — ${blueAthlete?.name ?? 'VĐV xanh'}`}.`
+                      : confirmation === 'publish-result'
+                        ? 'Công bố kết quả sẽ phát hành người chiến thắng cho bảng điểm công khai và luồng nhánh đấu. Không thể hoàn tác tại đây.'
+                        : 'Xác nhận lưu kết quả chính thức. Kết quả có thể làm nhánh đấu chuyển tiếp.'
           }
           onCancel={() => {
             setConfirmation(null);
           }}
           onConfirm={() => {
             const command =
-              confirmation === 'pause'
-                ? realtime.pauseRound()
-                : confirmation === 'resume'
-                  ? realtime.resumeRound()
-                  : confirmation === 'cancel-round'
-                    ? realtime.cancelRoundResult()
-                    : confirmation === 'appeal'
-                      ? realtime.completeAppeal({
-                          RED: {
-                            bonusPoints: appealValues.redBonus ?? 0,
-                            penaltyPoints: appealValues.redPenalty ?? 0,
-                          },
-                          BLUE: {
-                            bonusPoints: appealValues.blueBonus ?? 0,
-                            penaltyPoints: appealValues.bluePenalty ?? 0,
-                          },
-                          idempotencyKey: appealKey,
-                        })
-                      : confirmation === 'start-overtime'
-                        ? realtime.startOvertime()
-                        : confirmation === 'restart-overtime'
-                          ? realtime.restartOvertime()
-                          : confirmation === 'manual-red'
-                            ? realtime.selectManualWinner(AthleteColor.RED)
-                            : confirmation === 'manual-blue'
-                              ? realtime.selectManualWinner(AthleteColor.BLUE)
-                              : confirmation === 'publish-result'
-                                ? realtime.publishResult()
-                                : realtime.publishResult();
+              confirmation === 'cancel-round'
+                ? realtime.cancelRoundResult()
+                : confirmation === 'appeal'
+                  ? realtime.completeAppeal({
+                      RED: {
+                        bonusPoints: appealValues.redBonus ?? 0,
+                        penaltyPoints: appealValues.redPenalty ?? 0,
+                      },
+                      BLUE: {
+                        bonusPoints: appealValues.blueBonus ?? 0,
+                        penaltyPoints: appealValues.bluePenalty ?? 0,
+                      },
+                      idempotencyKey: appealKey,
+                    })
+                  : confirmation === 'start-overtime'
+                    ? realtime.startOvertime()
+                    : confirmation === 'restart-overtime'
+                      ? realtime.restartOvertime()
+                      : confirmation === 'manual-red'
+                        ? realtime.selectManualWinner(AthleteColor.RED)
+                        : confirmation === 'manual-blue'
+                          ? realtime.selectManualWinner(AthleteColor.BLUE)
+                          : confirmation === 'publish-result'
+                            ? realtime.publishResult()
+                            : realtime.publishResult();
             void command.then((ok) => {
               if (ok) {
                 if (confirmation === 'appeal') {

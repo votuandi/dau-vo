@@ -116,6 +116,14 @@ function HistoryList<T>({
   );
 }
 
+function PausedTag({ paused }: { readonly paused: boolean | undefined }) {
+  return paused ? (
+    <span className="ml-2 inline-flex rounded bg-amber-200 px-2 py-0.5 text-xs font-bold text-amber-950">
+      Tạm dừng
+    </span>
+  ) : null;
+}
+
 export function VarMonitoringDialog({
   matchId,
   onClose,
@@ -138,7 +146,7 @@ export function VarMonitoringDialog({
       className="!flex !h-[80vh] !max-h-[80vh] !w-[95vw] !max-w-[95vw] !flex-col !overflow-hidden border border-amber-300/60 bg-amber-50 text-amber-950"
       description="Dữ liệu chỉ đọc phục vụ kiểm tra VAR của trận đấu hiện tại."
       onClose={onClose}
-      title="Check VAR"
+      title="Lịch sử chấm điểm"
     >
       {failed ? (
         <div className="mt-5" role="alert">
@@ -175,6 +183,7 @@ export function VarMonitoringDialog({
                       {entry.scoreAwarded && entry.winningColor
                         ? `${colorLabel(entry.winningColor)} +1`
                         : 'Không tính điểm'}
+                      <PausedTag paused={entry.recordedWhilePaused} />
                       {entry.invalidatedAt ? ' · Đã hủy kết quả' : ''}
                     </p>
                     <div className="text-right text-xs opacity-80">
@@ -195,6 +204,7 @@ export function VarMonitoringDialog({
                             +1 {athleteColorLabel(vote.athleteColor)}
                           </strong>{' '}
                           <span className="opacity-80">[{timestamp(vote.serverReceivedAt)}]</span>
+                          <PausedTag paused={vote.recordedWhilePaused} />
                           {vote.invalidatedAt ? (
                             <span className="ml-2 font-bold">Đã vô hiệu</span>
                           ) : null}
@@ -218,6 +228,7 @@ export function VarMonitoringDialog({
                     Hiệp {entry.roundNumber ?? '—'} · {colorLabel(athlete?.color)} ·{' '}
                     {athlete?.name ?? '—'} · <strong>{entry.value}</strong> ·{' '}
                     {timestamp(entry.createdAt)}
+                    <PausedTag paused={entry.recordedWhilePaused} />
                     {entry.revertedAt ? <span className="ml-2 font-bold">Đã hoàn tác</span> : null}
                   </li>
                 );
@@ -251,6 +262,7 @@ export function VarMonitoringDialog({
                       {' '}
                       · {formatRoundElapsedTime(entry.roundElapsedMs, entry.roundNumber)}
                     </span>
+                    <PausedTag paused={entry.recordedWhilePaused} />
                     {entry.revertedAt ? <span className="ml-2 font-bold">Đã hoàn tác</span> : null}
                   </li>
                 );
@@ -264,6 +276,7 @@ export function VarMonitoringDialog({
               entries={auditLogs}
               renderEntry={(entry) => (
                 <li className="rounded-lg bg-muted/60 p-3 text-sm" key={entry.id}>
+                  <PausedTag paused={entry.recordedWhilePaused} />
                   <strong>{auditEventLabel(entry.eventType)}</strong> · {timestamp(entry.createdAt)}
                   <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs text-muted-foreground">
                     {metadataText(entry.metadata)}

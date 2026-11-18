@@ -1765,7 +1765,12 @@ export class MatchLifecycleService implements OnModuleDestroy {
               where: {
                 matchId,
                 roundId: round.id,
-                type: ScoreEventType.JUDGE_POINT,
+                type: {
+                  in: [
+                    ScoreEventType.JUDGE_POINT,
+                    ScoreEventType.ADMIN_ADJUSTMENT,
+                  ],
+                },
                 revertedAt: null,
               },
             }),

@@ -3,6 +3,20 @@ import { activeRoundElapsedMs } from './round-timing';
 describe('activeRoundElapsedMs', () => {
   const startedAt = new Date('2026-09-10T00:00:00.000Z');
 
+  it('keeps elapsed time frozen while paused even after the old deadline', () => {
+    expect(
+      activeRoundElapsedMs(
+        {
+          durationMs: 60_000,
+          endsAt: new Date('2026-09-10T00:01:00Z'),
+          pausedAt: new Date('2026-09-10T00:00:10Z'),
+          remainingDurationMs: 50_000,
+        },
+        new Date('2026-09-10T01:00:00Z'),
+      ),
+    ).toBe(10_000);
+  });
+
   it('returns active time five seconds after round start', () => {
     expect(
       activeRoundElapsedMs(

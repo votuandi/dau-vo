@@ -358,6 +358,7 @@ export interface PublicMatchStatePayload {
   /** Public event identity; optional for compatibility with older servers. */
   tournament?: { name: string; location: string | null; imagePath: string | null };
   weightClass?: { name: string } | null;
+  bracketRoundNumber?: number | null;
   activeRound: Omit<MatchRoundState, 'id'> | null;
   /** Authoritative end timestamp for the round-one intermission, if enabled. */
   intermissionEndsAt: string | null;

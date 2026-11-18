@@ -72,6 +72,10 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
+  'score:adjust': (
+    payload: { athlete: import('@martial-arts-scoring/shared-types').AthleteColor; value: 1 | -1 },
+    acknowledge: (response: { ok: boolean; error?: { message: string } }) => void,
+  ) => void;
   'official:assignment-snapshot:request': () => void;
   'match:state:request': () => void;
   'match:presence:enter': () => void;

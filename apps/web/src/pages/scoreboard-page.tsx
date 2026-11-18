@@ -161,7 +161,10 @@ function ScoreboardContent({
         <>
           <div className="scoreboard-event-summary">
             <ScoreboardEvent tournament={snapshot?.tournament} />
-            <ScoreboardWeightClass weightClass={snapshot?.weightClass} />
+            <ScoreboardWeightClass
+              weightClass={snapshot?.weightClass}
+              bracketRoundNumber={snapshot?.bracketRoundNumber}
+            />
           </div>
           <WinnerPresentation athlete={view.winner} note={view.winnerNote} />
         </>
@@ -210,7 +213,10 @@ function ScoreboardContent({
                 generatedAt={snapshot?.generatedAt}
               />
             </div>
-            <ScoreboardWeightClass weightClass={snapshot?.weightClass} />
+            <ScoreboardWeightClass
+              weightClass={snapshot?.weightClass}
+              bracketRoundNumber={snapshot?.bracketRoundNumber}
+            />
           </section>
 
           <JudgeVoteStrip generatedAt={snapshot?.generatedAt} judgeVotes={snapshot?.judgeVotes} />

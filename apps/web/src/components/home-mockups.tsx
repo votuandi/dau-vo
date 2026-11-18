@@ -230,7 +230,7 @@ export function SupervisorMockup() {
     <div
       className="home-window home-supervisor"
       role="img"
-      aria-label="Mockup màn hình giám sát: ba giám định đã kết nối, điểm hai bên, nút điểm cộng, lỗi và lịch sử Check VAR"
+      aria-label="Mockup màn hình giám sát: ba giám định đã kết nối, điểm hai bên, nút điểm cộng, lỗi và lịch sử chấm điểm"
     >
       <WindowBar title="Giám sát · Trận M-0142" />
       <div className="home-supervisor-body">
@@ -266,7 +266,7 @@ export function SupervisorMockup() {
         </div>
         <div className="home-supervisor-var">
           <p>
-            <History size={13} /> CHECK VAR
+            <History size={13} /> Lịch sử chấm điểm
           </p>
           <ol>
             {[

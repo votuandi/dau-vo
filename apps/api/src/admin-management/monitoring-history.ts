@@ -78,3 +78,53 @@ export function monitoringScoreEvent<T extends MonitoringScoreEvent>(
       (event.roundId === null ? null : event.roundElapsedMs),
   };
 }
+
+/** Reconstruct pause intervals from the persisted server clock in control audits. */
+export function monitoringPauseLookup(
+  audits: readonly {
+    eventType: string;
+    metadata: unknown;
+  }[],
+): (roundId: string | null | undefined, occurredAt: Date) => boolean {
+  const controls = audits
+    .flatMap((audit) => {
+      if (
+        !isRecord(audit.metadata) ||
+        typeof audit.metadata.roundId !== 'string'
+      )
+        return [];
+      const paused = audit.eventType === 'ROUND_PAUSED';
+      if (!paused && audit.eventType !== 'ROUND_RESUMED') return [];
+      const timestamp = paused
+        ? audit.metadata.pausedAt
+        : audit.metadata.resumedAt;
+      if (typeof timestamp !== 'string') return [];
+      const time = Date.parse(timestamp);
+      return Number.isFinite(time)
+        ? [{ roundId: audit.metadata.roundId, paused, time }]
+        : [];
+    })
+    .sort((a, b) => a.time - b.time);
+  const intervals = new Map<string, Array<{ start: number; end: number }>>();
+  for (const control of controls) {
+    const rounds = intervals.get(control.roundId) ?? [];
+    const last = rounds.at(-1);
+    if (control.paused) {
+      if (!last || last.end !== Infinity)
+        rounds.push({ start: control.time, end: Infinity });
+    } else if (last?.end === Infinity) {
+      last.end = control.time;
+    }
+    intervals.set(control.roundId, rounds);
+  }
+  return (roundId, occurredAt) =>
+    roundId != null &&
+    (intervals
+      .get(roundId)
+      ?.some(
+        (interval) =>
+          occurredAt.getTime() >= interval.start &&
+          occurredAt.getTime() < interval.end,
+      ) ??
+      false);
+}

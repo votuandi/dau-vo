@@ -29,7 +29,6 @@ import {
   DuplicateRefereeVoteError,
   InactiveVoteSessionError,
   MatchNotRunningForVoteError,
-  RoundPausedForVoteError,
   PriorScoringWindowPendingError,
   RoundEndedForVoteError,
 } from './scoring.errors';
@@ -61,6 +60,8 @@ interface ServerClock {
 }
 
 interface ActiveRound {
+  pausedAt?: Date | null;
+  remainingDurationMs?: number | null;
   durationMs: number | null;
   endsAt: Date;
   id: string;
@@ -230,6 +231,8 @@ export class ScoringService implements OnModuleDestroy {
             rounds: {
               select: {
                 durationMs: true,
+                pausedAt: true,
+                remainingDurationMs: true,
                 endsAt: true,
                 id: true,
                 roundNumber: true,
@@ -242,19 +245,15 @@ export class ScoringService implements OnModuleDestroy {
           },
           where: { id: input.matchId },
         });
-        if (
-          match.status === MatchStatus.ROUND_1_PAUSED ||
-          match.status === MatchStatus.ROUND_2_PAUSED ||
-          match.status === MatchStatus.OVERTIME_PAUSED
-        ) {
-          throw new RoundPausedForVoteError();
-        }
         const activeRound = this.activeRound(match);
 
         if (activeRound === null) {
           throw new MatchNotRunningForVoteError();
         }
-        if (clock.serverNow.getTime() >= activeRound.endsAt.getTime()) {
+        if (
+          activeRound.pausedAt == null &&
+          clock.serverNow.getTime() >= activeRound.endsAt.getTime()
+        ) {
           throw new RoundEndedForVoteError();
         }
 
@@ -699,14 +698,19 @@ export class ScoringService implements OnModuleDestroy {
     if (
       match.status !== MatchStatus.ROUND_1_RUNNING &&
       match.status !== MatchStatus.ROUND_2_RUNNING &&
-      match.status !== MatchStatus.OVERTIME_RUNNING
+      match.status !== MatchStatus.OVERTIME_RUNNING &&
+      match.status !== MatchStatus.ROUND_1_PAUSED &&
+      match.status !== MatchStatus.ROUND_2_PAUSED &&
+      match.status !== MatchStatus.OVERTIME_PAUSED
     ) {
       return null;
     }
     const expectedRound =
-      match.status === MatchStatus.ROUND_1_RUNNING
+      match.status === MatchStatus.ROUND_1_RUNNING ||
+      match.status === MatchStatus.ROUND_1_PAUSED
         ? 1
-        : match.status === MatchStatus.ROUND_2_RUNNING
+        : match.status === MatchStatus.ROUND_2_RUNNING ||
+            match.status === MatchStatus.ROUND_2_PAUSED
           ? match.currentRound
           : 1;
     if (match.currentRound !== expectedRound) {
@@ -716,7 +720,8 @@ export class ScoringService implements OnModuleDestroy {
       match.rounds.find(
         (round) =>
           round.roundNumber === expectedRound &&
-          (match.status === MatchStatus.OVERTIME_RUNNING
+          (match.status === MatchStatus.OVERTIME_RUNNING ||
+          match.status === MatchStatus.OVERTIME_PAUSED
             ? round.stage === RoundStage.OVERTIME
             : round.stage === RoundStage.REGULATION),
       ) ?? null
