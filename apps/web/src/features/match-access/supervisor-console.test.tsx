@@ -59,13 +59,40 @@ function snapshotFor(status: MatchStatus) {
 }
 
 describe('SupervisorConsole', () => {
-  it('locks Check VAR only while an authoritative round is running', () => {
+  it('sends direct adjustments for each athlete while running or paused', async () => {
+    const user = userEvent.setup();
+    const adjustScore = vi.fn(() => Promise.resolve());
+    const { rerender } = render(
+      <SupervisorConsole
+        realtime={createRealtimeState({
+          snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING),
+          adjustScore,
+        })}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Cộng 1 điểm VĐV đỏ' }));
+    await user.click(screen.getByRole('button', { name: 'Trừ 1 điểm VĐV xanh' }));
+    expect(adjustScore).toHaveBeenNthCalledWith(1, AthleteColor.RED, 1);
+    expect(adjustScore).toHaveBeenNthCalledWith(2, AthleteColor.BLUE, -1);
+    rerender(
+      <SupervisorConsole
+        realtime={createRealtimeState({
+          snapshot: snapshotFor(MatchStatus.ROUND_1_PAUSED),
+          adjustScore,
+        })}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Cộng 1 điểm VĐV đỏ' }));
+    expect(adjustScore).toHaveBeenNthCalledWith(3, AthleteColor.RED, 1);
+  });
+
+  it('locks Lịch sử chấm điểm only while an authoritative round is running', () => {
     const { rerender } = render(
       <SupervisorConsole
         realtime={createRealtimeState({ snapshot: snapshotFor(MatchStatus.ROUND_1_RUNNING) })}
       />,
     );
-    expect(screen.getByRole('button', { name: 'CHECK VAR' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /lịch sử chấm điểm/i })).toBeDisabled();
 
     for (const status of [
       MatchStatus.ROUND_1_PAUSED,
@@ -76,13 +103,13 @@ describe('SupervisorConsole', () => {
       rerender(
         <SupervisorConsole realtime={createRealtimeState({ snapshot: snapshotFor(status) })} />,
       );
-      expect(screen.getByRole('button', { name: 'CHECK VAR' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: /lịch sử chấm điểm/i })).toBeEnabled();
     }
   });
 
-  it('guards Check VAR until an authoritative match snapshot exists', () => {
+  it('guards Lịch sử chấm điểm until an authoritative match snapshot exists', () => {
     render(<SupervisorConsole realtime={createRealtimeState({ snapshot: null })} />);
-    expect(screen.getByRole('button', { name: 'CHECK VAR' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /lịch sử chấm điểm/i })).toBeDisabled();
   });
 
   it('hides an expired intermission countdown without starting Round 2', async () => {
@@ -113,7 +140,7 @@ describe('SupervisorConsole', () => {
     expect(startRound).toHaveBeenCalledOnce();
   });
 
-  it('keeps the appeal presentation after Check VAR closes', async () => {
+  it('keeps the appeal presentation after Lịch sử chấm điểm closes', async () => {
     const user = userEvent.setup();
     const { container, rerender } = render(
       <QueryClientProvider
@@ -126,8 +153,8 @@ describe('SupervisorConsole', () => {
     );
 
     expect(container.firstElementChild).toHaveClass('from-amber-950');
-    await user.click(screen.getByRole('button', { name: 'CHECK VAR' }));
-    expect(screen.getByRole('dialog', { name: 'Check VAR' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: /lịch sử chấm điểm/i }));
+    expect(screen.getByRole('dialog', { name: /lịch sử chấm điểm/i })).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Đóng' }));
 
     rerender(
@@ -284,7 +311,8 @@ describe('SupervisorConsole', () => {
     expect(screen.getByRole('button', { name: 'Ghi nhận Lỗi nặng VĐV XANH' })).toBeEnabled();
   });
 
-  it('shows match-scoped readiness and disables round start until every required display is connected', () => {
+  it('shows match-scoped readiness on hover and disables round start until every required display is connected', async () => {
+    const user = userEvent.setup();
     const presence = createMatchSnapshot().presence.map((entry) =>
       entry.accessRole === MatchAccessRole.JUDGE_2
         ? { ...entry, connected: false, connectedSocketCount: 0 }
@@ -310,6 +338,8 @@ describe('SupervisorConsole', () => {
       />,
     );
 
+    expect(screen.queryByRole('heading', { name: 'Sẵn sàng trận đấu' })).not.toBeInTheDocument();
+    await user.hover(screen.getByRole('button', { name: 'Chưa sẵn sàng' }));
     expect(screen.getByRole('heading', { name: 'Sẵn sàng trận đấu' })).toBeVisible();
     expect(screen.getByText('Giám định 1 đã kết nối')).toBeVisible();
     expect(screen.getByText('Giám định 2 chưa kết nối')).toBeVisible();
@@ -335,7 +365,7 @@ describe('SupervisorConsole', () => {
     expect(screen.getByRole('button', { name: 'BẮT ĐẦU HIỆP 1' })).toBeDisabled();
   });
 
-  it('confirms pause and resume without changing display state before server success', async () => {
+  it('pauses and resumes directly without a confirmation dialog', async () => {
     const user = userEvent.setup();
     const pauseRound = vi.fn(() => Promise.resolve(true));
     const resumeRound = vi.fn(() => Promise.resolve(true));
@@ -349,9 +379,7 @@ describe('SupervisorConsole', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'TẠM DỪNG' }));
-    expect(pauseRound).not.toHaveBeenCalled();
-    expect(screen.getByText('Bạn có chắc muốn tạm dừng hiệp đấu hiện tại?')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Tạm dừng' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(pauseRound).toHaveBeenCalledOnce();
 
     rerender(
@@ -364,10 +392,9 @@ describe('SupervisorConsole', () => {
     );
     expect(screen.getByText('HIỆP 1 TẠM DỪNG')).toBeVisible();
     expect(screen.getByRole('timer')).toHaveTextContent('01:00');
-    expect(screen.getByRole('button', { name: 'Ghi nhận Lỗi nhẹ VĐV ĐỎ' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ghi nhận Lỗi nhẹ VĐV ĐỎ' })).toBeEnabled();
     await user.click(screen.getByRole('button', { name: 'TIẾP TỤC' }));
-    expect(resumeRound).not.toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: 'Tiếp tục' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(resumeRound).toHaveBeenCalledOnce();
   });
 

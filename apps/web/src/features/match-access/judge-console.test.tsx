@@ -1,11 +1,40 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { AthleteColor } from '@martial-arts-scoring/shared-types';
+import { AthleteColor, MatchStatus } from '@martial-arts-scoring/shared-types';
 import { JudgeConsole } from './judge-console';
 import { acceptedRedVote, createRealtimeState, createMatchSnapshot } from '@/test/factories';
 
 describe('JudgeConsole', () => {
+  it.each([MatchStatus.ROUND_1_PAUSED, MatchStatus.ROUND_2_PAUSED, MatchStatus.OVERTIME_PAUSED])(
+    'allows scoring while %s without advancing the frozen timer',
+    async (phase) => {
+      const user = userEvent.setup();
+      const submitVote = vi.fn(() => Promise.resolve());
+      const base = createMatchSnapshot();
+      if (!base.activeRound) throw new Error('Missing round');
+      render(
+        <JudgeConsole
+          realtime={createRealtimeState({
+            submitVote,
+            snapshot: {
+              ...base,
+              match: { ...base.match, phase, status: phase },
+              activeRound: {
+                ...base.activeRound,
+                pausedAt: '2026-09-01T12:01:00Z',
+                remainingDurationMs: 60_000,
+              },
+            },
+          })}
+        />,
+      );
+      expect(screen.getByRole('timer')).toHaveTextContent('01:00');
+      await user.click(screen.getByRole('button', { name: /Chấm điểm RED/i }));
+      expect(submitVote).toHaveBeenCalledWith(AthleteColor.RED);
+    },
+  );
+
   it('only presents a vote as recorded after the accepted-vote state arrives', () => {
     const { rerender } = render(
       <JudgeConsole realtime={createRealtimeState({ submittingVote: AthleteColor.RED })} />,

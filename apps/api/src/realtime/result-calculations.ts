@@ -28,7 +28,8 @@ export function judgeBaseForRounds(input: {
   return input.events.reduce(
     (total, event) =>
       event.athleteId === input.athleteId &&
-      event.type === ScoreEventType.JUDGE_POINT &&
+      (event.type === ScoreEventType.JUDGE_POINT ||
+        event.type === ScoreEventType.ADMIN_ADJUSTMENT) &&
       event.revertedAt === null &&
       event.roundId !== null &&
       ids.has(event.roundId)

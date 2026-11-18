@@ -1358,6 +1358,99 @@ export class RealtimeGateway
     }
   }
 
+  @SubscribeMessage('score:adjust')
+  async adjustScore(
+    @ConnectedSocket() client: RealtimeSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<
+    { ok: true } | { ok: false; error: { code: string; message: string } }
+  > {
+    if (this.isScoreboardSocket(client))
+      return {
+        ok: false,
+        error: {
+          code: 'REALTIME_AUTHENTICATION_REQUIRED',
+          message: 'Vui lòng đăng nhập lại.',
+        },
+      };
+    const command = await this.supervisorCommand(client);
+    if (!command)
+      return {
+        ok: false,
+        error: {
+          code: 'FAULT_FORBIDDEN',
+          message: 'Chỉ Giám sát đang được phân công mới được điều chỉnh điểm.',
+        },
+      };
+    if (
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    )
+      return {
+        ok: false,
+        error: {
+          code: 'REALTIME_AUTHENTICATION_REQUIRED',
+          message: 'Vui lòng đăng nhập lại.',
+        },
+      };
+    const adjustment = payload as { athlete?: unknown; value?: unknown } | null;
+    if (
+      !adjustment ||
+      (adjustment.athlete !== 'RED' && adjustment.athlete !== 'BLUE') ||
+      (adjustment.value !== 1 && adjustment.value !== -1)
+    ) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_ADJUSTMENT',
+          message: 'Điều chỉnh điểm không hợp lệ.',
+        },
+      };
+    }
+    try {
+      const transition = await this.faults.adjustScore({
+        athlete: adjustment.athlete as AthleteColor,
+        value: adjustment.value,
+        identity: command.identity,
+        matchId: command.matchId,
+      });
+      await this.broadcastMatchState(
+        transition.matchId,
+        transition.matchPublicId,
+      );
+      return { ok: true };
+    } catch (error) {
+      const mapped: [FaultRecordError['code'], string] =
+        error instanceof InactiveFaultSupervisorError
+          ? ['FAULT_STALE_ASSIGNMENT', 'Phân công Giám sát không còn hiệu lực.']
+          : error instanceof FaultRoundPausedError
+            ? [
+                'FAULT_ROUND_PAUSED',
+                'Không thể điều chỉnh điểm khi hiệp đấu đang tạm dừng.',
+              ]
+            : error instanceof FaultMatchNotRunningError
+              ? [
+                  'FAULT_MATCH_NOT_RUNNING',
+                  'Chỉ có thể điều chỉnh điểm khi hiệp đấu đang diễn ra.',
+                ]
+              : error instanceof FaultRoundEndedError
+                ? ['FAULT_ROUND_ENDED', 'Hiệp đấu đã kết thúc.']
+                : error instanceof InvalidFaultStateError
+                  ? ['FAULT_INVALID_STATE', 'Trạng thái trận đấu không hợp lệ.']
+                  : ['FAULT_FAILED', 'Không thể điều chỉnh điểm.'];
+      this.logger.error(
+        { error, matchId: command.matchId },
+        'Unable to adjust supervisor score',
+      );
+      return {
+        ok: false,
+        error: {
+          code: mapped[0] as FaultRecordError['code'],
+          message: mapped[1],
+        },
+      };
+    }
+  }
+
   @SubscribeMessage(RealtimeEvent.FAULT_RECORD)
   async faultRecord(
     @ConnectedSocket() client: RealtimeSocket,

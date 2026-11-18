@@ -30,7 +30,8 @@ export function calculateMatchScoreProjection(input: {
   }
   for (const event of input.scoreEvents) {
     if (
-      event.type === ScoreEventType.JUDGE_POINT &&
+      (event.type === ScoreEventType.JUDGE_POINT ||
+        event.type === ScoreEventType.ADMIN_ADJUSTMENT) &&
       event.revertedAt === null &&
       event.roundId !== null &&
       valid.has(event.roundId)

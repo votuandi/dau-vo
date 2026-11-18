@@ -3,12 +3,12 @@ import { AuditEventType, MatchStatus, RoundStage } from '@prisma/client';
 import type { AthleteColor, FaultSeverity } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { auditActor, type SupervisorCommandIdentity } from './command-identity';
+import { activeRoundElapsedMs } from './round-timing';
 import { calculateMatchScoreProjection } from './match-score-projection';
 import { SupervisorAuthorizationService } from './supervisor-authorization.service';
 import {
   FaultMatchNotRunningError,
   FaultRoundEndedError,
-  FaultRoundPausedError,
   InactiveFaultSupervisorError,
   InvalidFaultStateError,
 } from './fault.errors';
@@ -63,6 +63,8 @@ export class FaultService {
                 stage: true,
                 endsAt: true,
                 pausedAt: true,
+                durationMs: true,
+                remainingDurationMs: true,
               },
             },
           },
@@ -71,15 +73,11 @@ export class FaultService {
           match.status === MatchStatus.ROUND_1_RUNNING ||
           match.status === MatchStatus.ROUND_2_RUNNING ||
           match.status === MatchStatus.OVERTIME_RUNNING;
-        if (!running) {
-          if (
-            match.status === MatchStatus.ROUND_1_PAUSED ||
-            match.status === MatchStatus.ROUND_2_PAUSED ||
-            match.status === MatchStatus.OVERTIME_PAUSED
-          )
-            throw new FaultRoundPausedError();
-          throw new FaultMatchNotRunningError();
-        }
+        const paused =
+          match.status === MatchStatus.ROUND_1_PAUSED ||
+          match.status === MatchStatus.ROUND_2_PAUSED ||
+          match.status === MatchStatus.OVERTIME_PAUSED;
+        if (!running && !paused) throw new FaultMatchNotRunningError();
         const round = match.rounds.find(
           (r) =>
             r.roundNumber === match.currentRound &&
@@ -87,8 +85,7 @@ export class FaultService {
               r.stage === RoundStage.OVERTIME),
         );
         if (!round) throw new InvalidFaultStateError();
-        if (round.pausedAt !== null) throw new FaultRoundPausedError();
-        if (clock >= round.endsAt) throw new FaultRoundEndedError();
+        if (!paused && clock >= round.endsAt) throw new FaultRoundEndedError();
         const athlete = await tx.matchAthlete.findUnique({
           where: {
             matchId_color: { matchId: input.matchId, color: input.athlete },
@@ -117,6 +114,7 @@ export class FaultService {
             matchId: input.matchId,
             metadata: {
               action: 'FAULT_RECORDED',
+              recordedWhilePaused: paused,
               athlete: input.athlete,
               severity: input.severity,
               faultId: fault.id,
@@ -182,6 +180,108 @@ export class FaultService {
           matchPublicId: match.publicId,
           projection,
         };
+      },
+      { maxWait: 5000, timeout: 10000 },
+    );
+  }
+  async adjustScore(input: {
+    athlete: AthleteColor;
+    value: 1 | -1;
+    identity: SupervisorCommandIdentity;
+    matchId: string;
+  }) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const locks = await tx.$queryRaw<
+          Array<{ id: string }>
+        >`SELECT "id" FROM "matches" WHERE "id"=${input.matchId}::uuid FOR UPDATE`;
+        if (locks.length !== 1) throw new InvalidFaultStateError();
+        await this.supervisorAuthorization.lockAndVerify(
+          tx,
+          input.matchId,
+          input.identity,
+          new InactiveFaultSupervisorError(),
+        );
+        const clock = (
+          await tx.$queryRaw<
+            Array<{ serverNow: Date }>
+          >`SELECT clock_timestamp() AS "serverNow"`
+        )[0]?.serverNow;
+        if (!clock) throw new InvalidFaultStateError();
+        const match = await tx.match.findUniqueOrThrow({
+          where: { id: input.matchId },
+          select: {
+            currentRound: true,
+            publicId: true,
+            status: true,
+            lifecycle: true,
+            rulesVersion: true,
+            rounds: {
+              where: { endedAt: null, invalidatedAt: null },
+              select: {
+                id: true,
+                roundNumber: true,
+                stage: true,
+                endsAt: true,
+                pausedAt: true,
+                durationMs: true,
+                remainingDurationMs: true,
+              },
+            },
+          },
+        });
+        const running =
+          match.status === MatchStatus.ROUND_1_RUNNING ||
+          match.status === MatchStatus.ROUND_2_RUNNING ||
+          match.status === MatchStatus.OVERTIME_RUNNING;
+        const paused =
+          match.status === MatchStatus.ROUND_1_PAUSED ||
+          match.status === MatchStatus.ROUND_2_PAUSED ||
+          match.status === MatchStatus.OVERTIME_PAUSED;
+        if (!running && !paused) throw new FaultMatchNotRunningError();
+        const round = match.rounds.find(
+          (r) =>
+            r.roundNumber === match.currentRound &&
+            (r.stage === RoundStage.REGULATION ||
+              r.stage === RoundStage.OVERTIME),
+        );
+        if (!round) throw new InvalidFaultStateError();
+        if (!paused && clock >= round.endsAt) throw new FaultRoundEndedError();
+        const athlete = await tx.matchAthlete.findUnique({
+          where: {
+            matchId_color: { matchId: input.matchId, color: input.athlete },
+          },
+          select: { id: true },
+        });
+        if (!athlete) throw new InvalidFaultStateError();
+        await tx.scoreEvent.create({
+          data: {
+            matchId: input.matchId,
+            athleteId: athlete.id,
+            roundId: round.id,
+            roundNumber: round.roundNumber,
+            type: 'ADMIN_ADJUSTMENT',
+            value: input.value,
+            occurredAt: clock,
+            roundElapsedMs: activeRoundElapsedMs(round, clock),
+            createdAt: clock,
+          },
+        });
+        await tx.auditLog.create({
+          data: {
+            matchId: input.matchId,
+            eventType: AuditEventType.MATCH_ACTION,
+            ...auditActor(input.identity),
+            metadata: {
+              action: 'SUPERVISOR_SCORE_ADJUSTED',
+              recordedWhilePaused: paused,
+              athlete: input.athlete,
+              value: input.value,
+              roundId: round.id,
+            },
+          },
+        });
+        return { matchId: input.matchId, matchPublicId: match.publicId };
       },
       { maxWait: 5000, timeout: 10000 },
     );

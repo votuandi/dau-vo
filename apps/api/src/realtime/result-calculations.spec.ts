@@ -14,6 +14,26 @@ const valid = (athleteId: string, roundId: string, value: number) => ({
 });
 
 describe('independent result calculations', () => {
+  it('includes direct supervisor adjustments only in valid, unreverted rounds', () => {
+    const adjustment = (roundId: string, value: number) => ({
+      ...valid('red', roundId, value),
+      type: ScoreEventType.ADMIN_ADJUSTMENT,
+    });
+    const events = [
+      valid('red', 'r1', 3),
+      adjustment('r1', 1),
+      adjustment('r1', -1),
+      adjustment('r2', -1),
+      adjustment('invalid', 50),
+      { ...adjustment('r1', 50), revertedAt: new Date() },
+    ];
+    expect(
+      regulationBase({ athleteId: 'red', roundIds: ['r1', 'r2'], events }),
+    ).toBe(2);
+    expect(overtimeBase({ athleteId: 'red', roundIds: ['ot'], events })).toBe(
+      0,
+    );
+  });
   it('uses R1 and R2 only for regulation, and one overtime round only for overtime', () => {
     const events = [
       valid('red', 'r1', 2),

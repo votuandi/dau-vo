@@ -119,6 +119,7 @@ export interface AdminMatchMonitoring {
   readonly outcome: { winnerColor: AthleteColor; method: string; publishedAt: string } | null;
   readonly diagnostics: readonly string[];
   readonly scoringWindows: readonly {
+    recordedWhilePaused?: boolean;
     id: string;
     roundNumber: number;
     startedAt: string;
@@ -131,6 +132,7 @@ export interface AdminMatchMonitoring {
     winningColor: AthleteColor | null;
     scoreAwarded: boolean;
     judgeVotes?: readonly {
+      recordedWhilePaused?: boolean;
       judgeSlot: string | null;
       judgePosition: number | null;
       athleteColor: AthleteColor;
@@ -139,6 +141,7 @@ export interface AdminMatchMonitoring {
     }[];
   }[];
   readonly penalties: readonly {
+    recordedWhilePaused?: boolean;
     id: string;
     roundNumber: number | null;
     value: number;
@@ -148,6 +151,7 @@ export interface AdminMatchMonitoring {
     athlete: { color: AthleteColor; name: string };
   }[];
   readonly scoreEvents: readonly {
+    recordedWhilePaused?: boolean;
     id: string;
     roundNumber: number | null;
     occurredAt: string;
@@ -162,6 +166,7 @@ export interface AdminMatchMonitoring {
     athlete: { color: AthleteColor | null; name: string | null };
   }[];
   readonly auditLogs: readonly {
+    recordedWhilePaused?: boolean;
     id: string;
     eventType: string;
     metadata: unknown;

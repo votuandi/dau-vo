@@ -110,6 +110,37 @@ describe('VarMonitoringDialog', () => {
     vi.useRealTimers();
   });
 
+  it('shows persistent pause tags on scoring windows, votes, score events and fault audits', async () => {
+    api.state.mockResolvedValueOnce({
+      varMonitoring: {
+        ...historyFixture,
+        scoringWindows: historyFixture.scoringWindows.map((window) => ({
+          ...window,
+          recordedWhilePaused: true,
+          judgeVotes: (window.judgeVotes ?? []).map((vote) => ({
+            ...vote,
+            recordedWhilePaused: true,
+          })),
+        })),
+        scoreEvents: historyFixture.scoreEvents.map((event) => ({
+          ...event,
+          recordedWhilePaused: true,
+        })),
+        auditLogs: historyFixture.auditLogs.map((audit) => ({
+          ...audit,
+          recordedWhilePaused: true,
+        })),
+      },
+    });
+    const user = userEvent.setup();
+    renderDialog();
+    await screen.findByText('Giám định 2:');
+    expect(screen.getAllByText('Tạm dừng')[0]).toBeVisible();
+    await user.click(screen.getByText('Score events (2)'));
+    await user.click(screen.getByText('Audit logs (1)'));
+    expect(screen.getAllByText('Tạm dừng')).toHaveLength(5);
+  });
+
   it('renders all four read-only history sections and their empty states', async () => {
     api.state.mockResolvedValueOnce({ varMonitoring: empty });
     const user = userEvent.setup();

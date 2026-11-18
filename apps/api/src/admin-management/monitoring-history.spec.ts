@@ -1,5 +1,6 @@
 import {
   monitoringAuditJudgeVotes,
+  monitoringPauseLookup,
   monitoringScoreEvent,
   monitoringScoringWindow,
 } from './monitoring-history';
@@ -82,5 +83,29 @@ describe('monitoring history projection', () => {
         startedAt: new Date('2026-09-10T00:00:05.000Z'),
       }),
     ).toMatchObject({ invalidatedAt, roundElapsedMs: 5_000 });
+  });
+});
+
+describe('pause history labels', () => {
+  it('uses server times, handles multiple pauses, and isolates repeated round numbers by round id', () => {
+    const audit = (eventType: string, roundId: string, time: string) => ({
+      eventType,
+      metadata: {
+        roundId,
+        [eventType === 'ROUND_PAUSED' ? 'pausedAt' : 'resumedAt']: time,
+      },
+    });
+    const lookup = monitoringPauseLookup([
+      audit('ROUND_RESUMED', 'r1', '2026-01-01T00:00:20Z'),
+      audit('ROUND_PAUSED', 'r1', '2026-01-01T00:00:10Z'),
+      audit('ROUND_PAUSED', 'r1', '2026-01-01T00:00:30Z'),
+      { eventType: 'ROUND_PAUSED', metadata: null },
+    ]);
+    expect(lookup('r1', new Date('2026-01-01T00:00:09Z'))).toBe(false);
+    expect(lookup('r1', new Date('2026-01-01T00:00:10Z'))).toBe(true);
+    expect(lookup('r1', new Date('2026-01-01T00:00:20Z'))).toBe(false);
+    expect(lookup('r1', new Date('2026-01-01T00:00:35Z'))).toBe(true);
+    expect(lookup('ot1', new Date('2026-01-01T00:00:15Z'))).toBe(false);
+    expect(lookup(null, new Date('2026-01-01T00:00:15Z'))).toBe(false);
   });
 });

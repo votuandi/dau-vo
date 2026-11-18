@@ -17,7 +17,6 @@ import {
   InactiveVoteSessionError,
   MatchNotRunningForVoteError,
   RoundEndedForVoteError,
-  RoundPausedForVoteError,
 } from './scoring.errors';
 import {
   isWithinScoringWindow,
@@ -465,7 +464,7 @@ describe('ScoringService (PostgreSQL integration)', () => {
     ).rejects.toBeInstanceOf(RoundEndedForVoteError);
   });
 
-  it('rejects votes after pause while resolving the already-open window from pre-pause votes', async () => {
+  it('accepts paused votes in an open window and resolves their majority', async () => {
     const current = await fixture();
     await vote(current, JudgeSlot.JUDGE_1, AthleteColor.RED);
     await vote(current, JudgeSlot.JUDGE_2, AthleteColor.RED);
@@ -477,17 +476,44 @@ describe('ScoringService (PostgreSQL integration)', () => {
       where: { id: current.matchId },
     });
 
-    await expect(
-      vote(current, JudgeSlot.JUDGE_3, AthleteColor.BLUE),
-    ).rejects.toBeInstanceOf(RoundPausedForVoteError);
+    await prisma.round.updateMany({
+      where: { matchId: current.matchId, endedAt: null },
+      data: { pausedAt: new Date(), remainingDurationMs: 15_000 },
+    });
+    await vote(current, JudgeSlot.JUDGE_3, AthleteColor.BLUE);
     const resolved = await waitForResolution(current.matchId);
     expect(resolved.winningColor).toBe(AthleteColor.RED);
     await expect(
       prisma.judgeVote.count({ where: { scoringWindowId: resolved.id } }),
-    ).resolves.toBe(2);
+    ).resolves.toBe(3);
     await expect(
       prisma.scoreEvent.count({ where: { scoringWindowId: resolved.id } }),
     ).resolves.toBe(1);
+  });
+
+  it('opens and resolves a new scoring window during a long pause using frozen competition time', async () => {
+    const current = await fixture();
+    await prisma.match.update({
+      where: { id: current.matchId },
+      data: { status: MatchStatus.ROUND_1_PAUSED },
+    });
+    await prisma.round.updateMany({
+      where: { matchId: current.matchId, endedAt: null },
+      data: {
+        endsAt: new Date(Date.now() - 60_000),
+        pausedAt: new Date(Date.now() - 90_000),
+        durationMs: 120_000,
+        remainingDurationMs: 100_000,
+      },
+    });
+    await vote(current, JudgeSlot.JUDGE_1, AthleteColor.BLUE);
+    await vote(current, JudgeSlot.JUDGE_2, AthleteColor.BLUE);
+    const resolved = await waitForResolution(current.matchId);
+    expect(resolved.winningColor).toBe(AthleteColor.BLUE);
+    expect(resolved.roundElapsedMs).toBe(20_000);
+    await expect(
+      prisma.scoreEvent.findFirst({ where: { scoringWindowId: resolved.id } }),
+    ).resolves.toMatchObject({ value: 1, roundElapsedMs: 20_000 });
   });
 
   it('resolves overdue persisted windows safely during recovery and only awards one point', async () => {

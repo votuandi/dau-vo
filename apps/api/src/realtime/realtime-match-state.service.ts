@@ -660,6 +660,7 @@ export class RealtimeMatchStateService {
         requiredJudgeCount: true,
         tournament: { select: { name: true, location: true, imagePath: true } },
         weightClass: { select: { name: true } },
+        bracketFixture: { select: { roundNumber: true } },
       },
       where: { publicId: publicMatchId },
     });
@@ -699,6 +700,7 @@ export class RealtimeMatchStateService {
     return {
       tournament: match.tournament,
       weightClass: match.weightClass,
+      bracketRoundNumber: match.bracketFixture?.roundNumber ?? null,
       ...this.toPublicSnapshot(snapshot, outcome, {
         judgeCount: match.requiredJudgeCount,
         lastResolvedWindow:

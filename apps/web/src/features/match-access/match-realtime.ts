@@ -113,6 +113,7 @@ export interface MatchRealtimeState {
   readonly readinessFresh: boolean;
   readonly reconnect: () => void;
   readonly requestSnapshot: () => void;
+  readonly adjustScore?: (athlete: AthleteColor, value: 1 | -1) => Promise<void>;
   readonly submitFault: (athlete: AthleteColor, severity: FaultSeverity) => Promise<void>;
   readonly roundStartErrorMessage: string | null;
   readonly scoringWindowMessage: string | null;
@@ -896,6 +897,44 @@ export function useMatchRealtime({
     }
   }, []);
 
+  const adjustScore = useCallback(
+    async (athlete: AthleteColor, value: 1 | -1) => {
+      const socket = getSocketClient();
+      if (!socket.connected || faultSubmissionInFlightRef.current) return;
+      faultSubmissionInFlightRef.current = true;
+      setSubmittingFault(athlete);
+      setFaultErrorMessage(null);
+      try {
+        const response = await new Promise<{ ok: boolean; error?: { message: string } }>(
+          (resolve, reject) => {
+            socket
+              .timeout(10_000)
+              .emit(
+                'score:adjust',
+                { athlete, value },
+                (error: Error | null, ack: { ok: boolean; error?: { message: string } }) => {
+                  if (error) reject(error);
+                  else resolve(ack);
+                },
+              );
+          },
+        );
+        if (!response.ok)
+          setFaultErrorMessage(response.error?.message ?? 'Không thể điều chỉnh điểm.');
+        requestSnapshot();
+      } catch {
+        setFaultErrorMessage(
+          'Máy chủ chưa xác nhận điều chỉnh điểm. Kiểm tra điểm trước khi thử lại.',
+        );
+        requestSnapshot();
+      } finally {
+        faultSubmissionInFlightRef.current = false;
+        setSubmittingFault(null);
+      }
+    },
+    [requestSnapshot],
+  );
+
   const submitFault = useCallback(async (athlete: AthleteColor, severity: FaultSeverity) => {
     const socket = getSocketClient();
     if (faultSubmissionInFlightRef.current) {
@@ -1398,6 +1437,7 @@ export function useMatchRealtime({
     resultCancellationErrorMessage,
     reconnect,
     requestSnapshot,
+    adjustScore,
     submitFault,
     roundStartErrorMessage,
     scoringWindowMessage,

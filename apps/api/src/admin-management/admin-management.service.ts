@@ -65,6 +65,7 @@ import { MatchCredentialGeneratorService } from './match-credential-generator.se
 import {
   monitoringAuditJudgeVotes,
   monitoringScoreEvent,
+  monitoringPauseLookup,
   monitoringScoringWindow,
 } from './monitoring-history';
 import { projectMatchDisplayState } from '../match-display-state';
@@ -1178,6 +1179,7 @@ export class AdminManagementService {
           resolvedAt: true,
           roundElapsedMs: true,
           roundNumber: true,
+          roundId: true,
           scoreAwarded: true,
           startedAt: true,
           winningColor: true,
@@ -1211,6 +1213,37 @@ export class AdminManagementService {
       }),
     ]);
 
+    const wasPausedAt = monitoringPauseLookup(auditLogs);
+    const historyWindows = scoringWindows.map(({ judgeVotes, ...window }) => {
+      const persistedVotes = judgeVotes.map(({ assignment, ...vote }) => ({
+        ...vote,
+        judgePosition: assignment?.judgePosition ?? null,
+      }));
+      const auditVotes = auditLogs.flatMap((audit) =>
+        monitoringAuditJudgeVotes(audit.metadata, window.id),
+      );
+      const votes = (
+        persistedVotes.length > 0 ? persistedVotes : auditVotes
+      ).map((vote) => ({
+        ...vote,
+        recordedWhilePaused: wasPausedAt(
+          window.roundId,
+          new Date(vote.serverReceivedAt),
+        ),
+      }));
+      return monitoringScoringWindow({
+        ...window,
+        judgeVotes: votes,
+        recordedWhilePaused:
+          wasPausedAt(window.roundId, window.startedAt) ||
+          votes.some((vote) => vote.recordedWhilePaused),
+      });
+    });
+    const pausedWindows = new Set(
+      historyWindows
+        .filter((window) => window.recordedWhilePaused)
+        .map((window) => window.id),
+    );
     const diagnostics: string[] = [];
     if (outcome === null)
       diagnostics.push(
@@ -1243,28 +1276,28 @@ export class AdminManagementService {
           color: athlete.color,
         })),
       })),
-      auditLogs,
+      auditLogs: auditLogs.map((audit) => ({
+        ...audit,
+        recordedWhilePaused:
+          typeof audit.metadata === 'object' &&
+          audit.metadata !== null &&
+          !Array.isArray(audit.metadata) &&
+          (audit.metadata.recordedWhilePaused === true ||
+            (typeof audit.metadata.scoringWindowId === 'string' &&
+              pausedWindows.has(audit.metadata.scoringWindowId))),
+      })),
       diagnostics,
       outcome,
       penalties,
       rounds,
-      scoreEvents: scoreEvents.map(({ scoringWindow, ...event }) =>
-        monitoringScoreEvent(event, scoringWindow),
-      ),
-      scoringWindows: scoringWindows.map(({ judgeVotes, ...window }) => {
-        const persistedVotes = judgeVotes.map(({ assignment, ...vote }) => ({
-          ...vote,
-          judgePosition: assignment?.judgePosition ?? null,
-        }));
-        const auditVotes = auditLogs.flatMap((auditLog) =>
-          monitoringAuditJudgeVotes(auditLog.metadata, window.id),
-        );
-
-        return monitoringScoringWindow({
-          ...window,
-          judgeVotes: persistedVotes.length > 0 ? persistedVotes : auditVotes,
-        });
-      }),
+      scoreEvents: scoreEvents.map(({ scoringWindow, ...event }) => ({
+        ...monitoringScoreEvent(event, scoringWindow),
+        recordedWhilePaused:
+          wasPausedAt(event.roundId, event.occurredAt ?? event.createdAt) ||
+          (event.scoringWindowId !== null &&
+            pausedWindows.has(event.scoringWindowId)),
+      })),
+      scoringWindows: historyWindows,
       snapshot,
     };
   }

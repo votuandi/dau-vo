@@ -1,6 +1,8 @@
 export interface RoundTiming {
   durationMs: number | null;
   endsAt: Date;
+  pausedAt?: Date | null;
+  remainingDurationMs?: number | null;
 }
 
 /**
@@ -16,6 +18,9 @@ export function activeRoundElapsedMs(
     return null;
   }
 
+  if (round.pausedAt != null && round.remainingDurationMs != null) {
+    return Math.max(0, round.durationMs - round.remainingDurationMs);
+  }
   const remainingMs = Math.max(
     0,
     round.endsAt.getTime() - occurredAt.getTime(),
