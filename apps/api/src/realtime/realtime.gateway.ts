@@ -1254,6 +1254,7 @@ export class RealtimeGateway
           athlete: payload.athlete,
           matchId: assignment.match.id,
           officialSessionId: official.sessionId,
+          scoringWindowId: payload.scoringWindowId,
         });
         if (transition.resolvedBeforeAcceptance)
           await this.publishScoringResolution(
@@ -1315,6 +1316,7 @@ export class RealtimeGateway
         athlete: payload.athlete,
         matchId: identity.matchId,
         judgeSlot: identity.judgeSlot,
+        scoringWindowId: payload.scoringWindowId,
         sessionId: identity.sessionId,
       });
 
@@ -2219,8 +2221,11 @@ export class RealtimeGateway
     if (typeof payload !== 'object' || payload === null) {
       return false;
     }
-    const athlete = (payload as Record<string, unknown>).athlete;
-    return athlete === AthleteColor.RED || athlete === AthleteColor.BLUE;
+    const { athlete, scoringWindowId } = payload as Record<string, unknown>;
+    return (
+      (athlete === AthleteColor.RED || athlete === AthleteColor.BLUE) &&
+      (scoringWindowId === undefined || typeof scoringWindowId === 'string')
+    );
   }
 
   private isPenaltyPayload(payload: unknown): payload is PenaltyAddPayload {

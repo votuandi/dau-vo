@@ -361,6 +361,7 @@ export function useMatchRealtime({
   const [resultActionErrorMessage, setResultActionErrorMessage] = useState<string | null>(null);
   const acceptedVoteRef = useRef<VoteAcceptedPayload | null>(null);
   const scoringMethodRef = useRef<ScoringMethod | undefined>(undefined);
+  const refereeWindowIdRef = useRef<string | undefined>(undefined);
   const refereeIdentityRef = useRef(refereeIdentity);
   const onAuthenticationRequiredRef = useRef(onAuthenticationRequired);
   const onSessionRevokedRef = useRef(onSessionRevoked);
@@ -382,9 +383,14 @@ export function useMatchRealtime({
   }, [refereeIdentity]);
 
   const scoringMethod = snapshot?.match.scoringMethod;
+  const activeScoringWindow = snapshot?.activeScoringWindow;
+  // The open referee-command window the judge is looking at; the vote names it
+  // so a delayed vote can never be counted in a later stop.
+  const refereeWindowId = activeScoringWindow?.endsAt === null ? activeScoringWindow.id : undefined;
   useEffect(() => {
     scoringMethodRef.current = scoringMethod;
-  }, [scoringMethod]);
+    refereeWindowIdRef.current = refereeWindowId;
+  }, [scoringMethod, refereeWindowId]);
 
   const requestSnapshot = useCallback(() => {
     const socket = getSocketClient();
@@ -888,7 +894,10 @@ export function useMatchRealtime({
           .timeout(10_000)
           .emit(
             RealtimeEvent.VOTE_SUBMIT,
-            { athlete },
+            scoringMethodRef.current === ScoringMethod.REFEREE_COMMAND &&
+              refereeWindowIdRef.current !== undefined
+              ? { athlete, scoringWindowId: refereeWindowIdRef.current }
+              : { athlete },
             (error: Error | null, acknowledgement: VoteSubmitResponse) => {
               if (error) {
                 reject(error);

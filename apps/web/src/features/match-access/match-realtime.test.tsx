@@ -7,6 +7,7 @@ import {
   JudgeSlot,
   ScoringMethod,
   type MatchExitResponse,
+  type MatchStatePayload,
   type RoundControlResponse,
   type VoteSubmitResponse,
 } from '@martial-arts-scoring/shared-types';
@@ -346,8 +347,16 @@ describe('useMatchRealtime referee-command scoring', () => {
     const snapshot = createMatchSnapshot({ viewer: { acceptedVote: acceptedRedVote } });
     return {
       ...snapshot,
+      activeScoringWindow: {
+        attemptNumber: 0,
+        endsAt: null,
+        id: acceptedRedVote.scoringWindowId,
+        roundNumber: 1,
+        stage: 'REGULATION',
+        startedAt: '2026-09-01T12:01:00.000Z',
+      },
       match: { ...snapshot.match, scoringMethod: ScoringMethod.REFEREE_COMMAND },
-    };
+    } satisfies MatchStatePayload;
   }
 
   it('starts scoring through the dedicated supervisor command', async () => {
@@ -402,9 +411,26 @@ describe('useMatchRealtime referee-command scoring', () => {
     await act(async () => {
       await result.current.submitVote(AthleteColor.BLUE);
     });
+    // The vote names the window the judge saw, so a late one cannot move on.
     expect(socketHarness.socket.emit).toHaveBeenCalledWith(
       RealtimeEvent.VOTE_SUBMIT,
-      { athlete: AthleteColor.BLUE },
+      { athlete: AthleteColor.BLUE, scoringWindowId: acceptedRedVote.scoringWindowId },
+      expect.any(Function),
+    );
+  });
+
+  it('sends only the athlete for a free 1.5 s window vote', async () => {
+    acknowledgeWith(RealtimeEvent.VOTE_SUBMIT, { ok: true, vote: acceptedRedVote });
+    const { result } = renderJudge();
+    act(() => {
+      socketHarness.triggerSocketEvent(RealtimeEvent.MATCH_STATE, createMatchSnapshot());
+    });
+    await act(async () => {
+      await result.current.submitVote(AthleteColor.RED);
+    });
+    expect(socketHarness.socket.emit).toHaveBeenCalledWith(
+      RealtimeEvent.VOTE_SUBMIT,
+      { athlete: AthleteColor.RED },
       expect.any(Function),
     );
   });

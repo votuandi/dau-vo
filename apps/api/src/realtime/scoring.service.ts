@@ -219,6 +219,8 @@ export class ScoringService implements OnModuleDestroy {
     matchId: string;
     officialSessionId?: string;
     judgeSlot?: JudgeSlot;
+    /** Referee-command scoring: the window the judge saw open when voting. */
+    scoringWindowId?: string;
     sessionId?: string;
   }): Promise<VoteSubmissionTransition> {
     const result = await this.prisma.$transaction(
@@ -255,7 +257,8 @@ export class ScoringService implements OnModuleDestroy {
                 stage: true,
                 startedAt: true,
               },
-              where: { endedAt: null },
+              // A cancelled round keeps endedAt null; only the live attempt counts.
+              where: { endedAt: null, invalidatedAt: null },
             },
             scoringMethod: true,
             status: true,
@@ -275,6 +278,7 @@ export class ScoringService implements OnModuleDestroy {
               authorization,
               matchId: input.matchId,
               matchPublicId: match.publicId,
+              scoringWindowId: input.scoringWindowId,
               serverNow: clock.serverNow,
             }),
             opened: null,
@@ -494,6 +498,7 @@ export class ScoringService implements OnModuleDestroy {
       authorization: VoteAuthorization;
       matchId: string;
       matchPublicId: string;
+      scoringWindowId: string | undefined;
       serverNow: Date;
     },
   ): Promise<VoteAcceptedPayload> {
@@ -507,7 +512,13 @@ export class ScoringService implements OnModuleDestroy {
         roundId: input.activeRound.id,
       },
     });
-    if (input.activeRound.pausedAt == null || window === null) {
+    // The window id pins the vote to the stop the judge saw. A vote delayed
+    // past "Tiếp tục" must not land in the next stop's window.
+    if (
+      input.activeRound.pausedAt == null ||
+      window === null ||
+      window.id !== input.scoringWindowId
+    ) {
       throw new ScoringClosedForVoteError();
     }
     const existing = await transaction.judgeVote.findFirst({

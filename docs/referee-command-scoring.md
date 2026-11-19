@@ -35,6 +35,11 @@ hình thức cho điểm từ lúc chuẩn bị.
 Nút TẠM DỪNG thường vẫn hoạt động như cũ; khi tạm dừng thường, giám định không
 cho điểm được và nút CHẤM ĐIỂM không hiện.
 
+Khi đang có lượt chấm mở, không thể chọn **Thoát và lưu trạng thái hiện tại**
+(tạm hoãn hiệp phụ): Giám sát bấm TIẾP TỤC để chốt lượt trước. Lý do: tạm hoãn
+giải phóng phân công giám định, nên phiếu của tổ cũ không được tính chung với tổ
+nhận lại trận. Vẫn có thể chọn **Hủy kết quả**.
+
 ## Dữ liệu và giao thức
 
 - Enum `scoring_method`; cột `BracketRoundStaffing.scoringMethod` và
@@ -47,8 +52,14 @@ cho điểm được và nút CHẤM ĐIỂM không hiện.
   `scoring-window:opened` (`endsAt: null`).
 - `round:resume` đóng lượt chấm đang mở trong cùng transaction tiếp tục hiệp, phát
   `scoring-window:resolved` và `score:updated` (nếu có điểm) trước `match:state`.
-- Vote ngoài lượt chấm bị từ chối với mã `VOTE_SCORING_CLOSED`. Vote lặp lại trong
-  lượt chấm cập nhật vote hiện có, không tạo vote mới.
+- Vote ở chế độ này phải gửi `scoringWindowId` của lượt chấm mà giám định đang
+  thấy. Server so khớp ID dưới khóa trận, nên phiếu đến trễ (sau khi lượt đó đã
+  đóng, kể cả khi một lượt mới đã mở) bị từ chối, không bị tính sang lượt sau.
+- Vote ngoài lượt chấm, thiếu ID hoặc sai ID bị từ chối với mã
+  `VOTE_SCORING_CLOSED`. Vote lặp lại trong lượt chấm cập nhật vote hiện có, không
+  tạo vote mới.
+- Hiệp bị vô hiệu (hủy kết quả giữa hiệp) giữ `endedAt = null`; việc nhận phiếu
+  chỉ xét hiệp còn hiệu lực.
 - Snapshot `match:state` có thêm `match.scoringMethod`;
   `activeScoringWindow.endsAt` là null khi lượt chấm đang mở.
 - Audit: `ROUND_PAUSED` có `reason: 'REFEREE_SCORING'` và `scoringWindowId`;

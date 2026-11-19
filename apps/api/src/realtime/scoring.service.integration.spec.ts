@@ -147,11 +147,13 @@ describe('ScoringService (PostgreSQL integration)', () => {
     current: Fixture,
     slot: JudgeSlot,
     athlete: AthleteColor,
+    scoringWindowId?: string,
   ) {
     return scoring.submitVote({
       athlete,
       matchId: current.matchId,
       judgeSlot: slot,
+      scoringWindowId,
       sessionId: current.sessions[slot],
     });
   }
@@ -651,7 +653,13 @@ describe('ScoringService (PostgreSQL integration)', () => {
         window: { endsAt: null, roundNumber: 1 },
       });
 
-      const first = await vote(current, JudgeSlot.JUDGE_1, AthleteColor.RED);
+      const windowId = opened.window.id;
+      const first = await vote(
+        current,
+        JudgeSlot.JUDGE_1,
+        AthleteColor.RED,
+        windowId,
+      );
       expect(first).toMatchObject({
         opened: null,
         resolvedBeforeAcceptance: null,
@@ -660,14 +668,19 @@ describe('ScoringService (PostgreSQL integration)', () => {
           scoringWindowId: opened.window.id,
         },
       });
-      await vote(current, JudgeSlot.JUDGE_2, AthleteColor.BLUE);
-      const changed = await vote(current, JudgeSlot.JUDGE_2, AthleteColor.RED);
+      await vote(current, JudgeSlot.JUDGE_2, AthleteColor.BLUE, windowId);
+      const changed = await vote(
+        current,
+        JudgeSlot.JUDGE_2,
+        AthleteColor.RED,
+        windowId,
+      );
       expect(changed.accepted).toMatchObject({
         athlete: AthleteColor.RED,
         identity: { judgeSlot: JudgeSlot.JUDGE_2, kind: 'legacy' },
       });
       // Same choice twice is accepted idempotently and still one vote.
-      await vote(current, JudgeSlot.JUDGE_1, AthleteColor.RED);
+      await vote(current, JudgeSlot.JUDGE_1, AthleteColor.RED, windowId);
 
       const votes = await prisma.judgeVote.findMany({
         orderBy: { judgeSlot: 'asc' },
@@ -712,7 +725,7 @@ describe('ScoringService (PostgreSQL integration)', () => {
       ]);
 
       await expect(
-        vote(current, JudgeSlot.JUDGE_3, AthleteColor.BLUE),
+        vote(current, JudgeSlot.JUDGE_3, AthleteColor.BLUE, windowId),
       ).rejects.toBeInstanceOf(ScoringClosedForVoteError);
     });
 
@@ -729,15 +742,90 @@ describe('ScoringService (PostgreSQL integration)', () => {
       'awards a point only with a judge majority: %j -> %s',
       async (choices, expected) => {
         const current = await refereeFixture();
-        await openScoring(current);
+        const { window } = await openScoring(current);
         const slots = [JudgeSlot.JUDGE_1, JudgeSlot.JUDGE_2, JudgeSlot.JUDGE_3];
         for (const [index, athlete] of choices.entries())
-          await vote(current, slots[index]!, athlete);
+          await vote(current, slots[index]!, athlete, window.id);
         const resolution = await closeScoring(current);
         expect(resolution?.payload.window.winningColor ?? null).toBe(expected);
         expect(resolution?.scoreUpdated === null).toBe(expected === null);
       },
     );
+
+    it('rejects a vote that does not name the open window', async () => {
+      const current = await refereeFixture();
+      const { window } = await openScoring(current);
+      await expect(
+        vote(current, JudgeSlot.JUDGE_1, AthleteColor.RED),
+      ).rejects.toBeInstanceOf(ScoringClosedForVoteError);
+      await expect(
+        prisma.judgeVote.count({ where: { scoringWindowId: window.id } }),
+      ).resolves.toBe(0);
+    });
+
+    it('never moves a delayed vote into the next stop', async () => {
+      const current = await refereeFixture();
+      const first = await openScoring(current);
+      await closeScoring(current);
+      // Resume, then the referee stops the bout again.
+      await prisma.round.updateMany({
+        data: { pausedAt: null, remainingDurationMs: null },
+        where: { matchId: current.matchId },
+      });
+      await prisma.match.update({
+        data: { status: MatchStatus.ROUND_1_RUNNING },
+        where: { id: current.matchId },
+      });
+      const second = await openScoring(current);
+      await expect(
+        vote(current, JudgeSlot.JUDGE_1, AthleteColor.RED, first.window.id),
+      ).rejects.toBeInstanceOf(ScoringClosedForVoteError);
+      await expect(
+        prisma.judgeVote.count({
+          where: { scoringWindowId: second.window.id },
+        }),
+      ).resolves.toBe(0);
+    });
+
+    it('accepts votes in the live attempt beside a cancelled one of the same round', async () => {
+      const current = await refereeFixture();
+      // A mid-round cancellation invalidates the attempt but leaves endedAt null.
+      await prisma.round.updateMany({
+        data: { invalidatedAt: new Date() },
+        where: { matchId: current.matchId },
+      });
+      const now = new Date();
+      await prisma.round.create({
+        data: {
+          endsAt: new Date(now.getTime() + 20_000),
+          matchId: current.matchId,
+          roundNumber: 1,
+          startedAt: now,
+        },
+      });
+      const { window } = await prisma.$transaction(async (transaction) => {
+        const live = await transaction.round.findFirstOrThrow({
+          where: { invalidatedAt: null, matchId: current.matchId },
+        });
+        const paused = await transaction.round.update({
+          data: { pausedAt: now, remainingDurationMs: 20_000 },
+          where: { id: live.id },
+        });
+        await transaction.match.update({
+          data: { status: MatchStatus.ROUND_1_PAUSED },
+          where: { id: current.matchId },
+        });
+        return scoring.openRefereeCommandWindowLocked(transaction, {
+          matchId: current.matchId,
+          matchPublicId: PUBLIC_ID,
+          round: paused,
+          serverNow: now,
+        });
+      });
+      await expect(
+        vote(current, JudgeSlot.JUDGE_1, AthleteColor.RED, window.id),
+      ).resolves.toMatchObject({ accepted: { scoringWindowId: window.id } });
+    });
 
     it('returns no resolution when no referee-command window is open', async () => {
       const current = await refereeFixture();
@@ -778,7 +866,12 @@ describe('ScoringService (PostgreSQL integration)', () => {
       });
       expect(retired.resolvedAt).not.toBeNull();
       expect(retired.endsAt).toEqual(retired.resolvedAt);
-      await vote(current, JudgeSlot.JUDGE_1, AthleteColor.BLUE);
+      await vote(
+        current,
+        JudgeSlot.JUDGE_1,
+        AthleteColor.BLUE,
+        reopened.window.id,
+      );
       await expect(
         prisma.judgeVote.count({
           where: { scoringWindowId: reopened.window.id },

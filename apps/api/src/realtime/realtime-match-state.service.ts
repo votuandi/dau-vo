@@ -611,7 +611,7 @@ export class RealtimeMatchStateService {
       regulationRoundCount?: number;
     },
     rounds: Array<{ endedAt: Date | null; roundNumber: number }>,
-    unresolvedWindow: { id: string } | null,
+    unresolvedWindow: { endsAt: Date | null; id: string } | null,
   ): MatchExitCapability {
     const blockedReasons: MatchExitBlockedReason[] = [];
     if (match.lifecycle === MatchLifecycle.COMPLETED) {
@@ -638,8 +638,12 @@ export class RealtimeMatchStateService {
         ] as MatchStatus[]
       ).includes(match.status)
     ) {
-      // These cannot be represented by the legacy retained-round modes.
-      allowedModes.push(MatchExitMode.SUSPEND_KEEP_V2_PHASE);
+      // These cannot be represented by the legacy retained-round modes. An open
+      // referee-command window must be closed first: suspension releases the
+      // judges, and their votes must not count beside a re-assigned crew's.
+      if (unresolvedWindow !== null && unresolvedWindow.endsAt === null)
+        blockedReasons.push('UNRESOLVED_SCORING_WINDOW');
+      else allowedModes.push(MatchExitMode.SUSPEND_KEEP_V2_PHASE);
     }
     if (roundOneEnded && unresolvedWindow === null)
       allowedModes.push(MatchExitMode.SUSPEND_KEEP_ROUND_1);

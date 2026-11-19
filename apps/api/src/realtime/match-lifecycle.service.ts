@@ -724,7 +724,7 @@ export class MatchLifecycleService implements OnModuleDestroy {
             matchId: input.matchId,
             resolvedAt: null,
           },
-          select: { id: true },
+          select: { endsAt: true, id: true },
         });
         const retainsV2Phase =
           input.mode === MatchExitMode.SUSPEND_KEEP_V2_PHASE;
@@ -740,7 +740,8 @@ export class MatchLifecycleService implements OnModuleDestroy {
           ] as MatchStatus[]
         ).includes(match.status);
         if (
-          (retainsV2Phase && !retainableV2Phase) ||
+          (retainsV2Phase &&
+            (!retainableV2Phase || unresolved?.endsAt === null)) ||
           (input.mode === MatchExitMode.SUSPEND_KEEP_ROUND_1 &&
             (!hasRoundOne || unresolved !== null)) ||
           (input.mode === MatchExitMode.SUSPEND_KEEP_ROUNDS_1_AND_2 &&

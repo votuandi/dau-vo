@@ -590,6 +590,11 @@ export type RoundStartResponse =
 
 export interface VoteSubmitPayload {
   athlete: AthleteColor;
+  /**
+   * Required by referee-command scoring: the open window the judge voted in.
+   * A vote arriving after that window closed is rejected, never moved on.
+   */
+  scoringWindowId?: string;
 }
 
 export type VoteSubmitErrorCode =

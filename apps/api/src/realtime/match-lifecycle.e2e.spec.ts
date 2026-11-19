@@ -1449,11 +1449,15 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
   });
 
   describe('referee-command scoring', () => {
-    function submitVote(socket: Socket, athlete: AthleteColor) {
+    function submitVote(
+      socket: Socket,
+      athlete: AthleteColor,
+      scoringWindowId?: string,
+    ) {
       return emitCommand<VoteSubmitResponse>(
         socket,
         RealtimeEvent.VOTE_SUBMIT,
-        { athlete },
+        { athlete, scoringWindowId },
       );
     }
 
@@ -1521,7 +1525,9 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
         [judge2, AthleteColor.BLUE],
         [judge2, AthleteColor.RED],
       ] as const)
-        await expect(submitVote(judge, athlete)).resolves.toMatchObject({
+        await expect(
+          submitVote(judge, athlete, window.id),
+        ).resolves.toMatchObject({
           ok: true,
           vote: { athlete, scoringWindowId: window.id },
         });
@@ -1560,7 +1566,8 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
         }),
       ).resolves.toEqual({ status: MatchStatus.ROUND_1_RUNNING });
       await expect(
-        submitVote(judge3, AthleteColor.BLUE),
+        // A vote naming the closed window arrives late and is refused.
+        submitVote(judge3, AthleteColor.BLUE, window.id),
       ).resolves.toMatchObject({
         error: { code: 'VOTE_SCORING_CLOSED' },
         ok: false,
@@ -1637,6 +1644,110 @@ describe('Match lifecycle and authoritative round timing (integration)', () => {
           scoringMethod: ScoringMethod.JUDGE_FREE_WINDOW,
         },
       });
+    });
+
+    it('scores the new attempt after the results are cancelled mid-round', async () => {
+      const { judges, match, socket } =
+        await startRefereeMatch('referee-cancel');
+      const judge = judges[0];
+      await expect(
+        exitMatch(socket, MatchExitMode.CANCEL_RESULTS),
+      ).resolves.toMatchObject({ ok: true });
+      // The cancelled attempt is invalidated but never ended.
+      await expect(
+        prisma.round.findFirstOrThrow({
+          select: { endedAt: true, invalidatedAt: true },
+          where: { matchId: match.id },
+        }),
+      ).resolves.toEqual({ endedAt: null, invalidatedAt: expect.any(Date) });
+
+      const restarted = socket;
+      expect((await startRound(restarted)).ok).toBe(true);
+      const opened = waitForEvent<ScoringWindowOpenedPayload>(
+        judge!,
+        RealtimeEvent.SCORING_WINDOW_OPENED,
+      );
+      await expect(
+        controlRound(restarted, RealtimeEvent.SCORING_START),
+      ).resolves.toMatchObject({ ok: true });
+      const { window } = await opened;
+      await expect(
+        submitVote(judge!, AthleteColor.RED, window.id),
+      ).resolves.toMatchObject({
+        ok: true,
+        vote: { scoringWindowId: window.id },
+      });
+    });
+
+    it('blocks keep-phase suspension until open overtime scoring is closed', async () => {
+      const match = await createMatch(
+        'referee-overtime-exit',
+        30_000,
+        MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2,
+        2,
+        ScoringMethod.REFEREE_COMMAND,
+      );
+      const crew = await createOfficialCrew('referee-overtime-exit', match.id);
+      const now = new Date();
+      await prisma.match.update({
+        data: {
+          currentRound: 1,
+          lifecycle: MatchLifecycle.IN_PROGRESS,
+          startedAt: now,
+          status: MatchStatus.OVERTIME_PAUSED,
+        },
+        where: { id: match.id },
+      });
+      const round = await prisma.round.create({
+        data: {
+          attemptNumber: 1,
+          durationMs: 30_000,
+          endsAt: new Date(now.getTime() + 20_000),
+          matchId: match.id,
+          pausedAt: now,
+          remainingDurationMs: 20_000,
+          roundNumber: 1,
+          stage: 'OVERTIME',
+          startedAt: new Date(now.getTime() - 10_000),
+        },
+      });
+      const window = await prisma.scoringWindow.create({
+        data: {
+          endsAt: null,
+          matchId: match.id,
+          roundId: round.id,
+          roundNumber: 1,
+          startedAt: now,
+        },
+      });
+      const inspectorSocket = await connect(crew.inspectorCookie);
+      await expect(requestSnapshot(inspectorSocket)).resolves.toMatchObject({
+        exit: {
+          allowedModes: [MatchExitMode.CANCEL_RESULTS],
+          blockedReasons: expect.arrayContaining(['UNRESOLVED_SCORING_WINDOW']),
+        },
+      });
+      await expect(
+        exitMatch(inspectorSocket, MatchExitMode.SUSPEND_KEEP_V2_PHASE),
+      ).resolves.toMatchObject({
+        error: { code: 'MATCH_EXIT_INVALID_STATE' },
+        ok: false,
+      });
+      await expect(
+        prisma.matchOfficialAssignment.count({
+          where: { matchId: match.id, releasedAt: null },
+        }),
+      ).resolves.toBe(4);
+
+      // Once "Tiếp tục" has closed the stop, suspension is offered again.
+      await prisma.scoringWindow.update({
+        data: { endsAt: now, resolvedAt: now },
+        where: { id: window.id },
+      });
+      const snapshot = await requestSnapshot(inspectorSocket);
+      expect(snapshot.exit.allowedModes).toContain(
+        MatchExitMode.SUSPEND_KEEP_V2_PHASE,
+      );
     });
 
     it('rejects the scoring command from a judge', async () => {
