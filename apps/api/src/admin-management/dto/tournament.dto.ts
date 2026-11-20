@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEnum,
   IsOptional,
   IsString,
@@ -78,4 +79,9 @@ export class UpdateTournamentDto {
   @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsEnum(TournamentStatus)
   status?: TournamentStatus;
+
+  /** "Cho phép theo dõi trực tiếp" on the public /watch page. */
+  @IsOptional()
+  @IsBoolean()
+  allowLiveWatch?: boolean;
 }

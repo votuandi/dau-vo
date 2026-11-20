@@ -390,6 +390,18 @@ export class BracketConfirmationService {
       });
     return { ...this.view(b), activeRefereeCount };
   }
+  /** Every current (active or completed) bracket of a tournament, for read-only public viewers. */
+  async listCurrent(tournamentId: string) {
+    const brackets = await this.prisma.tournamentBracket.findMany({
+      where: {
+        tournamentId,
+        status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
+      },
+      orderBy: [{ confirmedAt: 'asc' }, { id: 'asc' }],
+      include: bracketInclude,
+    });
+    return brackets.map((b) => this.view(b));
+  }
   private get(tx: Prisma.TransactionClient, id: string) {
     return tx.tournamentBracket
       .findUniqueOrThrow({ where: { id }, include: bracketInclude })

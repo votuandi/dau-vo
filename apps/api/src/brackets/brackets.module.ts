@@ -25,5 +25,6 @@ import { BracketRoundStaffingService } from './bracket-round-staffing.service';
     BracketDrawSetupTokenService,
     BracketRoundStaffingService,
   ],
+  exports: [BracketConfirmationService],
 })
 export class BracketsModule {}

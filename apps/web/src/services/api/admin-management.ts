@@ -43,6 +43,8 @@ export interface AdminTournament {
   readonly startDate: string | null;
   readonly endDate: string | null;
   readonly status: TournamentStatus;
+  /** "Cho phép theo dõi trực tiếp" on the public /watch page; absent (older server) means true. */
+  readonly allowLiveWatch?: boolean;
   readonly sportId: string;
   readonly sport: AdminSport;
   readonly createdAt: string;
@@ -198,6 +200,7 @@ export interface UpdateTournamentInput {
   readonly startDate?: string | null;
   readonly endDate?: string | null;
   readonly status?: TournamentStatus;
+  readonly allowLiveWatch?: boolean;
 }
 
 export interface MatchAthleteInput {

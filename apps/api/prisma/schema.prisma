@@ -320,6 +320,8 @@ model Tournament {
   startDate      DateTime?                 @map("start_date") @db.Date
   endDate        DateTime?                 @map("end_date") @db.Date
   status         TournamentStatus          @default(DRAFT)
+  /// "Cho phép theo dõi trực tiếp": spectators may follow the tournament on /watch.
+  allowLiveWatch Boolean                   @default(true) @map("allow_live_watch")
   ownerUserId    String                    @map("owner_user_id") @db.Uuid
   sportId        String                    @map("sport_id") @db.Uuid
   softDeletedAt  DateTime?                 @map("soft_deleted_at") @db.Timestamptz(3)

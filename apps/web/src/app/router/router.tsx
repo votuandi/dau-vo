@@ -76,6 +76,11 @@ const SuperAdminSportsPage = lazyPage(
   () => import('@/features/super-admin/sports/sports-page'),
   'SuperAdminSportsPage',
 );
+const WatchPage = lazyPage(() => import('@/pages/watch-page'), 'WatchPage');
+const WatchMatchResultPage = lazyPage(
+  () => import('@/pages/watch-match-result-page'),
+  'WatchMatchResultPage',
+);
 const AccountPage = lazyPage(() => import('@/pages/account-page'), 'AccountPage');
 const MatchPage = lazyPage(() => import('@/pages/public-view-pages'), 'MatchPage');
 const TournamentPage = lazyPage(() => import('@/pages/public-view-pages'), 'TournamentPage');
@@ -100,6 +105,9 @@ export const routes: RouteObject[] = [
         element: <AdminLoginPage />,
       },
       { path: 'register', element: <RegisterPage /> },
+      { path: 'watch', element: <WatchPage /> },
+      { path: 'watch/:code', element: <WatchPage /> },
+      { path: 'watch/:code/matches/:matchId', element: <WatchMatchResultPage /> },
       {
         element: <AuthenticatedRouteGuard />,
         children: [

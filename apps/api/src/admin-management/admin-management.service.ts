@@ -84,6 +84,7 @@ const tournamentSelect = {
   name: true,
   startDate: true,
   status: true,
+  allowLiveWatch: true,
   sportId: true,
   publicCode: true,
   sport: {
@@ -705,6 +706,9 @@ export class AdminManagementService {
       }
       if (input.status !== undefined) {
         data.status = input.status;
+      }
+      if (input.allowLiveWatch !== undefined) {
+        data.allowLiveWatch = input.allowLiveWatch;
       }
       if (sportId !== undefined) data.sport = { connect: { id: sportId } };
 
