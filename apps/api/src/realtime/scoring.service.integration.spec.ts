@@ -7,6 +7,7 @@ import {
   MatchStatus,
   JudgeSlot,
   ScoringMethod,
+  ScoringThreshold,
   TournamentOfficialRole,
 } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
@@ -574,6 +575,24 @@ describe('ScoringService (PostgreSQL integration)', () => {
     expect(recovered.scoreEvents).toHaveLength(1);
   });
 
+  it('awards the free 1.5 s window with the at-least-half rule for 2 judges', async () => {
+    const current = await fixture();
+    await prisma.match.update({
+      data: {
+        requiredJudgeCount: 2,
+        scoringThreshold: ScoringThreshold.AT_LEAST_HALF,
+      },
+      where: { id: current.matchId },
+    });
+    await vote(current, JudgeSlot.JUDGE_1, AthleteColor.BLUE);
+    const window = await waitForResolution(current.matchId);
+    expect(window).toMatchObject({
+      scoreAwarded: true,
+      winningColor: AthleteColor.BLUE,
+    });
+    expect(window.scoreEvents).toHaveLength(1);
+  });
+
   describe('referee-command scoring', () => {
     const PUBLIC_ID = 'REFEREE';
 
@@ -911,6 +930,293 @@ describe('ScoringService (PostgreSQL integration)', () => {
           },
         }),
       ).rejects.toThrow(/scoring_windows_resolved_has_end_check/);
+    });
+
+    describe('supervisor (TT) votes', () => {
+      /** A legacy supervisor session for the fixture match. */
+      async function supervisorSession(current: Fixture): Promise<string> {
+        const accessCode = await prisma.matchAccessCode.create({
+          data: {
+            codeHash: `test-supervisor-${randomBytes(4).toString('hex')}`,
+            matchId: current.matchId,
+            role: MatchAccessRole.SUPERVISOR,
+          },
+          select: { id: true },
+        });
+        const session = await prisma.matchSession.create({
+          data: {
+            accessCodeId: accessCode.id,
+            active: true,
+            deviceId: `${TEST_PREFIX}-supervisor`,
+            expiresAt: new Date(Date.now() + 60_000),
+            matchId: current.matchId,
+            role: MatchRole.SUPERVISOR,
+            tokenHash: `${randomBytes(18).toString('hex')}-supervisor`,
+          },
+          select: { id: true },
+        });
+        return session.id;
+      }
+
+      function supervisorVote(
+        current: Fixture,
+        sessionId: string,
+        athlete: AthleteColor,
+        scoringWindowId: string,
+      ) {
+        return prisma.$transaction((transaction) =>
+          scoring.recordSupervisorVoteLocked(transaction, {
+            athlete,
+            matchId: current.matchId,
+            owner: { kind: 'legacy', sessionId },
+            scoringWindowId,
+            serverNow: new Date(),
+          }),
+        );
+      }
+
+      async function supervisedFixture() {
+        const current = await refereeFixture();
+        await prisma.match.update({
+          data: { supervisorScoringEnabled: true },
+          where: { id: current.matchId },
+        });
+        return { current, sessionId: await supervisorSession(current) };
+      }
+
+      it('records one supervisor vote per stop and keeps its last choice', async () => {
+        const { current, sessionId } = await supervisedFixture();
+        const { window } = await openScoring(current);
+
+        await supervisorVote(current, sessionId, AthleteColor.BLUE, window.id);
+        const changed = await supervisorVote(
+          current,
+          sessionId,
+          AthleteColor.RED,
+          window.id,
+        );
+        expect(changed.scoringWindowId).toBe(window.id);
+
+        await expect(
+          prisma.judgeVote.findMany({
+            select: {
+              athleteColor: true,
+              castBySupervisor: true,
+              judgeSlot: true,
+            },
+            where: { scoringWindowId: window.id },
+          }),
+        ).resolves.toEqual([
+          {
+            athleteColor: AthleteColor.RED,
+            castBySupervisor: true,
+            judgeSlot: null,
+          },
+        ]);
+      });
+
+      it('rejects a supervisor vote outside the open stop it was cast for', async () => {
+        const { current, sessionId } = await supervisedFixture();
+        await expect(
+          supervisorVote(current, sessionId, AthleteColor.RED, 'none'),
+        ).rejects.toBeInstanceOf(ScoringClosedForVoteError);
+        const { window } = await openScoring(current);
+        await closeScoring(current);
+        await expect(
+          supervisorVote(current, sessionId, AthleteColor.RED, window.id),
+        ).rejects.toBeInstanceOf(ScoringClosedForVoteError);
+      });
+
+      it('counts the supervisor as one more judge: 3 judges + TT need 3 votes', async () => {
+        const { current, sessionId } = await supervisedFixture();
+
+        const split = await openScoring(current);
+        await vote(
+          current,
+          JudgeSlot.JUDGE_1,
+          AthleteColor.RED,
+          split.window.id,
+        );
+        await vote(
+          current,
+          JudgeSlot.JUDGE_2,
+          AthleteColor.RED,
+          split.window.id,
+        );
+        await vote(
+          current,
+          JudgeSlot.JUDGE_3,
+          AthleteColor.BLUE,
+          split.window.id,
+        );
+        await supervisorVote(
+          current,
+          sessionId,
+          AthleteColor.BLUE,
+          split.window.id,
+        );
+        // 2–2 between judges + TT: no majority of 3, no point.
+        await expect(closeScoring(current)).resolves.toMatchObject({
+          payload: { window: { scoreAwarded: false, winningColor: null } },
+        });
+
+        await prisma.round.updateMany({
+          data: { pausedAt: null },
+          where: { matchId: current.matchId },
+        });
+        await prisma.match.update({
+          data: { status: MatchStatus.ROUND_1_RUNNING },
+          where: { id: current.matchId },
+        });
+        const agreed = await openScoring(current);
+        await vote(
+          current,
+          JudgeSlot.JUDGE_1,
+          AthleteColor.RED,
+          agreed.window.id,
+        );
+        await vote(
+          current,
+          JudgeSlot.JUDGE_2,
+          AthleteColor.RED,
+          agreed.window.id,
+        );
+        await supervisorVote(
+          current,
+          sessionId,
+          AthleteColor.RED,
+          agreed.window.id,
+        );
+        const resolved = await closeScoring(current);
+        expect(resolved?.payload.window).toMatchObject({
+          scoreAwarded: true,
+          winningColor: AthleteColor.RED,
+        });
+        expect(
+          resolved?.payload.votes.map(({ athlete, bySupervisor }) => ({
+            athlete,
+            bySupervisor,
+          })),
+        ).toEqual([
+          { athlete: AthleteColor.RED, bySupervisor: false },
+          { athlete: AthleteColor.RED, bySupervisor: false },
+          { athlete: AthleteColor.RED, bySupervisor: true },
+        ]);
+      });
+
+      it('keeps the judge-only majority when supervisor scoring is off', async () => {
+        const current = await refereeFixture();
+        const { window } = await openScoring(current);
+        await vote(current, JudgeSlot.JUDGE_1, AthleteColor.BLUE, window.id);
+        await vote(current, JudgeSlot.JUDGE_2, AthleteColor.BLUE, window.id);
+        await expect(closeScoring(current)).resolves.toMatchObject({
+          payload: {
+            window: { scoreAwarded: true, winningColor: AthleteColor.BLUE },
+          },
+        });
+      });
+
+      it('lets the database accept supervisor votes only from the match supervisor', async () => {
+        const { current } = await supervisedFixture();
+        const { window } = await openScoring(current);
+        // A judge session cannot cast a vote marked as the supervisor's.
+        await expect(
+          prisma.judgeVote.create({
+            data: {
+              athleteColor: AthleteColor.RED,
+              castBySupervisor: true,
+              judgeSlot: JudgeSlot.JUDGE_1,
+              matchId: current.matchId,
+              scoringWindowId: window.id,
+              sessionId: current.sessions[JudgeSlot.JUDGE_1],
+            },
+          }),
+        ).rejects.toThrow();
+        await expect(
+          prisma.judgeVote.create({
+            data: {
+              athleteColor: AthleteColor.RED,
+              castBySupervisor: true,
+              judgeSlot: null,
+              matchId: current.matchId,
+              scoringWindowId: window.id,
+              sessionId: current.sessions[JudgeSlot.JUDGE_1],
+            },
+          }),
+        ).rejects.toThrow(/SUPERVISOR session/);
+      });
+
+      it('applies the at-least-half rule for an even number of scorers', async () => {
+        const current = await refereeFixture();
+        await prisma.match.update({
+          data: { requiredJudgeCount: 2 },
+          where: { id: current.matchId },
+        });
+
+        // Default rule (more than half of 2 scorers = 2): one vote is not enough.
+        const strict = await openScoring(current);
+        await vote(
+          current,
+          JudgeSlot.JUDGE_1,
+          AthleteColor.RED,
+          strict.window.id,
+        );
+        await expect(closeScoring(current)).resolves.toMatchObject({
+          payload: { window: { scoreAwarded: false, winningColor: null } },
+        });
+
+        await prisma.round.updateMany({
+          data: { pausedAt: null },
+          where: { matchId: current.matchId },
+        });
+        await prisma.match.update({
+          data: {
+            scoringThreshold: ScoringThreshold.AT_LEAST_HALF,
+            status: MatchStatus.ROUND_1_RUNNING,
+          },
+          where: { id: current.matchId },
+        });
+        const lenient = await openScoring(current);
+        await vote(
+          current,
+          JudgeSlot.JUDGE_1,
+          AthleteColor.RED,
+          lenient.window.id,
+        );
+        await expect(closeScoring(current)).resolves.toMatchObject({
+          payload: {
+            window: { scoreAwarded: true, winningColor: AthleteColor.RED },
+          },
+        });
+      });
+
+      it('counts the supervisor when judging the at-least-half rule', async () => {
+        const { current } = await supervisedFixture();
+        await prisma.match.update({
+          data: { scoringThreshold: ScoringThreshold.AT_LEAST_HALF },
+          where: { id: current.matchId },
+        });
+        const { window } = await openScoring(current);
+        // 3 judges + TT = 4 scorers; TT does not vote: 2 red ≥ 2 and more than 1 blue.
+        await vote(current, JudgeSlot.JUDGE_1, AthleteColor.RED, window.id);
+        await vote(current, JudgeSlot.JUDGE_2, AthleteColor.RED, window.id);
+        await vote(current, JudgeSlot.JUDGE_3, AthleteColor.BLUE, window.id);
+        await expect(closeScoring(current)).resolves.toMatchObject({
+          payload: {
+            window: { scoreAwarded: true, winningColor: AthleteColor.RED },
+          },
+        });
+      });
+
+      it('allows supervisor scoring only with the referee-command method', async () => {
+        const current = await fixture();
+        await expect(
+          prisma.match.update({
+            data: { supervisorScoringEnabled: true },
+            where: { id: current.matchId },
+          }),
+        ).rejects.toThrow(/matches_supervisor_scoring_method_check/);
+      });
     });
   });
 });

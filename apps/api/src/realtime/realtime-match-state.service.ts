@@ -77,7 +77,8 @@ export class RealtimeMatchStateService {
     matchId: string,
     viewer?:
       | { kind: 'legacy'; judgeSlot: JudgeSlot | null }
-      | { assignmentId: string; kind: 'official'; judgePosition: number },
+      | { assignmentId: string; kind: 'official'; judgePosition: number }
+      | { kind: 'supervisor' },
   ): Promise<MatchStatePayload> {
     const match = await this.prisma.match.findUnique({
       select: {
@@ -106,6 +107,7 @@ export class RealtimeMatchStateService {
         regulationRoundCount: true,
         roundDurationMs: true,
         scoringMethod: true,
+        supervisorScoringEnabled: true,
         rounds: {
           orderBy: { roundNumber: 'desc' },
           select: {
@@ -325,6 +327,7 @@ export class RealtimeMatchStateService {
         phase: this.sharedMatchStatus(match.status),
         rulesVersion: match.rulesVersion,
         scoringMethod: this.sharedScoringMethod(match.scoringMethod),
+        supervisorScoringEnabled: match.supervisorScoringEnabled,
         startedAt: match.startedAt?.toISOString() ?? null,
         intermissionEndsAt: match.intermissionEndsAt?.toISOString() ?? null,
         status: this.sharedMatchStatus(match.status),
@@ -666,6 +669,7 @@ export class RealtimeMatchStateService {
       select: {
         id: true,
         requiredJudgeCount: true,
+        supervisorScoringEnabled: true,
         tournament: { select: { name: true, location: true, imagePath: true } },
         weightClass: { select: { name: true } },
         bracketFixture: { select: { roundNumber: true } },
@@ -692,6 +696,7 @@ export class RealtimeMatchStateService {
             orderBy: { serverReceivedAt: 'asc' },
             select: {
               athleteColor: true,
+              castBySupervisor: true,
               judgeSlot: true,
               assignment: { select: { judgePosition: true } },
             },
@@ -711,6 +716,7 @@ export class RealtimeMatchStateService {
       bracketRoundNumber: match.bracketFixture?.roundNumber ?? null,
       ...this.toPublicSnapshot(snapshot, outcome, {
         judgeCount: match.requiredJudgeCount,
+        supervisorVoting: match.supervisorScoringEnabled,
         lastResolvedWindow:
           lastResolvedWindow?.resolvedAt == null
             ? null
@@ -721,6 +727,7 @@ export class RealtimeMatchStateService {
                     ? null
                     : this.sharedAthleteColor(lastResolvedWindow.winningColor),
                 votes: lastResolvedWindow.judgeVotes.flatMap((vote) => {
+                  if (vote.castBySupervisor) return [];
                   const judgePosition =
                     vote.assignment?.judgePosition ??
                     (vote.judgeSlot === null
@@ -735,6 +742,14 @@ export class RealtimeMatchStateService {
                         },
                       ];
                 }),
+                supervisorVote: (() => {
+                  const vote = lastResolvedWindow.judgeVotes.find(
+                    (candidate) => candidate.castBySupervisor,
+                  );
+                  return vote
+                    ? this.sharedAthleteColor(vote.athleteColor)
+                    : null;
+                })(),
               },
       }),
     };
@@ -779,6 +794,11 @@ export class RealtimeMatchStateService {
       ),
       generatedAt: snapshot.generatedAt,
       judgeVotes,
+      // A deadline-less window exists only while a referee-command scoring stop is open.
+      refereeScoringOpen:
+        snapshot.match.scoringMethod === SharedScoringMethod.REFEREE_COMMAND &&
+        snapshot.activeScoringWindow !== null &&
+        snapshot.activeScoringWindow.endsAt === null,
       committedScores: {
         source:
           snapshot.result.currentOvertimeAttempt &&
@@ -828,6 +848,7 @@ export class RealtimeMatchStateService {
     viewer:
       | { kind: 'legacy'; judgeSlot: JudgeSlot | null }
       | { assignmentId: string; kind: 'official'; judgePosition: number }
+      | { kind: 'supervisor' }
       | undefined,
     unresolvedWindow: {
       endsAt: Date | null;
@@ -839,6 +860,32 @@ export class RealtimeMatchStateService {
   ): Promise<MatchStateViewer | undefined> {
     if (viewer === undefined) {
       return undefined;
+    }
+
+    if (viewer.kind === 'supervisor') {
+      // Only the supervisor's own direct snapshot carries its open-stop choice.
+      const vote =
+        unresolvedWindow === null
+          ? null
+          : await this.prisma.judgeVote.findFirst({
+              select: { athleteColor: true, serverReceivedAt: true },
+              where: {
+                castBySupervisor: true,
+                scoringWindowId: unresolvedWindow.id,
+              },
+            });
+      return {
+        acceptedVote: null,
+        supervisorVote:
+          vote === null || unresolvedWindow === null
+            ? null
+            : {
+                athlete: this.sharedAthleteColor(vote.athleteColor),
+                matchPublicId,
+                scoringWindowId: unresolvedWindow.id,
+                serverReceivedAt: vote.serverReceivedAt.toISOString(),
+              },
+      };
     }
 
     if (

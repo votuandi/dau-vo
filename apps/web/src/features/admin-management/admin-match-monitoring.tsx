@@ -10,6 +10,7 @@ import {
 } from '@/features/match-presentation';
 import { matchMonitoringQueryOptions } from './queries';
 import { formatCountdown, useServerCountdown } from '@/features/match-timer/server-countdown';
+import { Alert } from '@/components/ui/alert';
 
 const roleLabels: Record<MatchAccessRole, string> = {
   [MatchAccessRole.JUDGE_1]: 'Giám định 1',
@@ -31,7 +32,12 @@ function judgeVoteColorClassName(color: AthleteColor): string {
   return color === AthleteColor.RED ? 'text-red-700' : 'text-blue-700';
 }
 
-function judgeVoteLabel(vote: { judgePosition: number | null; judgeSlot: string | null }): string {
+function judgeVoteLabel(vote: {
+  bySupervisor?: boolean;
+  judgePosition: number | null;
+  judgeSlot: string | null;
+}): string {
+  if (vote.bySupervisor === true) return 'TT (Giám sát)';
   if (vote.judgePosition !== null) return `Giám định ${String(vote.judgePosition)}`;
   if (vote.judgeSlot !== null) return roleLabels[vote.judgeSlot as MatchAccessRole];
   return 'Giám định';
@@ -243,12 +249,9 @@ export function AdminMatchMonitoring({
           <summary className="cursor-pointer font-black">Diễn biến và kết quả đã lưu</summary>
           <div className="mt-4 space-y-3 text-sm">
             {diagnostics.map((diagnostic) => (
-              <p
-                className="rounded-lg border border-warning/25 bg-warning/5 p-3 font-semibold text-warning"
-                key={diagnostic}
-              >
+              <Alert className="font-semibold" key={diagnostic} tone="warning">
                 {diagnostic}
-              </p>
+              </Alert>
             ))}
             {rounds.map((round) => (
               <article className="rounded-lg bg-muted/60 p-3" key={round.id}>

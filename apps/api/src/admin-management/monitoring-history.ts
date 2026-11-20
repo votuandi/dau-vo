@@ -12,6 +12,8 @@ interface MonitoringScoreEvent {
 
 export interface MonitoringJudgeVote {
   athleteColor: 'RED' | 'BLUE';
+  /** The supervisor's own ("TT") vote. */
+  bySupervisor: boolean;
   judgePosition: number | null;
   judgeSlot: string | null;
   serverReceivedAt: string;
@@ -51,6 +53,7 @@ export function monitoringAuditJudgeVotes(
     return [
       {
         athleteColor: vote.athlete,
+        bySupervisor: vote.bySupervisor === true,
         judgePosition:
           typeof vote.judgePosition === 'number' ? vote.judgePosition : null,
         judgeSlot: typeof vote.judgeSlot === 'string' ? vote.judgeSlot : null,

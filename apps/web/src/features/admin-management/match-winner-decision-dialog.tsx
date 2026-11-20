@@ -7,6 +7,7 @@ import { matchQueryKeys, tournamentQueryKeys } from './queries';
 import { adminManagementApi, type AdminMatch } from '@/services/api/admin-management';
 import { createUuid } from '@/lib/uuid';
 import { AthleteColor } from '@/types/shared';
+import { Alert } from '@/components/ui/alert';
 
 export function MatchWinnerDecisionDialog({
   match,
@@ -61,9 +62,9 @@ export function MatchWinnerDecisionDialog({
         save.mutate();
       }}>
         {match.bracketFixtureId ? (
-          <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+          <Alert className="mt-3" tone="warning">
             Nếu người thắng thay đổi, trận vòng sau đã chuẩn bị sẽ được tách khỏi nhánh đấu để giữ lịch sử.
-          </p>
+          </Alert>
         ) : null}
         <fieldset className="mt-4 space-y-2">
           <legend className="mb-2 text-sm font-bold">Vận động viên chiến thắng</legend>

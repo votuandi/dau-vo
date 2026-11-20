@@ -2,6 +2,7 @@ import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Alert } from '@/components/ui/alert';
 
 interface ConfirmationDialogProps {
   readonly actionLabel: string;
@@ -86,9 +87,9 @@ export function ConfirmationDialog({
           {description}
         </p>
         {warning ? (
-          <p className="mt-3 rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm font-semibold text-destructive">
+          <Alert className="mt-3 font-semibold" tone="warning">
             {warning}
-          </p>
+          </Alert>
         ) : null}
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <Button disabled={busy} onClick={onCancel} type="button" variant="outline">

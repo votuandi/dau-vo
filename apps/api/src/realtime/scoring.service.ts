@@ -20,6 +20,7 @@ import {
   type JudgeSlot,
   ScoreEventType,
   ScoringMethod,
+  ScoringThreshold,
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 
@@ -34,6 +35,7 @@ import {
   RoundEndedForVoteError,
   ScoringClosedForVoteError,
 } from './scoring.errors';
+import { scoringStopWinner } from './scoring-threshold';
 
 /** Official duration of a persisted referee voting window. */
 export const SCORING_WINDOW_DURATION_MS = 1_500;
@@ -502,6 +504,117 @@ export class ScoringService implements OnModuleDestroy {
       serverNow: Date;
     },
   ): Promise<VoteAcceptedPayload> {
+    const windowId = await this.openRefereeWindowIdForVote(transaction, {
+      activeRound: input.activeRound,
+      matchId: input.matchId,
+      scoringWindowId: input.scoringWindowId,
+    });
+    // A judge may change their choice while scoring is open; the last choice
+    // before the supervisor resumes the round is the one that counts.
+    const vote = await this.upsertWindowVote(transaction, {
+      athlete: input.athlete,
+      owner: this.voteOwnerWhere(input.authorization),
+      create: () =>
+        this.createVote(transaction, {
+          athlete: input.athlete,
+          authorization: input.authorization,
+          matchId: input.matchId,
+          scoringWindowId: windowId,
+          serverNow: input.serverNow,
+        }),
+      scoringWindowId: windowId,
+      serverNow: input.serverNow,
+    });
+    return this.acceptedPayload(
+      input.athlete,
+      input.matchPublicId,
+      input.authorization,
+      windowId,
+      vote.serverReceivedAt,
+    );
+  }
+
+  /**
+   * Record the supervisor's own ("TT") vote in the open referee-command stop. The caller
+   * holds the Match lock and has already verified the supervisor and that the match lets
+   * the supervisor vote. Like a judge, the supervisor may change the choice until resume.
+   */
+  async recordSupervisorVoteLocked(
+    transaction: Prisma.TransactionClient,
+    input: {
+      athlete: AthleteColor;
+      matchId: string;
+      owner:
+        | { kind: 'official'; assignmentId: string }
+        | { kind: 'legacy'; sessionId: string };
+      scoringWindowId: string;
+      serverNow: Date;
+    },
+  ): Promise<{ scoringWindowId: string; serverReceivedAt: Date }> {
+    const match = await transaction.match.findUniqueOrThrow({
+      select: {
+        currentRound: true,
+        rounds: {
+          select: {
+            durationMs: true,
+            pausedAt: true,
+            remainingDurationMs: true,
+            endsAt: true,
+            id: true,
+            roundNumber: true,
+            stage: true,
+            startedAt: true,
+          },
+          where: { endedAt: null, invalidatedAt: null },
+        },
+        status: true,
+      },
+      where: { id: input.matchId },
+    });
+    const activeRound = this.activeRound(match);
+    if (activeRound === null) throw new ScoringClosedForVoteError();
+    const windowId = await this.openRefereeWindowIdForVote(transaction, {
+      activeRound,
+      matchId: input.matchId,
+      scoringWindowId: input.scoringWindowId,
+    });
+    const vote = await this.upsertWindowVote(transaction, {
+      athlete: input.athlete,
+      owner: { castBySupervisor: true },
+      create: () =>
+        transaction.judgeVote.create({
+          data: {
+            assignmentId:
+              input.owner.kind === 'official' ? input.owner.assignmentId : null,
+            athleteColor: input.athlete,
+            castBySupervisor: true,
+            judgeSlot: null,
+            matchId: input.matchId,
+            scoringWindowId: windowId,
+            serverReceivedAt: input.serverNow,
+            sessionId:
+              input.owner.kind === 'legacy' ? input.owner.sessionId : null,
+          },
+          select: { serverReceivedAt: true },
+        }),
+      scoringWindowId: windowId,
+      serverNow: input.serverNow,
+    });
+    return {
+      scoringWindowId: windowId,
+      serverReceivedAt: vote.serverReceivedAt,
+    };
+  }
+
+  /** The open referee-command window a vote may land in, pinned to the id the voter saw. */
+  private async openRefereeWindowIdForVote(
+    transaction: Prisma.TransactionClient,
+    input: {
+      activeRound: ActiveRound;
+      matchId: string;
+      scoringWindowId: string | undefined;
+    },
+  ): Promise<string> {
     const window = await transaction.scoringWindow.findFirst({
       select: { id: true },
       where: {
@@ -512,7 +625,7 @@ export class ScoringService implements OnModuleDestroy {
         roundId: input.activeRound.id,
       },
     });
-    // The window id pins the vote to the stop the judge saw. A vote delayed
+    // The window id pins the vote to the stop the voter saw. A vote delayed
     // past "Tiếp tục" must not land in the next stop's window.
     if (
       input.activeRound.pausedAt == null ||
@@ -521,47 +634,46 @@ export class ScoringService implements OnModuleDestroy {
     ) {
       throw new ScoringClosedForVoteError();
     }
+    return window.id;
+  }
+
+  /** Create the voter's vote in a window, or move an existing one to the new choice. */
+  private async upsertWindowVote(
+    transaction: Prisma.TransactionClient,
+    input: {
+      athlete: AthleteColor;
+      create: () => Promise<{ serverReceivedAt: Date }>;
+      owner: Prisma.JudgeVoteWhereInput;
+      scoringWindowId: string;
+      serverNow: Date;
+    },
+  ): Promise<{ serverReceivedAt: Date }> {
     const existing = await transaction.judgeVote.findFirst({
       select: { id: true },
-      where: {
-        scoringWindowId: window.id,
-        ...this.voteOwnerWhere(input.authorization),
-      },
+      where: { scoringWindowId: input.scoringWindowId, ...input.owner },
     });
-    // A judge may change their choice while scoring is open; the last choice
-    // before the supervisor resumes the round is the one that counts.
-    const vote =
-      existing === null
-        ? await this.createVote(transaction, {
-            athlete: input.athlete,
-            authorization: input.authorization,
-            matchId: input.matchId,
-            scoringWindowId: window.id,
-            serverNow: input.serverNow,
-          })
-        : await transaction.judgeVote.update({
-            data: {
-              athleteColor: input.athlete,
-              serverReceivedAt: input.serverNow,
-            },
-            select: { serverReceivedAt: true },
-            where: { id: existing.id },
-          });
-    return this.acceptedPayload(
-      input.athlete,
-      input.matchPublicId,
-      input.authorization,
-      window.id,
-      vote.serverReceivedAt,
-    );
+    return existing === null
+      ? input.create()
+      : transaction.judgeVote.update({
+          data: {
+            athleteColor: input.athlete,
+            serverReceivedAt: input.serverNow,
+          },
+          select: { serverReceivedAt: true },
+          where: { id: existing.id },
+        });
   }
 
   private voteOwnerWhere(
     authorization: VoteAuthorization,
   ): Prisma.JudgeVoteWhereInput {
     return authorization.kind === 'official'
-      ? { assignmentId: authorization.assignmentId }
-      : { assignmentId: null, judgeSlot: authorization.judgeSlot };
+      ? { assignmentId: authorization.assignmentId, castBySupervisor: false }
+      : {
+          assignmentId: null,
+          castBySupervisor: false,
+          judgeSlot: authorization.judgeSlot,
+        };
   }
 
   private createVote(
@@ -696,13 +808,18 @@ export class ScoringService implements OnModuleDestroy {
     const rules = await this.rulesForMatch(transaction, window.matchId);
     const match = await transaction.match.findUniqueOrThrow({
       where: { id: window.matchId },
-      select: { requiredJudgeCount: true },
+      select: {
+        requiredJudgeCount: true,
+        scoringThreshold: true,
+        supervisorScoringEnabled: true,
+      },
     });
     const votes = await transaction.judgeVote.findMany({
       orderBy: { serverReceivedAt: 'asc' },
       select: {
         assignmentId: true,
         athleteColor: true,
+        castBySupervisor: true,
         judgeSlot: true,
         serverReceivedAt: true,
         assignment: { select: { judgePosition: true } },
@@ -715,12 +832,17 @@ export class ScoringService implements OnModuleDestroy {
     const blueVotes = votes.filter(
       (vote) => vote.athleteColor === AthleteColor.BLUE,
     ).length;
-    const winningColor =
-      redVotes >= rules.judgeMajority(match.requiredJudgeCount)
-        ? AthleteColor.RED
-        : blueVotes >= rules.judgeMajority(match.requiredJudgeCount)
-          ? AthleteColor.BLUE
-          : null;
+    // When the supervisor votes it counts as one more judge, so the threshold is
+    // taken over the judges plus the supervisor (e.g. 3 judges + TT = 4 scorers).
+    const winningColor = scoringStopWinner({
+      blueVotes,
+      majority: rules.judgeMajority,
+      redVotes,
+      scorerCount:
+        match.requiredJudgeCount + (match.supervisorScoringEnabled ? 1 : 0),
+      // No choice recorded keeps the original rule (more than half).
+      threshold: match.scoringThreshold ?? ScoringThreshold.MORE_THAN_HALF,
+    });
 
     const updated = await transaction.scoringWindow.updateMany({
       data: {
@@ -780,6 +902,7 @@ export class ScoringService implements OnModuleDestroy {
           votes: votes.map((vote) => ({
             athlete: vote.athleteColor,
             assignmentId: vote.assignmentId,
+            bySupervisor: vote.castBySupervisor,
             judgePosition: vote.assignment?.judgePosition ?? null,
             judgeSlot:
               vote.judgeSlot === null
@@ -800,6 +923,7 @@ export class ScoringService implements OnModuleDestroy {
         votes: votes.map((vote) => ({
           athlete: this.sharedAthleteColor(vote.athleteColor),
           assignmentId: vote.assignmentId,
+          bySupervisor: vote.castBySupervisor,
           judgePosition: vote.assignment?.judgePosition ?? null,
           judgeSlot:
             vote.judgeSlot === null

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { MatchReadinessHover } from './match-readiness-hover';
-import { CirclePause, CirclePlay, Gavel, LogOut, History, Save, Trophy } from 'lucide-react';
+import { CirclePause, CirclePlay, ClipboardPen, LogOut, History, Save, Trophy } from 'lucide-react';
 import {
   AthleteColor,
   FaultSeverity,
@@ -32,6 +32,12 @@ import {
   newIdempotencyKey,
 } from './supervisor-console-model';
 import { formatCountdown, useServerCountdown } from '@/features/match-timer/server-countdown';
+import {
+  matchScreenTone,
+  matchToneBackgroundClassName,
+  matchToneBarClassName,
+  matchTonePanelClassName,
+} from '@/features/match-screen-tone';
 
 interface SupervisorConsoleProps {
   readonly realtime: MatchRealtimeState;
@@ -53,6 +59,16 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
   // An open referee-command window has no deadline until "Tiếp tục" closes it.
   const refereeScoringOpen =
     refereeCommandScoring && roundIsPaused && snapshot.activeScoringWindow?.endsAt === null;
+  // The supervisor scores as one more judge ("TT") while a stop is open, if the round allows it.
+  const supervisorCanScore = refereeScoringOpen && snapshot.match.supervisorScoringEnabled;
+  const { supervisorVote } = realtime;
+  // Only a choice made in the stop that is open now is shown as selected.
+  const supervisorChoice =
+    supervisorCanScore &&
+    supervisorVote !== null &&
+    supervisorVote.scoringWindowId === snapshot.activeScoringWindow?.id
+      ? supervisorVote.athlete
+      : null;
   const remainingTime = useServerCountdown(
     roundIsRunning ? snapshot?.activeRound?.endsAt : undefined,
     snapshot?.generatedAt,
@@ -84,7 +100,10 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
   );
   const appealActive =
     status === MatchStatus.REGULATION_APPEAL || status === MatchStatus.OVERTIME_APPEAL;
-  const yellowPresentation = roundIsPaused || intermission.active || appealActive || varOpen;
+  const tone = matchScreenTone({
+    scoring: refereeScoringOpen,
+    attention: roundIsPaused || intermission.active || appealActive || varOpen,
+  });
   const exitMenuFirstOptionRef = useRef<HTMLButtonElement>(null);
   const displayedRemaining = roundIsPaused
     ? (snapshot?.activeRound?.remainingDurationMs ?? null)
@@ -238,16 +257,10 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
       : snapshot?.result.regulationAppeal;
 
   return (
-    <div
-      className={`min-h-dvh text-white ${
-        yellowPresentation
-          ? 'bg-gradient-to-br from-amber-950 via-yellow-800 to-amber-950'
-          : 'arena-background'
-      }`}
-    >
+    <div className={`min-h-dvh text-white ${matchToneBackgroundClassName[tone]}`}>
       <main className="mx-auto w-full max-w-6xl space-y-3 px-3 py-3 sm:space-y-5 sm:px-5 sm:py-5">
         <header
-          className={`relative z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5 sm:py-3 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/45' : 'border-white/15 bg-blue-950/35'}`}
+          className={`relative z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5 sm:py-3 ${matchToneBarClassName[tone]}`}
         >
           <div className="flex min-w-0 items-baseline gap-2 sm:block">
             <p className="shrink-0 text-xs font-bold uppercase tracking-[0.18em] text-sky-200/80">
@@ -320,7 +333,7 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
         ) : null}
 
         <section
-          className={`rounded-3xl border px-4 py-4 text-center shadow-2xl backdrop-blur-xl sm:px-8 sm:py-8 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/30 shadow-amber-950/30' : 'border-white/15 bg-white/10 shadow-blue-950/20'}`}
+          className={`rounded-3xl border px-4 py-4 text-center shadow-2xl backdrop-blur-xl sm:px-8 sm:py-8 ${matchTonePanelClassName[tone]}`}
         >
           <p className="text-sm font-black tracking-[0.2em] text-sky-200">
             {status
@@ -370,30 +383,35 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
               </Button>
             ) : null}
             {roundIsRunning ? (
-              <Button
-                className="h-16 w-full touch-manipulation border border-amber-200/60 bg-amber-500 text-lg font-black text-amber-950 shadow-lg shadow-amber-950/25 hover:bg-amber-400"
-                disabled={realtime.connectionStatus !== 'connected' || realtime.controllingRound}
-                onClick={() => {
-                  void realtime.pauseRound();
-                }}
-                type="button"
-              >
-                <CirclePause aria-hidden="true" className="size-6" strokeWidth={2.5} />
-                <span>{realtime.controllingRound ? 'ĐANG XỬ LÝ…' : 'TẠM DỪNG'}</span>
-              </Button>
-            ) : null}
-            {roundIsRunning && refereeCommandScoring ? (
-              <Button
-                className="h-16 w-full touch-manipulation border border-sky-200/50 bg-sky-600 text-lg font-black text-white shadow-lg shadow-sky-950/25 hover:bg-sky-500"
-                disabled={realtime.connectionStatus !== 'connected' || realtime.controllingRound}
-                onClick={() => {
-                  void realtime.startScoring();
-                }}
-                type="button"
-              >
-                <Gavel aria-hidden="true" className="size-6" strokeWidth={2.5} />
-                <span>{realtime.controllingRound ? 'ĐANG XỬ LÝ…' : 'CHẤM ĐIỂM'}</span>
-              </Button>
+              // In referee-command matches, pause and scoring sit side by side.
+              <div className={refereeCommandScoring ? 'grid grid-cols-2 gap-3' : 'grid'}>
+                <Button
+                  className="h-16 w-full touch-manipulation border border-amber-200/60 bg-amber-500 text-lg font-black text-amber-950 shadow-lg shadow-amber-950/25 hover:bg-amber-400"
+                  disabled={realtime.connectionStatus !== 'connected' || realtime.controllingRound}
+                  onClick={() => {
+                    void realtime.pauseRound();
+                  }}
+                  type="button"
+                >
+                  <CirclePause aria-hidden="true" className="size-6" strokeWidth={2.5} />
+                  <span>{realtime.controllingRound ? 'ĐANG XỬ LÝ…' : 'TẠM DỪNG'}</span>
+                </Button>
+                {refereeCommandScoring ? (
+                  <Button
+                    className="h-16 w-full touch-manipulation border border-sky-200/50 bg-sky-600 text-lg font-black text-white shadow-lg shadow-sky-950/25 hover:bg-sky-500"
+                    disabled={
+                      realtime.connectionStatus !== 'connected' || realtime.controllingRound
+                    }
+                    onClick={() => {
+                      void realtime.startScoring();
+                    }}
+                    type="button"
+                  >
+                    <ClipboardPen aria-hidden="true" className="size-6" strokeWidth={2.5} />
+                    <span>{realtime.controllingRound ? 'ĐANG XỬ LÝ…' : 'CHẤM ĐIỂM'}</span>
+                  </Button>
+                ) : null}
+              </div>
             ) : null}
             {roundIsPaused ? (
               <Button
@@ -657,6 +675,13 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
                       faultCounts: { minor: 0, major: 0 },
                     }
                   }
+                  onSelect={
+                    supervisorCanScore && athlete && realtime.connectionStatus === 'connected'
+                      ? () => void realtime.submitSupervisorVote(color)
+                      : undefined
+                  }
+                  selected={supervisorChoice === color}
+                  submitting={realtime.submittingSupervisorVote === color}
                 />
                 <div className="grid grid-flow-col grid-cols-2 grid-rows-2 gap-2 sm:gap-3 lg:grid-flow-row lg:grid-cols-4 lg:grid-rows-1">
                   {([FaultSeverity.MINOR, FaultSeverity.MAJOR] as const).map((severity) => (
@@ -692,6 +717,18 @@ export function SupervisorConsole({ realtime }: SupervisorConsoleProps) {
               <p className="font-semibold text-amber-200">
                 Nhấn {armedFault.severity === FaultSeverity.MINOR ? 'LỖI NHẸ' : 'LỖI NẶNG'} lần nữa
                 để xác nhận.
+              </p>
+            ) : supervisorCanScore && realtime.voteSubmitErrorMessage ? (
+              <p
+                className="rounded-xl bg-red-400/15 px-4 py-3 font-semibold text-red-100"
+                role="alert"
+              >
+                {realtime.voteSubmitErrorMessage}
+              </p>
+            ) : supervisorCanScore ? (
+              <p className="font-semibold text-sky-100">
+                Chạm vào ô tên VĐV để chấm điểm như một giám định (TT). Có thể đổi lựa chọn đến khi
+                bấm Tiếp tục.
               </p>
             ) : realtime.faultErrorMessage ? (
               <p

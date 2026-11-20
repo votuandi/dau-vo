@@ -5,6 +5,7 @@ import type { ScoreboardSource } from './scoreboard-source';
 import { ScoreboardAccessForm } from './components/scoreboard-access-form';
 import { ScoreboardHeader } from './components/scoreboard-header';
 import { useScreenWakeLock } from './display-controls';
+import { Alert } from '@/components/ui/alert';
 
 export function SupervisorScoreboard({
   source,
@@ -56,12 +57,9 @@ export function SupervisorScoreboard({
       <main className="arena-background grid min-h-dvh place-items-center p-4 text-white">
         <div className="w-full max-w-lg space-y-6 rounded-3xl border border-slate-200 bg-white p-6 text-slate-900 shadow-2xl">
           <h1 className="text-3xl font-black">Bảng điểm</h1>
-          <p
-            role="alert"
-            className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
-          >
+          <Alert role="alert" tone="error">
             {error}
-          </p>
+          </Alert>
           <ScoreboardAccessForm source={source} onSelect={onSelect} />
         </div>
       </main>

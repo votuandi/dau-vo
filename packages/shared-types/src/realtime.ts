@@ -48,6 +48,8 @@ export const RealtimeEvent = {
   SCORE_UPDATED: 'score:updated',
   /** Supervisor command: pause the round and open a referee-command window. */
   SCORING_START: 'scoring:start',
+  /** Supervisor command: cast the supervisor's own ("TT") vote in an open scoring stop. */
+  SUPERVISOR_VOTE_SUBMIT: 'vote:supervisor-submit',
   SCORING_WINDOW_OPENED: 'scoring-window:opened',
   SCORING_WINDOW_RESOLVED: 'scoring-window:resolved',
   SESSION_REVOKED: 'session:revoked',
@@ -248,6 +250,8 @@ export interface MatchStateIdentity {
   phase: MatchPhase;
   rulesVersion: 'LEGACY_SCORE_PENALTY_V1' | 'FAULT_APPEAL_OVERTIME_V2';
   scoringMethod: ScoringMethod;
+  /** Referee-command only: the supervisor also votes, as one more judge ("TT"). */
+  supervisorScoringEnabled: boolean;
   /** @deprecated Use phase. */
   status: MatchPhase;
 }
@@ -297,6 +301,8 @@ export interface MatchStateAthlete {
  */
 export interface MatchStateViewer {
   acceptedVote: VoteAcceptedPayload | null;
+  /** The supervisor's own vote in the open scoring stop, for the supervisor only. */
+  supervisorVote?: SupervisorVoteAcceptedPayload | null;
 }
 
 export interface MatchStatePayload {
@@ -347,10 +353,14 @@ export type MatchExitResponse =
  */
 export interface PublicJudgeVotes {
   judgeCount: number;
+  /** The supervisor votes too and gets a "TT" cell. Optional for older servers. */
+  supervisorVoting?: boolean;
   lastResolvedWindow: {
     resolvedAt: string;
     winningColor: AthleteColor | null;
     votes: Array<{ judgePosition: number; athlete: AthleteColor }>;
+    /** The supervisor's ("TT") choice, or null when it did not vote. */
+    supervisorVote?: AthleteColor | null;
   } | null;
 }
 
@@ -387,7 +397,15 @@ export interface PublicMatchStatePayload {
   };
   generatedAt: string;
   judgeVotes: PublicJudgeVotes;
-  match: Omit<MatchStateIdentity, 'id' | 'startedAt' | 'scoringMethod'> & {
+  /**
+   * True while a referee-command scoring stop is open (judges are scoring). Exposes only
+   * that fact, not the window or its votes. Optional for compatibility with older servers.
+   */
+  refereeScoringOpen?: boolean;
+  match: Omit<
+    MatchStateIdentity,
+    'id' | 'startedAt' | 'scoringMethod' | 'supervisorScoringEnabled'
+  > & {
     outcome: {
       winner: AthleteColor;
       method: 'REGULATION_SCORE' | 'OVERTIME_SCORE' | 'MANUAL_AFTER_OVERTIME_TIE' | 'ADMIN_MANUAL';
@@ -638,6 +656,18 @@ export type VoteAcceptedPayload =
       };
     });
 
+/** The supervisor's ("TT") vote; it has no judge slot or judge position. */
+export type SupervisorVoteAcceptedPayload = VoteAcceptedPayloadBase;
+
+export interface SupervisorVoteSubmitPayload {
+  athlete: AthleteColor;
+  /** The open referee-command stop the supervisor voted in. */
+  scoringWindowId: string;
+}
+
+export type SupervisorVoteSubmitResponse =
+  { ok: true; vote: SupervisorVoteAcceptedPayload } | { ok: false; error: VoteSubmitError };
+
 export type VoteSubmitResponse =
   | {
       ok: true;
@@ -669,6 +699,8 @@ export interface ScoringWindowResolvedPayload {
   votes: Array<{
     athlete: AthleteColor;
     assignmentId: string | null;
+    /** The supervisor's ("TT") vote; it has no judge position or slot. */
+    bySupervisor?: boolean;
     judgePosition: number | null;
     judgeSlot?: JudgeSlot | null;
     serverReceivedAt: string;

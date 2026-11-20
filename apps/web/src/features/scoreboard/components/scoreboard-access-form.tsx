@@ -1,9 +1,10 @@
 import { useId, useState, type SyntheticEvent } from 'react';
-import { AlertCircle, ArrowRight, Check, LoaderCircle, RadioTower, Swords } from 'lucide-react';
+import { ArrowRight, Check, LoaderCircle, RadioTower, Swords } from 'lucide-react';
 import { toast } from '@/components/ui/toast';
 import { supervisorScoreboardApi } from '@/services/api/scoreboard';
 import { normalizeMatchId, validateMatchIdChange } from '../scoreboard-view-model';
 import type { ScoreboardSource } from '../scoreboard-source';
+import { Alert } from '@/components/ui/alert';
 
 /** Shared by initial entry and switching from either tracking mode. */
 export function ScoreboardAccessForm({
@@ -170,14 +171,9 @@ export function ScoreboardAccessForm({
         </p>
       ) : null}
       {error ? (
-        <p
-          id={errorId}
-          role="alert"
-          className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm leading-6 text-red-800"
-        >
-          <AlertCircle aria-hidden="true" className="mt-1 size-4 shrink-0" />
+        <Alert id={errorId} role="alert" tone="error">
           {error}
-        </p>
+        </Alert>
       ) : null}
       <div className="flex gap-3 border-t border-slate-200 pt-5">
         {onCancel ? (

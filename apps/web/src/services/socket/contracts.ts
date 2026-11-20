@@ -41,6 +41,8 @@ import type {
   VoteRejectedPayload,
   VoteSubmitPayload,
   VoteSubmitResponse,
+  SupervisorVoteSubmitPayload,
+  SupervisorVoteSubmitResponse,
 } from '@martial-arts-scoring/shared-types';
 
 export interface ServerToClientEvents {
@@ -125,5 +127,10 @@ export interface ClientToServerEvents {
   'vote:submit': (
     payload: VoteSubmitPayload,
     acknowledge: (response: VoteSubmitResponse) => void,
+  ) => void;
+  /** The supervisor's own ("TT") vote in an open referee-command stop. */
+  'vote:supervisor-submit': (
+    payload: SupervisorVoteSubmitPayload,
+    acknowledge: (response: SupervisorVoteSubmitResponse) => void,
   ) => void;
 }

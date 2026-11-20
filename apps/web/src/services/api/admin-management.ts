@@ -9,7 +9,11 @@ import type {
 } from '@martial-arts-scoring/shared-types';
 import { apiClient } from '@/services/api/client';
 import type { ApiRequestOptions } from '@/services/api/client';
-import type { ScoringMethod, TournamentOfficialRole } from '@martial-arts-scoring/shared-types';
+import type {
+  ScoringMethod,
+  ScoringThreshold,
+  TournamentOfficialRole,
+} from '@martial-arts-scoring/shared-types';
 
 type ApiRequestWithoutBody = Omit<ApiRequestOptions<never>, 'body' | 'method'>;
 
@@ -133,6 +137,8 @@ export interface AdminMatchMonitoring {
     scoreAwarded: boolean;
     judgeVotes?: readonly {
       recordedWhilePaused?: boolean;
+      /** The supervisor's own ("TT") vote; absent on older servers. */
+      bySupervisor?: boolean;
       judgeSlot: string | null;
       judgePosition: number | null;
       athleteColor: AthleteColor;
@@ -485,6 +491,9 @@ export interface ActiveBracket {
     readonly regulationRoundCount?: number;
     readonly roundDurationMs?: number;
     readonly scoringMethod?: ScoringMethod;
+    readonly supervisorScoringEnabled?: boolean;
+    /** Null until the organiser chooses a win rule for an even number of scorers. */
+    readonly scoringThreshold?: ScoringThreshold | null;
     readonly requiredJudgeCount: number;
   }[];
 }
@@ -494,6 +503,10 @@ export interface BracketRoundRuleSettings {
   readonly regulationRoundCount: number;
   readonly roundDurationMs: number;
   readonly scoringMethod: ScoringMethod;
+  /** Referee-command only: the supervisor also votes, as one more judge ("TT"). */
+  readonly supervisorScoringEnabled: boolean;
+  /** Win rule when the number of scorers (judges + TT) is even; sent only when chosen. */
+  readonly scoringThreshold?: ScoringThreshold;
 }
 
 function encodePathSegment(value: string): string {

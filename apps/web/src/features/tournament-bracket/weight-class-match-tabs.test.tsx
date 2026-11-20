@@ -28,7 +28,6 @@ describe('WeightClassMatchTabs', () => {
           weightClass('w-2', 'Nam 65kg', 'NONE'),
           weightClass('w-3', 'Nữ 52kg', 'COMPLETED'),
         ]}
-        counts={new Map([['w-1', 4]])}
         onSelect={vi.fn()}
         selectedId="w-1"
         unassignedCount={0}
@@ -37,7 +36,7 @@ describe('WeightClassMatchTabs', () => {
     const active = screen.getByRole('tab', { name: /Nam 61kg/ });
     expect(active).toHaveAttribute('aria-selected', 'true');
     expect(active).toHaveAttribute('title', 'Đang thi đấu');
-    expect(active).toHaveTextContent('Đang thi đấu: Nam 61kg');
+    expect(active).toHaveTextContent(/^Đang thi đấu: Nam 61kg$/);
     expect(screen.getByRole('tab', { name: /Nam 65kg/ })).toHaveAttribute('title', 'Chưa bốc thăm');
     expect(screen.getByRole('tab', { name: /Nữ 52kg/ })).toHaveAttribute('title', 'Hoàn tất');
     expect(screen.getByLabelText('Chú thích trạng thái hạng cân')).toBeInTheDocument();
@@ -47,7 +46,6 @@ describe('WeightClassMatchTabs', () => {
     render(
       <WeightClassMatchTabs
         classes={[weightClass('w-1', 'Nam 61kg')]}
-        counts={new Map()}
         onSelect={vi.fn()}
         selectedId="w-1"
         unassignedCount={2}

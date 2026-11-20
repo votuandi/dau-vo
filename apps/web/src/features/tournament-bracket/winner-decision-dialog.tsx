@@ -15,6 +15,7 @@ import {
 } from './fixture-presentation';
 import { bracketQueryKeys } from './query-keys';
 import { createUuid } from '@/lib/uuid';
+import { Alert } from '@/components/ui/alert';
 
 /**
  * Records an administrator's winner or correction for any resolved fixture. Mount it
@@ -109,10 +110,10 @@ export function WinnerDecisionDialog({
         }}
       >
         {decisionType === 'ADMIN_OVERRIDE' ? (
-          <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+          <Alert className="mt-3" tone="warning">
             Nếu thay người thắng, các trận vòng sau đã chuẩn bị sẽ được tách khỏi nhánh đấu để giữ
             lịch sử và nhánh đấu được cập nhật lại.
-          </p>
+          </Alert>
         ) : null}
         <fieldset className="mt-4">
           <legend className="text-sm font-bold">Vận động viên chiến thắng</legend>

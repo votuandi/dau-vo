@@ -173,6 +173,26 @@ describe('JudgeConsole referee-command scoring', () => {
     expect(submitVote).toHaveBeenCalledWith(AthleteColor.BLUE);
   });
 
+  it('turns blue-purple-red while judges score and amber for an ordinary pause', () => {
+    const { container, rerender } = render(
+      <JudgeConsole
+        realtime={createRealtimeState({
+          snapshot: refereeCommandSnapshot(MatchStatus.ROUND_1_PAUSED, openRefereeWindow),
+        })}
+      />,
+    );
+    expect(container.firstElementChild).toHaveClass('via-purple-900');
+    rerender(
+      <JudgeConsole
+        realtime={createRealtimeState({
+          snapshot: refereeCommandSnapshot(MatchStatus.ROUND_1_PAUSED),
+        })}
+      />,
+    );
+    expect(container.firstElementChild).toHaveClass('via-yellow-800');
+    expect(container.firstElementChild).not.toHaveClass('via-purple-900');
+  });
+
   it('lets a judge change an accepted choice until the supervisor resumes', async () => {
     const user = userEvent.setup();
     const submitVote = vi.fn(() => Promise.resolve());

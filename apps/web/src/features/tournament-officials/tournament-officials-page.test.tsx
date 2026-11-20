@@ -140,6 +140,33 @@ describe('TournamentOfficialsPage credentials', () => {
     expect(api.createOfficial).toHaveBeenCalledTimes(2);
   });
 
+  it('does not grab focus on load and focuses the name field for add and edit', async () => {
+    api.listOfficials.mockResolvedValue({
+      officials: [
+        {
+          id: 'judge-1',
+          name: 'Trọng tài 1',
+          role: TournamentOfficialRole.JUDGE,
+          isActive: true,
+          status: 'READY',
+        },
+      ],
+    });
+    renderPage();
+    await screen.findByText('Trọng tài 1');
+    const nameInput = screen.getByRole('textbox', { name: 'Thêm giám định' });
+    expect(nameInput).not.toHaveFocus();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sửa' }));
+    const editInput = screen.getByRole('textbox', { name: 'Sửa tên' });
+    expect(editInput).toHaveFocus();
+    expect(editInput).toHaveValue('Trọng tài 1');
+
+    editInput.blur();
+    fireEvent.click(screen.getByRole('button', { name: /Thêm giám định/ }));
+    expect(screen.getByRole('textbox', { name: 'Thêm giám định' })).toHaveFocus();
+  });
+
   it('hides quick creation in read-only mode', async () => {
     renderPage(TournamentOfficialRole.JUDGE, true);
     await screen.findByText('Chưa có giám định.');

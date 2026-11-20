@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertCircle, RefreshCw, Search } from 'lucide-react';
+import { RefreshCw, Search } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { officialAccessApi, type OfficialMatch } from '@/services/api/official-access';
@@ -12,6 +12,7 @@ import {
 import { MatchLifecycle } from '@/types/shared';
 import { selectClassName } from '@/features/admin-management/presentation';
 import { cn } from '@/lib/utils';
+import { Alert } from '@/components/ui/alert';
 
 const badgeStyles: Record<MatchSemanticVariant, string> = {
   neutral: 'bg-slate-100 text-slate-600',
@@ -193,16 +194,9 @@ export function SupervisorMatchListDialog({
           </div>
         ) : null}
         {matches.isError ? (
-          <div
-            role="alert"
-            className="flex items-start gap-3 rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-800"
-          >
-            <AlertCircle aria-hidden="true" className="size-5 shrink-0" />
-            <div>
-              <p className="font-bold">Không thể tải danh sách trận.</p>
-              <p className="mt-1">Vui lòng thử cập nhật lại danh sách.</p>
-            </div>
-          </div>
+          <Alert role="alert" title="Không thể tải danh sách trận." tone="error">
+            <p>Vui lòng thử cập nhật lại danh sách.</p>
+          </Alert>
         ) : null}
         {matches.data && filtered.length === 0 ? (
           <div className="px-3 py-6 text-center">

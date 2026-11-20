@@ -42,6 +42,8 @@ import {
   type VoteRejectedPayload,
   type VoteSubmitErrorCode,
   type VoteSubmitResponse,
+  type SupervisorVoteAcceptedPayload,
+  type SupervisorVoteSubmitResponse,
 } from '@martial-arts-scoring/shared-types';
 import {
   connectSocket,
@@ -139,6 +141,11 @@ export interface MatchRealtimeState {
   readonly startingRound: boolean;
   readonly submitVote: (athlete: AthleteColor) => Promise<void>;
   readonly submittingVote: AthleteColor | null;
+  /** Supervisor only: cast the supervisor's own ("TT") vote in the open scoring stop. */
+  readonly submitSupervisorVote: (athlete: AthleteColor) => Promise<void>;
+  /** The supervisor's last accepted vote; compare its window with the open stop. */
+  readonly supervisorVote: SupervisorVoteAcceptedPayload | null;
+  readonly submittingSupervisorVote: AthleteColor | null;
   readonly submittingFault: AthleteColor | null;
   readonly faultErrorMessage: string | null;
   readonly completeAppeal: (payload: AppealCompletePayload) => Promise<boolean>;
@@ -354,6 +361,10 @@ export function useMatchRealtime({
     string | null
   >(null);
   const [submittingVote, setSubmittingVote] = useState<AthleteColor | null>(null);
+  const [supervisorVote, setSupervisorVote] = useState<SupervisorVoteAcceptedPayload | null>(null);
+  const [submittingSupervisorVote, setSubmittingSupervisorVote] = useState<AthleteColor | null>(
+    null,
+  );
   const [submittingFault, setSubmittingFault] = useState<AthleteColor | null>(null);
   const [faultErrorMessage, setFaultErrorMessage] = useState<string | null>(null);
   const [voteSubmitErrorMessage, setVoteSubmitErrorMessage] = useState<string | null>(null);
@@ -362,6 +373,7 @@ export function useMatchRealtime({
   const acceptedVoteRef = useRef<VoteAcceptedPayload | null>(null);
   const scoringMethodRef = useRef<ScoringMethod | undefined>(undefined);
   const refereeWindowIdRef = useRef<string | undefined>(undefined);
+  const supervisorVoteInFlightRef = useRef(false);
   const refereeIdentityRef = useRef(refereeIdentity);
   const onAuthenticationRequiredRef = useRef(onAuthenticationRequired);
   const onSessionRevokedRef = useRef(onSessionRevoked);
@@ -936,6 +948,57 @@ export function useMatchRealtime({
     }
   }, []);
 
+  const submitSupervisorVote = useCallback(async (athlete: AthleteColor) => {
+    const socket = getSocketClient();
+    const scoringWindowId = refereeWindowIdRef.current;
+    if (scoringWindowId === undefined || supervisorVoteInFlightRef.current) return;
+    if (!socket.connected) {
+      setVoteSubmitErrorMessage(
+        'Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi chấm điểm.',
+      );
+      return;
+    }
+    supervisorVoteInFlightRef.current = true;
+    setSubmittingSupervisorVote(athlete);
+    setVoteSubmitErrorMessage(null);
+    try {
+      const response = await new Promise<SupervisorVoteSubmitResponse>((resolve, reject) => {
+        socket
+          .timeout(10_000)
+          .emit(
+            RealtimeEvent.SUPERVISOR_VOTE_SUBMIT,
+            { athlete, scoringWindowId },
+            (error: Error | null, acknowledgement: SupervisorVoteSubmitResponse) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+              resolve(acknowledgement);
+            },
+          );
+      });
+      if (response.ok) {
+        setSupervisorVote(response.vote);
+        return;
+      }
+      setVoteSubmitErrorMessage(
+        getVoteSubmitErrorMessage(response.error.code, response.error.message),
+      );
+      if (response.error.code === 'REALTIME_AUTHENTICATION_REQUIRED') {
+        socket.disconnect();
+        setConnectionStatus('authentication-required');
+        onAuthenticationRequiredRef.current();
+      }
+    } catch {
+      setVoteSubmitErrorMessage(
+        'Máy chủ không phản hồi lựa chọn chấm điểm. Vui lòng kiểm tra trạng thái trước khi thử lại.',
+      );
+    } finally {
+      supervisorVoteInFlightRef.current = false;
+      setSubmittingSupervisorVote(null);
+    }
+  }, []);
+
   const adjustScore = useCallback(
     async (athlete: AthleteColor, value: 1 | -1) => {
       const socket = getSocketClient();
@@ -1196,6 +1259,10 @@ export function useMatchRealtime({
         const acceptedVote = payload.viewer.acceptedVote;
         acceptedVoteRef.current = acceptedVote;
         setLastAcceptedVote(acceptedVote);
+        // The supervisor's own choice in the open stop (absent for judges).
+        if (payload.viewer.supervisorVote !== undefined) {
+          setSupervisorVote(payload.viewer.supervisorVote);
+        }
         voteSubmissionInFlightRef.current = false;
         setSubmittingVote(null);
       }
@@ -1485,6 +1552,9 @@ export function useMatchRealtime({
     startRound,
     startingRound,
     submitVote,
+    submitSupervisorVote,
+    supervisorVote,
+    submittingSupervisorVote,
     submittingVote,
     submittingFault,
     faultErrorMessage,

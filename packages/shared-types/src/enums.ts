@@ -49,6 +49,17 @@ export enum ScoringMethod {
   REFEREE_COMMAND = 'REFEREE_COMMAND',
 }
 
+/**
+ * How a scoring stop is won when the number of scorers (judges + supervisor "TT") is even.
+ * With an odd number both rules give the same result.
+ */
+export enum ScoringThreshold {
+  /** More than half of all scorers (the original majority rule). */
+  MORE_THAN_HALF = 'MORE_THAN_HALF',
+  /** At least half of all scorers, and more votes than the other athlete. */
+  AT_LEAST_HALF = 'AT_LEAST_HALF',
+}
+
 export enum MatchLifecycle {
   READY = 'READY',
   IN_PROGRESS = 'IN_PROGRESS',

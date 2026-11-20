@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import type { BracketDrawSetup } from '@/services/api/admin-management';
 import { shuffle } from './shuffle';
+import { Alert } from '@/components/ui/alert';
 type Strategy = 'RANDOM' | 'MANUAL' | 'SEEDED';
 
 export function BracketDrawSetupDialog({
@@ -86,10 +87,7 @@ export function BracketDrawSetupDialog({
         ))}
       </dl>
       {error ? (
-        <div
-          className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-          role="alert"
-        >
+        <Alert className="mt-4" role="alert" tone="error">
           {error}
           <Button
             className="ml-3"
@@ -103,7 +101,7 @@ export function BracketDrawSetupDialog({
           >
             Tải lại danh sách
           </Button>
-        </div>
+        </Alert>
       ) : null}
       {byeCount === 0 ? (
         <p className="mt-4 rounded-lg border p-3 text-sm text-muted-foreground">

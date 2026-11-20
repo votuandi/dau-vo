@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Info } from 'lucide-react';
-import { TabCount, TabScroller } from '@/components/ui/tabs';
-import { chipListClassName, chipTriggerClassName, type ChipTone } from '@/components/ui/tab-styles';
+import { TabScroller } from '@/components/ui/tabs';
+import { tabListClassName, tabTriggerClassName } from '@/components/ui/tab-styles';
 import { cn } from '@/lib/utils';
 import type {
   TournamentRosterItem,
@@ -21,13 +21,7 @@ const PROGRESS_META: Record<
   COMPLETED: { label: 'Hoàn tất', dotClassName: 'bg-emerald-500' },
 };
 
-// All weight class chips share one blue; the selected chip is a deeper, filled blue.
-const WEIGHT_CLASS_TONE: ChipTone = {
-  idle: 'border-blue-200 bg-blue-50 text-blue-700 hover:border-blue-400 hover:bg-blue-100',
-  active: 'border-blue-700 bg-blue-700 text-white shadow-md shadow-blue-700/25',
-};
-
-/** Status dot shown on a weight class chip and in the legend. */
+/** Status dot shown on a weight class tab and in the legend. */
 function ProgressDot({ progress }: { readonly progress: WeightClassBracketProgress }) {
   return (
     <span
@@ -44,19 +38,12 @@ interface Props {
   readonly classes: readonly (TournamentRosterItem & {
     readonly bracketProgress?: WeightClassBracketProgress;
   })[];
-  readonly counts: ReadonlyMap<string, number>;
   readonly selectedId: string | null;
   readonly unassignedCount: number;
   readonly onSelect: (id: string | null) => void;
 }
 
-export function WeightClassMatchTabs({
-  classes,
-  counts,
-  selectedId,
-  unassignedCount,
-  onSelect,
-}: Props) {
+export function WeightClassMatchTabs({ classes, selectedId, unassignedCount, onSelect }: Props) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const items = [
     ...classes.map((item) => ({
@@ -72,12 +59,12 @@ export function WeightClassMatchTabs({
   return (
     <div className="flex items-center gap-3">
       <TabScroller className="min-w-0 flex-1">
-        <div aria-label="Hạng cân" className={chipListClassName} role="tablist">
+        <div aria-label="Hạng cân" className={tabListClassName} role="tablist">
           {items.map((item, index) => (
             <button
               aria-controls="weight-class-match-panel"
               aria-selected={selectedId === item.id}
-              className={chipTriggerClassName(selectedId === item.id, WEIGHT_CLASS_TONE)}
+              className={tabTriggerClassName(selectedId === item.id)}
               key={item.id ?? '__unassigned'}
               onClick={() => {
                 onSelect(item.id);
@@ -109,13 +96,7 @@ export function WeightClassMatchTabs({
                   <span className="sr-only">{PROGRESS_META[item.progress].label}: </span>
                 </>
               ) : null}
-              {item.label}{' '}
-              <TabCount
-                active={selectedId === item.id}
-                label={`${String(counts.get(item.id ?? '__unassigned') ?? 0)} trận`}
-              >
-                {counts.get(item.id ?? '__unassigned') ?? 0}
-              </TabCount>
+              {item.label}
             </button>
           ))}
         </div>

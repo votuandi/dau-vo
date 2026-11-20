@@ -10,6 +10,7 @@ import {
   type MatchStatePayload,
   type RoundControlResponse,
   type VoteSubmitResponse,
+  type SupervisorVoteSubmitResponse,
 } from '@martial-arts-scoring/shared-types';
 import { getParticipantsNotReadyMessage, useMatchRealtime } from './match-realtime';
 import { acceptedRedVote, createMatchSnapshot, refereeSession } from '@/test/factories';
@@ -324,7 +325,10 @@ describe('useMatchRealtime referee-command scoring', () => {
     socketHarness.socket.emit.mockReset();
   });
 
-  function acknowledgeWith(event: string, response: RoundControlResponse | VoteSubmitResponse) {
+  function acknowledgeWith(
+    event: string,
+    response: RoundControlResponse | VoteSubmitResponse | SupervisorVoteSubmitResponse,
+  ) {
     socketHarness.socket.emit.mockImplementation((name: string, ...args: unknown[]) => {
       const acknowledge = args.at(-1);
       if (name === event && typeof acknowledge === 'function')
@@ -386,6 +390,85 @@ describe('useMatchRealtime referee-command scoring', () => {
     expect(result.current.roundControlErrorMessage).toBe(
       'Trạng thái hiệp đấu đã thay đổi. Dữ liệu mới nhất đang được tải lại.',
     );
+  });
+
+  it('sends the supervisor vote for the open stop and keeps the accepted choice', async () => {
+    const { result } = renderJudge();
+    act(() => {
+      socketHarness.triggerSocketEvent(RealtimeEvent.MATCH_STATE, refereeCommandState());
+    });
+    await waitFor(() => {
+      expect(result.current.snapshot).not.toBeNull();
+    });
+    const accepted = {
+      athlete: AthleteColor.BLUE,
+      matchPublicId: refereeSession.matchPublicId,
+      scoringWindowId: acceptedRedVote.scoringWindowId,
+      serverReceivedAt: '2026-09-01T12:01:02.000Z',
+    };
+    acknowledgeWith(RealtimeEvent.SUPERVISOR_VOTE_SUBMIT, { ok: true, vote: accepted });
+    await act(async () => {
+      await result.current.submitSupervisorVote(AthleteColor.BLUE);
+    });
+    expect(socketHarness.socket.emit).toHaveBeenCalledWith(
+      RealtimeEvent.SUPERVISOR_VOTE_SUBMIT,
+      { athlete: AthleteColor.BLUE, scoringWindowId: acceptedRedVote.scoringWindowId },
+      expect.any(Function),
+    );
+    expect(result.current.supervisorVote).toEqual(accepted);
+    expect(result.current.submittingSupervisorVote).toBeNull();
+  });
+
+  it('reports a rejected supervisor vote', async () => {
+    const { result } = renderJudge();
+    act(() => {
+      socketHarness.triggerSocketEvent(RealtimeEvent.MATCH_STATE, refereeCommandState());
+    });
+    await waitFor(() => {
+      expect(result.current.snapshot).not.toBeNull();
+    });
+    acknowledgeWith(RealtimeEvent.SUPERVISOR_VOTE_SUBMIT, {
+      error: { code: 'VOTE_SCORING_CLOSED', message: 'closed' },
+      ok: false,
+    });
+    await act(async () => {
+      await result.current.submitSupervisorVote(AthleteColor.RED);
+    });
+    expect(result.current.supervisorVote).toBeNull();
+    expect(result.current.voteSubmitErrorMessage).toBe(
+      'Chỉ có thể chấm điểm khi Giám sát đã bấm Chấm điểm.',
+    );
+  });
+
+  it('does not send a supervisor vote when no stop is open', async () => {
+    const { result } = renderJudge();
+    await act(async () => {
+      await result.current.submitSupervisorVote(AthleteColor.RED);
+    });
+    expect(socketHarness.socket.emit).not.toHaveBeenCalledWith(
+      RealtimeEvent.SUPERVISOR_VOTE_SUBMIT,
+      expect.anything(),
+      expect.any(Function),
+    );
+  });
+
+  it('restores the supervisor own choice from its direct snapshot', async () => {
+    const { result } = renderJudge();
+    const restored = {
+      athlete: AthleteColor.RED,
+      matchPublicId: refereeSession.matchPublicId,
+      scoringWindowId: acceptedRedVote.scoringWindowId,
+      serverReceivedAt: '2026-09-01T12:01:03.000Z',
+    };
+    act(() => {
+      socketHarness.triggerSocketEvent(RealtimeEvent.MATCH_STATE, {
+        ...refereeCommandState(),
+        viewer: { acceptedVote: null, supervisorVote: restored },
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.supervisorVote).toEqual(restored);
+    });
   });
 
   it('lets a judge change an accepted choice but not resend the same one', async () => {

@@ -17,8 +17,11 @@ import {
   type RoundEndedPayload,
   type RoundStartedPayload,
   type ScoringWindowOpenedPayload,
+  AthleteColor as SharedAthleteColor,
+  type SupervisorVoteAcceptedPayload,
 } from '@martial-arts-scoring/shared-types';
 import {
+  AthleteColor,
   AuditEventType,
   MatchAccessRole,
   MatchLifecycle,
@@ -56,6 +59,7 @@ import {
   MatchLifecycleTargetMissingError,
   ResultCancellationUndoNotAllowedError,
 } from './match-lifecycle.errors';
+import { SupervisorVoteDisabledError } from './scoring.errors';
 
 const TRANSACTION_MAX_WAIT_MS = 5_000;
 const TRANSACTION_TIMEOUT_MS = 10_000;
@@ -408,6 +412,65 @@ export class MatchLifecycleService implements OnModuleDestroy {
       opened: result.opened,
       payload: result.payload,
     };
+  }
+
+  /**
+   * The supervisor's own ("TT") vote in the open referee-command stop. Only matches whose
+   * round enabled supervisor scoring accept it; it then counts as one more judge.
+   */
+  async submitSupervisorVote(input: {
+    athlete: AthleteColor;
+    identity: SupervisorCommandIdentity;
+    matchId: string;
+    scoringWindowId: string;
+  }): Promise<SupervisorVoteAcceptedPayload> {
+    return this.prisma.$transaction(
+      async (transaction) => {
+        await this.lockMatch(transaction, input.matchId);
+        await this.lockActiveControlSession(transaction, input);
+        const clock = await this.serverClock(transaction);
+        const match = await transaction.match.findUniqueOrThrow({
+          select: {
+            publicId: true,
+            scoringMethod: true,
+            supervisorScoringEnabled: true,
+          },
+          where: { id: input.matchId },
+        });
+        if (
+          match.scoringMethod !== ScoringMethod.REFEREE_COMMAND ||
+          !match.supervisorScoringEnabled
+        ) {
+          throw new SupervisorVoteDisabledError();
+        }
+        const vote = await this.scoring.recordSupervisorVoteLocked(
+          transaction,
+          {
+            athlete: input.athlete,
+            matchId: input.matchId,
+            owner:
+              input.identity.kind === 'official'
+                ? {
+                    assignmentId: input.identity.assignmentId,
+                    kind: 'official',
+                  }
+                : { kind: 'legacy', sessionId: input.identity.sessionId },
+            scoringWindowId: input.scoringWindowId,
+            serverNow: clock.serverNow,
+          },
+        );
+        return {
+          athlete:
+            input.athlete === AthleteColor.RED
+              ? SharedAthleteColor.RED
+              : SharedAthleteColor.BLUE,
+          matchPublicId: match.publicId,
+          scoringWindowId: vote.scoringWindowId,
+          serverReceivedAt: vote.serverReceivedAt.toISOString(),
+        };
+      },
+      { maxWait: TRANSACTION_MAX_WAIT_MS, timeout: TRANSACTION_TIMEOUT_MS },
+    );
   }
 
   private async pauseRunningRoundLocked(

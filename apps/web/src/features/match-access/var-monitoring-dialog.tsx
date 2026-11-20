@@ -30,7 +30,12 @@ function nullableAthlete(value: unknown): { color?: AthleteColor; name?: string 
   return typeof value === 'object' && value !== null ? value : null;
 }
 
-function judgeVoteLabel(vote: { judgePosition: number | null; judgeSlot: string | null }): string {
+function judgeVoteLabel(vote: {
+  bySupervisor?: boolean;
+  judgePosition: number | null;
+  judgeSlot: string | null;
+}): string {
+  if (vote.bySupervisor === true) return 'TT (Giám sát)';
   if (vote.judgePosition !== null) return `Giám định ${String(vote.judgePosition)}`;
   if (vote.judgeSlot && vote.judgeSlot in roleLabels) {
     return roleLabels[vote.judgeSlot as MatchAccessRole];

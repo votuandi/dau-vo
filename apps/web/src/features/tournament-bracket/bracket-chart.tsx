@@ -6,7 +6,9 @@ import type {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Crown, Pencil, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { BracketZoomControls } from './bracket-zoom-controls';
+import { useDragToPan } from './use-drag-to-pan';
 import { isBracketPreview } from './bracket-graph';
 import { bracketChartPresentation } from './bracket-chart-presentation';
 import {
@@ -80,6 +82,7 @@ export function BracketChart({
     [data, isPreview],
   );
   const contentRef = useRef<HTMLDivElement>(null);
+  const pan = useDragToPan<HTMLDivElement>();
   const fixtureRefs = useRef(new Map<string, HTMLElement>());
   const slotRefs = useRef(new Map<string, HTMLElement>());
   const [paths, setPaths] = useState<readonly ConnectorPath[]>([]);
@@ -196,7 +199,17 @@ export function BracketChart({
           <BracketZoomControls onChange={setInternalZoomPercent} zoomPercent={zoomPercent} />
         </div>
       ) : null}
-      <div className="overflow-x-auto">
+      {/* Mouse/pen drag pans the chart (see useDragToPan); touch uses native scrolling. */}
+      <div
+        className={cn(
+          'overflow-x-auto',
+          // Grabbing pans the chart, so text selection would only fight the gesture.
+          'select-none',
+          pan.isPanning ? 'cursor-grabbing' : 'cursor-grab',
+        )}
+        data-bracket-viewport
+        ref={pan.ref}
+      >
         <div
           className="relative flex min-w-max items-stretch"
           data-bracket-content

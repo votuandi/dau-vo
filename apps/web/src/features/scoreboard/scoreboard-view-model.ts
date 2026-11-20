@@ -16,7 +16,7 @@ export type ScoreboardAthlete = PublicMatchStatePayload['athletes'][number];
 export type ScoreboardActiveRound = PublicMatchStatePayload['activeRound'];
 
 /** Visual theme of the whole board; drives the page background. */
-export type ScoreboardTheme = 'arena' | 'attention' | 'red-winner' | 'blue-winner';
+export type ScoreboardTheme = 'arena' | 'attention' | 'scoring' | 'red-winner' | 'blue-winner';
 
 function placeholderAthlete(color: AthleteColor): ScoreboardAthlete {
   return {
@@ -76,20 +76,54 @@ export function committedScoresLabel(
 export const JUDGE_VOTE_HOLD_MS = 5_000;
 
 export interface JudgeVoteCell {
-  readonly position: number;
+  /** Stable React key. */
+  readonly key: string;
+  /** Short label in the cell: "GĐ 1"… or "TT" for the supervisor. */
+  readonly label: string;
+  /** Spoken name: "Giám định 1"… or "Trọng tài (TT)". */
+  readonly name: string;
   readonly vote: AthleteColor | null;
 }
 
-/** One cell per judge position, coloured with that judge's vote if any. */
+/**
+ * One cell per judge position, coloured with that judge's vote if any, plus a "TT" cell
+ * for the supervisor when the match lets the supervisor vote.
+ */
 export function judgeVoteCells(
   judgeVotes: PublicMatchStatePayload['judgeVotes'] | undefined,
   showVotes: boolean,
 ): JudgeVoteCell[] {
-  const votes = showVotes ? (judgeVotes?.lastResolvedWindow?.votes ?? []) : [];
-  return Array.from({ length: judgeVotes?.judgeCount ?? 0 }, (_, index) => ({
-    position: index + 1,
-    vote: votes.find((vote) => vote.judgePosition === index + 1)?.athlete ?? null,
-  }));
+  const resolved = showVotes ? judgeVotes?.lastResolvedWindow : null;
+  const votes = resolved?.votes ?? [];
+  const cells: JudgeVoteCell[] = Array.from(
+    { length: judgeVotes?.judgeCount ?? 0 },
+    (_, index) => ({
+      key: `judge-${String(index + 1)}`,
+      label: `GĐ ${String(index + 1)}`,
+      name: `Giám định ${String(index + 1)}`,
+      vote: votes.find((vote) => vote.judgePosition === index + 1)?.athlete ?? null,
+    }),
+  );
+  if (judgeVotes?.supervisorVoting === true) {
+    cells.push({
+      key: 'supervisor',
+      label: 'TT',
+      name: 'Trọng tài (TT)',
+      vote: resolved?.supervisorVote ?? null,
+    });
+  }
+  return cells;
+}
+
+/** How long the judge strip flashes the awarded athlete's colour after a call. */
+export const JUDGE_VOTE_FLASH_MS = 1_500;
+
+/** The server deadline after which the judge strip stops flashing the awarded colour. */
+export function judgeVotesFlashUntil(
+  judgeVotes: PublicMatchStatePayload['judgeVotes'] | undefined,
+): string | null {
+  const resolvedAt = judgeVotes?.lastResolvedWindow?.resolvedAt;
+  return resolvedAt ? new Date(Date.parse(resolvedAt) + JUDGE_VOTE_FLASH_MS).toISOString() : null;
 }
 
 /** The server deadline after which the last resolved votes are cleared. */
@@ -133,6 +167,8 @@ export function buildScoreboardViewModel(
 
   let theme: ScoreboardTheme = 'arena';
   if (winner) theme = winner.color === AthleteColor.RED ? 'red-winner' : 'blue-winner';
+  // Judges scoring a referee-command stop gets its own colour, distinct from a plain pause.
+  else if (snapshot?.refereeScoringOpen === true) theme = 'scoring';
   else if (paused || intermissionActive || appeal) theme = 'attention';
 
   const presentation = snapshot

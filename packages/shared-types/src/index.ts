@@ -10,6 +10,7 @@ export {
   MatchStatus,
   JudgeSlot,
   ScoringMethod,
+  ScoringThreshold,
   TournamentStatus,
   TournamentOfficialRole,
 } from './enums';
@@ -99,6 +100,9 @@ export type {
   VoteSubmitErrorCode,
   VoteSubmitPayload,
   VoteSubmitResponse,
+  SupervisorVoteAcceptedPayload,
+  SupervisorVoteSubmitPayload,
+  SupervisorVoteSubmitResponse,
 } from './realtime';
 export type {
   DashboardRoundKey,

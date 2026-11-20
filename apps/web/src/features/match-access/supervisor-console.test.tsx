@@ -622,6 +622,9 @@ describe('SupervisorConsole referee-command scoring', () => {
       />,
     );
     expect(screen.getByRole('button', { name: 'TẠM DỪNG' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'TẠM DỪNG' }).parentElement).not.toHaveClass(
+      'grid-cols-2',
+    );
     expect(screen.queryByRole('button', { name: 'CHẤM ĐIỂM' })).not.toBeInTheDocument();
   });
 
@@ -636,10 +639,35 @@ describe('SupervisorConsole referee-command scoring', () => {
         })}
       />,
     );
-    expect(screen.getByRole('button', { name: 'TẠM DỪNG' })).toBeEnabled();
-    await user.click(screen.getByRole('button', { name: 'CHẤM ĐIỂM' }));
+    const pause = screen.getByRole('button', { name: 'TẠM DỪNG' });
+    const score = screen.getByRole('button', { name: 'CHẤM ĐIỂM' });
+    expect(pause).toBeEnabled();
+    // Left and right in one two-column row, pause first.
+    expect(pause.parentElement).toBe(score.parentElement);
+    expect(pause.parentElement).toHaveClass('grid-cols-2');
+    expect(pause.compareDocumentPosition(score) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await user.click(score);
     expect(startScoring).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('button', { name: 'TIẾP TỤC' })).not.toBeInTheDocument();
+  });
+
+  it('turns blue-purple-red while judges score and amber for an ordinary pause', () => {
+    const { container, rerender } = render(
+      <SupervisorConsole
+        realtime={createRealtimeState({
+          snapshot: refereeCommandSnapshot(MatchStatus.ROUND_1_PAUSED, openRefereeWindow),
+        })}
+      />,
+    );
+    expect(container.firstElementChild).toHaveClass('via-purple-900');
+    rerender(
+      <SupervisorConsole
+        realtime={createRealtimeState({
+          snapshot: refereeCommandSnapshot(MatchStatus.ROUND_1_PAUSED),
+        })}
+      />,
+    );
+    expect(container.firstElementChild).toHaveClass('via-yellow-800');
   });
 
   it('shows only TIẾP TỤC while judges score, which closes the scoring', async () => {
@@ -687,5 +715,97 @@ describe('SupervisorConsole referee-command scoring', () => {
     expect(screen.getAllByRole('button', { name: 'ĐANG XỬ LÝ…' })).toHaveLength(2);
     for (const button of screen.getAllByRole('button', { name: 'ĐANG XỬ LÝ…' }))
       expect(button).toBeDisabled();
+  });
+});
+
+describe('SupervisorConsole supervisor (TT) scoring', () => {
+  function supervisedSnapshot(
+    status: MatchStatus,
+    window: MatchStatePayload['activeScoringWindow'] = null,
+    enabled = true,
+  ): MatchStatePayload {
+    const snapshot = refereeCommandSnapshot(status, window);
+    return { ...snapshot, match: { ...snapshot.match, supervisorScoringEnabled: enabled } };
+  }
+
+  it('lets the supervisor pick an athlete by tapping its card while judges score', async () => {
+    const user = userEvent.setup();
+    const submitSupervisorVote = vi.fn(() => Promise.resolve());
+    render(
+      <SupervisorConsole
+        realtime={createRealtimeState({
+          snapshot: supervisedSnapshot(MatchStatus.ROUND_1_PAUSED, openRefereeWindow),
+          submitSupervisorVote,
+        })}
+      />,
+    );
+    expect(
+      screen.getByText(/Chạm vào ô tên VĐV để chấm điểm như một giám định \(TT\)/),
+    ).toBeVisible();
+    const blue = screen.getByRole('button', { name: 'TT chọn XANH — Trần Văn Xanh' });
+    expect(blue).toHaveAttribute('aria-pressed', 'false');
+    await user.click(blue);
+    expect(submitSupervisorVote).toHaveBeenCalledWith(AthleteColor.BLUE);
+  });
+
+  it('marks only the choice made in the stop that is open now', () => {
+    const vote = {
+      athlete: AthleteColor.RED,
+      matchPublicId: 'A72K9P',
+      scoringWindowId: openRefereeWindow.id,
+      serverReceivedAt: '2026-09-01T12:01:01.000Z',
+    };
+    const { rerender } = render(
+      <SupervisorConsole
+        realtime={createRealtimeState({
+          snapshot: supervisedSnapshot(MatchStatus.ROUND_1_PAUSED, openRefereeWindow),
+          supervisorVote: vote,
+        })}
+      />,
+    );
+    const red = screen.getByRole('button', { name: 'TT chọn ĐỎ — Nguyễn Văn Đỏ' });
+    expect(red).toHaveAttribute('aria-pressed', 'true');
+    expect(red).toHaveTextContent('✓ TT đã chọn');
+
+    rerender(
+      <SupervisorConsole
+        realtime={createRealtimeState({
+          snapshot: supervisedSnapshot(MatchStatus.ROUND_1_PAUSED, openRefereeWindow),
+          supervisorVote: { ...vote, scoringWindowId: 'an-earlier-stop' },
+        })}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'TT chọn ĐỎ — Nguyễn Văn Đỏ' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
+
+  it.each([
+    ['the round setting is off', MatchStatus.ROUND_1_PAUSED, openRefereeWindow, false],
+    ['the round is running', MatchStatus.ROUND_1_RUNNING, null, true],
+    ['the round is paused without scoring', MatchStatus.ROUND_1_PAUSED, null, true],
+  ] as const)('keeps the cards read-only when %s', (_case, status, window, enabled) => {
+    render(
+      <SupervisorConsole
+        realtime={createRealtimeState({ snapshot: supervisedSnapshot(status, window, enabled) })}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /^TT chọn/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Võ sĩ RED' })).toBeVisible();
+  });
+
+  it('shows why a supervisor vote was rejected', () => {
+    render(
+      <SupervisorConsole
+        realtime={createRealtimeState({
+          snapshot: supervisedSnapshot(MatchStatus.ROUND_1_PAUSED, openRefereeWindow),
+          voteSubmitErrorMessage: 'Chỉ có thể chấm điểm khi Giám sát đã bấm Chấm điểm.',
+        })}
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Chỉ có thể chấm điểm khi Giám sát đã bấm Chấm điểm.',
+    );
   });
 });

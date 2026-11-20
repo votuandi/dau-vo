@@ -117,6 +117,26 @@ describe('buildScoreboardViewModel', () => {
     );
   });
 
+  it('switches to the scoring theme while judges score a referee-command stop', () => {
+    const paused = snapshot({ phase: MatchStatus.ROUND_1_PAUSED });
+    expect(buildScoreboardViewModel({ ...paused, refereeScoringOpen: true }, false).theme).toBe(
+      'scoring',
+    );
+    expect(buildScoreboardViewModel({ ...paused, refereeScoringOpen: false }, false).theme).toBe(
+      'attention',
+    );
+  });
+
+  it('keeps the winner theme over an open scoring stop', () => {
+    const won = snapshot({
+      outcome: { winner: AthleteColor.RED, method: 'REGULATION_SCORE' },
+      phase: MatchStatus.ROUND_1_PAUSED,
+    });
+    expect(buildScoreboardViewModel({ ...won, refereeScoringOpen: true }, false).theme).toBe(
+      'red-winner',
+    );
+  });
+
   it('only exposes the intermission deadline during a break', () => {
     expect(buildScoreboardViewModel(snapshot(), false).intermissionEndsAt).toBeNull();
     expect(
@@ -178,10 +198,33 @@ describe('judgeVoteCells', () => {
 
   it('gives every judge a cell and colours only the judges who voted', () => {
     expect(judgeVoteCells(judgeVotes, true)).toEqual([
-      { position: 1, vote: AthleteColor.BLUE },
-      { position: 2, vote: AthleteColor.RED },
-      { position: 3, vote: null },
+      { key: 'judge-1', label: 'GĐ 1', name: 'Giám định 1', vote: AthleteColor.BLUE },
+      { key: 'judge-2', label: 'GĐ 2', name: 'Giám định 2', vote: AthleteColor.RED },
+      { key: 'judge-3', label: 'GĐ 3', name: 'Giám định 3', vote: null },
     ]);
+  });
+
+  it('adds a TT cell for the supervisor only when the match lets the supervisor vote', () => {
+    expect(judgeVoteCells(judgeVotes, true).map((cell) => cell.label)).not.toContain('TT');
+    const withSupervisor = {
+      ...judgeVotes,
+      supervisorVoting: true,
+      lastResolvedWindow: { ...judgeVotes.lastResolvedWindow, supervisorVote: AthleteColor.RED },
+    };
+    expect(judgeVoteCells(withSupervisor, true).at(-1)).toEqual({
+      key: 'supervisor',
+      label: 'TT',
+      name: 'Trọng tài (TT)',
+      vote: AthleteColor.RED,
+    });
+    // Shown but blank when the supervisor did not vote or the hold has passed.
+    expect(
+      judgeVoteCells(
+        { ...withSupervisor, lastResolvedWindow: judgeVotes.lastResolvedWindow },
+        true,
+      ).at(-1)?.vote,
+    ).toBeNull();
+    expect(judgeVoteCells(withSupervisor, false).at(-1)).toMatchObject({ label: 'TT', vote: null });
   });
 
   it('clears the votes once the hold time has passed', () => {

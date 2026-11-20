@@ -35,7 +35,6 @@ import { bracketQueryKeys } from './query-keys';
 import { WeightClassMatchTabs } from './weight-class-match-tabs';
 import { ManualMatchCreationForm } from './manual-match-creation-form';
 import { BracketRoundRulesEditor } from './bracket-round-rules-editor';
-import { BracketStaffingEditor } from './bracket-staffing-editor';
 import { CancelBracketDialog } from './cancel-bracket-dialog';
 import { FixtureList } from './fixture-list';
 import { bracketPdfFileName, type BracketFixture } from './fixture-presentation';
@@ -45,6 +44,12 @@ import { MatchSectionPanel, MatchSectionTabs } from './match-section-tabs';
 import { StandaloneMatchList } from './standalone-match-list';
 import { WinnerDecisionDialog } from './winner-decision-dialog';
 import { createUuid } from '@/lib/uuid';
+import { Alert } from '@/components/ui/alert';
+import {
+  settingsCardClassName,
+  settingsDescriptionClassName,
+  settingsTitleClassName,
+} from './settings-card-styles';
 
 // Compact sizing for the bracket toolbar so actions don't compete with the chart.
 const TOOLBAR_TEXT_BUTTON = 'min-h-8 gap-1.5 px-2.5 text-xs';
@@ -364,40 +369,18 @@ export function TournamentMatchesPage({
       );
     },
   });
-  const staffing = useMutation({
-    mutationFn: (input: {
-      readonly weightClassId: string;
-      readonly roundNumber: number;
-      readonly count: number;
-    }) =>
-      adminManagementApi.updateBracketRoundStaffing(
-        tournament.id,
-        input.weightClassId,
-        input.roundNumber,
-        input.count,
-      ),
-    onSuccess: (_, input) => {
-      if (input.weightClassId !== selectedId) return;
-      void qc.invalidateQueries({
-        queryKey: bracketQueryKeys.detail(tournament.id, input.weightClassId),
-      });
-      notifyMutationSuccess('Đã cập nhật số giám định.');
-    },
-    onError: (error) => {
-      notifyMutationError(error, 'Không thể cập nhật số giám định.');
-    },
-  });
   const roundRules = useMutation({
     mutationFn: (input: {
       weightClassId: string;
       roundNumber: number;
       settings: BracketRoundRuleSettings;
+      requiredJudgeCount: number | undefined;
     }) =>
       adminManagementApi.updateBracketRoundStaffing(
         tournament.id,
         input.weightClassId,
         input.roundNumber,
-        undefined,
+        input.requiredJudgeCount,
         undefined,
         input.settings,
       ),
@@ -411,17 +394,10 @@ export function TournamentMatchesPage({
       notifyMutationError(error, 'Không thể cập nhật cấu hình thi đấu.');
     },
   });
-  const counts = useMemo(
-    () =>
-      new Map(
-        matchCounts.data?.counts.map(({ weightClassId, count }) => [
-          weightClassId ?? '__unassigned',
-          count,
-        ]) ?? [],
-      ),
-    [matchCounts.data],
-  );
-  const unassigned = counts.get('__unassigned') ?? 0;
+  // Only the count of matches without a weight class is needed: it decides whether the
+  // "Chưa xác định" tab is shown.
+  const unassigned =
+    matchCounts.data?.counts.find(({ weightClassId }) => weightClassId === null)?.count ?? 0;
   const section = parseMatchSection(params.get('view'));
   const selectSection = (next: MatchSection) => {
     setParams(
@@ -501,7 +477,6 @@ export function TournamentMatchesPage({
     <div className="space-y-4">
       <WeightClassMatchTabs
         classes={active}
-        counts={counts}
         onSelect={(id) => {
           resetDraw();
           setParams((old) => {
@@ -522,13 +497,8 @@ export function TournamentMatchesPage({
         </p>
       </div> */}
         {weights.isError ? (
-          <div
-            className="rounded-xl border border-destructive/30 bg-destructive/5 p-4"
-            role="alert"
-          >
-            <p className="text-sm text-destructive">
-              {getApiErrorMessage(weights.error, 'Không thể tải hạng cân.')}
-            </p>
+          <Alert role="alert" tone="error">
+            <p>{getApiErrorMessage(weights.error, 'Không thể tải hạng cân.')}</p>
             <Button
               className="mt-3"
               onClick={() => void weights.refetch()}
@@ -538,7 +508,7 @@ export function TournamentMatchesPage({
             >
               Thử lại
             </Button>
-          </div>
+          </Alert>
         ) : null}
         <div id="weight-class-match-panel" role="tabpanel">
           {selectedId ? (
@@ -611,11 +581,8 @@ export function TournamentMatchesPage({
                       <span className="sr-only">Đang tạo bản xem trước nhánh đấu.</span>
                     </div>
                   ) : workflow === 'error' && !drawSetup ? (
-                    <div
-                      className="rounded-xl border border-destructive/30 bg-destructive/5 p-4"
-                      role="alert"
-                    >
-                      <p className="text-sm text-destructive">{dialogError}</p>
+                    <Alert role="alert" tone="error">
+                      <p>{dialogError}</p>
                       <Button
                         className="mt-3"
                         onClick={() => {
@@ -628,7 +595,7 @@ export function TournamentMatchesPage({
                       >
                         Thử lại
                       </Button>
-                    </div>
+                    </Alert>
                   ) : confirmedCancelled || isNoBracket ? (
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-6">
                       <p className="text-sm text-muted-foreground">
@@ -762,11 +729,8 @@ export function TournamentMatchesPage({
                   ) : bracket.isPending ? (
                     <div className="h-48 animate-pulse rounded-xl bg-muted" />
                   ) : athletes.isError ? (
-                    <div
-                      className="rounded-xl border border-destructive/30 bg-destructive/5 p-4"
-                      role="alert"
-                    >
-                      <p className="text-sm text-destructive">{reason}</p>
+                    <Alert role="alert" tone="error">
+                      <p>{reason}</p>
                       <Button
                         className="mt-3"
                         onClick={() => void athletes.refetch()}
@@ -776,13 +740,10 @@ export function TournamentMatchesPage({
                       >
                         Thử lại
                       </Button>
-                    </div>
+                    </Alert>
                   ) : (
-                    <div
-                      className="rounded-xl border border-destructive/30 bg-destructive/5 p-4"
-                      role="alert"
-                    >
-                      <p className="text-sm text-destructive">{reason}</p>
+                    <Alert role="alert" tone="error">
+                      <p>{reason}</p>
                       <Button
                         className="mt-3"
                         onClick={() => void bracket.refetch()}
@@ -792,7 +753,7 @@ export function TournamentMatchesPage({
                       >
                         Thử lại
                       </Button>
-                    </div>
+                    </Alert>
                   )}
                 </MatchSectionPanel>
                 <MatchSectionPanel section="schedule" selected={section}>
@@ -810,35 +771,42 @@ export function TournamentMatchesPage({
                 </MatchSectionPanel>
                 <MatchSectionPanel section="settings" selected={section}>
                   <div className="space-y-5">
+                    {/* Settings for the whole weight class, then settings per bracket round. */}
+                    <section aria-label="Cấu hình chung" className={settingsCardClassName}>
+                      <h3 className={settingsTitleClassName}>Cấu hình chung</h3>
+                      <p className={settingsDescriptionClassName}>
+                        Áp dụng cho mọi trận của hạng cân này.
+                      </p>
+                      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                        <IntermissionDurationForm
+                          initialSeconds={selectedWeightClass?.intermissionDurationSeconds ?? 0}
+                          isReadOnly={isReadOnly}
+                          key={`${selectedId}:${String(selectedWeightClass?.intermissionDurationSeconds ?? 0)}`}
+                          tournamentId={tournament.id}
+                          weightClassId={selectedId}
+                        />
+                      </div>
+                    </section>
                     {activeBracket ? (
-                      <>
-                        <BracketRoundRulesEditor
-                          data={activeBracket}
-                          disabled={isReadOnly || activeBracket.bracket.status !== 'ACTIVE'}
-                          pending={roundRules.isPending || staffing.isPending}
-                          onSave={(roundNumber, settings) => {
-                            roundRules.mutate({ weightClassId: selectedId, roundNumber, settings });
-                          }}
-                        />
-                        <BracketStaffingEditor
-                          data={activeBracket}
-                          disabled={isReadOnly || activeBracket.bracket.status !== 'ACTIVE'}
-                          pending={staffing.isPending || roundRules.isPending}
-                          onSave={(roundNumber, count) => {
-                            staffing.mutate({ weightClassId: selectedId, roundNumber, count });
-                          }}
-                        />
-                      </>
+                      <BracketRoundRulesEditor
+                        data={activeBracket}
+                        disabled={isReadOnly || activeBracket.bracket.status !== 'ACTIVE'}
+                        pending={roundRules.isPending}
+                        onSave={(roundNumber, settings, requiredJudgeCount) => {
+                          roundRules.mutate({
+                            weightClassId: selectedId,
+                            roundNumber,
+                            settings,
+                            requiredJudgeCount,
+                          });
+                        }}
+                      />
                     ) : (
-                      bracketDependentPlaceholder
+                      <section aria-label="Cấu hình từng vòng" className={settingsCardClassName}>
+                        <h3 className={settingsTitleClassName}>Cấu hình từng vòng</h3>
+                        <div className="mt-4">{bracketDependentPlaceholder}</div>
+                      </section>
                     )}
-                    <IntermissionDurationForm
-                      initialSeconds={selectedWeightClass?.intermissionDurationSeconds ?? 0}
-                      isReadOnly={isReadOnly}
-                      key={`${selectedId}:${String(selectedWeightClass?.intermissionDurationSeconds ?? 0)}`}
-                      tournamentId={tournament.id}
-                      weightClassId={selectedId}
-                    />
                   </div>
                 </MatchSectionPanel>
                 <MatchSectionPanel section="standalone" selected={section}>

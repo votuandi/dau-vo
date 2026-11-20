@@ -42,6 +42,8 @@ import {
   type VoteSubmitError,
   type VoteSubmitPayload,
   type VoteSubmitResponse,
+  type SupervisorVoteSubmitPayload,
+  type SupervisorVoteSubmitResponse,
   AthleteColor as SharedAthleteColor,
   FaultSeverity as SharedFaultSeverity,
 } from '@martial-arts-scoring/shared-types';
@@ -108,6 +110,7 @@ import {
   RoundEndedForVoteError,
   RoundPausedForVoteError,
   ScoringClosedForVoteError,
+  SupervisorVoteDisabledError,
 } from './scoring.errors';
 import {
   ScoringService,
@@ -1234,6 +1237,51 @@ export class RealtimeGateway
     return { ok: true, undo: transition.payload };
   }
 
+  /**
+   * The supervisor's own ("TT") vote in an open referee-command stop. Authority comes
+   * from the authenticated supervisor socket only; the response is sent to that supervisor
+   * alone, so judges never see the supervisor's choice before the stop is resolved.
+   */
+  @SubscribeMessage(RealtimeEvent.SUPERVISOR_VOTE_SUBMIT)
+  async supervisorVoteSubmit(
+    @ConnectedSocket() client: RealtimeSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<SupervisorVoteSubmitResponse> {
+    if (this.isScoreboardSocket(client))
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    const command = await this.supervisorCommand(client);
+    if (!command) return { error: VOTE_FORBIDDEN_ERROR, ok: false };
+    if (
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    )
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    if (!this.isSupervisorVotePayload(payload))
+      return { error: VOTE_INVALID_ATHLETE_ERROR, ok: false };
+    try {
+      const vote = await this.lifecycle.submitSupervisorVote({
+        athlete: payload.athlete,
+        identity: command.identity,
+        matchId: command.matchId,
+        scoringWindowId: payload.scoringWindowId,
+      });
+      return { ok: true, vote };
+    } catch (error: unknown) {
+      if (error instanceof InactiveRoundControlSessionError) {
+        this.revokeCommandSocket(client, command.identity);
+        return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+      }
+      if (error instanceof SupervisorVoteDisabledError)
+        return { error: VOTE_FORBIDDEN_ERROR, ok: false };
+      if (error instanceof ScoringClosedForVoteError)
+        return { error: VOTE_SCORING_CLOSED_ERROR, ok: false };
+      this.logger.error(
+        { error, matchId: command.matchId },
+        'Supervisor vote failed',
+      );
+      return { error: VOTE_FAILED_ERROR, ok: false };
+    }
+  }
+
   @SubscribeMessage(RealtimeEvent.VOTE_SUBMIT)
   async voteSubmit(
     @ConnectedSocket() client: RealtimeSocket,
@@ -1705,7 +1753,9 @@ export class RealtimeGateway
               kind: 'official' as const,
               judgePosition: assignment.judgePosition,
             }
-          : undefined;
+          : assignment.role === 'SUPERVISOR'
+            ? { kind: 'supervisor' as const }
+            : undefined;
       const snapshot = await this.matchState.snapshot(
         assignment.match.id,
         viewer,
@@ -1730,10 +1780,12 @@ export class RealtimeGateway
     // This response goes only to the authenticated socket, so it can include
     // that referee slot's accepted vote for an unresolved scoring window.
     // Room broadcasts intentionally omit this recipient-specific data.
-    const snapshot = await this.matchState.snapshot(identity.matchId, {
-      kind: 'legacy',
-      judgeSlot: identity.judgeSlot,
-    });
+    const snapshot = await this.matchState.snapshot(
+      identity.matchId,
+      identity.role === MatchRole.SUPERVISOR
+        ? { kind: 'supervisor' }
+        : { kind: 'legacy', judgeSlot: identity.judgeSlot },
+    );
 
     if (snapshot.match.publicId !== identity.publicMatchId) {
       this.sessionRegistry.revokeSessions([identity.sessionId]);
@@ -2225,6 +2277,16 @@ export class RealtimeGateway
     return (
       (athlete === AthleteColor.RED || athlete === AthleteColor.BLUE) &&
       (scoringWindowId === undefined || typeof scoringWindowId === 'string')
+    );
+  }
+
+  private isSupervisorVotePayload(
+    payload: unknown,
+  ): payload is SupervisorVoteSubmitPayload {
+    return (
+      this.isVotePayload(payload) &&
+      typeof payload.scoringWindowId === 'string' &&
+      payload.scoringWindowId.length > 0
     );
   }
 

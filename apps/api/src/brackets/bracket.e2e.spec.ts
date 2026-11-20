@@ -856,6 +856,13 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
       { roundDurationMs: null },
       { scoringMethod: 'UNKNOWN' },
       { scoringMethod: null },
+      { supervisorScoringEnabled: 'yes' },
+      { scoringThreshold: 'HALF' },
+      { scoringThreshold: null },
+      { supervisorScoringEnabled: null },
+      // Supervisor scoring requires the referee-command method.
+      { supervisorScoringEnabled: true },
+      { scoringMethod: 'JUDGE_FREE_WINDOW', supervisorScoringEnabled: true },
     ]) {
       await authenticated(
         request(app.getHttpServer()).patch(`${path}/staffing/1`),
@@ -881,11 +888,35 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
         regulationRoundCount: 1,
         roundDurationMs: 90000,
         scoringMethod: 'REFEREE_COMMAND',
+        supervisorScoringEnabled: true,
+        scoringThreshold: 'AT_LEAST_HALF',
       })
       .expect(200)
       .expect((response) => {
         expect(response.body.staffing).toMatchObject({
           scoringMethod: 'REFEREE_COMMAND',
+          supervisorScoringEnabled: true,
+          scoringThreshold: 'AT_LEAST_HALF',
+        });
+      });
+    // Leaving referee-command scoring turns supervisor scoring off by itself.
+    await authenticated(
+      request(app.getHttpServer()).patch(`${path}/staffing/2`),
+    )
+      .send({
+        scoringMethod: 'REFEREE_COMMAND',
+        supervisorScoringEnabled: true,
+      })
+      .expect(200);
+    await authenticated(
+      request(app.getHttpServer()).patch(`${path}/staffing/2`),
+    )
+      .send({ scoringMethod: 'JUDGE_FREE_WINDOW' })
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.staffing).toMatchObject({
+          scoringMethod: 'JUDGE_FREE_WINDOW',
+          supervisorScoringEnabled: false,
         });
       });
     await authenticated(
@@ -917,16 +948,29 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
     }
     await expect(
       prisma.match.findMany({
-        select: { scoringMethod: true },
+        select: {
+          scoringMethod: true,
+          scoringThreshold: true,
+          supervisorScoringEnabled: true,
+        },
         where: { bracketFixture: { bracketId, roundNumber: 1 } },
       }),
     ).resolves.toEqual(
-      roundOne.map(() => ({ scoringMethod: 'REFEREE_COMMAND' })),
+      roundOne.map(() => ({
+        scoringMethod: 'REFEREE_COMMAND',
+        scoringThreshold: 'AT_LEAST_HALF',
+        supervisorScoringEnabled: true,
+      })),
     );
     await authenticated(
       request(app.getHttpServer()).patch(`${path}/staffing/1`),
     )
       .send({ scoringMethod: 'JUDGE_FREE_WINDOW' })
+      .expect(409);
+    await authenticated(
+      request(app.getHttpServer()).patch(`${path}/staffing/1`),
+    )
+      .send({ supervisorScoringEnabled: false })
       .expect(409);
     await authenticated(
       request(app.getHttpServer()).patch(`${path}/staffing/1`),
@@ -955,8 +999,15 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
       },
     });
     expect(audit.metadata).toMatchObject({
-      after: { scoringMethod: 'JUDGE_FREE_WINDOW' },
-      before: { scoringMethod: 'JUDGE_FREE_WINDOW' },
+      after: {
+        scoringMethod: 'JUDGE_FREE_WINDOW',
+        scoringThreshold: null,
+        supervisorScoringEnabled: false,
+      },
+      before: {
+        scoringMethod: 'JUDGE_FREE_WINDOW',
+        supervisorScoringEnabled: false,
+      },
     });
   });
 

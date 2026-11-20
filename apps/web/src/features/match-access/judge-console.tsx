@@ -2,6 +2,12 @@ import { AthleteColor, MatchStatus, ScoringMethod } from '@martial-arts-scoring/
 import type { MatchRealtimeState, RealtimeConnectionStatus } from './match-realtime';
 import { IntermissionCountdown, useIntermissionActive } from '@/components/intermission-countdown';
 import { formatCountdown, useServerCountdown } from '@/features/match-timer/server-countdown';
+import {
+  matchScreenTone,
+  matchToneBackgroundClassName,
+  matchToneBarClassName,
+  matchTonePanelClassName,
+} from '@/features/match-screen-tone';
 
 interface JudgeConsoleProps {
   readonly realtime: MatchRealtimeState;
@@ -130,7 +136,6 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
   );
   const appealActive =
     status === MatchStatus.REGULATION_APPEAL || status === MatchStatus.OVERTIME_APPEAL;
-  const yellowPresentation = roundIsPaused || intermission.active || appealActive;
   const redAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
   const blueAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
   const refereeCommandScoring = snapshot?.match.scoringMethod === ScoringMethod.REFEREE_COMMAND;
@@ -139,6 +144,10 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
   const refereeScoringOpen =
     refereeCommandScoring && roundIsPaused && snapshot.activeScoringWindow?.endsAt === null;
   const votingOpen = refereeCommandScoring ? refereeScoringOpen : roundIsRunning || roundIsPaused;
+  const tone = matchScreenTone({
+    scoring: refereeScoringOpen,
+    attention: roundIsPaused || intermission.active || appealActive,
+  });
   const controlsDisabled =
     realtime.connectionStatus !== 'connected' ||
     !votingOpen ||
@@ -154,12 +163,10 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
   }
 
   return (
-    <div
-      className={`min-h-dvh text-white ${yellowPresentation ? 'bg-gradient-to-br from-amber-950 via-yellow-800 to-amber-950' : 'arena-background'}`}
-    >
+    <div className={`min-h-dvh text-white ${matchToneBackgroundClassName[tone]}`}>
       <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-3 px-3 py-3 sm:gap-5 sm:px-5 sm:py-5 short:gap-2 short:py-2">
         <header
-          className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5 sm:py-3 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/45' : 'border-white/15 bg-blue-950/35'}`}
+          className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5 sm:py-3 ${matchToneBarClassName[tone]}`}
         >
           <div className="flex min-w-0 items-baseline gap-2 sm:block">
             <p className="shrink-0 text-xs font-bold uppercase tracking-[0.18em] text-sky-200/80">
@@ -183,7 +190,7 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
 
         <section
           aria-labelledby="referee-round-title"
-          className={`flex flex-col justify-center rounded-3xl border px-4 py-4 text-center shadow-2xl backdrop-blur-xl sm:px-8 sm:py-8 short:py-2 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/30 shadow-amber-950/30' : 'border-white/15 bg-white/10 shadow-blue-950/20'}`}
+          className={`flex flex-col justify-center rounded-3xl border px-4 py-4 text-center shadow-2xl backdrop-blur-xl sm:px-8 sm:py-8 short:py-2 ${matchTonePanelClassName[tone]}`}
         >
           <p
             className="text-sm font-black uppercase tracking-[0.2em] text-sky-200"

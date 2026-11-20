@@ -268,7 +268,7 @@ export function AthletesPage({
   }
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-border bg-card p-5 shadow-sm">
         <div>
           <h2 className="flex items-center gap-2 text-xl font-black">
             Vận động viên
@@ -391,7 +391,7 @@ export function AthletesPage({
         </label>
       </div>
       {!readOnly && activeWeights.length > 0 && !activeUnlockedWeights.length ? (
-        <Alert tone="info">
+        <Alert tone="warning">
           Không thể thêm vận động viên vì tất cả hạng cân đang hoạt động đã được chia nhánh đấu.
         </Alert>
       ) : null}

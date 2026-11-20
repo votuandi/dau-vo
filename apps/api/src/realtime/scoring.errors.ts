@@ -48,3 +48,11 @@ export class ScoringClosedForVoteError extends Error {
     this.name = ScoringClosedForVoteError.name;
   }
 }
+
+/** The supervisor may only vote when the match round enabled supervisor scoring. */
+export class SupervisorVoteDisabledError extends Error {
+  constructor() {
+    super('Supervisor scoring is not enabled for this match');
+    this.name = SupervisorVoteDisabledError.name;
+  }
+}
