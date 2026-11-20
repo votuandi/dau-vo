@@ -514,22 +514,3 @@
     font-size: clamp(2rem, 10vw, 3.5rem);
   }
 }
-
-/* Sponsor logos scrolling right to left without end in the scoreboard header.
-   The track holds two identical runs, so moving it by half its width loops seamlessly. */
-@keyframes sponsor-marquee {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
-}
-.sponsor-marquee-track[data-moving='true'] {
-  animation: sponsor-marquee var(--marquee-duration, 20s) linear infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .sponsor-marquee-track[data-moving='true'] {
-    animation: none;
-  }
-}

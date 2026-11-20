@@ -5,7 +5,8 @@ import type { ScoreboardSource } from '../scoreboard-source';
 import { useFullscreen } from '../display-controls';
 import { useScoreboardSponsors } from '../use-scoreboard-sponsors';
 import { ScoreboardSourceSwitcher } from './scoreboard-source-switcher';
-import { SponsorMarquee } from './sponsor-marquee';
+import { SponsorLogo } from '@/features/sponsors/sponsor-logo';
+import { SponsorMarquee } from '@/features/sponsors/sponsor-marquee';
 
 /** Match code (opens "Đổi mã theo dõi") · sponsor logos · fullscreen. */
 export function ScoreboardHeader({
@@ -35,7 +36,14 @@ export function ScoreboardHeader({
           onSelect={onSelect}
           source={source}
         />
-        <SponsorMarquee sponsors={sponsors} />
+        {/* A slim strip that fits inside the header row next to the match code button. */}
+        <SponsorMarquee
+          className="h-7 flex-1 sm:h-8"
+          renderSponsor={(sponsor) => (
+            <SponsorLogo className="h-full w-auto max-w-none text-white" sponsor={sponsor} />
+          )}
+          sponsors={sponsors}
+        />
         <FullscreenButton />
       </div>
     </header>

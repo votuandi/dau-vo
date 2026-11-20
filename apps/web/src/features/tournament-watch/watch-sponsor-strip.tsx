@@ -1,106 +1,148 @@
-import { useId } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ExternalLink } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { SponsorLogo } from '@/features/sponsors/sponsor-logo';
+import { SponsorMarquee } from '@/features/sponsors/sponsor-marquee';
 import { isSafeWebsiteUrl } from '@/lib/website-url';
 import type { PublicSponsor } from '@/services/api/watch';
 
-/** Logo, or the sponsor's initial when it has none. */
-export function SponsorLogo({
+/**
+ * Sponsor details, drawn in a portal above the logo. The scrolling strip clips
+ * its overflow, so a tooltip inside it would be cut off.
+ */
+function SponsorTooltip({
+  anchor,
+  id,
+  link,
   sponsor,
-  className,
 }: {
+  readonly anchor: DOMRect;
+  readonly id: string;
+  readonly link: string | null;
   readonly sponsor: PublicSponsor;
-  readonly className?: string;
 }) {
-  return sponsor.imageUrl ? (
-    <img
-      alt={sponsor.name}
-      className={cn('max-h-full max-w-full object-contain', className)}
-      draggable={false}
-      loading="lazy"
-      src={sponsor.imageUrl}
-    />
-  ) : (
-    <span className={cn('truncate px-2 text-sm font-black text-slate-700', className)}>
-      {sponsor.name}
-    </span>
+  return createPortal(
+    <span
+      className="pointer-events-none fixed z-50 w-64 max-w-[80vw] -translate-x-1/2 -translate-y-full rounded-xl bg-slate-900 p-3 text-left text-xs leading-5 text-white shadow-xl"
+      id={id}
+      role="tooltip"
+      style={{ left: anchor.left + anchor.width / 2, top: anchor.top - 8 }}
+    >
+      <span className="block text-sm font-bold">{sponsor.name}</span>
+      <span className="block text-sky-200">{sponsor.tierName}</span>
+      {sponsor.details ? (
+        <span className="mt-1 line-clamp-5 block whitespace-pre-line text-white/85">
+          {sponsor.details}
+        </span>
+      ) : null}
+      {link ? (
+        <span className="mt-1.5 flex items-center gap-1 font-semibold text-sky-200">
+          <ExternalLink aria-hidden="true" className="size-3.5 shrink-0" />
+          <span className="truncate">{new URL(link).hostname}</span>
+        </span>
+      ) : null}
+      <span
+        aria-hidden="true"
+        className="absolute left-1/2 top-full -translate-x-1/2 border-[6px] border-transparent border-t-slate-900"
+      />
+    </span>,
+    document.body,
   );
 }
 
 /**
- * One sponsor: hovering or focusing shows its details in a tooltip; clicking
- * opens its advertising link ("Link quảng cáo") in a new tab when it has one.
+ * One sponsor tile: hovering or focusing shows its details; clicking opens its
+ * advertising link ("Link quảng cáo") in a new tab when it has one. Decorative
+ * copies that only fill the loop are skipped by the keyboard.
  */
-function SponsorItem({ sponsor }: { readonly sponsor: PublicSponsor }) {
+function SponsorTile({
+  sponsor,
+  decorative,
+}: {
+  readonly sponsor: PublicSponsor;
+  readonly decorative: boolean;
+}) {
   const tooltipId = useId();
+  const ref = useRef<HTMLElement | null>(null);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const link = isSafeWebsiteUrl(sponsor.adUrl) ? sponsor.adUrl : null;
-  const tileClassName =
-    'grid h-16 w-32 place-items-center rounded-xl border border-border bg-white p-2 shadow-sm outline-none transition-[box-shadow,transform] duration-200 focus-visible:ring-2 focus-visible:ring-ring sm:h-20 sm:w-40';
-  const content = <SponsorLogo sponsor={sponsor} />;
+  const show = () => {
+    setAnchor(ref.current?.getBoundingClientRect() ?? null);
+  };
+  const hide = () => {
+    setAnchor(null);
+  };
+  useEffect(() => {
+    if (!anchor) return;
+    // A fixed tooltip would drift away from its logo when the page scrolls.
+    window.addEventListener('scroll', hide, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('scroll', hide, { capture: true });
+    };
+  }, [anchor]);
+
+  const shared = {
+    'aria-describedby': anchor ? tooltipId : undefined,
+    className:
+      'flex h-full items-center rounded-xl border border-border bg-white px-3 py-2 shadow-sm outline-none transition-shadow duration-200 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring',
+    onBlur: hide,
+    onFocus: show,
+    onMouseEnter: show,
+    onMouseLeave: hide,
+    tabIndex: decorative ? -1 : 0,
+  };
+  // The tile carries the sponsor's name, so the image inside stays unnamed.
+  const logo = <SponsorLogo alt="" className="h-full w-auto max-w-none" sponsor={sponsor} />;
   return (
-    <li className="group relative">
+    <>
       {link ? (
         <a
-          aria-describedby={tooltipId}
+          {...shared}
           aria-label={`${sponsor.name} (mở trong tab mới)`}
-          className={cn(tileClassName, 'hover:-translate-y-0.5 hover:shadow-md')}
           href={link}
+          ref={(element) => {
+            ref.current = element;
+          }}
           rel="noopener noreferrer sponsored"
           target="_blank"
         >
-          {content}
+          {logo}
         </a>
       ) : (
         <span
-          aria-describedby={tooltipId}
+          {...shared}
           aria-label={sponsor.name}
-          className={tileClassName}
+          ref={(element) => {
+            ref.current = element;
+          }}
           role="img"
-          // Focusable so keyboard users can read the tooltip too.
-          tabIndex={0}
         >
-          {content}
+          {logo}
         </span>
       )}
-      <span
-        className="pointer-events-none invisible absolute bottom-full left-1/2 z-30 mb-2 w-64 max-w-[80vw] -translate-x-1/2 rounded-xl bg-slate-900 p-3 text-left text-xs leading-5 text-white opacity-0 shadow-xl transition-opacity duration-150 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100"
-        id={tooltipId}
-        role="tooltip"
-      >
-        <span className="block text-sm font-bold">{sponsor.name}</span>
-        <span className="block text-sky-200">{sponsor.tierName}</span>
-        {sponsor.details ? (
-          <span className="mt-1 line-clamp-5 block whitespace-pre-line text-white/85">
-            {sponsor.details}
-          </span>
-        ) : null}
-        {link ? (
-          <span className="mt-1.5 flex items-center gap-1 font-semibold text-sky-200">
-            <ExternalLink aria-hidden="true" className="size-3.5 shrink-0" />
-            <span className="truncate">{new URL(link).hostname}</span>
-          </span>
-        ) : null}
-        <span
-          aria-hidden="true"
-          className="absolute left-1/2 top-full -translate-x-1/2 border-[6px] border-transparent border-t-slate-900"
-        />
-      </span>
-    </li>
+      {anchor ? (
+        <SponsorTooltip anchor={anchor} id={tooltipId} link={link} sponsor={sponsor} />
+      ) : null}
+    </>
   );
 }
 
 export function WatchSponsorStrip({ sponsors }: { readonly sponsors: readonly PublicSponsor[] }) {
   if (sponsors.length === 0) return null;
   return (
-    <section aria-labelledby="watch-sponsors-heading" className="space-y-2">
-      <h2 className="text-sm font-bold text-muted-foreground" id="watch-sponsors-heading">
+    <div className="space-y-2">
+      <h2 aria-hidden="true" className="text-sm font-bold text-muted-foreground">
         Nhà tài trợ
       </h2>
-      <ul className="flex flex-wrap gap-3">
-        {sponsors.map((sponsor) => (
-          <SponsorItem key={sponsor.id} sponsor={sponsor} />
-        ))}
-      </ul>
-    </section>
+      <SponsorMarquee
+        className="h-16 w-full sm:h-20"
+        itemClassName="mr-3"
+        pauseOnHover
+        renderSponsor={(sponsor, decorative) => (
+          <SponsorTile decorative={decorative} sponsor={sponsor} />
+        )}
+        sponsors={sponsors}
+      />
+    </div>
   );
 }

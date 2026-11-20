@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { PublicSponsor } from '@/services/api/watch';
 import { WatchSponsorStrip } from './watch-sponsor-strip';
@@ -15,22 +15,26 @@ const sponsor = (overrides: Partial<PublicSponsor>): PublicSponsor => ({
 });
 
 describe('WatchSponsorStrip', () => {
-  it('opens a sponsor link in a new tab and describes it with a tooltip', () => {
+  it('opens a sponsor link in a new tab and describes it in a tooltip on hover', () => {
     render(<WatchSponsorStrip sponsors={[sponsor({})]} />);
+    // The loop repeats logos, but only one copy of each can be reached.
     const link = screen.getByRole('link', { name: 'Gold Co (mở trong tab mới)' });
     expect(link).toHaveAttribute('href', 'https://gold.example.com/ads');
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
-    expect(link).toHaveAccessibleDescription(
+    expect(link.querySelector('img')).toHaveAttribute('src', '/api/media/sponsors/gold.webp');
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(link);
+    expect(screen.getByRole('tooltip')).toHaveTextContent(
       /Gold Co.*Kim cương.*Nhà tài trợ chính.*gold\.example\.com/,
     );
-    expect(screen.getByRole('img', { name: 'Gold Co' })).toHaveAttribute(
-      'src',
-      '/api/media/sponsors/gold.webp',
-    );
+    expect(link).toHaveAccessibleDescription(/Gold Co/);
+    fireEvent.mouseLeave(link);
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
 
-  it('is not a link without a safe advertising link', () => {
+  it('is not a link without a safe advertising link, but still explains itself on focus', () => {
     render(
       <WatchSponsorStrip
         sponsors={[
@@ -40,7 +44,17 @@ describe('WatchSponsorStrip', () => {
       />,
     );
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('tooltip')).toHaveLength(2);
+    const tile = screen.getByRole('img', { name: 'No Link' });
+    fireEvent.focus(tile);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('No Link');
+  });
+
+  it('scrolls inside a strip that stops while pointed at', () => {
+    render(<WatchSponsorStrip sponsors={[sponsor({})]} />);
+    expect(screen.getByRole('region', { name: 'Nhà tài trợ' })).toHaveAttribute(
+      'data-pausable',
+      'true',
+    );
   });
 
   it('renders nothing without sponsors', () => {

@@ -5,7 +5,7 @@ import type {
   TournamentResultsAnnouncedPayload,
 } from '@martial-arts-scoring/shared-types';
 import { cn } from '@/lib/utils';
-import { SponsorLogo } from '@/features/tournament-watch/watch-sponsor-strip';
+import { SponsorLogo } from '@/features/sponsors/sponsor-logo';
 import type { PublicSponsor } from '@/services/api/watch';
 import { FireworksCanvas } from './fireworks-canvas';
 import { ScoreboardImage } from './scoreboard-image';
