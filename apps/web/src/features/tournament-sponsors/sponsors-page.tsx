@@ -221,8 +221,8 @@ function SponsorForm({
             className="block text-xs font-normal text-warning"
             id="sponsor-index-hint"
           >
-            Vị trí xuất hiện này đã được nhà tài trợ {takenBy} sử dụng. Thay đổi này sẽ làm thay đổi
-            vị trí của các Nhà tài trợ khác.
+            Vị trí xuất hiện này đã được nhà tài trợ <b className="font-bold">{takenBy}</b> sử dụng.
+            Thay đổi này sẽ làm thay đổi vị trí của các Nhà tài trợ khác.
           </span>
         )}
       </label>
