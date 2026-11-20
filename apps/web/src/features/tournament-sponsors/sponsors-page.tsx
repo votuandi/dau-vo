@@ -23,6 +23,8 @@ import {
   type SponsorInput,
   type TournamentSponsor,
 } from '@/services/api/admin-management';
+import { moveSponsor } from './move-sponsor';
+import { SortableSponsorItem, SortableSponsorList } from './sortable-sponsor-list';
 
 const DISPLAY_INDEX_TAKEN = 'SPONSOR_DISPLAY_INDEX_ALREADY_EXISTS';
 // The server shifts other sponsors itself; this only surfaces a concurrent-write race.
@@ -392,8 +394,26 @@ export function SponsorsPage({
     },
   });
 
+  const reorder = useMutation({
+    mutationFn: ({ sponsor, target }: { sponsor: TournamentSponsor; target: number }) =>
+      adminManagementApi.updateSponsor(tournamentId, sponsor.id, { displayIndex: target }),
+    onMutate: async ({ sponsor, target }) => {
+      await qc.cancelQueries({ queryKey });
+      const previous = qc.getQueryData<readonly TournamentSponsor[]>(queryKey);
+      if (previous) qc.setQueryData(queryKey, moveSponsor(previous, sponsor.id, target));
+      return { previous };
+    },
+    onError: (error, _input, context) => {
+      if (context?.previous) qc.setQueryData(queryKey, context.previous);
+      notifyMutationError(error, 'Không thể đổi vị trí nhà tài trợ.');
+    },
+    onSettled: () => refresh(),
+  });
+
   const items = query.data ?? [];
-  const busy = save.isPending || act.isPending;
+  const busy = save.isPending || act.isPending || reorder.isPending;
+  // Reordering is off while the form is open, so its position hint stays accurate.
+  const canReorder = !readOnly && !draft && items.length > 1;
   const editingId = draft?.mode === 'edit' ? draft.item.id : null;
   const takenIndexes = new Map(
     items
@@ -487,125 +507,141 @@ export function SponsorsPage({
           Chưa có nhà tài trợ nào.
         </p>
       ) : null}
-      <ul className="grid gap-3">
+      {canReorder ? (
+        <p className="text-xs text-muted-foreground">
+          Kéo biểu tượng ⋮⋮ để đổi vị trí xuất hiện của nhà tài trợ.
+        </p>
+      ) : null}
+      <SortableSponsorList
+        disabled={!canReorder || busy}
+        items={items}
+        onMove={(sponsor, target) => {
+          reorder.mutate({ sponsor, target });
+        }}
+      >
         {items.map((item) => (
-          <li
+          <SortableSponsorItem
             className={cn(
               'rounded-xl border border-border bg-card p-4 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-primary/30 hover:shadow-md',
               !item.isEnabled && 'bg-muted/40',
             )}
             key={item.id}
+            showHandle={canReorder}
+            sponsor={item}
           >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <span
-                  aria-label={`Vị trí xuất hiện ${String(item.displayIndex)}`}
-                  className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-black tabular-nums text-muted-foreground"
-                  title="Vị trí xuất hiện"
-                >
-                  {item.displayIndex}
-                </span>
-                {item.imagePath ? (
-                  <img
-                    alt={`Logo ${item.name}`}
-                    className="size-12 shrink-0 rounded-lg bg-white object-contain"
-                    loading="lazy"
-                    src={tournamentImageUrl(item.imagePath) ?? ''}
-                  />
-                ) : (
+            {(handle) => (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  {handle}
                   <span
-                    aria-label={`Chưa có logo cho ${item.name}`}
-                    className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm font-black text-primary"
-                    role="img"
+                    aria-label={`Vị trí xuất hiện ${String(item.displayIndex)}`}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-black tabular-nums text-muted-foreground"
+                    title="Vị trí xuất hiện"
                   >
-                    {item.name.trim().slice(0, 1).toLocaleUpperCase('vi')}
+                    {item.displayIndex}
                   </span>
-                )}
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <b className="break-words">{item.name}</b>
-                    <Badge tone="primary">
-                      Bậc {item.tier} · {item.tierName}
-                    </Badge>
-                    {!item.isEnabled ? (
-                      <Badge dot tone="warning">
-                        Ngừng tài trợ
+                  {item.imagePath ? (
+                    <img
+                      alt={`Logo ${item.name}`}
+                      className="size-12 shrink-0 rounded-lg bg-white object-contain"
+                      loading="lazy"
+                      src={tournamentImageUrl(item.imagePath) ?? ''}
+                    />
+                  ) : (
+                    <span
+                      aria-label={`Chưa có logo cho ${item.name}`}
+                      className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm font-black text-primary"
+                      role="img"
+                    >
+                      {item.name.trim().slice(0, 1).toLocaleUpperCase('vi')}
+                    </span>
+                  )}
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <b className="break-words">{item.name}</b>
+                      <Badge tone="primary">
+                        Bậc {item.tier} · {item.tierName}
                       </Badge>
+                      {!item.isEnabled ? (
+                        <Badge dot tone="warning">
+                          Ngừng tài trợ
+                        </Badge>
+                      ) : null}
+                    </div>
+                    {item.details ? (
+                      <p className="mt-1 whitespace-pre-line break-words text-sm text-muted-foreground">
+                        {item.details}
+                      </p>
                     ) : null}
                   </div>
-                  {item.details ? (
-                    <p className="mt-1 whitespace-pre-line break-words text-sm text-muted-foreground">
-                      {item.details}
-                    </p>
-                  ) : null}
                 </div>
+                {!readOnly ? (
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <Button
+                      aria-label="Cập nhật logo"
+                      disabled={busy || updateLogo.isPending}
+                      onClick={() => {
+                        logoSponsorId.current = item.id;
+                        logoInput.current?.click();
+                      }}
+                      size="sm"
+                      title="Cập nhật logo"
+                      type="button"
+                      variant="outline"
+                    >
+                      <Image aria-hidden="true" className="size-4" />
+                      Logo
+                    </Button>
+                    <Button
+                      aria-label="Sửa"
+                      disabled={busy}
+                      onClick={() => {
+                        setDraft({ mode: 'edit', item, values: sponsorValues(item) });
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="soft"
+                    >
+                      <Pencil aria-hidden="true" className="size-4" />
+                      Sửa
+                    </Button>
+                    <Button
+                      aria-label={!item.isEnabled ? 'Tài trợ lại' : 'Ngừng tài trợ'}
+                      disabled={busy}
+                      onClick={() => {
+                        setPending({ kind: 'toggle', item });
+                      }}
+                      size="sm"
+                      type="button"
+                      variant={!item.isEnabled ? 'success-soft' : 'warning-soft'}
+                    >
+                      {!item.isEnabled ? (
+                        <RotateCcw aria-hidden="true" className="size-4" />
+                      ) : (
+                        <Ban aria-hidden="true" className="size-4" />
+                      )}
+                      {!item.isEnabled ? 'Tài trợ lại' : 'Ngừng tài trợ'}
+                    </Button>
+                    <Button
+                      aria-label="Xóa"
+                      disabled={busy}
+                      onClick={() => {
+                        setPending({ kind: 'delete', item });
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="destructive-soft"
+                    >
+                      <Trash2 aria-hidden="true" className="size-4" />
+                      Xóa
+                    </Button>
+                  </div>
+                ) : null}
               </div>
-              {!readOnly ? (
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  <Button
-                    aria-label="Cập nhật logo"
-                    disabled={busy || updateLogo.isPending}
-                    onClick={() => {
-                      logoSponsorId.current = item.id;
-                      logoInput.current?.click();
-                    }}
-                    size="sm"
-                    title="Cập nhật logo"
-                    type="button"
-                    variant="outline"
-                  >
-                    <Image aria-hidden="true" className="size-4" />
-                    Logo
-                  </Button>
-                  <Button
-                    aria-label="Sửa"
-                    disabled={busy}
-                    onClick={() => {
-                      setDraft({ mode: 'edit', item, values: sponsorValues(item) });
-                    }}
-                    size="sm"
-                    type="button"
-                    variant="soft"
-                  >
-                    <Pencil aria-hidden="true" className="size-4" />
-                    Sửa
-                  </Button>
-                  <Button
-                    aria-label={!item.isEnabled ? 'Tài trợ lại' : 'Ngừng tài trợ'}
-                    disabled={busy}
-                    onClick={() => {
-                      setPending({ kind: 'toggle', item });
-                    }}
-                    size="sm"
-                    type="button"
-                    variant={!item.isEnabled ? 'success-soft' : 'warning-soft'}
-                  >
-                    {!item.isEnabled ? (
-                      <RotateCcw aria-hidden="true" className="size-4" />
-                    ) : (
-                      <Ban aria-hidden="true" className="size-4" />
-                    )}
-                    {!item.isEnabled ? 'Tài trợ lại' : 'Ngừng tài trợ'}
-                  </Button>
-                  <Button
-                    aria-label="Xóa"
-                    disabled={busy}
-                    onClick={() => {
-                      setPending({ kind: 'delete', item });
-                    }}
-                    size="sm"
-                    type="button"
-                    variant="destructive-soft"
-                  >
-                    <Trash2 aria-hidden="true" className="size-4" />
-                    Xóa
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-          </li>
+            )}
+          </SortableSponsorItem>
         ))}
-      </ul>
+      </SortableSponsorList>
       {pending ? (
         <ConfirmationDialog
           actionLabel={

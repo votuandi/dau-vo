@@ -149,10 +149,20 @@ describe('SponsorsPage', () => {
     });
   });
 
+  it('shows drag handles only while the list can be reordered', async () => {
+    renderPage();
+    await screen.findAllByRole('listitem');
+    expect(screen.getByRole('button', { name: 'Kéo để đổi vị trí Gold Co' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Kéo để đổi vị trí Silver Co' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /Thêm nhà tài trợ/ }));
+    expect(screen.queryByRole('button', { name: /Kéo để đổi vị trí/ })).toBeNull();
+  });
+
   it('hides editing actions when read-only', async () => {
     renderPage(true);
     await screen.findAllByRole('listitem');
     expect(screen.queryByRole('button', { name: /Thêm nhà tài trợ/ })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Sửa' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Kéo để đổi vị trí/ })).toBeNull();
   });
 });
