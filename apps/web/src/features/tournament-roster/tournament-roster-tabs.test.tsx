@@ -145,20 +145,35 @@ describe('RosterItemsPage', () => {
     expect(screen.getByLabelText('Tên')).toHaveValue('Changed');
   });
 
-  it('requires confirmation before status changes and invalidates tournament queries', async () => {
+  it('requires confirmation before suspending and invalidates tournament queries', async () => {
     const user = userEvent.setup();
-    api.deleteOrganization.mockResolvedValue({});
+    api.updateOrganization.mockResolvedValue({});
     const { invalidate } = renderPage();
-    const deactivateButton = (await screen.findAllByRole('button', { name: 'Ngừng dùng' }))[0];
-    if (!deactivateButton) throw new Error('Missing deactivate button.');
-    await user.click(deactivateButton);
-    expect(api.deleteOrganization).not.toHaveBeenCalled();
+    const suspendButton = (await screen.findAllByRole('button', { name: 'Đình chỉ' }))[0];
+    if (!suspendButton) throw new Error('Missing suspend button.');
+    await user.click(suspendButton);
+    expect(api.updateOrganization).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Đình chỉ thi đấu' }));
     await waitFor(() => {
-      expect(api.deleteOrganization).toHaveBeenCalledWith('t1', 'one');
+      expect(api.updateOrganization).toHaveBeenCalledWith('t1', 'one', { isActive: false });
     });
+    expect(api.deleteOrganization).not.toHaveBeenCalled();
     await waitFor(() => {
       expect(invalidate).toHaveBeenCalledWith({ queryKey: ['admin', 'tournaments', 't1'] });
+    });
+  });
+
+  it('deletes an organization after confirmation', async () => {
+    const user = userEvent.setup();
+    api.deleteOrganization.mockResolvedValue({});
+    renderPage();
+    const deleteButton = (await screen.findAllByRole('button', { name: 'Xóa' }))[0];
+    if (!deleteButton) throw new Error('Missing delete button.');
+    await user.click(deleteButton);
+    expect(api.deleteOrganization).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Xóa đơn vị' }));
+    await waitFor(() => {
+      expect(api.deleteOrganization).toHaveBeenCalledWith('t1', 'one');
     });
   });
 
@@ -166,7 +181,7 @@ describe('RosterItemsPage', () => {
     renderPage({ readOnly: true });
     await screen.findByText('First');
     expect(
-      screen.queryByRole('button', { name: /Thêm đơn vị|Sửa|Ngừng dùng|Khôi phục/u }),
+      screen.queryByRole('button', { name: /Thêm đơn vị|Sửa|Ngừng dùng|Đình chỉ|Xóa|Khôi phục/u }),
     ).not.toBeInTheDocument();
   });
 

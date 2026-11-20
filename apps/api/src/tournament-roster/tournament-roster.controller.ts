@@ -225,7 +225,7 @@ export class TournamentRosterController {
   ) {
     await this.access.assertTournamentAccess(tournamentId, req.user, true);
     return {
-      organization: await this.roster.deactivateOrganization(
+      organization: await this.roster.deleteOrganization(
         tournamentId,
         organizationId,
         req.user.id,

@@ -1124,6 +1124,78 @@ describe('Admin tournament and match management (integration)', () => {
     ).toBe('TOURNAMENT_ARCHIVED');
   });
 
+  it('suspends and soft deletes organizations', async () => {
+    const tournament = await createTournament('organization-delete');
+    const weight = await createWeightClass(tournament.id, 'org-delete-weight');
+    const organization = await createOrganization(tournament.id, 'org-delete', {
+      location: 'Hà Nội',
+    });
+    const athlete = await createAthlete(
+      tournament.id,
+      'org-delete-athlete',
+      weight.id,
+      organization.id,
+    );
+    const base = `/api/admin/tournaments/${tournament.id}/organizations`;
+    const listNames = async () =>
+      (
+        (
+          await authenticated(
+            request(app.getHttpServer()).get(`${base}?includeInactive=true`),
+          ).expect(200)
+        ).body as { organizations: RosterItemView[] }
+      ).organizations.map((row) => row.id);
+
+    // "Đình chỉ" is a reversible suspension through PATCH.
+    await authenticated(
+      request(app.getHttpServer()).patch(`${base}/${organization.id}`),
+    )
+      .send({ isActive: false })
+      .expect(200);
+    expect(await listNames()).toEqual([organization.id]);
+    await authenticated(
+      request(app.getHttpServer()).patch(`${base}/${organization.id}`),
+    )
+      .send({ isActive: true })
+      .expect(200);
+    await authenticated(
+      request(app.getHttpServer()).patch(
+        `/api/admin/tournaments/${tournament.id}/athletes/${athlete.id}`,
+      ),
+    )
+      .send({ organizationId: organization.id })
+      .expect(200);
+
+    // DELETE is a soft delete: hidden everywhere, athletes unassigned, name reusable.
+    await authenticated(
+      request(app.getHttpServer()).delete(`${base}/${organization.id}`),
+    ).expect(200);
+    expect(await listNames()).toEqual([]);
+    const row = await prisma.tournamentOrganization.findUniqueOrThrow({
+      where: { id: organization.id },
+    });
+    expect(row).toMatchObject({ isActive: false });
+    expect(row.deletedAt).toBeInstanceOf(Date);
+    const unassigned = await prisma.tournamentAthlete.findUniqueOrThrow({
+      where: { id: athlete.id },
+    });
+    expect(unassigned.organizationId).toBeNull();
+    await authenticated(
+      request(app.getHttpServer()).get(`${base}/${organization.id}`),
+    ).expect(404);
+    await authenticated(
+      request(app.getHttpServer()).patch(`${base}/${organization.id}`),
+    )
+      .send({ isActive: true })
+      .expect(404);
+    await authenticated(
+      request(app.getHttpServer()).delete(`${base}/${organization.id}`),
+    ).expect(404);
+    await createOrganization(tournament.id, 'org-delete', {
+      location: 'Hà Nội',
+    });
+  });
+
   it('shifts other sponsors when a taken display position is chosen', async () => {
     interface SponsorView {
       id: string;
