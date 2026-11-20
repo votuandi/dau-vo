@@ -150,6 +150,7 @@ export const routes: RouteObject[] = [
           { path: 'tournaments/:tournamentId/matches', element: <AdminTournamentDetailPage /> },
           { path: 'tournaments/:tournamentId/judges', element: <AdminTournamentDetailPage /> },
           { path: 'tournaments/:tournamentId/supervisors', element: <AdminTournamentDetailPage /> },
+          { path: 'tournaments/:tournamentId/sponsors', element: <AdminTournamentDetailPage /> },
           {
             path: 'matches/:matchId',
             element: <AdminMatchDetailPage />,

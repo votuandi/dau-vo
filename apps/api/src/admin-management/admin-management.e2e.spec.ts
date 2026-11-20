@@ -1026,6 +1026,117 @@ describe('Admin tournament and match management (integration)', () => {
       });
   });
 
+  it('manages sponsors with unique display positions and soft delete', async () => {
+    interface SponsorView {
+      id: string;
+      name: string;
+      details: string | null;
+      tier: number;
+      tierName: string;
+      displayIndex: number;
+      isDisabled: boolean;
+      deletedAt: string | null;
+    }
+    const tournament = await createTournament('sponsors');
+    const base = `/api/admin/tournaments/${tournament.id}/sponsors`;
+    const create = async (body: Record<string, unknown>, status = 201) =>
+      (
+        await authenticated(request(app.getHttpServer()).post(base))
+          .send(body)
+          .expect(status)
+      ).body as { sponsor: SponsorView; code?: string };
+    const list = async () =>
+      (
+        (
+          await authenticated(request(app.getHttpServer()).get(base)).expect(
+            200,
+          )
+        ).body as { sponsors: SponsorView[] }
+      ).sponsors;
+
+    const gold = await create({
+      name: '  Gold Co  ',
+      details: 'Main partner',
+      tier: 1,
+      tierName: 'Kim cương',
+    });
+    expect(gold.sponsor).toMatchObject({
+      name: 'Gold Co',
+      details: 'Main partner',
+      tier: 1,
+      tierName: 'Kim cương',
+      displayIndex: 1,
+      isDisabled: false,
+      deletedAt: null,
+    });
+    const silver = await create({
+      name: 'Silver Co',
+      tier: 2,
+      tierName: 'Bạc',
+      displayIndex: 5,
+    });
+    expect(silver.sponsor.displayIndex).toBe(5);
+    // Omitted index → after the current last position.
+    expect(
+      (await create({ name: 'Auto', tier: 3, tierName: 'Đồng' })).sponsor
+        .displayIndex,
+    ).toBe(6);
+    expect(
+      (
+        await create(
+          { name: 'Dup', tier: 3, tierName: 'Đồng', displayIndex: 5 },
+          409,
+        )
+      ).code,
+    ).toBe('SPONSOR_DISPLAY_INDEX_ALREADY_EXISTS');
+    await create({ name: 'Bad', tier: 0, tierName: 'x' }, 400);
+
+    await authenticated(
+      request(app.getHttpServer()).patch(`${base}/${gold.sponsor.id}`),
+    )
+      .send({ displayIndex: 5 })
+      .expect(409);
+    const disabled = await authenticated(
+      request(app.getHttpServer()).patch(`${base}/${gold.sponsor.id}`),
+    )
+      .send({ isDisabled: true, displayIndex: 10 })
+      .expect(200);
+    expect((disabled.body as { sponsor: SponsorView }).sponsor).toMatchObject({
+      isDisabled: true,
+      displayIndex: 10,
+    });
+    expect((await list()).map((s) => s.name)).toEqual([
+      'Silver Co',
+      'Auto',
+      'Gold Co',
+    ]);
+
+    await authenticated(
+      request(app.getHttpServer()).delete(`${base}/${silver.sponsor.id}`),
+    ).expect(200);
+    expect((await list()).map((s) => s.name)).toEqual(['Auto', 'Gold Co']);
+    const row = await prisma.tournamentSponsor.findUniqueOrThrow({
+      where: { id: silver.sponsor.id },
+    });
+    expect(row.deletedAt).toBeInstanceOf(Date);
+    // A soft-deleted sponsor frees its position and can no longer be edited.
+    await create({ name: 'Reuse', tier: 2, tierName: 'Bạc', displayIndex: 5 });
+    await authenticated(
+      request(app.getHttpServer()).patch(`${base}/${silver.sponsor.id}`),
+    )
+      .send({ name: 'Ghost' })
+      .expect(404);
+
+    await authenticated(
+      request(app.getHttpServer()).delete(
+        `/api/admin/tournaments/${tournament.id}`,
+      ),
+    ).expect(200);
+    expect(
+      (await create({ name: 'Late', tier: 1, tierName: 'Vàng' }, 409)).code,
+    ).toBe('TOURNAMENT_ARCHIVED');
+  });
+
   it('rejects cross-tournament, inactive, mismatched, inactive-class, and inactive-organization selections', async () => {
     const tournament = await createTournament('roster-rejections');
     const otherTournament = await createTournament('roster-other');

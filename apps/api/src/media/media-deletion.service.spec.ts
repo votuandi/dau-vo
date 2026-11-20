@@ -17,6 +17,7 @@ describe('MediaDeletionService', () => {
       },
       tournament: { count: jest.fn().mockResolvedValue(0) },
       tournamentOrganization: { count: jest.fn().mockResolvedValue(0) },
+      tournamentSponsor: { count: jest.fn().mockResolvedValue(0) },
       tournamentAthlete: { count: jest.fn().mockResolvedValue(0) },
       bracketEntrant: { count: jest.fn().mockResolvedValue(0) },
       mediaMigration: { count: jest.fn().mockResolvedValue(0) },

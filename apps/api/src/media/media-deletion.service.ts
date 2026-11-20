@@ -140,22 +140,40 @@ export class MediaDeletionService {
   }
 
   private async isProtected(storageKey: string): Promise<boolean> {
-    const [tournaments, organizations, athletes, snapshots, migrations] =
-      await Promise.all([
-        this.prisma.tournament.count({ where: { imagePath: storageKey } }),
-        this.prisma.tournamentOrganization.count({
-          where: { imagePath: storageKey },
-        }),
-        this.prisma.tournamentAthlete.count({
-          where: { imagePath: storageKey },
-        }),
-        this.prisma.bracketEntrant.count({
-          where: { snapshotImagePath: storageKey },
-        }),
-        this.prisma.mediaMigration.count({
-          where: { storageKey, state: 'PENDING' },
-        }),
-      ]);
-    return tournaments + organizations + athletes + snapshots + migrations > 0;
+    const [
+      tournaments,
+      organizations,
+      athletes,
+      sponsors,
+      snapshots,
+      migrations,
+    ] = await Promise.all([
+      this.prisma.tournament.count({ where: { imagePath: storageKey } }),
+      this.prisma.tournamentOrganization.count({
+        where: { imagePath: storageKey },
+      }),
+      this.prisma.tournamentAthlete.count({
+        where: { imagePath: storageKey },
+      }),
+      // Soft-deleted sponsors still reference their logo, so it stays protected.
+      this.prisma.tournamentSponsor.count({
+        where: { imagePath: storageKey },
+      }),
+      this.prisma.bracketEntrant.count({
+        where: { snapshotImagePath: storageKey },
+      }),
+      this.prisma.mediaMigration.count({
+        where: { storageKey, state: 'PENDING' },
+      }),
+    ]);
+    return (
+      tournaments +
+        organizations +
+        athletes +
+        sponsors +
+        snapshots +
+        migrations >
+      0
+    );
   }
 }

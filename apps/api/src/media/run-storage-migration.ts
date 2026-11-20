@@ -54,6 +54,7 @@ async function main(): Promise<void> {
     SELECT 'tournament' AS source, image_path AS storage_key FROM tournaments WHERE image_path IS NOT NULL
     UNION ALL SELECT 'organization', image_path FROM tournament_organizations WHERE image_path IS NOT NULL
     UNION ALL SELECT 'athlete', image_path FROM tournament_athletes WHERE image_path IS NOT NULL
+    UNION ALL SELECT 'sponsor', image_path FROM tournament_sponsors WHERE image_path IS NOT NULL
     UNION ALL SELECT 'bracket_snapshot', snapshot_image_path FROM bracket_entrants WHERE snapshot_image_path IS NOT NULL
     UNION ALL SELECT 'pending_migration', storage_key FROM media_migrations WHERE state = 'PENDING'
     ${includeOutbox ? "UNION ALL SELECT 'deletion_outbox', storage_key FROM media_deletions" : ''}
