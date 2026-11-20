@@ -19,6 +19,13 @@ describe('monitoring history projection', () => {
               judgeSlot: null,
               serverReceivedAt: '2026-09-30T04:23:51.000Z',
             },
+            {
+              athlete: 'RED',
+              bySupervisor: true,
+              judgePosition: null,
+              judgeSlot: null,
+              serverReceivedAt: '2026-09-30T04:23:52.000Z',
+            },
           ],
         },
         'window-1',
@@ -26,9 +33,17 @@ describe('monitoring history projection', () => {
     ).toEqual([
       {
         athleteColor: 'BLUE',
+        bySupervisor: false,
         judgePosition: 2,
         judgeSlot: null,
         serverReceivedAt: '2026-09-30T04:23:51.000Z',
+      },
+      {
+        athleteColor: 'RED',
+        bySupervisor: true,
+        judgePosition: null,
+        judgeSlot: null,
+        serverReceivedAt: '2026-09-30T04:23:52.000Z',
       },
     ]);
   });

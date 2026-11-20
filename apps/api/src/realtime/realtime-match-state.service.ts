@@ -22,6 +22,7 @@ import {
   MatchExitMode,
   type PresenceUpdatedPayload,
   JudgeSlot as SharedJudgeSlot,
+  ScoringMethod as SharedScoringMethod,
 } from '@martial-arts-scoring/shared-types';
 import {
   AthleteColor,
@@ -30,6 +31,7 @@ import {
   MatchStatus,
   MatchRulesVersion,
   JudgeSlot,
+  ScoringMethod,
 } from '@prisma/client';
 import {
   RoundStage,
@@ -75,7 +77,8 @@ export class RealtimeMatchStateService {
     matchId: string,
     viewer?:
       | { kind: 'legacy'; judgeSlot: JudgeSlot | null }
-      | { assignmentId: string; kind: 'official'; judgePosition: number },
+      | { assignmentId: string; kind: 'official'; judgePosition: number }
+      | { kind: 'supervisor' },
   ): Promise<MatchStatePayload> {
     const match = await this.prisma.match.findUnique({
       select: {
@@ -103,6 +106,8 @@ export class RealtimeMatchStateService {
         rulesVersion: true,
         regulationRoundCount: true,
         roundDurationMs: true,
+        scoringMethod: true,
+        supervisorScoringEnabled: true,
         rounds: {
           orderBy: { roundNumber: 'desc' },
           select: {
@@ -321,6 +326,8 @@ export class RealtimeMatchStateService {
         lifecycle: this.sharedMatchLifecycle(match.lifecycle),
         phase: this.sharedMatchStatus(match.status),
         rulesVersion: match.rulesVersion,
+        scoringMethod: this.sharedScoringMethod(match.scoringMethod),
+        supervisorScoringEnabled: match.supervisorScoringEnabled,
         startedAt: match.startedAt?.toISOString() ?? null,
         intermissionEndsAt: match.intermissionEndsAt?.toISOString() ?? null,
         status: this.sharedMatchStatus(match.status),
@@ -607,7 +614,7 @@ export class RealtimeMatchStateService {
       regulationRoundCount?: number;
     },
     rounds: Array<{ endedAt: Date | null; roundNumber: number }>,
-    unresolvedWindow: { id: string } | null,
+    unresolvedWindow: { endsAt: Date | null; id: string } | null,
   ): MatchExitCapability {
     const blockedReasons: MatchExitBlockedReason[] = [];
     if (match.lifecycle === MatchLifecycle.COMPLETED) {
@@ -634,8 +641,12 @@ export class RealtimeMatchStateService {
         ] as MatchStatus[]
       ).includes(match.status)
     ) {
-      // These cannot be represented by the legacy retained-round modes.
-      allowedModes.push(MatchExitMode.SUSPEND_KEEP_V2_PHASE);
+      // These cannot be represented by the legacy retained-round modes. An open
+      // referee-command window must be closed first: suspension releases the
+      // judges, and their votes must not count beside a re-assigned crew's.
+      if (unresolvedWindow !== null && unresolvedWindow.endsAt === null)
+        blockedReasons.push('UNRESOLVED_SCORING_WINDOW');
+      else allowedModes.push(MatchExitMode.SUSPEND_KEEP_V2_PHASE);
     }
     if (roundOneEnded && unresolvedWindow === null)
       allowedModes.push(MatchExitMode.SUSPEND_KEEP_ROUND_1);
@@ -658,6 +669,7 @@ export class RealtimeMatchStateService {
       select: {
         id: true,
         requiredJudgeCount: true,
+        supervisorScoringEnabled: true,
         tournament: { select: { name: true, location: true, imagePath: true } },
         weightClass: { select: { name: true } },
         bracketFixture: { select: { roundNumber: true } },
@@ -684,6 +696,7 @@ export class RealtimeMatchStateService {
             orderBy: { serverReceivedAt: 'asc' },
             select: {
               athleteColor: true,
+              castBySupervisor: true,
               judgeSlot: true,
               assignment: { select: { judgePosition: true } },
             },
@@ -703,6 +716,7 @@ export class RealtimeMatchStateService {
       bracketRoundNumber: match.bracketFixture?.roundNumber ?? null,
       ...this.toPublicSnapshot(snapshot, outcome, {
         judgeCount: match.requiredJudgeCount,
+        supervisorVoting: match.supervisorScoringEnabled,
         lastResolvedWindow:
           lastResolvedWindow?.resolvedAt == null
             ? null
@@ -713,6 +727,7 @@ export class RealtimeMatchStateService {
                     ? null
                     : this.sharedAthleteColor(lastResolvedWindow.winningColor),
                 votes: lastResolvedWindow.judgeVotes.flatMap((vote) => {
+                  if (vote.castBySupervisor) return [];
                   const judgePosition =
                     vote.assignment?.judgePosition ??
                     (vote.judgeSlot === null
@@ -727,6 +742,14 @@ export class RealtimeMatchStateService {
                         },
                       ];
                 }),
+                supervisorVote: (() => {
+                  const vote = lastResolvedWindow.judgeVotes.find(
+                    (candidate) => candidate.castBySupervisor,
+                  );
+                  return vote
+                    ? this.sharedAthleteColor(vote.athleteColor)
+                    : null;
+                })(),
               },
       }),
     };
@@ -771,6 +794,11 @@ export class RealtimeMatchStateService {
       ),
       generatedAt: snapshot.generatedAt,
       judgeVotes,
+      // A deadline-less window exists only while a referee-command scoring stop is open.
+      refereeScoringOpen:
+        snapshot.match.scoringMethod === SharedScoringMethod.REFEREE_COMMAND &&
+        snapshot.activeScoringWindow !== null &&
+        snapshot.activeScoringWindow.endsAt === null,
       committedScores: {
         source:
           snapshot.result.currentOvertimeAttempt &&
@@ -820,9 +848,10 @@ export class RealtimeMatchStateService {
     viewer:
       | { kind: 'legacy'; judgeSlot: JudgeSlot | null }
       | { assignmentId: string; kind: 'official'; judgePosition: number }
+      | { kind: 'supervisor' }
       | undefined,
     unresolvedWindow: {
-      endsAt: Date;
+      endsAt: Date | null;
       id: string;
       roundNumber: number;
       startedAt: Date;
@@ -831,6 +860,32 @@ export class RealtimeMatchStateService {
   ): Promise<MatchStateViewer | undefined> {
     if (viewer === undefined) {
       return undefined;
+    }
+
+    if (viewer.kind === 'supervisor') {
+      // Only the supervisor's own direct snapshot carries its open-stop choice.
+      const vote =
+        unresolvedWindow === null
+          ? null
+          : await this.prisma.judgeVote.findFirst({
+              select: { athleteColor: true, serverReceivedAt: true },
+              where: {
+                castBySupervisor: true,
+                scoringWindowId: unresolvedWindow.id,
+              },
+            });
+      return {
+        acceptedVote: null,
+        supervisorVote:
+          vote === null || unresolvedWindow === null
+            ? null
+            : {
+                athlete: this.sharedAthleteColor(vote.athleteColor),
+                matchPublicId,
+                scoringWindowId: unresolvedWindow.id,
+                serverReceivedAt: vote.serverReceivedAt.toISOString(),
+              },
+      };
     }
 
     if (
@@ -951,7 +1006,7 @@ export class RealtimeMatchStateService {
   }
 
   private scoringWindowState(window: {
-    endsAt: Date;
+    endsAt: Date | null;
     id: string;
     roundNumber: number;
     round: {
@@ -988,7 +1043,7 @@ export class RealtimeMatchStateService {
           };
 
     return {
-      endsAt: window.endsAt.toISOString(),
+      endsAt: window.endsAt?.toISOString() ?? null,
       id: window.id,
       ...descriptor,
       startedAt: window.startedAt.toISOString(),
@@ -1340,5 +1395,11 @@ export class RealtimeMatchStateService {
         throw new Error(`Unsupported match lifecycle: ${exhaustiveLifecycle}`);
       }
     }
+  }
+
+  private sharedScoringMethod(method: ScoringMethod): SharedScoringMethod {
+    return method === ScoringMethod.REFEREE_COMMAND
+      ? SharedScoringMethod.REFEREE_COMMAND
+      : SharedScoringMethod.JUDGE_FREE_WINDOW;
   }
 }

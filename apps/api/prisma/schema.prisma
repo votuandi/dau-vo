@@ -93,6 +93,26 @@ enum MatchOutcomeMethod {
   @@map("match_outcome_method")
 }
 
+/// How judges award a point: a self-opening 1.5 s window started by the first
+/// vote, or a window the supervisor opens and closes on the referee's signal.
+enum ScoringMethod {
+  JUDGE_FREE_WINDOW
+  REFEREE_COMMAND
+
+  @@map("scoring_method")
+}
+
+/// How a scoring stop is won when the number of scorers (judges + supervisor "TT") is even.
+/// With an odd number both rules give the same result.
+enum ScoringThreshold {
+  /// The athlete needs more than half of all scorers (the original majority rule).
+  MORE_THAN_HALF
+  /// The athlete needs at least half of all scorers and more votes than the other athlete.
+  AT_LEAST_HALF
+
+  @@map("scoring_threshold")
+}
+
 enum MatchLifecycle {
   READY
   IN_PROGRESS
@@ -556,6 +576,11 @@ model Match {
   status               MatchStatus               @default(WAITING)
   lifecycle            MatchLifecycle            @default(READY)
   rulesVersion         MatchRulesVersion         @default(FAULT_APPEAL_OVERTIME_V2) @map("rules_version")
+  scoringMethod        ScoringMethod             @default(JUDGE_FREE_WINDOW) @map("scoring_method")
+  /// Snapshot of the round setting: the supervisor also votes, as one more judge ("TT").
+  supervisorScoringEnabled Boolean               @default(false) @map("supervisor_scoring_enabled")
+  /// Snapshot of the round setting: win rule for an even number of scorers (null = original rule).
+  scoringThreshold     ScoringThreshold?         @map("scoring_threshold")
   suspendedAt          DateTime?                 @map("suspended_at") @db.Timestamptz(3)
   currentRound         Int?                      @map("current_round") @db.SmallInt
   regulationRoundCount Int                       @default(2) @map("regulation_round_count") @db.SmallInt
@@ -634,6 +659,11 @@ model TournamentBracket {
 model BracketRoundStaffing {
   regulationRoundCount Int             @default(2) @map("regulation_round_count") @db.SmallInt
   roundDurationMs      Int             @default(120000) @map("round_duration_ms")
+  scoringMethod        ScoringMethod   @default(JUDGE_FREE_WINDOW) @map("scoring_method")
+  /// Referee-command only: the supervisor also votes, as one more judge ("TT").
+  supervisorScoringEnabled Boolean       @default(false) @map("supervisor_scoring_enabled")
+  /// Win rule for an even number of scorers; null until the organiser chooses one.
+  scoringThreshold     ScoringThreshold? @map("scoring_threshold")
   id                 String            @id(map: "bracket_round_staffing_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   bracketId          String            @map("bracket_id") @db.Uuid
   roundNumber        Int               @map("round_number") @db.SmallInt
@@ -934,7 +964,8 @@ model ScoringWindow {
   roundId              String?       @map("round_id") @db.Uuid
   roundElapsedMs       Int?          @map("round_elapsed_ms")
   startedAt            DateTime      @map("started_at") @db.Timestamptz(3)
-  endsAt               DateTime      @map("ends_at") @db.Timestamptz(3)
+  /// Null only while a referee-command window is open; set when it closes.
+  endsAt               DateTime?     @map("ends_at") @db.Timestamptz(3)
   resolvedAt           DateTime?     @map("resolved_at") @db.Timestamptz(3)
   winningColor         AthleteColor? @map("winning_color")
   scoreAwarded         Boolean       @default(false) @map("score_awarded")
@@ -967,6 +998,8 @@ model JudgeVote {
   clientPressedAt      DateTime?                @map("client_pressed_at") @db.Timestamptz(3)
   invalidatedAt        DateTime?                @map("invalidated_at") @db.Timestamptz(3)
   invalidatedByAuditId String?                  @map("invalidated_by_audit_id") @db.Uuid
+  /// The supervisor's own vote ("TT"); it has no judge slot or judge position.
+  castBySupervisor     Boolean                  @default(false) @map("cast_by_supervisor")
   createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
   scoringWindow        ScoringWindow            @relation(fields: [scoringWindowId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "judge_votes_scoring_window_id_fkey")
   match                Match                    @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "judge_votes_match_id_fkey")

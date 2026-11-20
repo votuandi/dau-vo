@@ -72,16 +72,12 @@ function FieldError({
 
 function MembershipNotice() {
   return (
-    <Alert
-      className="items-center border-red-300 bg-red-50 ring-2 ring-red-200 dark:border-red-500/50 dark:bg-red-950/40 dark:ring-red-900/60"
-      role="alert"
-      tone="error"
-    >
+    <Alert className="items-center" role="alert" tone="warning">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="font-bold text-red-700 dark:text-red-300">
+        <p className="font-bold text-amber-900">
           Bạn chưa đăng ký gói thành viên. Hãy đăng ký để được sử dụng đầy đủ tính năng
         </p>
-        <Button asChild className="shrink-0" variant="destructive">
+        <Button asChild className="shrink-0">
           <Link to="/subscription">Đăng ký gói</Link>
         </Button>
       </div>

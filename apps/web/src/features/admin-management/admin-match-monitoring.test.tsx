@@ -190,6 +190,32 @@ describe('AdminMatchMonitoring', () => {
     expect(screen.getByText('+1 VĐV xanh')).toHaveClass('text-blue-700');
   });
 
+  it('lists the supervisor own vote as TT', async () => {
+    const fixture = monitoringFixture();
+    const [window] = fixture.scoringWindows;
+    if (!window) throw new Error('fixture needs a scoring window');
+    renderMonitoring({
+      ...fixture,
+      scoringWindows: [
+        {
+          ...window,
+          judgeVotes: [
+            {
+              athleteColor: AthleteColor.BLUE,
+              bySupervisor: true,
+              invalidatedAt: null,
+              judgePosition: null,
+              judgeSlot: null,
+              serverReceivedAt: occurredAt,
+            },
+          ],
+        },
+      ],
+    });
+    const label = await screen.findByText(/TT \(Giám sát\):/);
+    expect(label.closest('li')).toHaveTextContent('TT (Giám sát): +1 VĐV xanh');
+  });
+
   it('styles score events by athlete and retains reverted status', async () => {
     renderMonitoring();
     await screen.findByText('Điểm giám định', { exact: false });

@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { BracketChart } from './bracket-chart';
 import type { BracketPreview } from '@/services/api/admin-management';
+import { Alert } from '@/components/ui/alert';
 
 export function BracketPreviewPanel({
   preview,
@@ -60,12 +61,9 @@ export function BracketPreviewPanel({
         <BracketChart data={preview} {...(pending ? {} : { onEditAthlete })} />
       </div>
       {error ? (
-        <p
-          className="mt-4 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive"
-          role="alert"
-        >
+        <Alert className="mt-4" role="alert" tone="error">
           {error}
-        </p>
+        </Alert>
       ) : null}
       <div className="mt-6 flex flex-wrap justify-end gap-3">
         <Button disabled={pending} onClick={onCancel} type="button" variant="outline">

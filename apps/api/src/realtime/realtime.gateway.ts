@@ -26,6 +26,7 @@ import {
   type FaultRecordedPayload,
   type RoundStartResponse,
   type RoundControlResponse,
+  type ScoringWindowOpenedPayload,
   type ResultCancellationResponse,
   type ResultCancellationUndoResponse,
   type MatchCompletionResponse,
@@ -41,6 +42,8 @@ import {
   type VoteSubmitError,
   type VoteSubmitPayload,
   type VoteSubmitResponse,
+  type SupervisorVoteSubmitPayload,
+  type SupervisorVoteSubmitResponse,
   AthleteColor as SharedAthleteColor,
   FaultSeverity as SharedFaultSeverity,
 } from '@martial-arts-scoring/shared-types';
@@ -106,6 +109,8 @@ import {
   PriorScoringWindowPendingError,
   RoundEndedForVoteError,
   RoundPausedForVoteError,
+  ScoringClosedForVoteError,
+  SupervisorVoteDisabledError,
 } from './scoring.errors';
 import {
   ScoringService,
@@ -155,6 +160,7 @@ import {
   VOTE_INVALID_ATHLETE_ERROR,
   VOTE_MATCH_NOT_RUNNING_ERROR,
   VOTE_ROUND_ENDED_ERROR,
+  VOTE_SCORING_CLOSED_ERROR,
   VOTE_SCORING_WINDOW_PENDING_ERROR,
   matchRoom,
   officialRoom,
@@ -1019,9 +1025,17 @@ export class RealtimeGateway
     return this.controlRound(client, 'resume');
   }
 
+  /** Referee-command scoring: pause the round and open judge scoring. */
+  @SubscribeMessage(RealtimeEvent.SCORING_START)
+  async scoringStart(
+    @ConnectedSocket() client: RealtimeSocket,
+  ): Promise<RoundControlResponse> {
+    return this.controlRound(client, 'score');
+  }
+
   private async controlRound(
     client: RealtimeSocket,
-    action: 'pause' | 'resume',
+    action: 'pause' | 'resume' | 'score',
   ): Promise<RoundControlResponse> {
     if (this.isScoreboardSocket(client))
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
@@ -1032,15 +1046,22 @@ export class RealtimeGateway
     )
       return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
     let transition: RoundControlTransition;
+    let opened: ScoringWindowOpenedPayload | null = null;
     try {
       const input = {
         matchId: command.matchId,
         identity: command.identity,
       };
-      transition =
-        action === 'pause'
-          ? await this.lifecycle.pauseRound(input)
-          : await this.lifecycle.resumeRound(input);
+      if (action === 'score') {
+        const started = await this.lifecycle.startRefereeScoring(input);
+        transition = started;
+        opened = started.opened;
+      } else {
+        transition =
+          action === 'pause'
+            ? await this.lifecycle.pauseRound(input)
+            : await this.lifecycle.resumeRound(input);
+      }
     } catch (error: unknown) {
       if (error instanceof SportGroupRulesNotImplementedError)
         return { error: SPORT_GROUP_RULES_NOT_IMPLEMENTED_ERROR, ok: false };
@@ -1060,13 +1081,20 @@ export class RealtimeGateway
       );
       return { error: ROUND_CONTROL_FAILED_ERROR, ok: false };
     }
-    const event =
-      action === 'pause'
-        ? RealtimeEvent.ROUND_PAUSED
-        : RealtimeEvent.ROUND_RESUMED;
-    this.server
-      .to(matchRoom(command.publicMatchId))
-      .emit(event, transition.payload);
+    const room = this.server.to(matchRoom(command.publicMatchId));
+    room.emit(
+      action === 'resume'
+        ? RealtimeEvent.ROUND_RESUMED
+        : RealtimeEvent.ROUND_PAUSED,
+      transition.payload,
+    );
+    if (opened !== null) room.emit(RealtimeEvent.SCORING_WINDOW_OPENED, opened);
+    if (transition.scoringResolution) {
+      const { payload, scoreUpdated } = transition.scoringResolution;
+      room.emit(RealtimeEvent.SCORING_WINDOW_RESOLVED, payload);
+      if (scoreUpdated !== null)
+        room.emit(RealtimeEvent.SCORE_UPDATED, scoreUpdated);
+    }
     await this.broadcastMatchState(
       transition.matchId,
       command.publicMatchId,
@@ -1209,6 +1237,51 @@ export class RealtimeGateway
     return { ok: true, undo: transition.payload };
   }
 
+  /**
+   * The supervisor's own ("TT") vote in an open referee-command stop. Authority comes
+   * from the authenticated supervisor socket only; the response is sent to that supervisor
+   * alone, so judges never see the supervisor's choice before the stop is resolved.
+   */
+  @SubscribeMessage(RealtimeEvent.SUPERVISOR_VOTE_SUBMIT)
+  async supervisorVoteSubmit(
+    @ConnectedSocket() client: RealtimeSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<SupervisorVoteSubmitResponse> {
+    if (this.isScoreboardSocket(client))
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    const command = await this.supervisorCommand(client);
+    if (!command) return { error: VOTE_FORBIDDEN_ERROR, ok: false };
+    if (
+      !(await this.ensureCommandRoomMembership(client, command.publicMatchId))
+    )
+      return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+    if (!this.isSupervisorVotePayload(payload))
+      return { error: VOTE_INVALID_ATHLETE_ERROR, ok: false };
+    try {
+      const vote = await this.lifecycle.submitSupervisorVote({
+        athlete: payload.athlete,
+        identity: command.identity,
+        matchId: command.matchId,
+        scoringWindowId: payload.scoringWindowId,
+      });
+      return { ok: true, vote };
+    } catch (error: unknown) {
+      if (error instanceof InactiveRoundControlSessionError) {
+        this.revokeCommandSocket(client, command.identity);
+        return { error: REALTIME_AUTHENTICATION_ERROR, ok: false };
+      }
+      if (error instanceof SupervisorVoteDisabledError)
+        return { error: VOTE_FORBIDDEN_ERROR, ok: false };
+      if (error instanceof ScoringClosedForVoteError)
+        return { error: VOTE_SCORING_CLOSED_ERROR, ok: false };
+      this.logger.error(
+        { error, matchId: command.matchId },
+        'Supervisor vote failed',
+      );
+      return { error: VOTE_FAILED_ERROR, ok: false };
+    }
+  }
+
   @SubscribeMessage(RealtimeEvent.VOTE_SUBMIT)
   async voteSubmit(
     @ConnectedSocket() client: RealtimeSocket,
@@ -1229,6 +1302,7 @@ export class RealtimeGateway
           athlete: payload.athlete,
           matchId: assignment.match.id,
           officialSessionId: official.sessionId,
+          scoringWindowId: payload.scoringWindowId,
         });
         if (transition.resolvedBeforeAcceptance)
           await this.publishScoringResolution(
@@ -1253,6 +1327,8 @@ export class RealtimeGateway
           return { error: VOTE_ROUND_ENDED_ERROR, ok: false };
         if (error instanceof PriorScoringWindowPendingError)
           return { error: VOTE_SCORING_WINDOW_PENDING_ERROR, ok: false };
+        if (error instanceof ScoringClosedForVoteError)
+          return { error: VOTE_SCORING_CLOSED_ERROR, ok: false };
         this.logger.error(
           { error, assignmentId: assignment.id },
           'Assigned referee vote failed',
@@ -1288,6 +1364,7 @@ export class RealtimeGateway
         athlete: payload.athlete,
         matchId: identity.matchId,
         judgeSlot: identity.judgeSlot,
+        scoringWindowId: payload.scoringWindowId,
         sessionId: identity.sessionId,
       });
 
@@ -1347,6 +1424,13 @@ export class RealtimeGateway
           client,
           identity.publicMatchId,
           VOTE_SCORING_WINDOW_PENDING_ERROR,
+        );
+      }
+      if (error instanceof ScoringClosedForVoteError) {
+        return this.rejectVote(
+          client,
+          identity.publicMatchId,
+          VOTE_SCORING_CLOSED_ERROR,
         );
       }
 
@@ -1669,7 +1753,9 @@ export class RealtimeGateway
               kind: 'official' as const,
               judgePosition: assignment.judgePosition,
             }
-          : undefined;
+          : assignment.role === 'SUPERVISOR'
+            ? { kind: 'supervisor' as const }
+            : undefined;
       const snapshot = await this.matchState.snapshot(
         assignment.match.id,
         viewer,
@@ -1694,10 +1780,12 @@ export class RealtimeGateway
     // This response goes only to the authenticated socket, so it can include
     // that referee slot's accepted vote for an unresolved scoring window.
     // Room broadcasts intentionally omit this recipient-specific data.
-    const snapshot = await this.matchState.snapshot(identity.matchId, {
-      kind: 'legacy',
-      judgeSlot: identity.judgeSlot,
-    });
+    const snapshot = await this.matchState.snapshot(
+      identity.matchId,
+      identity.role === MatchRole.SUPERVISOR
+        ? { kind: 'supervisor' }
+        : { kind: 'legacy', judgeSlot: identity.judgeSlot },
+    );
 
     if (snapshot.match.publicId !== identity.publicMatchId) {
       this.sessionRegistry.revokeSessions([identity.sessionId]);
@@ -2185,8 +2273,21 @@ export class RealtimeGateway
     if (typeof payload !== 'object' || payload === null) {
       return false;
     }
-    const athlete = (payload as Record<string, unknown>).athlete;
-    return athlete === AthleteColor.RED || athlete === AthleteColor.BLUE;
+    const { athlete, scoringWindowId } = payload as Record<string, unknown>;
+    return (
+      (athlete === AthleteColor.RED || athlete === AthleteColor.BLUE) &&
+      (scoringWindowId === undefined || typeof scoringWindowId === 'string')
+    );
+  }
+
+  private isSupervisorVotePayload(
+    payload: unknown,
+  ): payload is SupervisorVoteSubmitPayload {
+    return (
+      this.isVotePayload(payload) &&
+      typeof payload.scoringWindowId === 'string' &&
+      payload.scoringWindowId.length > 0
+    );
   }
 
   private isPenaltyPayload(payload: unknown): payload is PenaltyAddPayload {

@@ -1007,6 +1007,9 @@ export class AdminManagementService {
               requiredJudgeCount: true,
               regulationRoundCount: true,
               roundDurationMs: true,
+              scoringMethod: true,
+              supervisorScoringEnabled: true,
+              scoringThreshold: true,
             },
           });
           if (!staffing)
@@ -1022,6 +1025,9 @@ export class AdminManagementService {
               bracketFixtureId: fixture.id,
               regulationRoundCount: staffing.regulationRoundCount,
               roundDurationMs: staffing.roundDurationMs,
+              scoringMethod: staffing.scoringMethod,
+              supervisorScoringEnabled: staffing.supervisorScoringEnabled,
+              scoringThreshold: staffing.scoringThreshold,
               breakDurationMs: this.breakDurationMs,
               requiredJudgeCount: staffing.requiredJudgeCount,
             },
@@ -1171,6 +1177,7 @@ export class AdminManagementService {
             select: {
               assignment: { select: { judgePosition: true } },
               athleteColor: true,
+              castBySupervisor: true,
               invalidatedAt: true,
               judgeSlot: true,
               serverReceivedAt: true,
@@ -1215,10 +1222,13 @@ export class AdminManagementService {
 
     const wasPausedAt = monitoringPauseLookup(auditLogs);
     const historyWindows = scoringWindows.map(({ judgeVotes, ...window }) => {
-      const persistedVotes = judgeVotes.map(({ assignment, ...vote }) => ({
-        ...vote,
-        judgePosition: assignment?.judgePosition ?? null,
-      }));
+      const persistedVotes = judgeVotes.map(
+        ({ assignment, castBySupervisor, ...vote }) => ({
+          ...vote,
+          bySupervisor: castBySupervisor,
+          judgePosition: assignment?.judgePosition ?? null,
+        }),
+      );
       const auditVotes = auditLogs.flatMap((audit) =>
         monitoringAuditJudgeVotes(audit.metadata, window.id),
       );

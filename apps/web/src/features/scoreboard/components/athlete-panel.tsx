@@ -15,8 +15,11 @@ function FaultChip({ label, value }: { readonly label: string; readonly value: n
 
 export const AthletePanel = memo(function AthletePanel({
   athlete,
+  scoreHighlightKey = null,
 }: {
   readonly athlete: ScoreboardAthlete;
+  /** Set while this athlete's point from the last call is highlighted; changes per call. */
+  readonly scoreHighlightKey?: string | null;
 }) {
   const red = athlete.color === AthleteColor.RED;
   const organization = athlete.organization ?? 'VĐV tự do';
@@ -83,7 +86,13 @@ export const AthletePanel = memo(function AthletePanel({
       <div className="grid flex-1 place-items-center short:col-start-2 short:row-span-2 short:row-start-1 short:pl-2">
         <p
           aria-label={`Điểm ${red ? 'Đỏ' : 'Xanh'}: ${String(athlete.score)}`}
-          className="font-mono text-[clamp(3.5rem,21vmin,15rem)] font-black leading-none tabular-nums drop-shadow-[0_6px_24px_rgb(0_0_0/0.35)]"
+          className={cn(
+            'rounded-[clamp(0.75rem,2.4vmin,1.75rem)] px-[clamp(0.5rem,2vmin,1.5rem)] font-mono text-[clamp(3.5rem,21vmin,15rem)] font-black leading-none tabular-nums drop-shadow-[0_6px_24px_rgb(0_0_0/0.35)]',
+            scoreHighlightKey !== null && 'scoreboard-score-highlight',
+          )}
+          data-highlighted={scoreHighlightKey !== null}
+          // A new key restarts the blink even when the same athlete scores again.
+          key={scoreHighlightKey ?? 'idle'}
         >
           {athlete.score}
         </p>

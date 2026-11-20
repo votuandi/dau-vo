@@ -1,5 +1,9 @@
 import { Maximize, Minimize } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  matchToneBarClassName,
+  type MatchScreenTone,
+} from "@/features/match-screen-tone";
 import type { ScoreboardConnectionStatus } from "../scoreboard-realtime";
 import type { ScoreboardSource } from "../scoreboard-source";
 import { useFullscreen } from "../display-controls";
@@ -16,14 +20,14 @@ export function ScoreboardHeader({
   onSelect,
   status,
   hasSnapshot,
-  attention = false,
+  tone = "arena",
   matchPublicId,
 }: {
   readonly source: ScoreboardSource;
   readonly onSelect: (source: ScoreboardSource) => void;
   readonly status: ScoreboardConnectionStatus;
   readonly hasSnapshot: boolean;
-  readonly attention?: boolean;
+  readonly tone?: MatchScreenTone;
   readonly matchPublicId?: string;
 }) {
   return (
@@ -31,9 +35,10 @@ export function ScoreboardHeader({
       aria-label="Thông tin bảng điểm"
       className={cn(
         "scoreboard-header rounded-2xl border px-3 py-2 backdrop-blur sm:px-5",
-        attention
-          ? "border-amber-200/40 bg-amber-950/45"
-          : "border-white/10 bg-blue-950/25",
+        // The scoreboard keeps its lighter arena bar; pause and scoring share the console tones.
+        tone === "arena"
+          ? "border-white/10 bg-blue-950/25"
+          : matchToneBarClassName[tone],
       )}
     >
       <div className="scoreboard-controls">

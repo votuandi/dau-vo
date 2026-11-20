@@ -8,6 +8,13 @@ import {
 import { tournamentQueryKeys } from '@/features/admin-management/queries';
 import { adminManagementApi } from '@/services/api/admin-management';
 import { parseIntermissionSeconds } from './fixture-presentation';
+import { inputClassName } from '@/features/admin-management/presentation';
+import {
+  settingsButtonClassName,
+  settingsDescriptionClassName,
+  settingsSubCardClassName,
+  settingsSubTitleClassName,
+} from './settings-card-styles';
 
 /**
  * Edits the break between rounds for one weight class. Mount it with a `key`
@@ -46,7 +53,7 @@ export function IntermissionDurationForm({
 
   return (
     <form
-      className="rounded-xl border border-border bg-muted/20 p-4"
+      className={settingsSubCardClassName}
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
@@ -59,14 +66,17 @@ export function IntermissionDurationForm({
         update.mutate(seconds);
       }}
     >
-      <label className="text-sm font-semibold" htmlFor="weight-class-intermission-duration">
+      <label className={settingsSubTitleClassName} htmlFor="weight-class-intermission-duration">
         Thời gian nghỉ giữa hiệp (giây)
       </label>
-      <div className="mt-1 flex flex-wrap items-center gap-3">
+      <p className={settingsDescriptionClassName} id="weight-class-intermission-help">
+        Nhập 0 để tắt thời gian nghỉ.
+      </p>
+      <div className="mt-2 flex flex-wrap items-end gap-3">
         <input
           aria-describedby="weight-class-intermission-help weight-class-intermission-error"
           aria-invalid={Boolean(error)}
-          className="block h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary aria-[invalid=true]:border-destructive sm:w-64"
+          className={`${inputClassName} sm:w-64`}
           disabled={disabled}
           id="weight-class-intermission-duration"
           inputMode="numeric"
@@ -79,16 +89,13 @@ export function IntermissionDurationForm({
           type="number"
           value={value}
         />
-        <Button disabled={disabled} type="submit">
+        <Button className={settingsButtonClassName} disabled={disabled} type="submit">
           {update.isPending ? 'Đang lưu…' : 'Lưu'}
         </Button>
       </div>
-      <p className="mt-1 text-xs text-muted-foreground" id="weight-class-intermission-help">
-        Nhập 0 để tắt thời gian nghỉ.
-      </p>
       {error ? (
         <p
-          className="mt-1 text-xs text-destructive"
+          className="mt-1.5 text-xs font-medium text-destructive"
           id="weight-class-intermission-error"
           role="alert"
         >

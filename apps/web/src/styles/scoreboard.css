@@ -134,7 +134,32 @@
   animation: winner-confetti-fall var(--duration) var(--delay) cubic-bezier(0.3, 0.4, 0.6, 1) 2 both;
 }
 
+/* Score of the athlete awarded the last call: 4 blinks x 0.375 s = 1.5 s (JUDGE_VOTE_FLASH_MS). */
+@keyframes scoreboard-score-blink {
+  0%,
+  100% {
+    background-color: rgb(255 255 255 / 0.28);
+    box-shadow:
+      0 0 0 clamp(3px, 0.6vmin, 6px) rgb(255 255 255 / 0.9),
+      0 0 clamp(1.5rem, 6vmin, 4rem) rgb(255 255 255 / 0.55);
+    transform: scale(1.06);
+  }
+  50% {
+    background-color: rgb(255 255 255 / 0);
+    box-shadow: 0 0 0 0 rgb(255 255 255 / 0);
+    transform: scale(1);
+  }
+}
+.scoreboard-score-highlight {
+  animation: scoreboard-score-blink 0.375s ease-in-out 4;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .scoreboard-score-highlight {
+    animation: none;
+    background-color: rgb(255 255 255 / 0.2);
+    box-shadow: 0 0 0 4px rgb(255 255 255 / 0.85);
+  }
   .winner-flash,
   .winner-confetti {
     display: none;

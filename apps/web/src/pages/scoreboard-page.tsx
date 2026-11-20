@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { MatchStatus } from '@martial-arts-scoring/shared-types';
+import { AthleteColor, MatchStatus } from '@martial-arts-scoring/shared-types';
 import { useScoreboardRealtime } from '@/features/scoreboard/scoreboard-realtime';
 import { IntermissionCountdown, useIntermissionActive } from '@/components/intermission-countdown';
 import { toast } from '@/components/ui/toast';
@@ -24,10 +24,17 @@ import type { ScoreboardSource } from '@/features/scoreboard/scoreboard-source';
 import { ScoreboardClock } from '@/features/scoreboard/components/scoreboard-clock';
 import { WinnerPresentation } from '@/features/scoreboard/components/winner-presentation';
 import { useScreenWakeLock } from '@/features/scoreboard/display-controls';
+import {
+  matchToneBackgroundClassName,
+  matchTonePanelClassName,
+  type MatchScreenTone,
+} from '@/features/match-screen-tone';
+import { useAwardedFlash } from '@/features/scoreboard/use-awarded-flash';
 
 const THEME_BACKGROUND: Record<ScoreboardTheme, string> = {
   arena: 'arena-background',
-  attention: 'bg-gradient-to-br from-amber-950 via-yellow-800 to-amber-950',
+  attention: matchToneBackgroundClassName.attention,
+  scoring: matchToneBackgroundClassName.scoring,
   'red-winner': 'bg-gradient-to-br from-red-500 via-red-700 to-red-950',
   'blue-winner': 'bg-gradient-to-br from-sky-500 via-blue-700 to-blue-950',
 };
@@ -137,7 +144,13 @@ function ScoreboardContent({
     snapshot?.generatedAt,
   );
   const view = buildScoreboardViewModel(snapshot, intermission.active);
-  const attention = view.theme === 'attention';
+  const awarded = useAwardedFlash(
+    snapshot?.judgeVotes,
+    snapshot?.generatedAt,
+    snapshot?.refereeScoringOpen === true,
+  );
+  const tone: MatchScreenTone =
+    view.theme === 'attention' || view.theme === 'scoring' ? view.theme : 'arena';
   const activeRound = snapshot?.activeRound;
 
   return (
@@ -153,7 +166,7 @@ function ScoreboardContent({
         onSelect={onSelect}
         status={trackingDisconnected ? 'disconnected' : connectionStatus}
         hasSnapshot={snapshot !== null}
-        attention={attention}
+        tone={tone}
         matchPublicId={snapshot?.match.publicId ?? matchPublicId}
       />
 
@@ -174,9 +187,7 @@ function ScoreboardContent({
             aria-label="Trạng thái trận đấu"
             className={cn(
               'scoreboard-match-state flex flex-col items-center rounded-[clamp(1rem,3vmin,2rem)] border px-4 py-[clamp(0.5rem,2vmin,1.5rem)] text-center shadow-2xl backdrop-blur-xl',
-              attention
-                ? 'border-amber-200/40 bg-amber-950/30 shadow-amber-950/30'
-                : 'border-white/15 bg-white/10 shadow-blue-950/20',
+              matchTonePanelClassName[tone],
             )}
           >
             <ScoreboardEvent tournament={snapshot?.tournament} />
@@ -219,14 +230,24 @@ function ScoreboardContent({
             />
           </section>
 
-          <JudgeVoteStrip generatedAt={snapshot?.generatedAt} judgeVotes={snapshot?.judgeVotes} />
+          <JudgeVoteStrip
+            generatedAt={snapshot?.generatedAt}
+            judgeVotes={snapshot?.judgeVotes}
+            awarded={awarded.color}
+          />
 
           <section
             aria-label="Điểm số hai góc"
             className="scoreboard-athletes grid flex-1 gap-[clamp(0.5rem,1.6vmin,1.25rem)] md:grid-cols-2 landscape:grid-cols-2"
           >
-            <AthletePanel athlete={view.red} />
-            <AthletePanel athlete={view.blue} />
+            <AthletePanel
+              athlete={view.red}
+              scoreHighlightKey={awarded.color === AthleteColor.RED ? awarded.key : null}
+            />
+            <AthletePanel
+              athlete={view.blue}
+              scoreHighlightKey={awarded.color === AthleteColor.BLUE ? awarded.key : null}
+            />
           </section>
         </>
       )}

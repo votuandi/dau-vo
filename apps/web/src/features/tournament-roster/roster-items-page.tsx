@@ -329,7 +329,7 @@ export function RosterItemsPage({
           type="file"
         />
       ) : null}
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-border bg-card p-5 shadow-sm">
         <div>
           <h2 className="flex items-center gap-2 text-xl font-black">
             {kind === 'organizations' ? 'Đơn vị tham gia' : 'Hạng cân'}

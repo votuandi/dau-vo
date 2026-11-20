@@ -9,6 +9,7 @@ import type { MatchRealtimeState } from '@/features/match-access/match-realtime'
 import { Button } from '@/components/ui/button';
 import { presentPhase } from '@/features/match-presentation';
 import { formatCountdown, useServerCountdown } from '@/features/match-timer/server-countdown';
+import { Alert } from '@/components/ui/alert';
 
 interface MatchRealtimePanelProps {
   readonly canStartRound: boolean;
@@ -239,12 +240,9 @@ function RefereeVoteControls({ realtime }: { readonly realtime: MatchRealtimeSta
       ) : null}
 
       {realtime.voteSubmitErrorMessage ? (
-        <p
-          className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-          role="alert"
-        >
+        <Alert className="mt-3" role="alert" tone="error">
           {realtime.voteSubmitErrorMessage}
-        </p>
+        </Alert>
       ) : null}
     </section>
   );
@@ -302,12 +300,9 @@ function InspectorFaultControls({ realtime }: { readonly realtime: MatchRealtime
         ))}
       </div>
       {realtime.faultErrorMessage ? (
-        <p
-          className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-          role="alert"
-        >
+        <Alert className="mt-3" role="alert" tone="error">
           {realtime.faultErrorMessage}
-        </p>
+        </Alert>
       ) : null}
     </section>
   );

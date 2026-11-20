@@ -1,11 +1,16 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AthleteColor,
   MatchExitMode,
   RealtimeEvent,
   JudgeSlot,
+  ScoringMethod,
   type MatchExitResponse,
+  type MatchStatePayload,
+  type RoundControlResponse,
+  type VoteSubmitResponse,
+  type SupervisorVoteSubmitResponse,
 } from '@martial-arts-scoring/shared-types';
 import { getParticipantsNotReadyMessage, useMatchRealtime } from './match-realtime';
 import { acceptedRedVote, createMatchSnapshot, refereeSession } from '@/test/factories';
@@ -309,5 +314,221 @@ describe('useMatchRealtime', () => {
       expect.any(Function),
     );
     expect(socketHarness.socket.emit).not.toHaveBeenCalledWith(RealtimeEvent.MATCH_STATE_REQUEST);
+  });
+});
+
+describe('useMatchRealtime referee-command scoring', () => {
+  beforeEach(() => {
+    socketHarness.reset();
+  });
+  afterEach(() => {
+    socketHarness.socket.emit.mockReset();
+  });
+
+  function acknowledgeWith(
+    event: string,
+    response: RoundControlResponse | VoteSubmitResponse | SupervisorVoteSubmitResponse,
+  ) {
+    socketHarness.socket.emit.mockImplementation((name: string, ...args: unknown[]) => {
+      const acknowledge = args.at(-1);
+      if (name === event && typeof acknowledge === 'function')
+        (acknowledge as (error: Error | null, value: unknown) => void)(null, response);
+    });
+  }
+
+  function renderJudge() {
+    return renderHook(() =>
+      useMatchRealtime({
+        matchPublicId: refereeSession.matchPublicId,
+        onAuthenticationRequired: vi.fn(),
+        onSessionRevoked: vi.fn(),
+        refereeIdentity: { kind: 'legacy', judgeSlot: JudgeSlot.JUDGE_1 },
+      }),
+    );
+  }
+
+  function refereeCommandState() {
+    const snapshot = createMatchSnapshot({ viewer: { acceptedVote: acceptedRedVote } });
+    return {
+      ...snapshot,
+      activeScoringWindow: {
+        attemptNumber: 0,
+        endsAt: null,
+        id: acceptedRedVote.scoringWindowId,
+        roundNumber: 1,
+        stage: 'REGULATION',
+        startedAt: '2026-09-01T12:01:00.000Z',
+      },
+      match: { ...snapshot.match, scoringMethod: ScoringMethod.REFEREE_COMMAND },
+    } satisfies MatchStatePayload;
+  }
+
+  it('starts scoring through the dedicated supervisor command', async () => {
+    const snapshot = createMatchSnapshot();
+    if (!snapshot.activeRound) throw new Error('Missing round');
+    acknowledgeWith(RealtimeEvent.SCORING_START, { ok: true, round: snapshot.activeRound });
+    const { result } = renderJudge();
+    await act(async () => {
+      await expect(result.current.startScoring()).resolves.toBe(true);
+    });
+    expect(socketHarness.socket.emit).toHaveBeenCalledWith(
+      RealtimeEvent.SCORING_START,
+      expect.any(Function),
+    );
+    expect(result.current.roundControlErrorMessage).toBeNull();
+  });
+
+  it('reports a rejected scoring start', async () => {
+    acknowledgeWith(RealtimeEvent.SCORING_START, {
+      error: { code: 'ROUND_CONTROL_INVALID_STATE', message: 'invalid' },
+      ok: false,
+    });
+    const { result } = renderJudge();
+    await act(async () => {
+      await expect(result.current.startScoring()).resolves.toBe(false);
+    });
+    expect(result.current.roundControlErrorMessage).toBe(
+      'Trạng thái hiệp đấu đã thay đổi. Dữ liệu mới nhất đang được tải lại.',
+    );
+  });
+
+  it('sends the supervisor vote for the open stop and keeps the accepted choice', async () => {
+    const { result } = renderJudge();
+    act(() => {
+      socketHarness.triggerSocketEvent(RealtimeEvent.MATCH_STATE, refereeCommandState());
+    });
+    await waitFor(() => {
+      expect(result.current.snapshot).not.toBeNull();
+    });
+    const accepted = {
+      athlete: AthleteColor.BLUE,
+      matchPublicId: refereeSession.matchPublicId,
+      scoringWindowId: acceptedRedVote.scoringWindowId,
+      serverReceivedAt: '2026-09-01T12:01:02.000Z',
+    };
+    acknowledgeWith(RealtimeEvent.SUPERVISOR_VOTE_SUBMIT, { ok: true, vote: accepted });
+    await act(async () => {
+      await result.current.submitSupervisorVote(AthleteColor.BLUE);
+    });
+    expect(socketHarness.socket.emit).toHaveBeenCalledWith(
+      RealtimeEvent.SUPERVISOR_VOTE_SUBMIT,
+      { athlete: AthleteColor.BLUE, scoringWindowId: acceptedRedVote.scoringWindowId },
+      expect.any(Function),
+    );
+    expect(result.current.supervisorVote).toEqual(accepted);
+    expect(result.current.submittingSupervisorVote).toBeNull();
+  });
+
+  it('reports a rejected supervisor vote', async () => {
+    const { result } = renderJudge();
+    act(() => {
+      socketHarness.triggerSocketEvent(RealtimeEvent.MATCH_STATE, refereeCommandState());
+    });
+    await waitFor(() => {
+      expect(result.current.snapshot).not.toBeNull();
+    });
+    acknowledgeWith(RealtimeEvent.SUPERVISOR_VOTE_SUBMIT, {
+      error: { code: 'VOTE_SCORING_CLOSED', message: 'closed' },
+      ok: false,
+    });
+    await act(async () => {
+      await result.current.submitSupervisorVote(AthleteColor.RED);
+    });
+    expect(result.current.supervisorVote).toBeNull();
+    expect(result.current.voteSubmitErrorMessage).toBe(
+      'Chỉ có thể chấm điểm khi Giám sát đã bấm Chấm điểm.',
+    );
+  });
+
+  it('does not send a supervisor vote when no stop is open', async () => {
+    const { result } = renderJudge();
+    await act(async () => {
+      await result.current.submitSupervisorVote(AthleteColor.RED);
+    });
+    expect(socketHarness.socket.emit).not.toHaveBeenCalledWith(
+      RealtimeEvent.SUPERVISOR_VOTE_SUBMIT,
+      expect.anything(),
+      expect.any(Function),
+    );
+  });
+
+  it('restores the supervisor own choice from its direct snapshot', async () => {
+    const { result } = renderJudge();
+    const restored = {
+      athlete: AthleteColor.RED,
+      matchPublicId: refereeSession.matchPublicId,
+      scoringWindowId: acceptedRedVote.scoringWindowId,
+      serverReceivedAt: '2026-09-01T12:01:03.000Z',
+    };
+    act(() => {
+      socketHarness.triggerSocketEvent(RealtimeEvent.MATCH_STATE, {
+        ...refereeCommandState(),
+        viewer: { acceptedVote: null, supervisorVote: restored },
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.supervisorVote).toEqual(restored);
+    });
+  });
+
+  it('lets a judge change an accepted choice but not resend the same one', async () => {
+    const { result } = renderJudge();
+    act(() => {
+      socketHarness.triggerSocketEvent(RealtimeEvent.MATCH_STATE, refereeCommandState());
+    });
+    await waitFor(() => {
+      expect(result.current.lastAcceptedVote).toEqual(acceptedRedVote);
+    });
+    await act(async () => {
+      await result.current.submitVote(AthleteColor.RED);
+    });
+    expect(socketHarness.socket.emit).not.toHaveBeenCalledWith(
+      RealtimeEvent.VOTE_SUBMIT,
+      expect.anything(),
+      expect.any(Function),
+    );
+    acknowledgeWith(RealtimeEvent.VOTE_SUBMIT, {
+      ok: true,
+      vote: { ...acceptedRedVote, athlete: AthleteColor.BLUE },
+    });
+    await act(async () => {
+      await result.current.submitVote(AthleteColor.BLUE);
+    });
+    // The vote names the window the judge saw, so a late one cannot move on.
+    expect(socketHarness.socket.emit).toHaveBeenCalledWith(
+      RealtimeEvent.VOTE_SUBMIT,
+      { athlete: AthleteColor.BLUE, scoringWindowId: acceptedRedVote.scoringWindowId },
+      expect.any(Function),
+    );
+  });
+
+  it('sends only the athlete for a free 1.5 s window vote', async () => {
+    acknowledgeWith(RealtimeEvent.VOTE_SUBMIT, { ok: true, vote: acceptedRedVote });
+    const { result } = renderJudge();
+    act(() => {
+      socketHarness.triggerSocketEvent(RealtimeEvent.MATCH_STATE, createMatchSnapshot());
+    });
+    await act(async () => {
+      await result.current.submitVote(AthleteColor.RED);
+    });
+    expect(socketHarness.socket.emit).toHaveBeenCalledWith(
+      RealtimeEvent.VOTE_SUBMIT,
+      { athlete: AthleteColor.RED },
+      expect.any(Function),
+    );
+  });
+
+  it('explains a vote rejected because scoring is closed', async () => {
+    acknowledgeWith(RealtimeEvent.VOTE_SUBMIT, {
+      error: { code: 'VOTE_SCORING_CLOSED', message: 'closed' },
+      ok: false,
+    });
+    const { result } = renderJudge();
+    await act(async () => {
+      await result.current.submitVote(AthleteColor.RED);
+    });
+    expect(result.current.voteSubmitErrorMessage).toBe(
+      'Chỉ có thể chấm điểm khi Giám sát đã bấm Chấm điểm.',
+    );
   });
 });

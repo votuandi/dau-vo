@@ -19,6 +19,7 @@ import {
   type AdminTournament,
 } from '@/services/api/admin-management';
 import { AthleteColor, TournamentStatus } from '@/types/shared';
+import { Alert } from '@/components/ui/alert';
 
 export function ManualMatchCreationForm({
   tournament,
@@ -152,12 +153,9 @@ export function ManualMatchCreationForm({
         </p>
       ) : null}
       {create.isError ? (
-        <p
-          className="mt-4 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive"
-          role="alert"
-        >
+        <Alert className="mt-4" role="alert" tone="error">
           {getApiErrorMessage(create.error, 'Không thể tạo trận đấu.')}
-        </p>
+        </Alert>
       ) : null}
       <Button
         className="mt-4 w-full"

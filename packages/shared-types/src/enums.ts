@@ -39,6 +39,27 @@ export enum MatchPhase {
 /** @deprecated Use MatchPhase. Kept temporarily for source compatibility. */
 export { MatchPhase as MatchStatus };
 
+/**
+ * How judges award a point. `JUDGE_FREE_WINDOW`: the first vote opens a 1.5 s
+ * window. `REFEREE_COMMAND`: the supervisor opens a window on the referee's
+ * stop signal (round paused) and closes it by resuming the round.
+ */
+export enum ScoringMethod {
+  JUDGE_FREE_WINDOW = 'JUDGE_FREE_WINDOW',
+  REFEREE_COMMAND = 'REFEREE_COMMAND',
+}
+
+/**
+ * How a scoring stop is won when the number of scorers (judges + supervisor "TT") is even.
+ * With an odd number both rules give the same result.
+ */
+export enum ScoringThreshold {
+  /** More than half of all scorers (the original majority rule). */
+  MORE_THAN_HALF = 'MORE_THAN_HALF',
+  /** At least half of all scorers, and more votes than the other athlete. */
+  AT_LEAST_HALF = 'AT_LEAST_HALF',
+}
+
 export enum MatchLifecycle {
   READY = 'READY',
   IN_PROGRESS = 'IN_PROGRESS',

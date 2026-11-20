@@ -141,6 +141,34 @@ describe('VarMonitoringDialog', () => {
     expect(screen.getAllByText('Tạm dừng')).toHaveLength(5);
   });
 
+  it('labels the supervisor own vote as TT', async () => {
+    const [window] = historyFixture.scoringWindows;
+    if (!window) throw new Error('fixture needs a scoring window');
+    api.state.mockResolvedValueOnce({
+      varMonitoring: {
+        ...historyFixture,
+        scoringWindows: [
+          {
+            ...window,
+            judgeVotes: [
+              {
+                bySupervisor: true,
+                judgeSlot: null,
+                judgePosition: null,
+                athleteColor: AthleteColor.BLUE,
+                serverReceivedAt: '2026-09-30T10:00:02.000Z',
+                invalidatedAt: null,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    renderDialog();
+    expect(await screen.findByText('TT (Giám sát):')).toBeVisible();
+    expect(screen.queryByText('Giám định:')).not.toBeInTheDocument();
+  });
+
   it('renders all four read-only history sections and their empty states', async () => {
     api.state.mockResolvedValueOnce({ varMonitoring: empty });
     const user = userEvent.setup();

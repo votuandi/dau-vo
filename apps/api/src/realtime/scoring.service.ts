@@ -19,6 +19,8 @@ import {
   RoundStage,
   type JudgeSlot,
   ScoreEventType,
+  ScoringMethod,
+  ScoringThreshold,
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 
@@ -31,7 +33,9 @@ import {
   MatchNotRunningForVoteError,
   PriorScoringWindowPendingError,
   RoundEndedForVoteError,
+  ScoringClosedForVoteError,
 } from './scoring.errors';
+import { scoringStopWinner } from './scoring-threshold';
 
 /** Official duration of a persisted referee voting window. */
 export const SCORING_WINDOW_DURATION_MS = 1_500;
@@ -70,6 +74,18 @@ interface ActiveRound {
   startedAt: Date;
 }
 
+const WINDOW_SELECT = {
+  endsAt: true,
+  id: true,
+  matchId: true,
+  roundElapsedMs: true,
+  roundId: true,
+  roundNumber: true,
+  startedAt: true,
+} as const satisfies Prisma.ScoringWindowSelect;
+
+/** A window with a known deadline: every timed window, and a referee-command
+ * window at the moment it is closed. */
 interface WindowRow {
   endsAt: Date;
   id: string;
@@ -78,6 +94,15 @@ interface WindowRow {
   roundId: string | null;
   roundNumber: number;
   startedAt: Date;
+}
+
+/** Narrows a timed window. Only referee-command matches open windows without
+ * a deadline, so meeting one in the free-window flow is a pending conflict. */
+function timedWindow<T extends { endsAt: Date | null }>(
+  window: T,
+): T & { endsAt: Date } {
+  if (window.endsAt === null) throw new PriorScoringWindowPendingError();
+  return { ...window, endsAt: window.endsAt };
 }
 
 interface ScheduledResolution {
@@ -152,8 +177,9 @@ export class ScoringService implements OnModuleDestroy {
   ): Promise<void> {
     this.resolutionListener = listener;
     const windows = await this.prisma.scoringWindow.findMany({
-      select: { endsAt: true, id: true, matchId: true },
-      where: { invalidatedAt: null, resolvedAt: null },
+      select: { id: true, matchId: true },
+      // Referee-command windows have no deadline; they close on round resume.
+      where: { endsAt: { not: null }, invalidatedAt: null, resolvedAt: null },
     });
 
     for (const window of windows) {
@@ -172,15 +198,7 @@ export class ScoringService implements OnModuleDestroy {
     for (;;) {
       const window = await transaction.scoringWindow.findFirst({
         orderBy: { startedAt: 'asc' },
-        select: {
-          endsAt: true,
-          id: true,
-          matchId: true,
-          roundElapsedMs: true,
-          roundId: true,
-          roundNumber: true,
-          startedAt: true,
-        },
+        select: WINDOW_SELECT,
         where: {
           matchId,
           invalidatedAt: null,
@@ -191,7 +209,7 @@ export class ScoringService implements OnModuleDestroy {
       if (!window) return;
       await this.resolveLockedWindow(
         transaction,
-        window,
+        timedWindow(window),
         resolvedAt,
         matchPublicId,
       );
@@ -203,6 +221,8 @@ export class ScoringService implements OnModuleDestroy {
     matchId: string;
     officialSessionId?: string;
     judgeSlot?: JudgeSlot;
+    /** Referee-command scoring: the window the judge saw open when voting. */
+    scoringWindowId?: string;
     sessionId?: string;
   }): Promise<VoteSubmissionTransition> {
     const result = await this.prisma.$transaction(
@@ -239,8 +259,10 @@ export class ScoringService implements OnModuleDestroy {
                 stage: true,
                 startedAt: true,
               },
-              where: { endedAt: null },
+              // A cancelled round keeps endedAt null; only the live attempt counts.
+              where: { endedAt: null, invalidatedAt: null },
             },
+            scoringMethod: true,
             status: true,
           },
           where: { id: input.matchId },
@@ -250,6 +272,22 @@ export class ScoringService implements OnModuleDestroy {
         if (activeRound === null) {
           throw new MatchNotRunningForVoteError();
         }
+        if (match.scoringMethod === ScoringMethod.REFEREE_COMMAND) {
+          return {
+            accepted: await this.recordRefereeCommandVote(transaction, {
+              activeRound,
+              athlete: input.athlete,
+              authorization,
+              matchId: input.matchId,
+              matchPublicId: match.publicId,
+              scoringWindowId: input.scoringWindowId,
+              serverNow: clock.serverNow,
+            }),
+            opened: null,
+            resolvedBeforeAcceptance: null,
+            schedule: null,
+          };
+        }
         if (
           activeRound.pausedAt == null &&
           clock.serverNow.getTime() >= activeRound.endsAt.getTime()
@@ -257,23 +295,16 @@ export class ScoringService implements OnModuleDestroy {
           throw new RoundEndedForVoteError();
         }
 
-        let unresolved = await transaction.scoringWindow.findFirst({
+        const pending = await transaction.scoringWindow.findFirst({
           orderBy: { startedAt: 'asc' },
-          select: {
-            endsAt: true,
-            id: true,
-            matchId: true,
-            roundElapsedMs: true,
-            roundId: true,
-            roundNumber: true,
-            startedAt: true,
-          },
+          select: WINDOW_SELECT,
           where: {
             invalidatedAt: null,
             matchId: input.matchId,
             resolvedAt: null,
           },
         });
+        let unresolved = pending === null ? null : timedWindow(pending);
         let resolvedBeforeAcceptance: ScoringResolutionTransition | null = null;
 
         if (
@@ -297,11 +328,12 @@ export class ScoringService implements OnModuleDestroy {
         }
 
         if (unresolved !== null) {
+          const { endsAt } = unresolved;
           if (
             !isWithinScoringWindow(
               clock.serverNow,
               unresolved.startedAt,
-              unresolved.endsAt,
+              endsAt,
             )
           ) {
             throw new RoundEndedForVoteError();
@@ -310,12 +342,7 @@ export class ScoringService implements OnModuleDestroy {
             select: { id: true },
             where: {
               scoringWindowId: unresolved.id,
-              ...(authorization.kind === 'official'
-                ? { assignmentId: authorization.assignmentId }
-                : {
-                    assignmentId: null,
-                    judgeSlot: authorization.judgeSlot,
-                  }),
+              ...this.voteOwnerWhere(authorization),
             },
           });
 
@@ -323,26 +350,12 @@ export class ScoringService implements OnModuleDestroy {
             throw new DuplicateRefereeVoteError();
           }
 
-          const vote = await transaction.judgeVote.create({
-            data: {
-              athleteColor: input.athlete,
-              matchId: input.matchId,
-              assignmentId:
-                authorization.kind === 'official'
-                  ? authorization.assignmentId
-                  : null,
-              judgeSlot:
-                authorization.kind === 'legacy'
-                  ? authorization.judgeSlot
-                  : null,
-              scoringWindowId: unresolved.id,
-              serverReceivedAt: clock.serverNow,
-              sessionId:
-                authorization.kind === 'legacy'
-                  ? authorization.sessionId
-                  : null,
-            },
-            select: { serverReceivedAt: true },
+          const vote = await this.createVote(transaction, {
+            athlete: input.athlete,
+            authorization,
+            matchId: input.matchId,
+            scoringWindowId: unresolved.id,
+            serverNow: clock.serverNow,
           });
 
           return {
@@ -355,9 +368,11 @@ export class ScoringService implements OnModuleDestroy {
             ),
             opened: null,
             resolvedBeforeAcceptance,
-            serverNow: clock.serverNow,
-            windowEndsAt: unresolved.endsAt,
-            windowId: unresolved.id,
+            schedule: {
+              endsAt,
+              serverNow: clock.serverNow,
+              windowId: unresolved.id,
+            },
           };
         }
 
@@ -373,31 +388,14 @@ export class ScoringService implements OnModuleDestroy {
             roundNumber: activeRound.roundNumber,
             startedAt: clock.serverNow,
           },
-          select: {
-            endsAt: true,
-            id: true,
-            roundElapsedMs: true,
-            roundId: true,
-            roundNumber: true,
-            startedAt: true,
-          },
+          select: { id: true, roundNumber: true, startedAt: true },
         });
-        const vote = await transaction.judgeVote.create({
-          data: {
-            athleteColor: input.athlete,
-            matchId: input.matchId,
-            assignmentId:
-              authorization.kind === 'official'
-                ? authorization.assignmentId
-                : null,
-            judgeSlot:
-              authorization.kind === 'legacy' ? authorization.judgeSlot : null,
-            scoringWindowId: window.id,
-            serverReceivedAt: clock.serverNow,
-            sessionId:
-              authorization.kind === 'legacy' ? authorization.sessionId : null,
-          },
-          select: { serverReceivedAt: true },
+        const vote = await this.createVote(transaction, {
+          athlete: input.athlete,
+          authorization,
+          matchId: input.matchId,
+          scoringWindowId: window.id,
+          serverNow: clock.serverNow,
         });
 
         return {
@@ -408,34 +406,321 @@ export class ScoringService implements OnModuleDestroy {
             window.id,
             vote.serverReceivedAt,
           ),
-          opened: {
-            matchPublicId: match.publicId,
-            window: {
-              endsAt: window.endsAt.toISOString(),
-              id: window.id,
-              roundNumber: this.roundNumber(window.roundNumber),
-              startedAt: window.startedAt.toISOString(),
-            },
-          },
+          opened: this.openedPayload(match.publicId, { ...window, endsAt }),
           resolvedBeforeAcceptance,
-          serverNow: clock.serverNow,
-          windowEndsAt: window.endsAt,
-          windowId: window.id,
+          schedule: { endsAt, serverNow: clock.serverNow, windowId: window.id },
         };
       },
       { maxWait: TRANSACTION_MAX_WAIT_MS, timeout: TRANSACTION_TIMEOUT_MS },
     );
 
-    this.scheduleResolution(
-      input.matchId,
-      result.windowId,
-      result.windowEndsAt,
-      result.serverNow,
-    );
+    if (result.schedule !== null) {
+      this.scheduleResolution(
+        input.matchId,
+        result.schedule.windowId,
+        result.schedule.endsAt,
+        result.schedule.serverNow,
+      );
+    }
     return {
       accepted: result.accepted,
       opened: result.opened,
       resolvedBeforeAcceptance: result.resolvedBeforeAcceptance,
+    };
+  }
+
+  /**
+   * Opens a referee-command window for a round the caller has just paused
+   * inside the same Match-locked transaction. The window has no deadline: it
+   * stays open until {@link resolveRefereeCommandWindowLocked} closes it.
+   */
+  async openRefereeCommandWindowLocked(
+    transaction: Prisma.TransactionClient,
+    input: {
+      matchId: string;
+      matchPublicId: string;
+      round: ActiveRound;
+      serverNow: Date;
+    },
+  ): Promise<ScoringWindowOpenedPayload> {
+    // A window invalidated while open (result cancellation, match exit) never
+    // counts, but still occupies the one-unresolved-window-per-match index.
+    await transaction.scoringWindow.updateMany({
+      data: { endsAt: input.serverNow, resolvedAt: input.serverNow },
+      where: {
+        endsAt: null,
+        invalidatedAt: { not: null },
+        matchId: input.matchId,
+        resolvedAt: null,
+      },
+    });
+    const window = await transaction.scoringWindow.create({
+      data: {
+        endsAt: null,
+        matchId: input.matchId,
+        roundElapsedMs: activeRoundElapsedMs(input.round, input.serverNow),
+        roundId: input.round.id,
+        roundNumber: input.round.roundNumber,
+        startedAt: input.serverNow,
+      },
+      select: { id: true, roundNumber: true, startedAt: true },
+    });
+    return this.openedPayload(input.matchPublicId, { ...window, endsAt: null });
+  }
+
+  /**
+   * Closes the open referee-command window, if any, at `resolvedAt` and
+   * awards the point under the usual judge-majority rule. Must run inside a
+   * transaction that already holds the Match row lock.
+   */
+  async resolveRefereeCommandWindowLocked(
+    transaction: Prisma.TransactionClient,
+    matchId: string,
+    matchPublicId: string,
+    resolvedAt: Date,
+  ): Promise<ScoringResolutionTransition | null> {
+    const window = await transaction.scoringWindow.findFirst({
+      select: WINDOW_SELECT,
+      where: { endsAt: null, invalidatedAt: null, matchId, resolvedAt: null },
+    });
+    if (window === null) return null;
+    return this.resolveLockedWindow(
+      transaction,
+      { ...window, endsAt: resolvedAt },
+      resolvedAt,
+      matchPublicId,
+    );
+  }
+
+  private async recordRefereeCommandVote(
+    transaction: Prisma.TransactionClient,
+    input: {
+      activeRound: ActiveRound;
+      athlete: AthleteColor;
+      authorization: VoteAuthorization;
+      matchId: string;
+      matchPublicId: string;
+      scoringWindowId: string | undefined;
+      serverNow: Date;
+    },
+  ): Promise<VoteAcceptedPayload> {
+    const windowId = await this.openRefereeWindowIdForVote(transaction, {
+      activeRound: input.activeRound,
+      matchId: input.matchId,
+      scoringWindowId: input.scoringWindowId,
+    });
+    // A judge may change their choice while scoring is open; the last choice
+    // before the supervisor resumes the round is the one that counts.
+    const vote = await this.upsertWindowVote(transaction, {
+      athlete: input.athlete,
+      owner: this.voteOwnerWhere(input.authorization),
+      create: () =>
+        this.createVote(transaction, {
+          athlete: input.athlete,
+          authorization: input.authorization,
+          matchId: input.matchId,
+          scoringWindowId: windowId,
+          serverNow: input.serverNow,
+        }),
+      scoringWindowId: windowId,
+      serverNow: input.serverNow,
+    });
+    return this.acceptedPayload(
+      input.athlete,
+      input.matchPublicId,
+      input.authorization,
+      windowId,
+      vote.serverReceivedAt,
+    );
+  }
+
+  /**
+   * Record the supervisor's own ("TT") vote in the open referee-command stop. The caller
+   * holds the Match lock and has already verified the supervisor and that the match lets
+   * the supervisor vote. Like a judge, the supervisor may change the choice until resume.
+   */
+  async recordSupervisorVoteLocked(
+    transaction: Prisma.TransactionClient,
+    input: {
+      athlete: AthleteColor;
+      matchId: string;
+      owner:
+        | { kind: 'official'; assignmentId: string }
+        | { kind: 'legacy'; sessionId: string };
+      scoringWindowId: string;
+      serverNow: Date;
+    },
+  ): Promise<{ scoringWindowId: string; serverReceivedAt: Date }> {
+    const match = await transaction.match.findUniqueOrThrow({
+      select: {
+        currentRound: true,
+        rounds: {
+          select: {
+            durationMs: true,
+            pausedAt: true,
+            remainingDurationMs: true,
+            endsAt: true,
+            id: true,
+            roundNumber: true,
+            stage: true,
+            startedAt: true,
+          },
+          where: { endedAt: null, invalidatedAt: null },
+        },
+        status: true,
+      },
+      where: { id: input.matchId },
+    });
+    const activeRound = this.activeRound(match);
+    if (activeRound === null) throw new ScoringClosedForVoteError();
+    const windowId = await this.openRefereeWindowIdForVote(transaction, {
+      activeRound,
+      matchId: input.matchId,
+      scoringWindowId: input.scoringWindowId,
+    });
+    const vote = await this.upsertWindowVote(transaction, {
+      athlete: input.athlete,
+      owner: { castBySupervisor: true },
+      create: () =>
+        transaction.judgeVote.create({
+          data: {
+            assignmentId:
+              input.owner.kind === 'official' ? input.owner.assignmentId : null,
+            athleteColor: input.athlete,
+            castBySupervisor: true,
+            judgeSlot: null,
+            matchId: input.matchId,
+            scoringWindowId: windowId,
+            serverReceivedAt: input.serverNow,
+            sessionId:
+              input.owner.kind === 'legacy' ? input.owner.sessionId : null,
+          },
+          select: { serverReceivedAt: true },
+        }),
+      scoringWindowId: windowId,
+      serverNow: input.serverNow,
+    });
+    return {
+      scoringWindowId: windowId,
+      serverReceivedAt: vote.serverReceivedAt,
+    };
+  }
+
+  /** The open referee-command window a vote may land in, pinned to the id the voter saw. */
+  private async openRefereeWindowIdForVote(
+    transaction: Prisma.TransactionClient,
+    input: {
+      activeRound: ActiveRound;
+      matchId: string;
+      scoringWindowId: string | undefined;
+    },
+  ): Promise<string> {
+    const window = await transaction.scoringWindow.findFirst({
+      select: { id: true },
+      where: {
+        endsAt: null,
+        invalidatedAt: null,
+        matchId: input.matchId,
+        resolvedAt: null,
+        roundId: input.activeRound.id,
+      },
+    });
+    // The window id pins the vote to the stop the voter saw. A vote delayed
+    // past "Tiếp tục" must not land in the next stop's window.
+    if (
+      input.activeRound.pausedAt == null ||
+      window === null ||
+      window.id !== input.scoringWindowId
+    ) {
+      throw new ScoringClosedForVoteError();
+    }
+    return window.id;
+  }
+
+  /** Create the voter's vote in a window, or move an existing one to the new choice. */
+  private async upsertWindowVote(
+    transaction: Prisma.TransactionClient,
+    input: {
+      athlete: AthleteColor;
+      create: () => Promise<{ serverReceivedAt: Date }>;
+      owner: Prisma.JudgeVoteWhereInput;
+      scoringWindowId: string;
+      serverNow: Date;
+    },
+  ): Promise<{ serverReceivedAt: Date }> {
+    const existing = await transaction.judgeVote.findFirst({
+      select: { id: true },
+      where: { scoringWindowId: input.scoringWindowId, ...input.owner },
+    });
+    return existing === null
+      ? input.create()
+      : transaction.judgeVote.update({
+          data: {
+            athleteColor: input.athlete,
+            serverReceivedAt: input.serverNow,
+          },
+          select: { serverReceivedAt: true },
+          where: { id: existing.id },
+        });
+  }
+
+  private voteOwnerWhere(
+    authorization: VoteAuthorization,
+  ): Prisma.JudgeVoteWhereInput {
+    return authorization.kind === 'official'
+      ? { assignmentId: authorization.assignmentId, castBySupervisor: false }
+      : {
+          assignmentId: null,
+          castBySupervisor: false,
+          judgeSlot: authorization.judgeSlot,
+        };
+  }
+
+  private createVote(
+    transaction: Prisma.TransactionClient,
+    input: {
+      athlete: AthleteColor;
+      authorization: VoteAuthorization;
+      matchId: string;
+      scoringWindowId: string;
+      serverNow: Date;
+    },
+  ): Promise<{ serverReceivedAt: Date }> {
+    const { authorization } = input;
+    return transaction.judgeVote.create({
+      data: {
+        athleteColor: input.athlete,
+        matchId: input.matchId,
+        assignmentId:
+          authorization.kind === 'official' ? authorization.assignmentId : null,
+        judgeSlot:
+          authorization.kind === 'legacy' ? authorization.judgeSlot : null,
+        scoringWindowId: input.scoringWindowId,
+        serverReceivedAt: input.serverNow,
+        sessionId:
+          authorization.kind === 'legacy' ? authorization.sessionId : null,
+      },
+      select: { serverReceivedAt: true },
+    });
+  }
+
+  private openedPayload(
+    matchPublicId: string,
+    window: {
+      endsAt: Date | null;
+      id: string;
+      roundNumber: number;
+      startedAt: Date;
+    },
+  ): ScoringWindowOpenedPayload {
+    return {
+      matchPublicId,
+      window: {
+        endsAt: window.endsAt?.toISOString() ?? null,
+        id: window.id,
+        roundNumber: this.roundNumber(window.roundNumber),
+        startedAt: window.startedAt.toISOString(),
+      },
     };
   }
 
@@ -482,16 +767,9 @@ export class ScoringService implements OnModuleDestroy {
             where: { id: matchId },
           }),
           transaction.scoringWindow.findFirst({
-            select: {
-              endsAt: true,
-              id: true,
-              matchId: true,
-              roundElapsedMs: true,
-              roundId: true,
-              roundNumber: true,
-              startedAt: true,
-            },
+            select: WINDOW_SELECT,
             where: {
+              endsAt: { not: null },
               id: windowId,
               invalidatedAt: null,
               matchId,
@@ -502,7 +780,8 @@ export class ScoringService implements OnModuleDestroy {
         if (window === null) {
           return { kind: 'inactive' };
         }
-        const delayMs = window.endsAt.getTime() - clock.serverNow.getTime();
+        const timed = timedWindow(window);
+        const delayMs = timed.endsAt.getTime() - clock.serverNow.getTime();
         if (delayMs > 0) {
           return { delayMs, kind: 'pending' };
         }
@@ -510,7 +789,7 @@ export class ScoringService implements OnModuleDestroy {
           kind: 'resolved',
           transition: await this.resolveLockedWindow(
             transaction,
-            window,
+            timed,
             clock.serverNow,
             match.publicId,
           ),
@@ -529,13 +808,18 @@ export class ScoringService implements OnModuleDestroy {
     const rules = await this.rulesForMatch(transaction, window.matchId);
     const match = await transaction.match.findUniqueOrThrow({
       where: { id: window.matchId },
-      select: { requiredJudgeCount: true },
+      select: {
+        requiredJudgeCount: true,
+        scoringThreshold: true,
+        supervisorScoringEnabled: true,
+      },
     });
     const votes = await transaction.judgeVote.findMany({
       orderBy: { serverReceivedAt: 'asc' },
       select: {
         assignmentId: true,
         athleteColor: true,
+        castBySupervisor: true,
         judgeSlot: true,
         serverReceivedAt: true,
         assignment: { select: { judgePosition: true } },
@@ -548,15 +832,22 @@ export class ScoringService implements OnModuleDestroy {
     const blueVotes = votes.filter(
       (vote) => vote.athleteColor === AthleteColor.BLUE,
     ).length;
-    const winningColor =
-      redVotes >= rules.judgeMajority(match.requiredJudgeCount)
-        ? AthleteColor.RED
-        : blueVotes >= rules.judgeMajority(match.requiredJudgeCount)
-          ? AthleteColor.BLUE
-          : null;
+    // When the supervisor votes it counts as one more judge, so the threshold is
+    // taken over the judges plus the supervisor (e.g. 3 judges + TT = 4 scorers).
+    const winningColor = scoringStopWinner({
+      blueVotes,
+      majority: rules.judgeMajority,
+      redVotes,
+      scorerCount:
+        match.requiredJudgeCount + (match.supervisorScoringEnabled ? 1 : 0),
+      // No choice recorded keeps the original rule (more than half).
+      threshold: match.scoringThreshold ?? ScoringThreshold.MORE_THAN_HALF,
+    });
 
     const updated = await transaction.scoringWindow.updateMany({
       data: {
+        // A referee-command window gets its end recorded as it closes.
+        endsAt: window.endsAt,
         resolvedAt,
         scoreAwarded: winningColor !== null,
         winningColor,
@@ -611,6 +902,7 @@ export class ScoringService implements OnModuleDestroy {
           votes: votes.map((vote) => ({
             athlete: vote.athleteColor,
             assignmentId: vote.assignmentId,
+            bySupervisor: vote.castBySupervisor,
             judgePosition: vote.assignment?.judgePosition ?? null,
             judgeSlot:
               vote.judgeSlot === null
@@ -631,6 +923,7 @@ export class ScoringService implements OnModuleDestroy {
         votes: votes.map((vote) => ({
           athlete: this.sharedAthleteColor(vote.athleteColor),
           assignmentId: vote.assignmentId,
+          bySupervisor: vote.castBySupervisor,
           judgePosition: vote.assignment?.judgePosition ?? null,
           judgeSlot:
             vote.judgeSlot === null

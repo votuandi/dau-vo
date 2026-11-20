@@ -173,6 +173,15 @@ export class BracketPreviewController {
         ...(input.roundDurationMs === undefined
           ? {}
           : { roundDurationMs: input.roundDurationMs }),
+        ...(input.scoringMethod === undefined
+          ? {}
+          : { scoringMethod: input.scoringMethod }),
+        ...(input.supervisorScoringEnabled === undefined
+          ? {}
+          : { supervisorScoringEnabled: input.supervisorScoringEnabled }),
+        ...(input.scoringThreshold === undefined
+          ? {}
+          : { scoringThreshold: input.scoringThreshold }),
       },
     );
   }

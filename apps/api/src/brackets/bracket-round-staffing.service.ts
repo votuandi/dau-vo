@@ -9,6 +9,8 @@ import {
   BracketFixtureStatus,
   BracketStatus,
   Prisma,
+  ScoringMethod,
+  type ScoringThreshold,
   TournamentOfficialRole,
   TournamentStatus,
 } from '@prisma/client';
@@ -29,12 +31,21 @@ export class BracketRoundStaffingService {
     roundNumber: number,
     requiredJudgeCount: number | undefined,
     actorId: string,
-    settings: { regulationRoundCount?: number; roundDurationMs?: number } = {},
+    settings: {
+      regulationRoundCount?: number;
+      roundDurationMs?: number;
+      scoringMethod?: ScoringMethod;
+      supervisorScoringEnabled?: boolean;
+      scoringThreshold?: ScoringThreshold;
+    } = {},
   ) {
     if (
       requiredJudgeCount === undefined &&
       settings.regulationRoundCount === undefined &&
-      settings.roundDurationMs === undefined
+      settings.roundDurationMs === undefined &&
+      settings.scoringMethod === undefined &&
+      settings.supervisorScoringEnabled === undefined &&
+      settings.scoringThreshold === undefined
     )
       throw new BadRequestException({
         code: 'BRACKET_ROUND_SETTINGS_EMPTY',
@@ -142,11 +153,25 @@ export class BracketRoundStaffingService {
               requiresOddRefereeCount: policy.requiresOddRefereeCount,
             },
           });
+        const scoringMethod = settings.scoringMethod ?? staffing.scoringMethod;
+        if (
+          scoringMethod !== ScoringMethod.REFEREE_COMMAND &&
+          settings.supervisorScoringEnabled === true
+        )
+          throw new BadRequestException({
+            code: 'BRACKET_ROUND_SUPERVISOR_SCORING_INVALID',
+            message:
+              'Supervisor scoring requires the referee-command scoring method',
+          });
         const updated = await tx.bracketRoundStaffing.update({
           where: { id: staffing.id },
           data: {
             ...(requiredJudgeCount === undefined ? {} : { requiredJudgeCount }),
             ...settings,
+            // Leaving referee-command scoring always turns supervisor scoring off.
+            ...(scoringMethod === ScoringMethod.REFEREE_COMMAND
+              ? {}
+              : { supervisorScoringEnabled: false }),
           },
         });
         await tx.auditLog.create({
@@ -162,11 +187,17 @@ export class BracketRoundStaffingService {
                 requiredJudgeCount: staffing.requiredJudgeCount,
                 regulationRoundCount: staffing.regulationRoundCount,
                 roundDurationMs: staffing.roundDurationMs,
+                scoringMethod: staffing.scoringMethod,
+                supervisorScoringEnabled: staffing.supervisorScoringEnabled,
+                scoringThreshold: staffing.scoringThreshold,
               },
               after: {
                 requiredJudgeCount: updated.requiredJudgeCount,
                 regulationRoundCount: updated.regulationRoundCount,
                 roundDurationMs: updated.roundDurationMs,
+                scoringMethod: updated.scoringMethod,
+                supervisorScoringEnabled: updated.supervisorScoringEnabled,
+                scoringThreshold: updated.scoringThreshold,
               },
             },
           },

@@ -3,6 +3,8 @@ import { createRoot, hydrateRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router-dom';
 import { AppProviders } from '@/app/providers/app-providers';
 import { router } from '@/app/router/router';
+// Roboto for the whole app, bundled with the app (no external font request at venues).
+import '@fontsource-variable/roboto';
 import '@/styles/globals.css';
 
 const rootElement = document.getElementById('root');

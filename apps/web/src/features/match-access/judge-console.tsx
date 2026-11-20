@@ -1,7 +1,13 @@
-import { AthleteColor, MatchStatus } from '@martial-arts-scoring/shared-types';
+import { AthleteColor, MatchStatus, ScoringMethod } from '@martial-arts-scoring/shared-types';
 import type { MatchRealtimeState, RealtimeConnectionStatus } from './match-realtime';
 import { IntermissionCountdown, useIntermissionActive } from '@/components/intermission-countdown';
 import { formatCountdown, useServerCountdown } from '@/features/match-timer/server-countdown';
+import {
+  matchScreenTone,
+  matchToneBackgroundClassName,
+  matchToneBarClassName,
+  matchTonePanelClassName,
+} from '@/features/match-screen-tone';
 
 interface JudgeConsoleProps {
   readonly realtime: MatchRealtimeState;
@@ -130,14 +136,23 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
   );
   const appealActive =
     status === MatchStatus.REGULATION_APPEAL || status === MatchStatus.OVERTIME_APPEAL;
-  const yellowPresentation = roundIsPaused || intermission.active || appealActive;
   const redAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.RED);
   const blueAthlete = snapshot?.athletes.find((athlete) => athlete.color === AthleteColor.BLUE);
+  const refereeCommandScoring = snapshot?.match.scoringMethod === ScoringMethod.REFEREE_COMMAND;
+  // Referee-command scoring opens only between the supervisor's "Chấm điểm"
+  // and "Tiếp tục"; a judge may change their choice until it closes.
+  const refereeScoringOpen =
+    refereeCommandScoring && roundIsPaused && snapshot.activeScoringWindow?.endsAt === null;
+  const votingOpen = refereeCommandScoring ? refereeScoringOpen : roundIsRunning || roundIsPaused;
+  const tone = matchScreenTone({
+    scoring: refereeScoringOpen,
+    attention: roundIsPaused || intermission.active || appealActive,
+  });
   const controlsDisabled =
     realtime.connectionStatus !== 'connected' ||
-    !(roundIsRunning || roundIsPaused) ||
+    !votingOpen ||
     realtime.submittingVote !== null ||
-    realtime.lastAcceptedVote !== null;
+    (!refereeCommandScoring && realtime.lastAcceptedVote !== null);
   const pendingVote = realtime.submittingVote;
   const acceptedVote = realtime.lastAcceptedVote;
 
@@ -148,12 +163,10 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
   }
 
   return (
-    <div
-      className={`min-h-dvh text-white ${yellowPresentation ? 'bg-gradient-to-br from-amber-950 via-yellow-800 to-amber-950' : 'arena-background'}`}
-    >
+    <div className={`min-h-dvh text-white ${matchToneBackgroundClassName[tone]}`}>
       <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-3 px-3 py-3 sm:gap-5 sm:px-5 sm:py-5 short:gap-2 short:py-2">
         <header
-          className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5 sm:py-3 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/45' : 'border-white/15 bg-blue-950/35'}`}
+          className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 shadow-xl shadow-black/10 backdrop-blur-xl sm:px-5 sm:py-3 ${matchToneBarClassName[tone]}`}
         >
           <div className="flex min-w-0 items-baseline gap-2 sm:block">
             <p className="shrink-0 text-xs font-bold uppercase tracking-[0.18em] text-sky-200/80">
@@ -177,7 +190,7 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
 
         <section
           aria-labelledby="referee-round-title"
-          className={`flex flex-col justify-center rounded-3xl border px-4 py-4 text-center shadow-2xl backdrop-blur-xl sm:px-8 sm:py-8 short:py-2 ${yellowPresentation ? 'border-amber-200/40 bg-amber-950/30 shadow-amber-950/30' : 'border-white/15 bg-white/10 shadow-blue-950/20'}`}
+          className={`flex flex-col justify-center rounded-3xl border px-4 py-4 text-center shadow-2xl backdrop-blur-xl sm:px-8 sm:py-8 short:py-2 ${matchTonePanelClassName[tone]}`}
         >
           <p
             className="text-sm font-black uppercase tracking-[0.2em] text-sky-200"
@@ -195,13 +208,15 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
               : '--:--'}
           </p>
           <p className="mt-2 text-xs text-sky-100/75 sm:mt-3 sm:text-sm short:hidden">
-            {roundIsPaused
-              ? 'Hiệp đấu đang tạm dừng. Không thể chấm điểm.'
-              : roundIsRunning
-                ? 'Thời gian chính thức do máy chủ xác định'
-                : status === MatchStatus.FINISHED
-                  ? 'Trận đấu đã kết thúc'
-                  : 'Chờ trạng thái chính thức từ máy chủ'}
+            {refereeScoringOpen
+              ? 'Đang chấm điểm theo hiệu lệnh trọng tài.'
+              : roundIsPaused
+                ? 'Hiệp đấu đang tạm dừng. Không thể chấm điểm.'
+                : roundIsRunning
+                  ? 'Thời gian chính thức do máy chủ xác định'
+                  : status === MatchStatus.FINISHED
+                    ? 'Trận đấu đã kết thúc'
+                    : 'Chờ trạng thái chính thức từ máy chủ'}
           </p>
           <IntermissionCountdown
             endsAt={status === MatchStatus.BREAK ? snapshot?.match.intermissionEndsAt : null}
@@ -235,8 +250,10 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
               role="status"
             >
               Máy chủ đã ghi nhận lựa chọn{' '}
-              {acceptedVote.athlete === AthleteColor.RED ? 'RED' : 'BLUE'}. Chờ cửa sổ chấm điểm kết
-              thúc.
+              {acceptedVote.athlete === AthleteColor.RED ? 'RED' : 'BLUE'}.{' '}
+              {refereeCommandScoring
+                ? 'Có thể đổi lựa chọn cho đến khi Giám sát bấm Tiếp tục.'
+                : 'Chờ cửa sổ chấm điểm kết thúc.'}
             </p>
           ) : pendingVote ? (
             <p
@@ -257,6 +274,10 @@ export function JudgeConsole({ realtime }: JudgeConsoleProps) {
             <p className="px-4 py-3 text-sky-100/70">Không thể gửi lựa chọn khi mất kết nối.</p>
           ) : !(roundIsRunning || roundIsPaused) ? (
             <p className="px-4 py-3 text-sky-100/70">Lựa chọn chỉ mở khi hiệp đấu đang diễn ra.</p>
+          ) : !votingOpen ? (
+            <p className="px-4 py-3 text-sky-100/70">
+              Lựa chọn chỉ mở khi Giám sát bấm Chấm điểm theo hiệu lệnh trọng tài.
+            </p>
           ) : null}
         </section>
       </main>

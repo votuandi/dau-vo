@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss';
+import defaultTheme from 'tailwindcss/defaultTheme';
 
 export default {
   darkMode: ['class'],
@@ -12,6 +13,10 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        // Self-hosted Roboto (variable, Vietnamese subset) for the whole app; see main.tsx.
+        sans: ['"Roboto Variable"', 'Roboto', ...defaultTheme.fontFamily.sans],
+      },
       screens: {
         // Short landscape viewports (phones on their side, small laptop windows).
         short: { raw: '(max-height: 32rem)' },

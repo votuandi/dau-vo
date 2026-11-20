@@ -396,6 +396,15 @@ describe('BracketOutcomeService retraction', () => {
         metadata: expect.objectContaining({ action: 'ADMIN_MANUAL_WINNER' }),
       }),
     });
+    // An open referee-command window has no end yet and is closed with one.
+    expect(tx.scoringWindow.updateMany).toHaveBeenCalledWith({
+      where: { matchId, resolvedAt: null, invalidatedAt: null, endsAt: null },
+      data: { endsAt: expect.any(Date), resolvedAt: expect.any(Date) },
+    });
+    expect(tx.scoringWindow.updateMany).toHaveBeenCalledWith({
+      where: { matchId, resolvedAt: null, invalidatedAt: null },
+      data: { resolvedAt: expect.any(Date) },
+    });
   });
 
 });

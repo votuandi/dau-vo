@@ -19,6 +19,7 @@ import {
 } from '@/features/admin-management/queries';
 import { adminManagementApi, type TournamentOfficial } from '@/services/api/admin-management';
 import { TournamentOfficialRole } from '@/types/shared';
+import { cn } from '@/lib/utils';
 
 const labels = { JUDGE: 'Giám định', SUPERVISOR: 'Giám sát' } as const;
 function errorText(error: unknown) {
@@ -198,7 +199,7 @@ export function TournamentOfficialsPage({
   }
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-5 shadow-sm">
         <div>
           <h2 className="flex items-center gap-2 text-xl font-black">
             {labels[role]}
@@ -226,6 +227,7 @@ export function TournamentOfficialsPage({
               onClick={() => {
                 setEditing(null);
                 setName('');
+                input.current?.focus();
               }}
               type="button"
             >
@@ -235,57 +237,61 @@ export function TournamentOfficialsPage({
           </div>
         ) : null}
       </div>
-      <label className="relative block max-w-md text-sm font-semibold">
-        Tìm kiếm
-        <Search
-          aria-hidden="true"
-          className="pointer-events-none absolute bottom-3.5 left-3 size-4 text-muted-foreground"
-        />
-        <input
-          className={`${inputClassName} mt-1 pl-9`}
-          onChange={(e) => {
-            setSearch(e.target.value);
-          }}
-          value={search}
-        />
-      </label>
-      {!readOnly ? (
-        <form
-          className="grid items-end gap-3 rounded-2xl border border-primary/20 bg-card p-4 shadow-sm sm:grid-cols-[1fr_auto_auto]"
-          onSubmit={submit}
-        >
-          <label className="text-sm font-semibold">
-            {editing ? 'Sửa tên' : `Thêm ${labels[role].toLocaleLowerCase('vi')}`}
-            <input
-              autoFocus
-              className={`${inputClassName} mt-1`}
-              maxLength={255}
-              onChange={(e) => {
-                setName(e.target.value);
-              }}
-              ref={input}
-              required
-              value={name}
-            />
-          </label>
-          <Button disabled={save.isPending || !name.trim()} type="submit">
-            {save.isPending ? 'Đang lưu…' : 'Lưu'}
-          </Button>
-          {editing ? (
-            <Button
-              disabled={save.isPending}
-              onClick={() => {
-                setEditing(null);
-                setName('');
-              }}
-              type="button"
-              variant="outline"
-            >
-              Hủy
+      {/* Search and the add/edit form share one card: side by side from md, stacked below. */}
+      <div
+        className={cn(
+          'grid items-end gap-4 rounded-2xl border border-border bg-card p-4 shadow-sm',
+          !readOnly && 'md:grid-cols-2',
+        )}
+      >
+        <label className="relative block text-sm font-semibold">
+          Tìm kiếm
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute bottom-3.5 left-3 size-4 text-muted-foreground"
+          />
+          <input
+            className={`${inputClassName} mt-1 pl-9`}
+            onChange={(e) => {
+              setSearch(e.target.value);
+            }}
+            value={search}
+          />
+        </label>
+        {!readOnly ? (
+          <form className="grid items-end gap-3 sm:grid-cols-[1fr_auto_auto]" onSubmit={submit}>
+            <label className="text-sm font-semibold">
+              {editing ? 'Sửa tên' : `Thêm ${labels[role].toLocaleLowerCase('vi')}`}
+              <input
+                className={`${inputClassName} mt-1`}
+                maxLength={255}
+                onChange={(e) => {
+                  setName(e.target.value);
+                }}
+                ref={input}
+                required
+                value={name}
+              />
+            </label>
+            <Button disabled={save.isPending || !name.trim()} type="submit">
+              {save.isPending ? 'Đang lưu…' : 'Lưu'}
             </Button>
-          ) : null}
-        </form>
-      ) : null}
+            {editing ? (
+              <Button
+                disabled={save.isPending}
+                onClick={() => {
+                  setEditing(null);
+                  setName('');
+                }}
+                type="button"
+                variant="outline"
+              >
+                Hủy
+              </Button>
+            ) : null}
+          </form>
+        ) : null}
+      </div>
       {query.isPending ? (
         <div className="grid gap-2">
           {[1, 2, 3].map((x) => (
@@ -323,7 +329,10 @@ export function TournamentOfficialsPage({
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="font-bold">{official.name}</h3>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  <h3 className="font-bold">{official.name}</h3>
+                  <Status official={official} />
+                </div>
                 {official.scoreboardCode ? (
                   <p className="mt-1 text-sm">
                     Mã xem bảng điểm:{' '}
@@ -336,9 +345,6 @@ export function TournamentOfficialsPage({
                     ? `Trận ${official.currentMatch.publicId}`
                     : 'Chưa được phân công'}
                 </p>
-                <div className="mt-2">
-                  <Status official={official} />
-                </div>
               </div>
               {!readOnly ? (
                 <div className="flex flex-wrap gap-2">
@@ -380,6 +386,7 @@ export function TournamentOfficialsPage({
                     onClick={() => {
                       setEditing(official);
                       setName(official.name);
+                      input.current?.focus();
                     }}
                     size="icon-sm"
                     title="Sửa"

@@ -11,6 +11,7 @@ import {
   type ResultPublishPayload,
   type ResultPublishResponse,
   MatchExitMode,
+  ScoringMethod,
   type MatchExitResponse,
   type MatchParticipantsNotReadyDetails,
   type MatchPresenceEntry,
@@ -41,6 +42,8 @@ import {
   type VoteRejectedPayload,
   type VoteSubmitErrorCode,
   type VoteSubmitResponse,
+  type SupervisorVoteAcceptedPayload,
+  type SupervisorVoteSubmitResponse,
 } from '@martial-arts-scoring/shared-types';
 import {
   connectSocket,
@@ -125,6 +128,8 @@ export interface MatchRealtimeState {
   readonly completionErrorMessage: string | null;
   readonly pauseRound: () => Promise<boolean>;
   readonly resumeRound: () => Promise<boolean>;
+  /** Referee-command scoring: pause the round and open judge scoring. */
+  readonly startScoring: () => Promise<boolean>;
   readonly controllingRound: boolean;
   readonly roundControlErrorMessage: string | null;
   readonly cancelRoundResult: () => Promise<boolean>;
@@ -136,6 +141,11 @@ export interface MatchRealtimeState {
   readonly startingRound: boolean;
   readonly submitVote: (athlete: AthleteColor) => Promise<void>;
   readonly submittingVote: AthleteColor | null;
+  /** Supervisor only: cast the supervisor's own ("TT") vote in the open scoring stop. */
+  readonly submitSupervisorVote: (athlete: AthleteColor) => Promise<void>;
+  /** The supervisor's last accepted vote; compare its window with the open stop. */
+  readonly supervisorVote: SupervisorVoteAcceptedPayload | null;
+  readonly submittingSupervisorVote: AthleteColor | null;
   readonly submittingFault: AthleteColor | null;
   readonly faultErrorMessage: string | null;
   readonly completeAppeal: (payload: AppealCompletePayload) => Promise<boolean>;
@@ -198,6 +208,20 @@ function getRoundStartErrorMessage(
       return fallback;
   }
 }
+
+type RoundControlAction = 'pause' | 'resume' | 'score';
+
+const roundControlEvents = {
+  pause: RealtimeEvent.ROUND_PAUSE,
+  resume: RealtimeEvent.ROUND_RESUME,
+  score: RealtimeEvent.SCORING_START,
+} as const satisfies Record<RoundControlAction, string>;
+
+const roundControlToasts: Record<RoundControlAction, { failed: string; succeeded: string }> = {
+  pause: { failed: 'Không thể tạm dừng hiệp đấu.', succeeded: 'Đã tạm dừng hiệp đấu.' },
+  resume: { failed: 'Không thể tiếp tục hiệp đấu.', succeeded: 'Đã tiếp tục hiệp đấu.' },
+  score: { failed: 'Không thể bắt đầu chấm điểm.', succeeded: 'Đã bắt đầu chấm điểm.' },
+};
 
 function getRoundControlErrorMessage(code: RoundControlErrorCode, fallback: string): string {
   switch (code) {
@@ -274,6 +298,8 @@ function getVoteSubmitErrorMessage(code: VoteSubmitErrorCode, fallback: string):
       return 'Lựa chọn của giám định cho cửa sổ chấm điểm này đã được ghi nhận.';
     case 'VOTE_SCORING_WINDOW_PENDING':
       return 'Cửa sổ chấm điểm trước đang được xử lý. Vui lòng thử lại sau giây lát.';
+    case 'VOTE_SCORING_CLOSED':
+      return 'Chỉ có thể chấm điểm khi Giám sát đã bấm Chấm điểm.';
     case 'VOTE_FAILED':
       return fallback;
   }
@@ -335,12 +361,19 @@ export function useMatchRealtime({
     string | null
   >(null);
   const [submittingVote, setSubmittingVote] = useState<AthleteColor | null>(null);
+  const [supervisorVote, setSupervisorVote] = useState<SupervisorVoteAcceptedPayload | null>(null);
+  const [submittingSupervisorVote, setSubmittingSupervisorVote] = useState<AthleteColor | null>(
+    null,
+  );
   const [submittingFault, setSubmittingFault] = useState<AthleteColor | null>(null);
   const [faultErrorMessage, setFaultErrorMessage] = useState<string | null>(null);
   const [voteSubmitErrorMessage, setVoteSubmitErrorMessage] = useState<string | null>(null);
   const [submittingResultAction, setSubmittingResultAction] = useState(false);
   const [resultActionErrorMessage, setResultActionErrorMessage] = useState<string | null>(null);
   const acceptedVoteRef = useRef<VoteAcceptedPayload | null>(null);
+  const scoringMethodRef = useRef<ScoringMethod | undefined>(undefined);
+  const refereeWindowIdRef = useRef<string | undefined>(undefined);
+  const supervisorVoteInFlightRef = useRef(false);
   const refereeIdentityRef = useRef(refereeIdentity);
   const onAuthenticationRequiredRef = useRef(onAuthenticationRequired);
   const onSessionRevokedRef = useRef(onSessionRevoked);
@@ -360,6 +393,16 @@ export function useMatchRealtime({
   useEffect(() => {
     refereeIdentityRef.current = refereeIdentity;
   }, [refereeIdentity]);
+
+  const scoringMethod = snapshot?.match.scoringMethod;
+  const activeScoringWindow = snapshot?.activeScoringWindow;
+  // The open referee-command window the judge is looking at; the vote names it
+  // so a delayed vote can never be counted in a later stop.
+  const refereeWindowId = activeScoringWindow?.endsAt === null ? activeScoringWindow.id : undefined;
+  useEffect(() => {
+    scoringMethodRef.current = scoringMethod;
+    refereeWindowIdRef.current = refereeWindowId;
+  }, [scoringMethod, refereeWindowId]);
 
   const requestSnapshot = useCallback(() => {
     const socket = getSocketClient();
@@ -537,7 +580,7 @@ export function useMatchRealtime({
     }
   }, [onMatchExitAcknowledged]);
 
-  const controlRound = useCallback(async (action: 'pause' | 'resume'): Promise<boolean> => {
+  const controlRound = useCallback(async (action: RoundControlAction): Promise<boolean> => {
     const socket = getSocketClient();
     if (roundControlInFlightRef.current) return false;
     if (!socket.connected) {
@@ -545,7 +588,7 @@ export function useMatchRealtime({
         'Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi điều khiển hiệp đấu.';
       setRoundControlErrorMessage(message);
       toast({
-        title: action === 'pause' ? 'Không thể tạm dừng hiệp đấu.' : 'Không thể tiếp tục hiệp đấu.',
+        title: roundControlToasts[action].failed,
         variant: 'destructive',
       });
       return false;
@@ -554,7 +597,7 @@ export function useMatchRealtime({
     setControllingRound(true);
     setRoundControlErrorMessage(null);
     try {
-      const event = action === 'pause' ? RealtimeEvent.ROUND_PAUSE : RealtimeEvent.ROUND_RESUME;
+      const event = roundControlEvents[action];
       const response = await new Promise<RoundControlResponse>((resolve, reject) => {
         socket
           .timeout(10_000)
@@ -570,8 +613,7 @@ export function useMatchRealtime({
         const message = getRoundControlErrorMessage(response.error.code, response.error.message);
         setRoundControlErrorMessage(message);
         toast({
-          title:
-            action === 'pause' ? 'Không thể tạm dừng hiệp đấu.' : 'Không thể tiếp tục hiệp đấu.',
+          title: roundControlToasts[action].failed,
           description: message,
           variant: 'destructive',
         });
@@ -584,7 +626,7 @@ export function useMatchRealtime({
         return false;
       }
       toast({
-        title: action === 'pause' ? 'Đã tạm dừng hiệp đấu.' : 'Đã tiếp tục hiệp đấu.',
+        title: roundControlToasts[action].succeeded,
         variant: 'success',
       });
       socket.emit(RealtimeEvent.MATCH_STATE_REQUEST);
@@ -593,7 +635,7 @@ export function useMatchRealtime({
       const message = 'Máy chủ không phản hồi. Vui lòng kiểm tra trạng thái hiệp đấu và thử lại.';
       setRoundControlErrorMessage(message);
       toast({
-        title: action === 'pause' ? 'Không thể tạm dừng hiệp đấu.' : 'Không thể tiếp tục hiệp đấu.',
+        title: roundControlToasts[action].failed,
         description: message,
         variant: 'destructive',
       });
@@ -605,6 +647,7 @@ export function useMatchRealtime({
   }, []);
   const pauseRound = useCallback(() => controlRound('pause'), [controlRound]);
   const resumeRound = useCallback(() => controlRound('resume'), [controlRound]);
+  const startScoring = useCallback(() => controlRound('score'), [controlRound]);
 
   const undoResultCancellation = useCallback(async (operationId: string): Promise<boolean> => {
     const socket = getSocketClient();
@@ -838,7 +881,12 @@ export function useMatchRealtime({
 
   const submitVote = useCallback(async (athlete: AthleteColor) => {
     const socket = getSocketClient();
-    if (voteSubmissionInFlightRef.current || acceptedVoteRef.current !== null) {
+    const accepted = acceptedVoteRef.current;
+    // Referee-command scoring lets a judge change their choice while scoring
+    // is open; the free window accepts exactly one choice per judge.
+    const canChangeChoice =
+      scoringMethodRef.current === ScoringMethod.REFEREE_COMMAND && accepted?.athlete !== athlete;
+    if (voteSubmissionInFlightRef.current || (accepted !== null && !canChangeChoice)) {
       return;
     }
     if (!socket.connected) {
@@ -858,7 +906,10 @@ export function useMatchRealtime({
           .timeout(10_000)
           .emit(
             RealtimeEvent.VOTE_SUBMIT,
-            { athlete },
+            scoringMethodRef.current === ScoringMethod.REFEREE_COMMAND &&
+              refereeWindowIdRef.current !== undefined
+              ? { athlete, scoringWindowId: refereeWindowIdRef.current }
+              : { athlete },
             (error: Error | null, acknowledgement: VoteSubmitResponse) => {
               if (error) {
                 reject(error);
@@ -894,6 +945,57 @@ export function useMatchRealtime({
       setVoteSubmitErrorMessage(
         'Máy chủ không phản hồi lựa chọn chấm điểm. Vui lòng kiểm tra trạng thái trước khi thử lại.',
       );
+    }
+  }, []);
+
+  const submitSupervisorVote = useCallback(async (athlete: AthleteColor) => {
+    const socket = getSocketClient();
+    const scoringWindowId = refereeWindowIdRef.current;
+    if (scoringWindowId === undefined || supervisorVoteInFlightRef.current) return;
+    if (!socket.connected) {
+      setVoteSubmitErrorMessage(
+        'Chưa kết nối với máy chủ. Vui lòng kết nối lại trước khi chấm điểm.',
+      );
+      return;
+    }
+    supervisorVoteInFlightRef.current = true;
+    setSubmittingSupervisorVote(athlete);
+    setVoteSubmitErrorMessage(null);
+    try {
+      const response = await new Promise<SupervisorVoteSubmitResponse>((resolve, reject) => {
+        socket
+          .timeout(10_000)
+          .emit(
+            RealtimeEvent.SUPERVISOR_VOTE_SUBMIT,
+            { athlete, scoringWindowId },
+            (error: Error | null, acknowledgement: SupervisorVoteSubmitResponse) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+              resolve(acknowledgement);
+            },
+          );
+      });
+      if (response.ok) {
+        setSupervisorVote(response.vote);
+        return;
+      }
+      setVoteSubmitErrorMessage(
+        getVoteSubmitErrorMessage(response.error.code, response.error.message),
+      );
+      if (response.error.code === 'REALTIME_AUTHENTICATION_REQUIRED') {
+        socket.disconnect();
+        setConnectionStatus('authentication-required');
+        onAuthenticationRequiredRef.current();
+      }
+    } catch {
+      setVoteSubmitErrorMessage(
+        'Máy chủ không phản hồi lựa chọn chấm điểm. Vui lòng kiểm tra trạng thái trước khi thử lại.',
+      );
+    } finally {
+      supervisorVoteInFlightRef.current = false;
+      setSubmittingSupervisorVote(null);
     }
   }, []);
 
@@ -1157,6 +1259,10 @@ export function useMatchRealtime({
         const acceptedVote = payload.viewer.acceptedVote;
         acceptedVoteRef.current = acceptedVote;
         setLastAcceptedVote(acceptedVote);
+        // The supervisor's own choice in the open stop (absent for judges).
+        if (payload.viewer.supervisorVote !== undefined) {
+          setSupervisorVote(payload.viewer.supervisorVote);
+        }
         voteSubmissionInFlightRef.current = false;
         setSubmittingVote(null);
       }
@@ -1423,6 +1529,7 @@ export function useMatchRealtime({
     readinessFresh,
     pauseRound,
     resumeRound,
+    startScoring,
     controllingRound,
     roundControlErrorMessage,
     cancelRoundResult,
@@ -1445,6 +1552,9 @@ export function useMatchRealtime({
     startRound,
     startingRound,
     submitVote,
+    submitSupervisorVote,
+    supervisorVote,
+    submittingSupervisorVote,
     submittingVote,
     submittingFault,
     faultErrorMessage,
