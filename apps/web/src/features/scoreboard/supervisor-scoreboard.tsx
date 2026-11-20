@@ -69,12 +69,7 @@ export function SupervisorScoreboard({
 
   return (
     <main className="arena-background flex min-h-dvh flex-col gap-[clamp(0.5rem,1.6vmin,1.25rem)] p-[clamp(0.5rem,1.6vmin,1.25rem)] text-white">
-      <ScoreboardHeader
-        source={source}
-        onSelect={onSelect}
-        status={reconnecting ? 'disconnected' : 'connected'}
-        hasSnapshot
-      />
+      <ScoreboardHeader source={source} onSelect={onSelect} />
       <section className="grid flex-1 content-center justify-items-center gap-5 p-6 text-center">
         <h1 className="max-w-4xl text-balance text-3xl font-black sm:text-5xl">
           {access.tournamentName}

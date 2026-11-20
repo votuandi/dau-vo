@@ -3,6 +3,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUrl,
   Max,
   MaxLength,
   Min,
@@ -12,6 +13,15 @@ import { Type } from 'class-transformer';
 
 /** Upper bound for tier and display index; keeps values well inside a Postgres INTEGER. */
 export const SPONSOR_NUMBER_MAX = 1_000_000;
+
+/** "Link quảng cáo" must be a full http(s) website address; other schemes could run script. */
+const AD_URL_OPTIONS = {
+  protocols: ['http', 'https'],
+  require_protocol: true,
+  require_valid_protocol: true,
+  require_tld: true,
+};
+const AD_URL_MESSAGE = 'adUrl must be an http or https website address';
 
 export class CreateSponsorDto {
   @IsString()
@@ -23,6 +33,12 @@ export class CreateSponsorDto {
   @IsString()
   @MaxLength(5000)
   details?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  @IsUrl(AD_URL_OPTIONS, { message: AD_URL_MESSAGE })
+  adUrl?: string | null;
 
   @Type(() => Number)
   @IsInt()
@@ -59,6 +75,12 @@ export class UpdateSponsorDto {
   @IsString()
   @MaxLength(5000)
   details?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  @IsUrl(AD_URL_OPTIONS, { message: AD_URL_MESSAGE })
+  adUrl?: string | null;
 
   @IsOptional()
   @Type(() => Number)

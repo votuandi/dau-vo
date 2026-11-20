@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AthleteColor, MatchStatus } from '@martial-arts-scoring/shared-types';
 import { useScoreboardRealtime } from '@/features/scoreboard/scoreboard-realtime';
@@ -20,6 +20,8 @@ import {
   ScoreboardWeightClass,
 } from '@/features/scoreboard/components/scoreboard-event';
 import { ScoreboardHeader } from '@/features/scoreboard/components/scoreboard-header';
+import { TournamentResultsScreen } from '@/features/scoreboard/components/tournament-results-screen';
+import { useScoreboardSponsors } from '@/features/scoreboard/use-scoreboard-sponsors';
 import type { ScoreboardSource } from '@/features/scoreboard/scoreboard-source';
 import { ScoreboardClock } from '@/features/scoreboard/components/scoreboard-clock';
 import { WinnerPresentation } from '@/features/scoreboard/components/winner-presentation';
@@ -75,14 +77,8 @@ export function ScoreboardPage() {
         key={location.key}
         source={supervisor}
         onSelect={select}
-        renderMatch={(id, reconnecting) => (
-          <ScoreboardContent
-            key={id}
-            matchPublicId={id}
-            source={supervisor}
-            trackingDisconnected={reconnecting}
-            onSelect={select}
-          />
+        renderMatch={(id) => (
+          <ScoreboardContent key={id} matchPublicId={id} source={supervisor} onSelect={select} />
         )}
       />
     );
@@ -102,15 +98,15 @@ export function ScoreboardPage() {
 function ScoreboardContent({
   matchPublicId,
   source,
-  trackingDisconnected = false,
   onSelect,
 }: {
   readonly matchPublicId: string;
   readonly source: ScoreboardSource;
-  readonly trackingDisconnected?: boolean;
   readonly onSelect: (source: ScoreboardSource) => void;
 }) {
-  const { connectionStatus, snapshot } = useScoreboardRealtime(matchPublicId);
+  const { connectionStatus, snapshot, tournamentResults } = useScoreboardRealtime(matchPublicId);
+  const sponsors = useScoreboardSponsors(source, snapshot?.match.publicId ?? matchPublicId);
+  const [dismissedResultsId, setDismissedResultsId] = useState<string | null>(null);
   const followingSupervisor = source.kind === 'supervisor';
   const location = useLocation();
   const navigate = useNavigate();
@@ -152,6 +148,25 @@ function ScoreboardContent({
   const tone: MatchScreenTone =
     view.theme === 'attention' || view.theme === 'scoring' ? view.theme : 'arena';
   const activeRound = snapshot?.activeRound;
+  // "Kết quả giải đấu" stays until closed, or until this match starts a new round after it.
+  const showTournamentResults =
+    tournamentResults !== null &&
+    dismissedResultsId !== tournamentResults.announcementId &&
+    !(
+      activeRound?.endedAt === null &&
+      Date.parse(activeRound.startedAt) > Date.parse(tournamentResults.announcedAt)
+    );
+
+  if (showTournamentResults)
+    return (
+      <TournamentResultsScreen
+        onClose={() => {
+          setDismissedResultsId(tournamentResults.announcementId);
+        }}
+        results={tournamentResults}
+        sponsors={sponsors}
+      />
+    );
 
   return (
     <main
@@ -164,8 +179,6 @@ function ScoreboardContent({
       <ScoreboardHeader
         source={source}
         onSelect={onSelect}
-        status={trackingDisconnected ? 'disconnected' : connectionStatus}
-        hasSnapshot={snapshot !== null}
         tone={tone}
         matchPublicId={snapshot?.match.publicId ?? matchPublicId}
       />

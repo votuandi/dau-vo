@@ -25,6 +25,7 @@ import {
   settingsTitleClassName,
 } from "./settings-card-styles";
 import { scoringThresholdHint } from "./scoring-threshold-hint";
+import { roundPlayOrder } from "./fixture-presentation";
 
 type Settings = NonNullable<ActiveBracket["staffing"]>[number];
 
@@ -89,7 +90,14 @@ export function BracketRoundRulesEditor({
         luôn là 1. Cấu hình khóa khi Giám sát nhận một trận trong vòng.
       </p>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        {(data.staffing ?? []).map((row) => {
+        {[...(data.staffing ?? [])]
+          // "Tranh hạng 3" is played before the final, so its card comes first.
+          .sort(
+            (a, b) =>
+              roundPlayOrder(a.roundNumber, data.bracket.roundCount) -
+              roundPlayOrder(b.roundNumber, data.bracket.roundCount),
+          )
+          .map((row) => {
           const locked = data.fixtures.some(
             (fixture) =>
               fixture.roundNumber === row.roundNumber &&

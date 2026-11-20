@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Image, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { Ban, ExternalLink, Image, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import {
 } from '@/features/admin-management/presentation';
 import { IMAGE_ACCEPT, imageFileProblem } from '@/lib/image-file';
 import { cn } from '@/lib/utils';
+import { WEBSITE_URL_MAX_LENGTH, checkWebsiteUrl, isSafeWebsiteUrl } from '@/lib/website-url';
 import { ApiClientError } from '@/services/api/client';
 import {
   adminManagementApi,
@@ -54,6 +55,7 @@ class SponsorImageUploadError extends Error {
 interface SponsorValues {
   readonly name: string;
   readonly details: string;
+  readonly adUrl: string;
   readonly tier: string;
   readonly tierName: string;
   readonly displayIndex: string;
@@ -72,6 +74,7 @@ function emptySponsorValues(items: readonly TournamentSponsor[]): SponsorValues 
   return {
     name: '',
     details: '',
+    adUrl: '',
     tier: '1',
     tierName: '',
     displayIndex: String(lastIndex + 1),
@@ -85,6 +88,7 @@ function sponsorValues(item: TournamentSponsor): SponsorValues {
   return {
     name: item.name,
     details: item.details ?? '',
+    adUrl: item.adUrl ?? '',
     tier: String(item.tier),
     tierName: item.tierName,
     displayIndex: String(item.displayIndex),
@@ -100,8 +104,9 @@ function positiveInteger(value: string): number | null {
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= 1_000_000 ? parsed : null;
 }
 
-interface SponsorSubmission extends Required<Omit<SponsorInput, 'details'>> {
+interface SponsorSubmission extends Required<Omit<SponsorInput, 'details' | 'adUrl'>> {
   readonly details: string | null;
+  readonly adUrl: string | null;
   readonly file: File | null;
 }
 
@@ -126,7 +131,9 @@ function SponsorForm({
   const tier = positiveInteger(values.tier);
   const displayIndex = positiveInteger(values.displayIndex);
   const takenBy = displayIndex === null ? undefined : takenIndexes.get(displayIndex);
+  const adUrl = checkWebsiteUrl(values.adUrl);
   const valid =
+    adUrl.ok &&
     values.name.trim() !== '' &&
     values.tierName.trim() !== '' &&
     tier !== null &&
@@ -141,6 +148,7 @@ function SponsorForm({
         onSubmit({
           name: values.name.trim(),
           details: values.details.trim() || null,
+          adUrl: adUrl.value,
           tier,
           tierName: values.tierName.trim(),
           displayIndex,
@@ -163,6 +171,36 @@ function SponsorForm({
           required
           value={values.name}
         />
+      </label>
+      <label className="form-field sm:col-span-2">
+        Link quảng cáo
+        <input
+          aria-describedby="sponsor-ad-url-hint"
+          aria-invalid={!adUrl.ok}
+          autoComplete="url"
+          className={inputClassName}
+          inputMode="url"
+          maxLength={WEBSITE_URL_MAX_LENGTH}
+          onChange={(e) => {
+            onValuesChange({ ...values, adUrl: e.target.value });
+          }}
+          placeholder="https://www.nhataitro.vn"
+          spellCheck={false}
+          type="text"
+          value={values.adUrl}
+        />
+        {adUrl.ok ? (
+          <span
+            className="block text-xs font-normal text-muted-foreground"
+            id="sponsor-ad-url-hint"
+          >
+            Không bắt buộc. Khán giả bấm vào logo nhà tài trợ sẽ mở link này trong tab mới.
+          </span>
+        ) : (
+          <span className="form-error block" id="sponsor-ad-url-hint" role="alert">
+            {adUrl.error}
+          </span>
+        )}
       </label>
       <label className="form-field">
         Bậc tài trợ
@@ -568,6 +606,17 @@ export function SponsorsPage({
                         </Badge>
                       ) : null}
                     </div>
+                    {isSafeWebsiteUrl(item.adUrl) ? (
+                      <a
+                        className="mt-1 inline-flex max-w-full items-center gap-1 text-sm font-semibold text-primary hover:underline"
+                        href={item.adUrl}
+                        rel="noopener noreferrer"
+                        target="_blank"
+                      >
+                        <ExternalLink aria-hidden="true" className="size-3.5 shrink-0" />
+                        <span className="truncate">{item.adUrl}</span>
+                      </a>
+                    ) : null}
                     {item.details ? (
                       <p className="mt-1 whitespace-pre-line break-words text-sm text-muted-foreground">
                         {item.details}

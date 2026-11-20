@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { THIRD_PLACE_ROUND_LABEL } from '@martial-arts-scoring/shared-types';
 import { MatchLifecycle, TournamentOfficialRole } from '@/types/shared';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
@@ -16,6 +17,7 @@ import {
 } from '@/features/match-access/match-realtime';
 import { JudgeConsole } from '@/features/match-access/judge-console';
 import { SupervisorConsole } from '@/features/match-access/supervisor-console';
+import { TournamentResultsPanel } from '@/features/match-access/tournament-results-panel';
 import { ApiClientError } from '@/services/api/client';
 import { presentLifecycle, presentOfficialStatus } from '@/features/match-presentation';
 import {
@@ -45,6 +47,12 @@ function errorMessage(e: unknown) {
     : e instanceof ApiClientError
       ? (e.body.message ?? 'Không thể thực hiện yêu cầu.')
       : 'Không thể kết nối đến máy chủ.';
+}
+
+/** "Bán kết", "Tranh hạng 3"… from the server; "Vòng N" from older servers. */
+function officialRoundLabel(round: number, label: string | null | undefined): string {
+  if (!round) return 'Trận ngoài nhánh đấu';
+  return label ?? `Vòng ${String(round)}`;
 }
 
 function isEligible(match: OfficialMatch): boolean {
@@ -301,7 +309,10 @@ function SupervisorAssignment({
     if (!rounds.has(round)) rounds.set(round, []);
     rounds.get(round)?.push(match);
   }
-  const roundGroups = [...rounds.entries()].sort((a, b) => a[0] - b[0]);
+  // "Tranh hạng 3" is stored after the final but played just before it.
+  const playOrder = ([round, group]: readonly [number, readonly OfficialMatch[]]) =>
+    group[0]?.roundLabel === THIRD_PLACE_ROUND_LABEL ? round - 1.5 : round;
+  const roundGroups = [...rounds.entries()].sort((a, b) => playOrder(a) - playOrder(b));
 
   return (
     <main className="mx-auto w-full max-w-7xl p-4 sm:p-6">
@@ -322,6 +333,7 @@ function SupervisorAssignment({
       <p aria-live="polite" className="sr-only">
         {refreshAnnouncement}
       </p>
+      <TournamentResultsPanel />
       <div className="mt-5 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_26rem]">
         <div className="min-w-0">
           {matches.isPending ? <MatchListSkeleton /> : null}
@@ -389,10 +401,10 @@ function SupervisorAssignment({
                   <section
                     className="mt-5"
                     key={round}
-                    aria-label={round ? `Vòng ${String(round)}` : 'Trận ngoài nhánh đấu'}
+                    aria-label={officialRoundLabel(round, group[0]?.roundLabel)}
                   >
                     <h2 className="mb-3 border-b pb-2 text-lg font-bold">
-                      {round ? `Vòng ${String(round)}` : 'Trận ngoài nhánh đấu'}
+                      {officialRoundLabel(round, group[0]?.roundLabel)}
                       <span className="ml-2 text-sm font-normal text-muted-foreground">
                         {group.length} trận
                       </span>
@@ -471,7 +483,9 @@ function SupervisorAssignment({
             >
               <p className="mb-3 text-sm text-muted-foreground">
                 {selected.weightClass?.name ?? 'Chưa phân hạng cân'}
-                {selected.roundNumber ? ` · Vòng ${String(selected.roundNumber)}` : ''}
+                {selected.roundNumber
+                  ? ` · ${officialRoundLabel(selected.roundNumber, selected.roundLabel)}`
+                  : ''}
               </p>
               <Button
                 className="mb-3 lg:hidden"

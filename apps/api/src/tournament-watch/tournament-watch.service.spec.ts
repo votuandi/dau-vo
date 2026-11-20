@@ -60,6 +60,19 @@ describe('TournamentWatchService', () => {
     const prisma = {
       tournament: { findFirst: jest.fn().mockResolvedValue(found) },
       match: { findMany: jest.fn().mockResolvedValue([]) },
+      tournamentSponsor: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 's-1',
+            name: 'Gold Co',
+            details: null,
+            imagePath: 'sponsors/gold.webp',
+            adUrl: 'https://gold.example.com',
+            tier: 1,
+            tierName: 'Kim cương',
+          },
+        ]),
+      },
       bracketFixture: {
         findMany: jest.fn().mockResolvedValue([
           {
@@ -188,6 +201,33 @@ describe('TournamentWatchService', () => {
         response: { code: 'WATCH_LIVE_WATCH_DISABLED' },
       });
     expect(prisma.match.findMany).not.toHaveBeenCalled();
+  });
+
+  it('includes active sponsors with their logo URL in the overview', async () => {
+    const { prisma, service } = setup();
+    const { sponsors } = await service.overview('ABC234');
+    expect(prisma.tournamentSponsor.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { tournamentId: 't-1', deletedAt: null, isEnabled: true },
+      }),
+    );
+    expect(sponsors).toEqual([
+      {
+        id: 's-1',
+        name: 'Gold Co',
+        details: null,
+        imageUrl: '/api/media/sponsors/gold.webp',
+        adUrl: 'https://gold.example.com',
+        tier: 1,
+        tierName: 'Kim cương',
+      },
+    ]);
+  });
+
+  it('still lists sponsors for the scoreboard when live watching is off', async () => {
+    const { service } = setup({ ...tournament, allowLiveWatch: false });
+    const { sponsors } = await service.sponsorsByTournamentCode('ABC234');
+    expect(sponsors).toHaveLength(1);
   });
 
   it('answers 404 for an unknown or malformed code without querying', async () => {

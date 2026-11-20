@@ -70,9 +70,23 @@ export interface WatchDecidedFixture extends WatchMatchBase {
 
 export type WatchMatch = WatchPlayedMatch | WatchDecidedFixture;
 
+/** A sponsor as public screens show it ("Đang tài trợ" only, in display order). */
+export interface PublicSponsor {
+  readonly id: string;
+  readonly name: string;
+  readonly details: string | null;
+  readonly imageUrl: string | null;
+  /** "Link quảng cáo"; open only after `isSafeWebsiteUrl`. */
+  readonly adUrl: string | null;
+  readonly tier: number;
+  readonly tierName: string;
+}
+
 export interface WatchOverview {
   readonly tournament: WatchTournament;
   readonly matches: readonly WatchMatch[];
+  /** Absent on servers older than the sponsor strip. */
+  readonly sponsors?: readonly PublicSponsor[];
 }
 
 export interface WatchBrackets {
@@ -119,6 +133,19 @@ export interface WatchMatchResult {
 }
 
 const base = (code: string) => `watch/tournaments/${encodeURIComponent(code)}`;
+
+export const publicSponsorsApi = {
+  byTournament: (code: string) =>
+    apiClient.get<{ readonly sponsors: readonly PublicSponsor[] }>(
+      `public/tournaments/${encodeURIComponent(code)}/sponsors`,
+      { credentials: 'omit' },
+    ),
+  byMatch: (matchPublicId: string) =>
+    apiClient.get<{ readonly sponsors: readonly PublicSponsor[] }>(
+      `public/matches/${encodeURIComponent(matchPublicId)}/sponsors`,
+      { credentials: 'omit' },
+    ),
+};
 
 export const watchApi = {
   overview: (code: string) => apiClient.get<WatchOverview>(base(code)),

@@ -49,7 +49,10 @@ export function bracketPresentation(data: ChartData): BracketPresentation {
     fixtures: data.fixtures,
     edges: data.fixtures.flatMap((fixture) =>
       fixture.slots.flatMap((slot) =>
-        slot.sourceFixtureId && fixtureIds.has(slot.sourceFixtureId)
+        // Connectors show who advances; the third-place match takes losers, so it has none.
+        slot.sourceFixtureId &&
+        slot.sourceOutcome !== 'LOSER' &&
+        fixtureIds.has(slot.sourceFixtureId)
           ? [
               {
                 sourceFixtureId: slot.sourceFixtureId,

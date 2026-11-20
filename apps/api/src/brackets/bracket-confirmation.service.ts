@@ -13,7 +13,9 @@ import {
   TournamentStatus,
   TournamentOfficialRole,
 } from '@prisma/client';
+import { bracketRoundLabel } from '@martial-arts-scoring/shared-types';
 import { PrismaService } from '../prisma/prisma.service';
+import { syncThirdPlaceFixture } from './bracket-third-place';
 import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
 import { BracketPreviewService } from './bracket-preview.service';
 import {
@@ -286,6 +288,13 @@ export class BracketConfirmationService {
             requiredJudgeCount: rules.defaultRequiredJudgeCount,
           })),
         });
+        // "Thực hiện trận tranh hạng 3" is a weight class setting chosen before or after the draw.
+        const weightClass = await tx.tournamentWeightClass.findUniqueOrThrow({
+          where: { id: weightClassId },
+          select: { thirdPlaceMatchEnabled: true },
+        });
+        if (weightClass.thirdPlaceMatchEnabled)
+          await syncThirdPlaceFixture(tx, bracket.id, true);
         await tx.auditLog.create({
           data: {
             adminUserId: userId,
@@ -485,11 +494,7 @@ export class BracketConfirmationService {
     };
   }
   private roundLabel(roundNumber: number, roundCount: number) {
-    const fromFinal = roundCount - roundNumber;
-    if (fromFinal === 0) return 'Chung kết';
-    if (fromFinal === 1) return 'Bán kết';
-    if (fromFinal === 2) return 'Tứ kết';
-    return `Vòng ${roundNumber}`;
+    return bracketRoundLabel(roundNumber, roundCount);
   }
   private graph(
     c: BracketPreviewTokenClaims,

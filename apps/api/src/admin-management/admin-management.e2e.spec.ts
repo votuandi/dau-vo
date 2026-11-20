@@ -1199,6 +1199,68 @@ describe('Admin tournament and match management (integration)', () => {
     });
   });
 
+  it('validates the sponsor advertising link and shares active sponsors publicly', async () => {
+    const tournament = await createTournament('sponsor-links');
+    const base = `/api/admin/tournaments/${tournament.id}/sponsors`;
+    const post = (body: Record<string, unknown>) =>
+      authenticated(request(app.getHttpServer()).post(base)).send({
+        tier: 1,
+        tierName: 'Vàng',
+        ...body,
+      });
+
+    for (const adUrl of [
+      'javascript:alert(1)',
+      'ftp://files.example.com',
+      'example.com',
+      'https://localhost',
+      'not a url',
+    ])
+      await post({ name: `Bad ${adUrl}`, adUrl }).expect(400);
+
+    const linked = (
+      await post({
+        name: 'Linked',
+        adUrl: 'https://shop.example.vn/khuyen-mai?x=1',
+      }).expect(201)
+    ).body as { sponsor: { id: string; adUrl: string | null } };
+    expect(linked.sponsor.adUrl).toBe('https://shop.example.vn/khuyen-mai?x=1');
+    const cleared = await authenticated(
+      request(app.getHttpServer()).patch(`${base}/${linked.sponsor.id}`),
+    )
+      .send({ adUrl: null })
+      .expect(200);
+    expect(
+      (cleared.body as { sponsor: { adUrl: string | null } }).sponsor.adUrl,
+    ).toBeNull();
+    await authenticated(
+      request(app.getHttpServer()).patch(`${base}/${linked.sponsor.id}`),
+    )
+      .send({ adUrl: 'http://ads.example.com' })
+      .expect(200);
+    await post({ name: 'Stopped', isEnabled: false }).expect(201);
+
+    const code = (
+      await prisma.tournament.findUniqueOrThrow({
+        where: { id: tournament.id },
+        select: { publicCode: true },
+      })
+    ).publicCode;
+    const publicList = await request(app.getHttpServer())
+      .get(`/api/public/tournaments/${code.toLowerCase()}/sponsors`)
+      .expect(200);
+    expect(publicList.body).toEqual({
+      sponsors: [
+        expect.objectContaining({
+          name: 'Linked',
+          adUrl: 'http://ads.example.com',
+          imageUrl: null,
+        }),
+      ],
+    });
+    expect(publicList.body.sponsors[0]).not.toHaveProperty('isEnabled');
+  });
+
   it('shifts other sponsors when a taken display position is chosen', async () => {
     interface SponsorView {
       id: string;

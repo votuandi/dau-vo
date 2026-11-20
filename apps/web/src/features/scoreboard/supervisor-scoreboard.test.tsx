@@ -1,8 +1,16 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SupervisorScoreboard } from './supervisor-scoreboard';
 import { supervisorScoreboardApi } from '@/services/api/scoreboard';
 import { ApiClientError } from '@/services/api/client';
+import { renderWithQueryClient as render } from '@/test/render-with-query-client';
+
+vi.mock('@/services/api/watch', () => ({
+  publicSponsorsApi: {
+    byMatch: vi.fn().mockResolvedValue({ sponsors: [] }),
+    byTournament: vi.fn().mockResolvedValue({ sponsors: [] }),
+  },
+}));
 
 const source = {
   kind: 'supervisor' as const,

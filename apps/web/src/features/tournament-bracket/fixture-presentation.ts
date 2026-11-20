@@ -1,4 +1,5 @@
 import type { ActiveBracket } from '@/services/api/admin-management';
+import { isThirdPlaceRound } from '@martial-arts-scoring/shared-types';
 import { MatchDisplayState, MatchLifecycle } from '@/types/shared';
 
 export type BracketFixture = ActiveBracket['fixtures'][number];
@@ -34,6 +35,14 @@ export function fixtureSurfaceClassName(fixture: BracketFixture): string {
   return 'bg-white';
 }
 
+/**
+ * Sort key that puts rounds in playing order: the third-place match ("Tranh
+ * hạng 3"), stored after the final, is played just before it.
+ */
+export function roundPlayOrder(roundNumber: number, roundCount: number): number {
+  return isThirdPlaceRound(roundNumber, roundCount) ? roundCount - 0.5 : roundNumber;
+}
+
 /** Groups fixtures by round number, preserving the order in which rounds first appear. */
 export function groupFixturesByRound(
   fixtures: readonly BracketFixture[],
@@ -56,7 +65,8 @@ export function fixtureSideLabel(
   const slot = fixture.slots.find((candidate) => candidate.side === side);
   if (slot?.resolvedEntrant) return slot.resolvedEntrant.snapshotName;
   if (slot?.sourceFixtureId) {
-    return `Chờ người thắng ${referenceById.get(slot.sourceFixtureId) ?? ''}`;
+    const outcome = slot.sourceOutcome === 'LOSER' ? 'thua' : 'thắng';
+    return `Chờ người ${outcome} ${referenceById.get(slot.sourceFixtureId) ?? ''}`;
   }
   return 'Chờ xác định';
 }
@@ -100,4 +110,21 @@ export function parseIntermissionSeconds(value: string): number | null {
   const text = value.trim();
   if (!text) return 0;
   return /^\d+$/u.test(text) ? Number(text) : null;
+}
+
+/** Why the setting cannot change right now, or null when it can. */
+export function thirdPlaceLockReason(bracket: ActiveBracket | undefined): string | null {
+  if (!bracket) return null;
+  if (bracket.bracket.status === 'COMPLETED')
+    return 'Nhánh đấu đã hoàn tất nên không thể thay đổi.';
+  const thirdPlace = bracket.fixtures.find((fixture) =>
+    isThirdPlaceRound(fixture.roundNumber, bracket.bracket.roundCount),
+  );
+  if (
+    thirdPlace &&
+    (thirdPlace.match !== null ||
+      ['MATCH_PREPARED', 'AWAITING_WINNER', 'COMPLETED'].includes(thirdPlace.status))
+  )
+    return 'Trận tranh hạng 3 đã được nhận hoặc đã có kết quả nên không thể tắt.';
+  return null;
 }

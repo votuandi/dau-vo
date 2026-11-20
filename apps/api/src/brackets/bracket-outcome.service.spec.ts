@@ -29,7 +29,17 @@ describe('BracketOutcomeService retraction', () => {
           bracketFixtureId: fixtureId,
         }),
       },
-      tournamentBracket: { update: jest.fn().mockResolvedValue({}) },
+      tournamentBracket: {
+        update: jest.fn().mockResolvedValue({}),
+        // Completion check: the final is still undecided.
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          id: 'bracket',
+          status: BracketStatus.ACTIVE,
+          roundCount: 2,
+          championEntrantId: null,
+          fixtures: [{ roundNumber: 2, winnerEntrantId: null }],
+        }),
+      },
     };
     const service = new BracketOutcomeService({} as never);
 
@@ -100,11 +110,22 @@ describe('BracketOutcomeService retraction', () => {
             winnerEntrantId: null,
             bracket: { roundCount: 2 },
             match: { id: matchId },
+            slots: [{ resolvedEntrantId: winnerId }, { resolvedEntrantId: otherId }],
           }),
         update: jest.fn().mockResolvedValue({}),
       },
       bracketSlot: { findMany: jest.fn().mockResolvedValue([]) },
-      tournamentBracket: { update: jest.fn().mockResolvedValue({}) },
+      tournamentBracket: {
+        update: jest.fn().mockResolvedValue({}),
+        // Completion check: the final is still undecided.
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          id: 'bracket',
+          status: BracketStatus.ACTIVE,
+          roundCount: 2,
+          championEntrantId: null,
+          fixtures: [{ roundNumber: 2, winnerEntrantId: null }],
+        }),
+      },
       auditLog: { create: jest.fn().mockResolvedValue({}) },
     };
     const service = new BracketOutcomeService({} as never);
@@ -163,11 +184,22 @@ describe('BracketOutcomeService retraction', () => {
             winnerEntrantId: null,
             bracket: { roundCount: 2 },
             match: null,
+            slots: [{ resolvedEntrantId: winnerId }, { resolvedEntrantId: otherId }],
           }),
         update: jest.fn().mockResolvedValue({}),
       },
       bracketSlot: { findMany: jest.fn().mockResolvedValue([]) },
-      tournamentBracket: { update: jest.fn().mockResolvedValue({}) },
+      tournamentBracket: {
+        update: jest.fn().mockResolvedValue({}),
+        // Completion check: the final is still undecided.
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          id: 'bracket',
+          status: BracketStatus.ACTIVE,
+          roundCount: 2,
+          championEntrantId: null,
+          fixtures: [{ roundNumber: 2, winnerEntrantId: null }],
+        }),
+      },
       auditLog: { create: jest.fn().mockResolvedValue({}) },
     };
     const service = new BracketOutcomeService({} as never);
@@ -271,6 +303,7 @@ describe('BracketOutcomeService retraction', () => {
             winnerEntrantId: otherId,
             bracket: { status: BracketStatus.COMPLETED, roundCount: 2 },
             match: null,
+            slots: [{ resolvedEntrantId: winnerId }, { resolvedEntrantId: otherId }],
           }),
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -296,7 +329,17 @@ describe('BracketOutcomeService retraction', () => {
         }),
       },
       match: { update: jest.fn().mockResolvedValue({}) },
-      tournamentBracket: { update: jest.fn().mockResolvedValue({}) },
+      tournamentBracket: {
+        update: jest.fn().mockResolvedValue({}),
+        // Completion check: correcting a semi-final undoes the final's result.
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          id: bracketId,
+          status: BracketStatus.COMPLETED,
+          roundCount: 2,
+          championEntrantId: otherId,
+          fixtures: [{ roundNumber: 2, winnerEntrantId: null }],
+        }),
+      },
       auditLog: { create: jest.fn().mockResolvedValue({}) },
     };
     const service = new BracketOutcomeService({} as never);

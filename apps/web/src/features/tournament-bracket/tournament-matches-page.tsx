@@ -39,6 +39,7 @@ import { CancelBracketDialog } from './cancel-bracket-dialog';
 import { FixtureList } from './fixture-list';
 import { bracketPdfFileName, type BracketFixture } from './fixture-presentation';
 import { IntermissionDurationForm } from './intermission-duration-form';
+import { ThirdPlaceMatchToggle } from './third-place-match-toggle';
 import { parseMatchSection, type MatchSection } from './match-section';
 import { MatchSectionPanel, MatchSectionTabs } from './match-section-tabs';
 import { StandaloneMatchList } from './standalone-match-list';
@@ -782,6 +783,14 @@ export function TournamentMatchesPage({
                           initialSeconds={selectedWeightClass?.intermissionDurationSeconds ?? 0}
                           isReadOnly={isReadOnly}
                           key={`${selectedId}:${String(selectedWeightClass?.intermissionDurationSeconds ?? 0)}`}
+                          tournamentId={tournament.id}
+                          weightClassId={selectedId}
+                        />
+                        <ThirdPlaceMatchToggle
+                          bracket={activeBracket ?? undefined}
+                          initialEnabled={selectedWeightClass?.thirdPlaceMatchEnabled ?? false}
+                          isReadOnly={isReadOnly}
+                          key={`${selectedId}:${String(selectedWeightClass?.thirdPlaceMatchEnabled ?? false)}`}
                           tournamentId={tournament.id}
                           weightClassId={selectedId}
                         />

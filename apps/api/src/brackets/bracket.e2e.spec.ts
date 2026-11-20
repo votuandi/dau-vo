@@ -1058,6 +1058,132 @@ describe('Bracket confirmation (PostgreSQL integration)', () => {
     expect(await progress()).toEqual([true, 'IN_PROGRESS']);
   });
 
+  it('plays a third-place match between the semi-final losers before completing the bracket', async () => {
+    const { tournamentId, weightClassId } = await setup(4);
+    const base = `/api/admin/tournaments/${tournamentId}/weight-classes/${weightClassId}/bracket`;
+    const setThirdPlace = (enabled: boolean, status = 200) =>
+      authenticated(request(app.getHttpServer()).patch(`${base}/third-place`))
+        .send({ enabled })
+        .expect(status);
+
+    // Chosen before the draw: saved on the weight class only.
+    expect((await setThirdPlace(true)).body).toEqual({
+      weightClass: { id: weightClassId, thirdPlaceMatchEnabled: true },
+    });
+    const previewBody = (await preview(tournamentId, weightClassId))
+      .body as PreviewResponse;
+    const confirmation = await authenticated(
+      request(app.getHttpServer()).post(`${base}/confirm`),
+    )
+      .send({
+        idempotencyKey: `${prefix}-third-place-confirm`,
+        previewToken: previewBody.previewToken,
+      })
+      .expect(201);
+    const view = confirmation.body as {
+      bracket: { id: string; roundCount: number };
+      fixtures: {
+        roundNumber: number;
+        displayReference: string;
+        status: string;
+      }[];
+      staffing: { roundNumber: number; roundLabel: string }[];
+    };
+    const bracketId = view.bracket.id;
+    expect(view.bracket.roundCount).toBe(2);
+    expect(view.fixtures.find((f) => f.roundNumber === 3)).toMatchObject({
+      displayReference: 'H3-M01',
+      status: 'PENDING_PARTICIPANTS',
+    });
+    expect(
+      view.staffing.map((row) => [row.roundNumber, row.roundLabel]),
+    ).toEqual([
+      [1, 'Bán kết'],
+      [2, 'Chung kết'],
+      [3, 'Tranh hạng 3'],
+    ]);
+
+    const fixtures = () =>
+      prisma.bracketFixture.findMany({
+        where: { bracketId },
+        orderBy: [{ roundNumber: 'asc' }, { position: 'asc' }],
+        include: { slots: { orderBy: { side: 'asc' } } },
+      });
+    const decide = (fixtureId: string, entrantId: string) =>
+      authenticated(
+        request(app.getHttpServer()).post(
+          `/api/admin/tournaments/${tournamentId}/brackets/${bracketId}/fixtures/${fixtureId}/decide-winner`,
+        ),
+      )
+        .send({
+          entrantId,
+          decisionType: 'WITHDRAWAL_OR_INJURY',
+          reason: 'Opponent withdrew',
+          idempotencyKey: `${prefix}-third-place-${fixtureId}`,
+        })
+        .expect(201);
+    const bracketStatus = async () =>
+      prisma.tournamentBracket.findUniqueOrThrow({
+        where: { id: bracketId },
+        select: { status: true, championEntrantId: true },
+      });
+
+    const semis = (await fixtures()).filter((f) => f.roundNumber === 1);
+    expect(semis).toHaveLength(2);
+    for (const semi of semis)
+      await decide(semi.id, semi.slots[0]!.resolvedEntrantId!);
+    const semiWinners = semis.map((semi) => semi.slots[0]!.resolvedEntrantId);
+    const semiLosers = semis.map((semi) => semi.slots[1]!.resolvedEntrantId);
+
+    let all = await fixtures();
+    expect(
+      all
+        .find((f) => f.roundNumber === 2)!
+        .slots.map((s) => s.resolvedEntrantId),
+    ).toEqual(semiWinners);
+    expect(all.find((f) => f.roundNumber === 3)).toMatchObject({
+      status: 'READY',
+      slots: [
+        { sourceOutcome: 'LOSER', resolvedEntrantId: semiLosers[0] },
+        { sourceOutcome: 'LOSER', resolvedEntrantId: semiLosers[1] },
+      ],
+    });
+
+    // A pending third-place match can be removed and added back with the losers resolved.
+    await setThirdPlace(false);
+    expect((await fixtures()).some((f) => f.roundNumber === 3)).toBe(false);
+    expect(
+      await prisma.bracketRoundStaffing.count({
+        where: { bracketId, roundNumber: 3 },
+      }),
+    ).toBe(0);
+    await setThirdPlace(true);
+    all = await fixtures();
+    const thirdPlace = all.find((f) => f.roundNumber === 3)!;
+    expect(thirdPlace.status).toBe('READY');
+    expect(thirdPlace.slots.map((s) => s.resolvedEntrantId)).toEqual(
+      semiLosers,
+    );
+
+    // The final alone does not complete the bracket while third place is pending.
+    const final = all.find((f) => f.roundNumber === 2)!;
+    await decide(final.id, semiWinners[0]!);
+    expect(await bracketStatus()).toEqual({
+      status: 'ACTIVE',
+      championEntrantId: null,
+    });
+    await decide(thirdPlace.id, semiLosers[1]!);
+    expect(await bracketStatus()).toEqual({
+      status: 'COMPLETED',
+      championEntrantId: semiWinners[0],
+    });
+
+    const locked = await setThirdPlace(false, 409);
+    expect(locked.body).toMatchObject({
+      code: 'BRACKET_THIRD_PLACE_BRACKET_COMPLETED',
+    });
+  });
+
   it('excludes retained matches from cancelled brackets from supervisor access', async () => {
     const { tournamentId, weightClassId } = await setup(2);
     const previewBody = (await preview(tournamentId, weightClassId))

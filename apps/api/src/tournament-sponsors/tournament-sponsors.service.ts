@@ -29,6 +29,7 @@ const sponsorSelect = {
   name: true,
   details: true,
   imagePath: true,
+  adUrl: true,
   tier: true,
   tierName: true,
   displayIndex: true,
@@ -98,6 +99,7 @@ export class TournamentSponsorService {
             tournamentId,
             name,
             details: this.details(input.details),
+            adUrl: this.details(input.adUrl),
             tier: input.tier,
             tierName,
             displayIndex,
@@ -128,6 +130,9 @@ export class TournamentSponsorService {
       ...(input.details === undefined
         ? {}
         : { details: this.details(input.details) }),
+      ...(input.adUrl === undefined
+        ? {}
+        : { adUrl: this.details(input.adUrl) }),
       ...(input.tier === undefined ? {} : { tier: input.tier }),
       ...(input.tierName === undefined
         ? {}

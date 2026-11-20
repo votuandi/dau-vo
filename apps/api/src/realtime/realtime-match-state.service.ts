@@ -662,6 +662,16 @@ export class RealtimeMatchStateService {
     return { canExit: true, allowedModes, blockedReasons };
   }
 
+  async tournamentIdForPublicMatch(
+    publicMatchId: string,
+  ): Promise<string | null> {
+    const match = await this.prisma.match.findUnique({
+      where: { publicId: publicMatchId },
+      select: { tournamentId: true },
+    });
+    return match?.tournamentId ?? null;
+  }
+
   async publicSnapshot(
     publicMatchId: string,
   ): Promise<PublicMatchStatePayload> {

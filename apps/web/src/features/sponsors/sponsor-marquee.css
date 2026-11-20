@@ -1,0 +1,23 @@
+/* Sponsor logos scrolling right to left without end. The track holds two
+   identical runs, so moving it by half its width loops seamlessly. */
+@keyframes sponsor-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.sponsor-marquee-track[data-moving='true'] {
+  animation: sponsor-marquee var(--marquee-duration, 20s) linear infinite;
+}
+/* Interactive strips stop while pointed at or focused, so a logo can be read and clicked. */
+.sponsor-marquee[data-pausable='true']:hover .sponsor-marquee-track,
+.sponsor-marquee[data-pausable='true']:focus-within .sponsor-marquee-track {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sponsor-marquee-track[data-moving='true'] {
+    animation: none;
+  }
+}

@@ -25,6 +25,7 @@ import { ConfirmBracketDto } from './dto/confirm-bracket.dto';
 import { DecideBracketWinnerDto } from './dto/decide-bracket-winner.dto';
 import { BracketCancellationService } from './bracket-cancellation.service';
 import { BracketRoundStaffingService } from './bracket-round-staffing.service';
+import { BracketThirdPlaceService } from './bracket-third-place.service';
 import { BracketDrawSetupService } from './bracket-draw-setup.service';
 import { CancelBracketDto } from './dto/cancel-bracket.dto';
 import { PreviewBracketDto } from './dto/preview-bracket.dto';
@@ -86,6 +87,7 @@ describe('bracket and match-filter controller validation', () => {
           provide: BracketRoundStaffingService,
           useValue: { update: jest.fn() },
         },
+        { provide: BracketThirdPlaceService, useValue: { setEnabled: jest.fn() } },
         { provide: BracketOutcomeService, useValue: outcomes },
         { provide: PrismaService, useValue: prisma },
       ],

@@ -1,6 +1,20 @@
 import { apiClient, request } from '@/services/api/client';
 import { MatchLifecycle, MatchStatus, type TournamentOfficialRole } from '@/types/shared';
+import type {
+  TournamentPodiumAthlete,
+  TournamentResultsAnnouncedPayload,
+} from '@martial-arts-scoring/shared-types';
 import type { AdminMatchMonitoring } from './admin-management';
+
+/** A weight class whose final has an official winner: its podium can be announced. */
+export interface AnnounceableTournamentResult {
+  readonly bracketId: string;
+  readonly weightClass: { readonly name: string };
+  readonly finalMatchPublicId: string | null;
+  readonly champion: TournamentPodiumAthlete;
+  readonly completedAt: string | null;
+  readonly resultsAnnouncedAt: string | null;
+}
 
 export interface OfficialAssignment {
   readonly id: string;
@@ -32,6 +46,8 @@ export interface OfficialMatch {
   readonly claimable: boolean;
   readonly weightClass?: { readonly id: string; readonly name: string } | null;
   readonly roundNumber?: number | null;
+  /** "Bán kết", "Chung kết", "Tranh hạng 3"…; absent on older servers. */
+  readonly roundLabel?: string | null;
   readonly position?: number | null;
 }
 export interface OfficialReferee {
@@ -97,4 +113,13 @@ export const officialAccessApi = {
     ),
   take: (matchId: string, judgeIds: readonly string[]) =>
     apiClient.post(`official/matches/${matchId}/take`, { judgeIds }),
+  tournamentResults: () =>
+    apiClient.get<{ results: readonly AnnounceableTournamentResult[] }>(
+      'official/tournament-results',
+    ),
+  announceTournamentResults: (bracketId: string) =>
+    apiClient.post<{ announcement: TournamentResultsAnnouncedPayload }>(
+      `official/tournament-results/${encodeURIComponent(bracketId)}/announce`,
+      {},
+    ),
 };
