@@ -236,6 +236,31 @@ export interface TournamentOrganization extends TournamentRosterItem {
   readonly imagePath: string | null;
   readonly imageUrl?: string | null;
 }
+export interface TournamentSponsor {
+  readonly id: string;
+  readonly tournamentId: string;
+  readonly name: string;
+  readonly details: string | null;
+  readonly imagePath: string | null;
+  /** From 1; a smaller tier is a higher sponsorship level. */
+  readonly tier: number;
+  readonly tierName: string;
+  /** Display position ("Vị trí xuất hiện"), unique among non-deleted sponsors. */
+  readonly displayIndex: number;
+  /** "Đang tài trợ"; false once the sponsorship has stopped. */
+  readonly isEnabled: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly deletedAt: string | null;
+}
+export interface SponsorInput {
+  readonly name?: string;
+  readonly details?: string | null;
+  readonly tier?: number;
+  readonly tierName?: string;
+  readonly displayIndex?: number;
+  readonly isEnabled?: boolean;
+}
 export interface TournamentAthlete {
   readonly id: string;
   readonly tournamentId: string;
@@ -708,6 +733,32 @@ export const adminManagementApi = {
     apiClient.delete<undefined>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/organizations/${encodePathSegment(id)}/image`,
     ),
+  listSponsors: (tournamentId: string) =>
+    apiClient.get<{ readonly sponsors: readonly TournamentSponsor[] }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/sponsors`,
+    ),
+  createSponsor: (tournamentId: string, input: SponsorInput) =>
+    apiClient.post<{ readonly sponsor: TournamentSponsor }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/sponsors`,
+      input,
+    ),
+  updateSponsor: (tournamentId: string, id: string, input: SponsorInput) =>
+    apiClient.patch<{ readonly sponsor: TournamentSponsor }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/sponsors/${encodePathSegment(id)}`,
+      input,
+    ),
+  deleteSponsor: (tournamentId: string, id: string) =>
+    apiClient.delete<{ readonly sponsor: TournamentSponsor }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/sponsors/${encodePathSegment(id)}`,
+    ),
+  replaceSponsorImage: (tournamentId: string, id: string, file: File) => {
+    const body = new FormData();
+    body.append('file', file);
+    return apiClient.put<{ readonly imagePath: string; readonly imageUrl: string }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/sponsors/${encodePathSegment(id)}/image`,
+      body,
+    );
+  },
   listWeightClasses: (tournamentId: string, includeInactive = true) =>
     apiClient.get<WeightClassesResponse>(
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes?includeInactive=${String(includeInactive)}`,

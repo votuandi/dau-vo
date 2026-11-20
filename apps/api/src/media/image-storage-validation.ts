@@ -30,9 +30,10 @@ const RESOURCES = new Set<ImageResource>([
   'tournaments',
   'organizations',
   'athletes',
+  'sponsors',
 ]);
 const KEY =
-  /^(tournaments|organizations|athletes)\/[0-9a-f-]{36}\.(jpg|png|webp)$/;
+  /^(tournaments|organizations|athletes|sponsors)\/[0-9a-f-]{36}\.(jpg|png|webp)$/;
 
 export interface CanonicalImage extends StoredImage {
   buffer: Buffer;

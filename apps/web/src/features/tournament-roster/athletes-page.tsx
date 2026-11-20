@@ -40,6 +40,7 @@ import {
 import { summarizeImportUnits } from './athlete-import-summary';
 import { ImportCompletionSection, ImportReviewSection, ImportUnitSection } from './import-sections';
 import { createUuid } from '@/lib/uuid';
+import { AthleteAvatarMenu } from './athlete-avatar-menu';
 
 function athleteImageError(file: File): string {
   const problem = imageFileProblem(file);
@@ -130,6 +131,17 @@ export function AthletesPage({
       );
     }
   }, [filters.page, query.data, setParams]);
+  const updateAvatar = useMutation({
+    mutationFn: ({ athleteId, file }: { athleteId: string; file: File }) =>
+      adminManagementApi.replaceAthleteImage(tournamentId, athleteId, file),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId, 'athletes'] });
+      notifyMutationSuccess('Đã cập nhật ảnh đại diện.');
+    },
+    onError: (error) => {
+      notifyMutationError(error, 'Không thể cập nhật ảnh đại diện.');
+    },
+  });
   const save = useMutation({
     mutationFn: async ({
       input,
@@ -702,22 +714,20 @@ export function AthletesPage({
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
-                  {x.imageUrl ? (
-                    <img
-                      alt={`Ảnh đại diện ${x.name}`}
-                      className="size-12 shrink-0 rounded-full object-cover"
-                      loading="lazy"
-                      src={x.imageUrl}
-                    />
-                  ) : (
-                    <span
-                      aria-label={`Chưa có ảnh đại diện cho ${x.name}`}
-                      className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/10 font-black text-primary"
-                      role="img"
-                    >
-                      {x.name.trim().slice(0, 1).toLocaleUpperCase('vi')}
-                    </span>
-                  )}
+                  <AthleteAvatarMenu
+                    busy={updateAvatar.isPending && updateAvatar.variables.athleteId === x.id}
+                    imageUrl={x.imageUrl}
+                    name={x.name}
+                    onFileSelected={(file) => {
+                      const imageError = athleteImageError(file);
+                      if (imageError) {
+                        toast({ title: imageError, variant: 'destructive' });
+                        return;
+                      }
+                      updateAvatar.mutate({ athleteId: x.id, file });
+                    }}
+                    readOnly={readOnly}
+                  />
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <b className="break-words">{x.name}</b>

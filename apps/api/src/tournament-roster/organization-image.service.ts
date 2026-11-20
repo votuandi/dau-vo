@@ -43,7 +43,7 @@ export class OrganizationImageService {
         await this.assertMutableTournament(tx, tournamentId);
         await tx.$queryRaw`SELECT id FROM tournament_organizations WHERE id = ${organizationId}::uuid AND tournament_id = ${tournamentId}::uuid FOR UPDATE`;
         const organization = await tx.tournamentOrganization.findFirst({
-          where: { id: organizationId, tournamentId },
+          where: { id: organizationId, tournamentId, deletedAt: null },
           select: { imagePath: true },
         });
         if (!organization) throw new NotFoundException(ORGANIZATION_NOT_FOUND);
@@ -81,7 +81,7 @@ export class OrganizationImageService {
       await this.assertMutableTournament(tx, tournamentId);
       await tx.$queryRaw`SELECT id FROM tournament_organizations WHERE id = ${organizationId}::uuid AND tournament_id = ${tournamentId}::uuid FOR UPDATE`;
       const organization = await tx.tournamentOrganization.findFirst({
-        where: { id: organizationId, tournamentId },
+        where: { id: organizationId, tournamentId, deletedAt: null },
         select: { imagePath: true },
       });
       if (!organization) throw new NotFoundException(ORGANIZATION_NOT_FOUND);

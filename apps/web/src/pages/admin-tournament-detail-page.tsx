@@ -43,6 +43,7 @@ import {
 import { TournamentMatchesPage } from '@/features/tournament-bracket/tournament-matches-page';
 import { TournamentOfficialsPage } from '@/features/tournament-officials/tournament-officials-page';
 import { TournamentOfficialRole } from '@/types/shared';
+import { SponsorsPage } from '@/features/tournament-sponsors/sponsors-page';
 
 function TournamentEditor({
   tournament,
@@ -360,7 +361,8 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
           tail === 'athletes' ||
           tail === 'matches' ||
           tail === 'judges' ||
-          tail === 'supervisors'
+          tail === 'supervisors' ||
+          tail === 'sponsors'
         ? tail
         : 'info';
 
@@ -431,8 +433,8 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
         {tournament.status === TournamentStatus.ARCHIVED ? (
           <Alert title="Giải đấu đã lưu trữ" tone="warning">
             <p>
-              Danh sách hạng cân, đơn vị, vận động viên và trọng tài chỉ có thể xem. Đổi trạng thái
-              ở tab Thông tin để chỉnh sửa lại.
+              Danh sách hạng cân, đơn vị, vận động viên, trọng tài và nhà tài trợ chỉ có thể xem.
+              Đổi trạng thái ở tab Thông tin để chỉnh sửa lại.
             </p>
           </Alert>
         ) : null}
@@ -485,6 +487,12 @@ function TournamentDetailContent({ tournamentId }: { readonly tournamentId: stri
               role={TournamentOfficialRole.SUPERVISOR}
               tournamentId={tournamentId}
               tournamentPublicCode={tournament.publicCode}
+            />
+          ) : null}
+          {active === 'sponsors' ? (
+            <SponsorsPage
+              readOnly={isReadOnly || tournament.status === TournamentStatus.ARCHIVED}
+              tournamentId={tournamentId}
             />
           ) : null}
         </div>

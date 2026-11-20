@@ -21,6 +21,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { SuperAdminModule } from './super-admin/super-admin.module';
 import { MediaModule } from './media/media.module';
 import { TournamentRosterModule } from './tournament-roster/tournament-roster.module';
+import { TournamentSponsorsModule } from './tournament-sponsors/tournament-sponsors.module';
 import { BracketsModule } from './brackets/brackets.module';
 import { TournamentOfficialsModule } from './tournament-officials/tournament-officials.module';
 import { OfficialAccessModule } from './official-access/official-access.module';
@@ -83,6 +84,7 @@ import { MatchOfficialAssignmentsModule } from './match-official-assignments/mat
     SuperAdminModule,
     MediaModule,
     TournamentRosterModule,
+    TournamentSponsorsModule,
     BracketsModule,
     TournamentOfficialsModule,
     OfficialAccessModule,

@@ -146,6 +146,10 @@ export class TournamentLifecycleService
               where: { tournamentId: id },
               select: { imagePath: true },
             }),
+            tx.tournamentSponsor.findMany({
+              where: { tournamentId: id },
+              select: { imagePath: true },
+            }),
           ]);
           await tx.match.deleteMany({ where: { tournamentId: id } });
           const deleted = await tx.tournament.deleteMany({
@@ -161,6 +165,7 @@ export class TournamentLifecycleService
               images[0]?.imagePath,
               ...images[1].map((row) => row.imagePath),
               ...images[2].map((row) => row.imagePath),
+              ...images[3].map((row) => row.imagePath),
             ].filter((key): key is string => key !== null && key !== undefined);
             if (keys.length)
               await tx.mediaDeletion.createMany({

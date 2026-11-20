@@ -39,6 +39,7 @@ const organizationSelect = {
   deactivatedAt: true,
   createdAt: true,
   updatedAt: true,
+  deletedAt: true,
 } satisfies Prisma.TournamentOrganizationSelect;
 const weightClassSelect = {
   id: true,
@@ -100,7 +101,11 @@ export class OrganizationService {
     includeInactive: boolean,
   ): Promise<OrganizationView[]> {
     return this.prisma.tournamentOrganization.findMany({
-      where: { tournamentId, ...(includeInactive ? {} : { isActive: true }) },
+      where: {
+        tournamentId,
+        deletedAt: null,
+        ...(includeInactive ? {} : { isActive: true }),
+      },
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
       select: organizationSelect,
     });
@@ -134,7 +139,7 @@ export class OrganizationService {
     id: string,
   ): Promise<OrganizationView> {
     const row = await this.prisma.tournamentOrganization.findFirst({
-      where: { id, tournamentId },
+      where: { id, tournamentId, deletedAt: null },
       select: organizationSelect,
     });
     if (!row) throw new NotFoundException(ORGANIZATION_NOT_FOUND);
@@ -203,7 +208,11 @@ export class OrganizationService {
       actorId,
     ) as Promise<WeightClassView>;
   }
-  async deactivateOrganization(
+  /**
+   * Soft delete: athletes leave the organization (as when it is suspended), and the row is
+   * kept but inactive, hidden from every list and no longer blocks its name + locality.
+   */
+  async deleteOrganization(
     tournamentId: string,
     id: string,
     actorId: string,
@@ -211,24 +220,28 @@ export class OrganizationService {
     return this.prisma.$transaction(async (tx) => {
       await this.lockTournament(tx, tournamentId);
       const before = await tx.tournamentOrganization.findFirst({
-        where: { id, tournamentId },
+        where: { id, tournamentId, deletedAt: null },
         select: organizationSelect,
       });
       if (!before) throw new NotFoundException(ORGANIZATION_NOT_FOUND);
-      if (!before.isActive) return before;
       await tx.tournamentAthlete.updateMany({
         where: { tournamentId, organizationId: id },
         data: { organizationId: null },
       });
+      const now = new Date();
       const after = await tx.tournamentOrganization.update({
         where: { id },
-        data: { isActive: false, deactivatedAt: new Date() },
+        data: {
+          isActive: false,
+          deactivatedAt: before.deactivatedAt ?? now,
+          deletedAt: now,
+        },
         select: organizationSelect,
       });
       await this.audit(
         tx,
         actorId,
-        'ORGANIZATION_DEACTIVATED',
+        'ORGANIZATION_DELETED',
         id,
         this.safe(before),
         this.safe(after),
@@ -352,7 +365,7 @@ export class OrganizationService {
         const before =
           kind === 'organization'
             ? await tx.tournamentOrganization.findFirst({
-                where: { id, tournamentId },
+                where: { id, tournamentId, deletedAt: null },
                 select: organizationSelect,
               })
             : await tx.tournamentWeightClass.findFirst({

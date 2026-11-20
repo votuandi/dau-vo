@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Image, Pencil, Plus, RotateCcw } from 'lucide-react';
+import { Ban, Image, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -208,6 +208,7 @@ export function RosterItemsPage({
   });
   const [draft, setDraft] = useState<RosterDraft>(null);
   const [confirm, setConfirm] = useState<TournamentRosterItem | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<TournamentRosterItem | null>(null);
   const logoInput = useRef<HTMLInputElement>(null);
   const logoOrganizationId = useRef<string | null>(null);
   const updateLogo = useMutation({
@@ -222,6 +223,9 @@ export function RosterItemsPage({
     },
   });
   const noun = kind === 'organizations' ? 'đơn vị' : 'hạng cân';
+  // Organizations are "suspended" (reversible) or deleted; weight classes are only deactivated.
+  const deactivateLabel = kind === 'organizations' ? 'Đình chỉ' : 'Ngừng dùng';
+  const inactiveLabel = kind === 'organizations' ? 'Đã đình chỉ' : 'Đã ngừng';
   const mutate = useMutation({
     mutationFn: async ({
       itemId,
@@ -283,7 +287,7 @@ export function RosterItemsPage({
     mutationFn: async (item: TournamentRosterItem) => {
       if (item.isActive) {
         if (kind === 'organizations')
-          await adminManagementApi.deleteOrganization(tournamentId, item.id);
+          await adminManagementApi.updateOrganization(tournamentId, item.id, { isActive: false });
         else await adminManagementApi.deleteWeightClass(tournamentId, item.id);
       } else if (kind === 'organizations')
         await adminManagementApi.updateOrganization(tournamentId, item.id, { isActive: true });
@@ -305,6 +309,19 @@ export function RosterItemsPage({
       );
     },
   });
+  const remove = useMutation({
+    mutationFn: (item: TournamentRosterItem) =>
+      adminManagementApi.deleteOrganization(tournamentId, item.id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'tournaments', tournamentId] });
+      notifyMutationSuccess('Đã xóa đơn vị.');
+      setConfirmDelete(null);
+    },
+    onError: (e) => {
+      notifyMutationError(e, 'Không thể xóa đơn vị.');
+    },
+  });
+  const busy = mutate.isPending || deactivate.isPending || remove.isPending;
   const items = query.data ?? [];
   return (
     <section className="space-y-5">
@@ -339,7 +356,7 @@ export function RosterItemsPage({
         </div>
         {!readOnly && !draft ? (
           <Button
-            disabled={mutate.isPending || deactivate.isPending}
+            disabled={busy}
             onClick={() => {
               setDraft({ mode: 'create', values: emptyRosterValues() });
             }}
@@ -426,7 +443,7 @@ export function RosterItemsPage({
                       </Badge>
                       {item.isActive ? null : (
                         <Badge dot tone="warning">
-                          Đã ngừng
+                          {inactiveLabel}
                         </Badge>
                       )}
                     </div>
@@ -455,7 +472,7 @@ export function RosterItemsPage({
                   {kind === 'organizations' ? (
                     <Button
                       aria-label="Cập nhật logo"
-                      disabled={mutate.isPending || deactivate.isPending || updateLogo.isPending}
+                      disabled={busy || updateLogo.isPending}
                       onClick={() => {
                         logoOrganizationId.current = item.id;
                         logoInput.current?.click();
@@ -471,7 +488,7 @@ export function RosterItemsPage({
                   ) : null}
                   <Button
                     aria-label="Sửa"
-                    disabled={mutate.isPending || deactivate.isPending}
+                    disabled={busy}
                     onClick={() => {
                       setDraft({ mode: 'edit', item, values: rosterValues(item) });
                     }}
@@ -483,8 +500,8 @@ export function RosterItemsPage({
                     Sửa
                   </Button>
                   <Button
-                    aria-label={item.isActive ? 'Ngừng dùng' : 'Khôi phục'}
-                    disabled={mutate.isPending || deactivate.isPending}
+                    aria-label={item.isActive ? deactivateLabel : 'Khôi phục'}
+                    disabled={busy}
                     onClick={() => {
                       setConfirm(item);
                     }}
@@ -497,8 +514,23 @@ export function RosterItemsPage({
                     ) : (
                       <RotateCcw aria-hidden="true" className="size-4" />
                     )}
-                    {item.isActive ? 'Ngừng dùng' : 'Khôi phục'}
+                    {item.isActive ? deactivateLabel : 'Khôi phục'}
                   </Button>
+                  {kind === 'organizations' ? (
+                    <Button
+                      aria-label="Xóa"
+                      disabled={busy}
+                      onClick={() => {
+                        setConfirmDelete(item);
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="destructive-soft"
+                    >
+                      <Trash2 aria-hidden="true" className="size-4" />
+                      Xóa
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -520,7 +552,21 @@ export function RosterItemsPage({
           onConfirm={() => {
             if (!deactivate.isPending) deactivate.mutate(confirm);
           }}
-          title={`${confirm.isActive ? 'Ngừng dùng' : 'Khôi phục'} ${noun}?`}
+          title={`${confirm.isActive ? deactivateLabel : 'Khôi phục'} ${noun}?`}
+        />
+      ) : null}
+      {confirmDelete ? (
+        <ConfirmationDialog
+          actionLabel="Xóa đơn vị"
+          busy={remove.isPending}
+          description={`“${confirmDelete.name}” sẽ bị gỡ khỏi danh sách và không thể khôi phục tại đây. Các vận động viên đang thuộc đơn vị này sẽ trở thành “Không đơn vị”.`}
+          onCancel={() => {
+            setConfirmDelete(null);
+          }}
+          onConfirm={() => {
+            if (!remove.isPending) remove.mutate(confirmDelete);
+          }}
+          title="Xóa đơn vị?"
         />
       ) : null}
     </section>

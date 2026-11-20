@@ -136,7 +136,12 @@ export class AthleteImportService {
     const normalizedName = this.normalized(organizationName);
     const normalizedLocation = this.normalized(row.organizationLocation);
     let unit = await tx.tournamentOrganization.findFirst({
-      where: { tournamentId, normalizedName, normalizedLocation },
+      where: {
+        tournamentId,
+        normalizedName,
+        normalizedLocation,
+        deletedAt: null,
+      },
       select: { id: true, isActive: true, name: true, location: true },
     });
     if (!unit) {
@@ -228,7 +233,7 @@ export class AthleteImportService {
         select: { normalizedName: true, id: true },
       }),
       client.tournamentOrganization.findMany({
-        where: { tournamentId },
+        where: { tournamentId, deletedAt: null },
         select: {
           normalizedName: true,
           normalizedLocation: true,

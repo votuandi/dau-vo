@@ -1,4 +1,13 @@
-import { Building2, ClipboardCheck, Info, Scale, ShieldCheck, Swords, Users } from 'lucide-react';
+import {
+  Building2,
+  ClipboardCheck,
+  Handshake,
+  Info,
+  Scale,
+  ShieldCheck,
+  Swords,
+  Users,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { TabScroller } from '@/components/ui/tabs';
 import { tabListClassName, tabTriggerClassName } from '@/components/ui/tab-styles';
@@ -12,6 +21,7 @@ const tabs = [
   ['matches', 'Trận đấu', Swords],
   ['judges', 'Giám định', ClipboardCheck],
   ['supervisors', 'Giám sát', ShieldCheck],
+  ['sponsors', 'Nhà tài trợ', Handshake],
 ] as const;
 export type TournamentTab = (typeof tabs)[number][0];
 

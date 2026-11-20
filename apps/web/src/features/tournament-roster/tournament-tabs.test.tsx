@@ -23,6 +23,7 @@ describe('TournamentTabs', () => {
       ['Trận đấu', '/admin/tournaments/tournament-1/matches'],
       ['Giám định', '/admin/tournaments/tournament-1/judges'],
       ['Giám sát', '/admin/tournaments/tournament-1/supervisors'],
+      ['Nhà tài trợ', '/admin/tournaments/tournament-1/sponsors'],
     ]);
   });
 

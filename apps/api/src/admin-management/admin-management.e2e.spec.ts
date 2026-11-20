@@ -1026,6 +1026,255 @@ describe('Admin tournament and match management (integration)', () => {
       });
   });
 
+  it('manages sponsors with display positions and soft delete', async () => {
+    interface SponsorView {
+      id: string;
+      name: string;
+      details: string | null;
+      tier: number;
+      tierName: string;
+      displayIndex: number;
+      isEnabled: boolean;
+      deletedAt: string | null;
+    }
+    const tournament = await createTournament('sponsors');
+    const base = `/api/admin/tournaments/${tournament.id}/sponsors`;
+    const create = async (body: Record<string, unknown>, status = 201) =>
+      (
+        await authenticated(request(app.getHttpServer()).post(base))
+          .send(body)
+          .expect(status)
+      ).body as { sponsor: SponsorView; code?: string };
+    const list = async () =>
+      (
+        (
+          await authenticated(request(app.getHttpServer()).get(base)).expect(
+            200,
+          )
+        ).body as { sponsors: SponsorView[] }
+      ).sponsors;
+
+    const gold = await create({
+      name: '  Gold Co  ',
+      details: 'Main partner',
+      tier: 1,
+      tierName: 'Kim cương',
+    });
+    expect(gold.sponsor).toMatchObject({
+      name: 'Gold Co',
+      details: 'Main partner',
+      tier: 1,
+      tierName: 'Kim cương',
+      displayIndex: 1,
+      isEnabled: true,
+      deletedAt: null,
+    });
+    const silver = await create({
+      name: 'Silver Co',
+      tier: 2,
+      tierName: 'Bạc',
+      displayIndex: 5,
+    });
+    expect(silver.sponsor.displayIndex).toBe(5);
+    // Omitted index → after the current last position.
+    expect(
+      (await create({ name: 'Auto', tier: 3, tierName: 'Đồng' })).sponsor
+        .displayIndex,
+    ).toBe(6);
+    await create({ name: 'Bad', tier: 0, tierName: 'x' }, 400);
+
+    const disabled = await authenticated(
+      request(app.getHttpServer()).patch(`${base}/${gold.sponsor.id}`),
+    )
+      .send({ isEnabled: false, displayIndex: 10 })
+      .expect(200);
+    expect((disabled.body as { sponsor: SponsorView }).sponsor).toMatchObject({
+      isEnabled: false,
+      displayIndex: 10,
+    });
+    expect((await list()).map((s) => s.name)).toEqual([
+      'Silver Co',
+      'Auto',
+      'Gold Co',
+    ]);
+
+    await authenticated(
+      request(app.getHttpServer()).delete(`${base}/${silver.sponsor.id}`),
+    ).expect(200);
+    expect((await list()).map((s) => s.name)).toEqual(['Auto', 'Gold Co']);
+    const row = await prisma.tournamentSponsor.findUniqueOrThrow({
+      where: { id: silver.sponsor.id },
+    });
+    expect(row.deletedAt).toBeInstanceOf(Date);
+    // A soft-deleted sponsor frees its position and can no longer be edited.
+    await create({ name: 'Reuse', tier: 2, tierName: 'Bạc', displayIndex: 5 });
+    await authenticated(
+      request(app.getHttpServer()).patch(`${base}/${silver.sponsor.id}`),
+    )
+      .send({ name: 'Ghost' })
+      .expect(404);
+
+    await authenticated(
+      request(app.getHttpServer()).delete(
+        `/api/admin/tournaments/${tournament.id}`,
+      ),
+    ).expect(200);
+    expect(
+      (await create({ name: 'Late', tier: 1, tierName: 'Vàng' }, 409)).code,
+    ).toBe('TOURNAMENT_ARCHIVED');
+  });
+
+  it('suspends and soft deletes organizations', async () => {
+    const tournament = await createTournament('organization-delete');
+    const weight = await createWeightClass(tournament.id, 'org-delete-weight');
+    const organization = await createOrganization(tournament.id, 'org-delete', {
+      location: 'Hà Nội',
+    });
+    const athlete = await createAthlete(
+      tournament.id,
+      'org-delete-athlete',
+      weight.id,
+      organization.id,
+    );
+    const base = `/api/admin/tournaments/${tournament.id}/organizations`;
+    const listNames = async () =>
+      (
+        (
+          await authenticated(
+            request(app.getHttpServer()).get(`${base}?includeInactive=true`),
+          ).expect(200)
+        ).body as { organizations: RosterItemView[] }
+      ).organizations.map((row) => row.id);
+
+    // "Đình chỉ" is a reversible suspension through PATCH.
+    await authenticated(
+      request(app.getHttpServer()).patch(`${base}/${organization.id}`),
+    )
+      .send({ isActive: false })
+      .expect(200);
+    expect(await listNames()).toEqual([organization.id]);
+    await authenticated(
+      request(app.getHttpServer()).patch(`${base}/${organization.id}`),
+    )
+      .send({ isActive: true })
+      .expect(200);
+    await authenticated(
+      request(app.getHttpServer()).patch(
+        `/api/admin/tournaments/${tournament.id}/athletes/${athlete.id}`,
+      ),
+    )
+      .send({ organizationId: organization.id })
+      .expect(200);
+
+    // DELETE is a soft delete: hidden everywhere, athletes unassigned, name reusable.
+    await authenticated(
+      request(app.getHttpServer()).delete(`${base}/${organization.id}`),
+    ).expect(200);
+    expect(await listNames()).toEqual([]);
+    const row = await prisma.tournamentOrganization.findUniqueOrThrow({
+      where: { id: organization.id },
+    });
+    expect(row).toMatchObject({ isActive: false });
+    expect(row.deletedAt).toBeInstanceOf(Date);
+    const unassigned = await prisma.tournamentAthlete.findUniqueOrThrow({
+      where: { id: athlete.id },
+    });
+    expect(unassigned.organizationId).toBeNull();
+    await authenticated(
+      request(app.getHttpServer()).get(`${base}/${organization.id}`),
+    ).expect(404);
+    await authenticated(
+      request(app.getHttpServer()).patch(`${base}/${organization.id}`),
+    )
+      .send({ isActive: true })
+      .expect(404);
+    await authenticated(
+      request(app.getHttpServer()).delete(`${base}/${organization.id}`),
+    ).expect(404);
+    await createOrganization(tournament.id, 'org-delete', {
+      location: 'Hà Nội',
+    });
+  });
+
+  it('shifts other sponsors when a taken display position is chosen', async () => {
+    interface SponsorView {
+      id: string;
+      name: string;
+      displayIndex: number;
+    }
+    const tournament = await createTournament('sponsor-reorder');
+    const base = `/api/admin/tournaments/${tournament.id}/sponsors`;
+    const create = async (name: string, displayIndex?: number) =>
+      (
+        (
+          await authenticated(request(app.getHttpServer()).post(base))
+            .send({ name, tier: 1, tierName: 'Vàng', displayIndex })
+            .expect(201)
+        ).body as { sponsor: SponsorView }
+      ).sponsor;
+    const move = (id: string, displayIndex: number) =>
+      authenticated(request(app.getHttpServer()).patch(`${base}/${id}`))
+        .send({ displayIndex })
+        .expect(200);
+    const positions = async () =>
+      (
+        (
+          await authenticated(request(app.getHttpServer()).get(base)).expect(
+            200,
+          )
+        ).body as { sponsors: SponsorView[] }
+      ).sponsors.map((s) => `${String(s.displayIndex)}:${s.name}`);
+
+    const [a, b, , , e] = [
+      await create('A'),
+      await create('B'),
+      await create('C'),
+      await create('D'),
+      await create('E'),
+    ];
+    // Inserting at a taken position pushes it and everything after it down.
+    const f = await create('F', 2);
+    expect(await positions()).toEqual([
+      '1:A',
+      '2:F',
+      '3:B',
+      '4:C',
+      '5:D',
+      '6:E',
+    ]);
+    // Moving up shifts only the sponsors in between down by one.
+    await move(e.id, 2);
+    expect(await positions()).toEqual([
+      '1:A',
+      '2:E',
+      '3:F',
+      '4:B',
+      '5:C',
+      '6:D',
+    ]);
+    // Moving down closes the gap it leaves.
+    await move(a.id, 4);
+    expect(await positions()).toEqual([
+      '1:E',
+      '2:F',
+      '3:B',
+      '4:A',
+      '5:C',
+      '6:D',
+    ]);
+    // A free position is simply taken without moving anyone.
+    await move(f.id, 9);
+    await move(b.id, 3);
+    expect(await positions()).toEqual([
+      '1:E',
+      '3:B',
+      '4:A',
+      '5:C',
+      '6:D',
+      '9:F',
+    ]);
+  });
+
   it('rejects cross-tournament, inactive, mismatched, inactive-class, and inactive-organization selections', async () => {
     const tournament = await createTournament('roster-rejections');
     const otherTournament = await createTournament('roster-other');
