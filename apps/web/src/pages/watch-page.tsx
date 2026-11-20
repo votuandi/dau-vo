@@ -7,6 +7,7 @@ import { underlineListClassName, underlineTriggerClassName } from '@/components/
 import { inputClassName } from '@/features/admin-management/presentation';
 import { WatchBracketView } from '@/features/tournament-watch/watch-bracket-view';
 import { WatchMatchList } from '@/features/tournament-watch/watch-match-list';
+import { WatchSponsorStrip } from '@/features/tournament-watch/watch-sponsor-strip';
 import { normalizeWatchCode, watchTournamentPath } from '@/features/tournament-watch/watch-paths';
 import { watchQueryKeys } from '@/features/tournament-watch/watch-queries';
 import { WatchErrorMessage } from '@/features/tournament-watch/watch-error-message';
@@ -130,6 +131,7 @@ function WatchTournament({ code }: { readonly code: string }) {
   return (
     <div className="space-y-6">
       <TournamentSummary tournament={query.data.tournament} />
+      <WatchSponsorStrip sponsors={query.data.sponsors ?? []} />
       <WatchTabs
         onSelect={(next) => {
           setParams(next === 'bracket' ? { tab: 'bracket' } : {}, { replace: true });

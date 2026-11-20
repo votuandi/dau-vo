@@ -84,6 +84,13 @@ enum MatchAppealStatus {
   @@map("match_appeal_status")
 }
 
+enum BracketSlotSourceOutcome {
+  WINNER
+  LOSER
+
+  @@map("bracket_slot_source_outcome")
+}
+
 enum MatchOutcomeMethod {
   REGULATION_SCORE
   OVERTIME_SCORE
@@ -518,6 +525,8 @@ model TournamentSponsor {
   name         String    @db.VarChar(255)
   details      String?   @db.Text
   imagePath    String?   @map("image_path") @db.VarChar(1024)
+  /// "Link quảng cáo": the sponsor's website (http or https), opened from public pages.
+  adUrl        String?   @map("ad_url") @db.VarChar(2048)
   /// Sponsorship tier, from 1; a smaller number is a higher tier.
   tier         Int
   tierName     String    @map("tier_name") @db.VarChar(255)
@@ -541,6 +550,8 @@ model TournamentWeightClass {
   normalizedName String              @map("normalized_name") @db.VarChar(255)
   details        String?             @db.Text
   intermissionDurationSeconds Int     @default(0) @map("intermission_duration_seconds")
+  /// "Thực hiện trận tranh hạng 3": the two semi-final losers play for third place before the final.
+  thirdPlaceMatchEnabled Boolean      @default(false) @map("third_place_match_enabled")
   isActive       Boolean             @default(true) @map("is_active")
   deactivatedAt  DateTime?           @map("deactivated_at") @db.Timestamptz(3)
   createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -672,6 +683,8 @@ model TournamentBracket {
   completedAt             DateTime?              @map("completed_at") @db.Timestamptz(3)
   cancelledAt             DateTime?              @map("cancelled_at") @db.Timestamptz(3)
   championEntrantId       String?                @map("champion_entrant_id") @db.Uuid
+  /// Last "Công bố Kết quả giải đấu" of this weight class's podium to the scoreboards.
+  resultsAnnouncedAt      DateTime?              @map("results_announced_at") @db.Timestamptz(3)
   createdAt               DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt               DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   tournament              Tournament             @relation(fields: [tournamentId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "tournament_brackets_tournament_id_fkey")
@@ -844,6 +857,8 @@ model BracketSlot {
   directEntrantId   String?         @map("direct_entrant_id") @db.Uuid
   sourceFixtureId   String?         @map("source_fixture_id") @db.Uuid
   resolvedEntrantId String?         @map("resolved_entrant_id") @db.Uuid
+  /// Which entrant of the source fixture fills this slot: its winner, or its loser (third-place match).
+  sourceOutcome     BracketSlotSourceOutcome @default(WINNER) @map("source_outcome")
   createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   fixture           BracketFixture  @relation(fields: [fixtureId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "bracket_slots_fixture_id_fkey")

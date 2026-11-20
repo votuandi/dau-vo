@@ -175,6 +175,11 @@ export function tournamentRoom(tournamentId: string): string {
   return `tournament:${tournamentId}`;
 }
 
+/** Every public scoreboard of a tournament, for tournament-wide announcements. */
+export function tournamentScoreboardRoom(tournamentId: string): string {
+  return `scoreboard-tournament:${tournamentId}`;
+}
+
 /** Public sockets are isolated from participant broadcasts and commands. */
 export function scoreboardRoom(publicMatchId: string): string {
   return `scoreboard:${publicMatchId}`;

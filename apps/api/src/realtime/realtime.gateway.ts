@@ -166,6 +166,7 @@ import {
   officialRoom,
   sessionRoom,
   scoreboardRoom,
+  tournamentScoreboardRoom,
   tournamentRoom,
 } from './realtime.constants';
 import { RealtimeMatchStateService } from './realtime-match-state.service';
@@ -2158,6 +2159,10 @@ export class RealtimeGateway
       return;
     }
     await client.join(scoreboardRoom(publicMatchId));
+    // Tournament-wide announcements ("Kết quả giải đấu") reach every scoreboard of the event.
+    const tournamentId =
+      await this.matchState.tournamentIdForPublicMatch(publicMatchId);
+    if (tournamentId) await client.join(tournamentScoreboardRoom(tournamentId));
     await this.broadcastScoreboardPresence(publicMatchId).catch(
       (error: unknown) => {
         this.logger.error(

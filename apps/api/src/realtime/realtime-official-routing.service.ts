@@ -1,13 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   RealtimeEvent,
+  type TournamentResultsAnnouncedPayload,
   type MatchAssignmentReleasedPayload,
   type MatchOfficialsUpdatedPayload,
   type OfficialAssignmentUpdatedPayload,
 } from '@martial-arts-scoring/shared-types';
 import type { Server } from 'socket.io';
 
-import { matchRoom, officialRoom, tournamentRoom } from './realtime.constants';
+import {
+  matchRoom,
+  officialRoom,
+  tournamentRoom,
+  tournamentScoreboardRoom,
+} from './realtime.constants';
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
@@ -56,6 +62,20 @@ export class RealtimeOfficialRoutingService {
           'Authoritative match state publication failed',
         );
       },
+    );
+  }
+
+  /** "Công bố Kết quả giải đấu": every scoreboard of the tournament switches to the podium. */
+  publishTournamentResults(
+    tournamentId: string,
+    payload: TournamentResultsAnnouncedPayload,
+  ): void {
+    this.safePublish(
+      () =>
+        this.requireServer()
+          .to(tournamentScoreboardRoom(tournamentId))
+          .emit(RealtimeEvent.TOURNAMENT_RESULTS_ANNOUNCED, payload),
+      { tournamentId, announcementId: payload.announcementId },
     );
   }
 

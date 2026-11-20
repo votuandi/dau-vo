@@ -233,6 +233,8 @@ export interface TournamentWeightClass extends TournamentRosterItem {
   readonly hasCurrentBracket: boolean;
   readonly bracketProgress: WeightClassBracketProgress;
   readonly intermissionDurationSeconds: number;
+  /** "Thực hiện trận tranh hạng 3"; absent on older servers (off). */
+  readonly thirdPlaceMatchEnabled?: boolean;
 }
 export interface TournamentOrganization extends TournamentRosterItem {
   readonly location: string | null;
@@ -245,6 +247,8 @@ export interface TournamentSponsor {
   readonly name: string;
   readonly details: string | null;
   readonly imagePath: string | null;
+  /** "Link quảng cáo": the sponsor's http(s) website, or null. */
+  readonly adUrl: string | null;
   /** From 1; a smaller tier is a higher sponsorship level. */
   readonly tier: number;
   readonly tierName: string;
@@ -259,6 +263,7 @@ export interface TournamentSponsor {
 export interface SponsorInput {
   readonly name?: string;
   readonly details?: string | null;
+  readonly adUrl?: string | null;
   readonly tier?: number;
   readonly tierName?: string;
   readonly displayIndex?: number;
@@ -510,6 +515,8 @@ export interface ActiveBracket {
         readonly isSeed?: boolean | null;
       } | null;
       readonly sourceFixtureId: string | null;
+      /** LOSER: this slot takes the source fixture's loser (third-place match). */
+      readonly sourceOutcome?: 'WINNER' | 'LOSER';
     }[];
   }[];
   readonly staffing?: readonly {
@@ -634,6 +641,14 @@ export const adminManagementApi = {
       `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/confirm`,
       input,
       options,
+    ),
+  /** "Thực hiện trận tranh hạng 3": saved on the weight class and applied to its active bracket. */
+  updateThirdPlaceMatch: (tournamentId: string, weightClassId: string, enabled: boolean) =>
+    apiClient.patch<{
+      readonly weightClass: { readonly id: string; readonly thirdPlaceMatchEnabled: boolean };
+    }>(
+      `admin/tournaments/${encodePathSegment(tournamentId)}/weight-classes/${encodePathSegment(weightClassId)}/bracket/third-place`,
+      { enabled },
     ),
   getBracket: (tournamentId: string, weightClassId: string) =>
     apiClient.get<ActiveBracket>(

@@ -44,6 +44,30 @@ function bracket(): ActiveBracket {
 }
 
 describe('BracketRoundRulesEditor', () => {
+  it('shows the "Tranh hạng 3" card right before the final', () => {
+    const data = bracket();
+    const withThirdPlace: ActiveBracket = {
+      ...data,
+      staffing: [
+        ...(data.staffing ?? []),
+        { id: 'third', roundNumber: 3, roundLabel: 'Tranh hạng 3', requiredJudgeCount: 3 },
+      ],
+    };
+    render(
+      <BracketRoundRulesEditor
+        data={withThirdPlace}
+        disabled={false}
+        pending={false}
+        onSave={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByRole('form').map((form) => form.getAttribute('aria-label'))).toEqual([
+      'Cấu hình Bán kết',
+      'Cấu hình Tranh hạng 3',
+      'Cấu hình Chung kết',
+    ]);
+  });
+
   it('edits one round independently and converts seconds to milliseconds', () => {
     const save = vi.fn();
     render(

@@ -20,6 +20,7 @@ function sponsor(overrides: Partial<TournamentSponsor>): TournamentSponsor {
     name: 'Gold Co',
     details: null,
     imagePath: null,
+    adUrl: null,
     tier: 1,
     tierName: 'Kim cương',
     displayIndex: 1,
@@ -100,11 +101,38 @@ describe('SponsorsPage', () => {
       expect(api.createSponsor).toHaveBeenCalledWith('tournament-1', {
         name: 'New Co',
         details: 'Đồng hành cùng giải',
+        adUrl: null,
         tier: 2,
         tierName: 'Vàng',
         displayIndex: 4,
         isEnabled: false,
       });
+    });
+  });
+
+  it('validates the advertising link and saves it as a full https address', async () => {
+    renderPage();
+    await screen.findAllByRole('listitem');
+    fireEvent.click(screen.getByRole('button', { name: /Thêm nhà tài trợ/ }));
+    const form = screen.getByRole('form', { name: 'Thêm nhà tài trợ' });
+    fireEvent.change(within(form).getByLabelText('Tên'), { target: { value: 'Ads Co' } });
+    fireEvent.change(within(form).getByLabelText('Tên bậc tài trợ'), {
+      target: { value: 'Vàng' },
+    });
+    const link = within(form).getByLabelText(/Link quảng cáo/);
+    fireEvent.change(link, { target: { value: 'javascript:alert(1)' } });
+    expect(link).toHaveAttribute('aria-invalid', 'true');
+    expect(within(form).getByRole('alert')).toHaveTextContent('http:// hoặc https://');
+    expect(within(form).getByRole('button', { name: 'Thêm mới' })).toBeDisabled();
+
+    fireEvent.change(link, { target: { value: 'nhataitro.vn/khuyen-mai' } });
+    expect(link).toHaveAttribute('aria-invalid', 'false');
+    fireEvent.click(within(form).getByRole('button', { name: 'Thêm mới' }));
+    await waitFor(() => {
+      expect(api.createSponsor).toHaveBeenCalledWith(
+        'tournament-1',
+        expect.objectContaining({ adUrl: 'https://nhataitro.vn/khuyen-mai' }),
+      );
     });
   });
 

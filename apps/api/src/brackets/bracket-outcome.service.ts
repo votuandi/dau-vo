@@ -2,6 +2,7 @@ import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import {
   AuditEventType,
   BracketFixtureStatus,
+  BracketSlotSourceOutcome,
   BracketStatus,
   MatchStatus,
   MatchLifecycle,
@@ -12,6 +13,10 @@ import {
 import { Prisma, type AthleteColor } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
+import {
+  fixtureLoserId,
+  refreshBracketCompletion,
+} from './bracket-third-place';
 import type { BracketWinnerDecisionType } from './dto/decide-bracket-winner.dto';
 
 export class BracketProgressionLockedError extends Error {
@@ -184,16 +189,8 @@ export class BracketOutcomeService {
         });
       }
     }
-    if (fixture.roundNumber === fixture.bracket.roundCount) {
-      await tx.tournamentBracket.update({
-        where: { id: fixture.bracketId },
-        data: {
-          status: BracketStatus.ACTIVE,
-          completedAt: null,
-          championEntrantId: null,
-        },
-      });
-    }
+    // Retracting the final or the third-place match reopens a completed bracket.
+    await refreshBracketCompletion(tx, fixture.bracketId);
     await tx.auditLog.create({
       data: {
         eventType: AuditEventType.BRACKET_WINNER_RETRACTED,
@@ -578,7 +575,11 @@ export class BracketOutcomeService {
     await this.lockFixtureAndDownstream(tx, fixtureId);
     const fixture = await tx.bracketFixture.findUniqueOrThrow({
       where: { id: fixtureId },
-      include: { bracket: true, match: { select: { id: true } } },
+      include: {
+        bracket: true,
+        match: { select: { id: true } },
+        slots: { select: { resolvedEntrantId: true } },
+      },
     });
     const previousWinnerEntrantId = fixture.winnerEntrantId;
     if (previousWinnerEntrantId && previousWinnerEntrantId !== entrantId) {
@@ -588,19 +589,12 @@ export class BracketOutcomeService {
         typeof decision.actorId === 'string' ? decision.actorId : '',
         typeof decision.reason === 'string' ? decision.reason : '',
       );
-      if (
-        fixture.roundNumber !== fixture.bracket.roundCount &&
-        fixture.bracket.status === BracketStatus.COMPLETED
-      )
-        await tx.tournamentBracket.update({
-          where: { id: fixture.bracketId },
-          data: {
-            status: BracketStatus.ACTIVE,
-            completedAt: null,
-            championEntrantId: null,
-          },
-        });
     }
+    // The winner advances; a semi-final's loser goes to the third-place match.
+    const loserEntrantId = fixtureLoserId({
+      winnerEntrantId: entrantId,
+      slots: fixture.slots,
+    });
     await tx.bracketFixture.update({
       where: { id: fixtureId },
       data: {
@@ -614,7 +608,12 @@ export class BracketOutcomeService {
       include: { fixture: { include: { slots: true } } },
     });
     for (const slot of downstream) {
-      if (slot.resolvedEntrantId && slot.resolvedEntrantId !== entrantId)
+      const expected =
+        slot.sourceOutcome === BracketSlotSourceOutcome.LOSER
+          ? loserEntrantId
+          : entrantId;
+      if (expected === null) continue;
+      if (slot.resolvedEntrantId && slot.resolvedEntrantId !== expected)
         throw new ConflictException({
           code: 'BRACKET_WINNER_DECISION_CONFLICT',
           message: 'Downstream slot already differs',
@@ -622,7 +621,7 @@ export class BracketOutcomeService {
       if (!slot.resolvedEntrantId)
         await tx.bracketSlot.update({
           where: { id: slot.id },
-          data: { resolvedEntrantId: entrantId },
+          data: { resolvedEntrantId: expected },
         });
       const slots = await tx.bracketSlot.findMany({
         where: { fixtureId: slot.fixtureId },
@@ -636,27 +635,8 @@ export class BracketOutcomeService {
           data: { status: BracketFixtureStatus.READY },
         });
     }
-    if (fixture.roundNumber === fixture.bracket.roundCount) {
-      await tx.tournamentBracket.update({
-        where: { id: fixture.bracketId },
-        data: {
-          status: BracketStatus.COMPLETED,
-          completedAt: new Date(),
-          championEntrantId: entrantId,
-        },
-      });
-      await tx.auditLog.create({
-        data: {
-          eventType: AuditEventType.BRACKET_COMPLETED,
-          metadata: {
-            bracketId: fixture.bracketId,
-            tournamentId: fixture.bracket.tournamentId,
-            weightClassId: fixture.bracket.weightClassId,
-            championEntrantId: entrantId,
-          },
-        },
-      });
-    }
+    // Complete once the final and, if any, the third-place match are decided.
+    await refreshBracketCompletion(tx, fixture.bracketId);
     await tx.auditLog.create({
       data: {
         eventType:

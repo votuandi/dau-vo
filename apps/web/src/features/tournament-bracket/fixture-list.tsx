@@ -18,6 +18,7 @@ import {
   fixtureSurfaceClassName,
   groupFixturesByRound,
   manualWinnerDecisionType,
+  roundPlayOrder,
   type BracketFixture,
 } from './fixture-presentation';
 
@@ -30,7 +31,14 @@ export function FixtureList({
   readonly disabled: boolean;
   readonly onDecide: (fixture: BracketFixture) => void;
 }) {
-  const groups = useMemo(() => groupFixturesByRound(data.fixtures), [data.fixtures]);
+  const groups = useMemo(
+    () =>
+      [...groupFixturesByRound(data.fixtures)].sort(
+        ([a], [b]) =>
+          roundPlayOrder(a, data.bracket.roundCount) - roundPlayOrder(b, data.bracket.roundCount),
+      ),
+    [data.fixtures, data.bracket.roundCount],
+  );
   const referenceById = useMemo(
     () => new Map(data.fixtures.map((fixture) => [fixture.id, fixture.displayReference])),
     [data.fixtures],
@@ -39,7 +47,7 @@ export function FixtureList({
   return (
     <div className="space-y-4">
       {/* <h3 className="font-black">Danh sách trận đấu theo vòng</h3> */}
-      {[...groups].map(([round, fixtures]) => (
+      {groups.map(([round, fixtures]) => (
         <section key={round}>
           <h4 className="text-sm font-bold">{roundLabel(round, data.bracket.roundCount)}</h4>
           <ul className="mt-2 space-y-2">

@@ -7,6 +7,7 @@ import type {
   MatchExitResponse,
   MatchStatePayload,
   PublicMatchStatePayload,
+  TournamentResultsAnnouncedPayload,
   PenaltyAddedPayload,
   PenaltyAddPayload,
   PenaltyAddResponse,
@@ -117,6 +118,9 @@ export interface ServerToClientEvents {
   'result:published': (payload: ResultPublishedPayload) => void;
   'match:state': (payload: MatchStatePayload) => void;
   'scoreboard:state': (payload: PublicMatchStatePayload) => void;
+  'tournament:results:announced': (
+    payload: TournamentResultsAnnouncedPayload,
+  ) => void;
   'penalty:added': (payload: PenaltyAddedPayload) => void;
   'fault:recorded': (payload: FaultRecordedPayload) => void;
   'presence:updated': (payload: PresenceUpdatedPayload) => void;

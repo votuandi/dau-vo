@@ -47,6 +47,7 @@ const weightClassSelect = {
   name: true,
   details: true,
   intermissionDurationSeconds: true,
+  thirdPlaceMatchEnabled: true,
   isActive: true,
   deactivatedAt: true,
   createdAt: true,

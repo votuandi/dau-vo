@@ -23,6 +23,7 @@ import { MediaModule } from './media/media.module';
 import { TournamentRosterModule } from './tournament-roster/tournament-roster.module';
 import { TournamentSponsorsModule } from './tournament-sponsors/tournament-sponsors.module';
 import { TournamentWatchModule } from './tournament-watch/tournament-watch.module';
+import { TournamentResultsModule } from './tournament-results/tournament-results.module';
 import { BracketsModule } from './brackets/brackets.module';
 import { TournamentOfficialsModule } from './tournament-officials/tournament-officials.module';
 import { OfficialAccessModule } from './official-access/official-access.module';
@@ -91,6 +92,7 @@ import { MatchOfficialAssignmentsModule } from './match-official-assignments/mat
     OfficialAccessModule,
     MatchOfficialAssignmentsModule,
     TournamentWatchModule,
+    TournamentResultsModule,
   ],
 })
 export class AppModule {}

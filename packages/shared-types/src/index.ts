@@ -20,6 +20,9 @@ export {
   bracketFixtureStatusLabel,
   bracketRoundLabel,
   isBracketFixtureAwaitingWinner,
+  isThirdPlaceRound,
+  THIRD_PLACE_ROUND_LABEL,
+  thirdPlaceRoundNumber,
 } from './bracket-presentation';
 export type { BracketFixtureState } from './bracket-presentation';
 export type {
@@ -103,6 +106,8 @@ export type {
   SupervisorVoteAcceptedPayload,
   SupervisorVoteSubmitPayload,
   SupervisorVoteSubmitResponse,
+  TournamentPodiumAthlete,
+  TournamentResultsAnnouncedPayload,
 } from './realtime';
 export type {
   DashboardRoundKey,

@@ -249,6 +249,26 @@ function decidedFixtureView(fixture: DecidedFixtureRecord) {
   };
 }
 
+const publicSponsorSelect = {
+  id: true,
+  name: true,
+  details: true,
+  imagePath: true,
+  adUrl: true,
+  tier: true,
+  tierName: true,
+} satisfies Prisma.TournamentSponsorSelect;
+
+/** What spectators see of a sponsor: identity, logo and advertising link, never internal state. */
+function publicSponsorView(
+  sponsor: Prisma.TournamentSponsorGetPayload<{
+    select: typeof publicSponsorSelect;
+  }>,
+) {
+  const { imagePath, ...rest } = sponsor;
+  return { ...rest, imageUrl: imageUrl(imagePath) };
+}
+
 /**
  * Read-only projections for spectators who follow a tournament by its public
  * code. Nothing here exposes officials, access codes or internal settings.
@@ -263,7 +283,7 @@ export class TournamentWatchService {
 
   async overview(code: string) {
     const tournament = await this.requireTournament(code);
-    const [matches, decidedFixtures] = await Promise.all([
+    const [matches, decidedFixtures, sponsors] = await Promise.all([
       this.prisma.match.findMany({
         where: { tournamentId: tournament.id, deletedAt: null },
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
@@ -282,6 +302,7 @@ export class TournamentWatchService {
         orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
         select: decidedFixtureSelect,
       }),
+      this.sponsorsOf(tournament.id),
     ]);
     return {
       tournament: {
@@ -299,7 +320,45 @@ export class TournamentWatchService {
         ...matches.map(watchMatchView),
         ...decidedFixtures.map(decidedFixtureView),
       ],
+      sponsors,
     };
+  }
+
+  /**
+   * Sponsors of a tournament for public screens. Unlike the schedule, they are
+   * shown even when live watching is turned off: the scoreboard still runs.
+   */
+  async sponsorsByTournamentCode(code: string) {
+    const tournament = await this.requireTournament(code, {
+      requireLiveWatch: false,
+    });
+    return { sponsors: await this.sponsorsOf(tournament.id) };
+  }
+
+  async sponsorsByMatch(matchPublicId: string) {
+    const match = await this.prisma.match.findFirst({
+      where: {
+        publicId: matchPublicId.trim().toUpperCase(),
+        deletedAt: null,
+        tournament: {
+          softDeletedAt: null,
+          status: { not: TournamentStatus.ARCHIVED },
+        },
+      },
+      select: { tournamentId: true },
+    });
+    if (match === null) throw new NotFoundException(MATCH_NOT_FOUND);
+    return { sponsors: await this.sponsorsOf(match.tournamentId) };
+  }
+
+  /** Active sponsors ("Đang tài trợ"), in their display order. */
+  private async sponsorsOf(tournamentId: string) {
+    const sponsors = await this.prisma.tournamentSponsor.findMany({
+      where: { tournamentId, deletedAt: null, isEnabled: true },
+      orderBy: [{ displayIndex: 'asc' }, { createdAt: 'asc' }],
+      select: publicSponsorSelect,
+    });
+    return sponsors.map(publicSponsorView);
   }
 
   async brackets(code: string) {
@@ -437,7 +496,10 @@ export class TournamentWatchService {
     };
   }
 
-  private async requireTournament(code: string) {
+  private async requireTournament(
+    code: string,
+    { requireLiveWatch = true }: { requireLiveWatch?: boolean } = {},
+  ) {
     const normalized = normalizeTournamentCode(code);
     const tournament =
       normalized === null
@@ -464,7 +526,7 @@ export class TournamentWatchService {
           });
     if (tournament === null) throw new NotFoundException(TOURNAMENT_NOT_FOUND);
     // The organiser closed the public view: no schedule, bracket or result is shared.
-    if (!tournament.allowLiveWatch)
+    if (requireLiveWatch && !tournament.allowLiveWatch)
       throw new ForbiddenException(LIVE_WATCH_DISABLED);
     return tournament;
   }

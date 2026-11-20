@@ -38,6 +38,10 @@ import { SwapPreviewAthleteDto } from './dto/swap-preview-athlete.dto';
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { UpdateBracketRoundStaffingDto } from './dto/update-bracket-round-staffing.dto';
 import { BracketRoundStaffingService } from './bracket-round-staffing.service';
+import { BracketThirdPlaceService } from './bracket-third-place.service';
+// Nest reads this class from decorator metadata at runtime.
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+import { UpdateThirdPlaceMatchDto } from './dto/update-third-place.dto';
 
 const uuid = new ParseUUIDPipe({
   exceptionFactory: () => new BadRequestException(INVALID_ID_ERROR),
@@ -62,7 +66,26 @@ export class BracketPreviewController {
     private readonly drawSetup: BracketDrawSetupService,
     @Inject(BracketRoundStaffingService)
     private readonly staffing: BracketRoundStaffingService,
+    @Inject(BracketThirdPlaceService)
+    private readonly thirdPlace: BracketThirdPlaceService,
   ) {}
+
+  /** "Thực hiện trận tranh hạng 3": saved on the weight class, applied to its active bracket. */
+  @Patch('third-place')
+  @Header('Cache-Control', 'no-store')
+  async updateThirdPlace(
+    @Param('tournamentId', uuid) tournamentId: string,
+    @Param('weightClassId', uuid) weightClassId: string,
+    @Body() input: UpdateThirdPlaceMatchDto,
+    @Req() request: AuthenticatedUserRequest,
+  ) {
+    await this.access.assertTournamentAccess(tournamentId, request.user, true);
+    return this.thirdPlace.setEnabled(
+      tournamentId,
+      weightClassId,
+      input.enabled,
+    );
+  }
 
   @Get('draw-setup')
   @Header('Cache-Control', 'no-store')

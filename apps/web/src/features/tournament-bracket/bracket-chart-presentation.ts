@@ -3,7 +3,11 @@ import type {
   BracketFixture,
   BracketPreview,
 } from '@/services/api/admin-management';
-import { bracketRoundLabel } from '@martial-arts-scoring/shared-types';
+import {
+  THIRD_PLACE_ROUND_LABEL,
+  bracketRoundLabel,
+  isThirdPlaceRound,
+} from '@martial-arts-scoring/shared-types';
 import { bracketPresentation, isBracketPreview, type BracketEdge } from './bracket-graph';
 
 type ChartData = Pick<BracketPreview, 'rounds' | 'initialEntrants'> | ActiveBracket;
@@ -78,6 +82,19 @@ export function bracketChartPresentation(data: ChartData) {
       }
     }
     round.fixtures.sort((a, b) => a.position - b.position);
+  }
+  if (!preview) {
+    // "Tranh hạng 3" sits under the final, in the final's column, without connectors.
+    const thirdPlace = data.fixtures.find((fixture) =>
+      isThirdPlaceRound(fixture.roundNumber, data.bracket.roundCount),
+    );
+    const finalRound = rounds.find((round) => round.roundNumber === data.bracket.roundCount);
+    if (thirdPlace && finalRound)
+      finalRound.fixtures.push({
+        ...thirdPlace,
+        position: 2,
+        displayReference: `${THIRD_PLACE_ROUND_LABEL} · ${thirdPlace.displayReference}`,
+      });
   }
   return { rounds, byeIds, edges };
 }

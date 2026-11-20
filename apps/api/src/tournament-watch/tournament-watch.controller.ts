@@ -34,3 +34,24 @@ export class TournamentWatchController {
     return this.watch.matchResult(code, publicId);
   }
 }
+
+/** Sponsor logos for public screens (/watch and the scoreboard). */
+@Controller('public')
+export class PublicSponsorsController {
+  constructor(
+    @Inject(TournamentWatchService)
+    private readonly watch: TournamentWatchService,
+  ) {}
+
+  @Get('tournaments/:code/sponsors')
+  @Header('Cache-Control', 'no-store')
+  byTournament(@Param('code') code: string) {
+    return this.watch.sponsorsByTournamentCode(code);
+  }
+
+  @Get('matches/:publicId/sponsors')
+  @Header('Cache-Control', 'no-store')
+  byMatch(@Param('publicId') publicId: string) {
+    return this.watch.sponsorsByMatch(publicId);
+  }
+}

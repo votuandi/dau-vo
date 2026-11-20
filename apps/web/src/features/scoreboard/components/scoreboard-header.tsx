@@ -1,97 +1,44 @@
-import { Maximize, Minimize } from "lucide-react";
-import { cn } from "@/lib/utils";
-import {
-  matchToneBarClassName,
-  type MatchScreenTone,
-} from "@/features/match-screen-tone";
-import type { ScoreboardConnectionStatus } from "../scoreboard-realtime";
-import type { ScoreboardSource } from "../scoreboard-source";
-import { useFullscreen } from "../display-controls";
-import { ScoreboardSourceSwitcher } from "./scoreboard-source-switcher";
+import { Maximize, Minimize } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { matchToneBarClassName, type MatchScreenTone } from '@/features/match-screen-tone';
+import type { ScoreboardSource } from '../scoreboard-source';
+import { useFullscreen } from '../display-controls';
+import { useScoreboardSponsors } from '../use-scoreboard-sponsors';
+import { ScoreboardSourceSwitcher } from './scoreboard-source-switcher';
+import { SponsorMarquee } from './sponsor-marquee';
 
-const CONNECTION_LABEL = {
-  connected: "ĐANG TRỰC TUYẾN",
-  reconnecting: "ĐANG KẾT NỐI LẠI",
-  connecting: "ĐANG KẾT NỐI",
-} as const;
-
+/** Match code (opens "Đổi mã theo dõi") · sponsor logos · fullscreen. */
 export function ScoreboardHeader({
   source,
   onSelect,
-  status,
-  hasSnapshot,
-  tone = "arena",
+  tone = 'arena',
   matchPublicId,
 }: {
   readonly source: ScoreboardSource;
   readonly onSelect: (source: ScoreboardSource) => void;
-  readonly status: ScoreboardConnectionStatus;
-  readonly hasSnapshot: boolean;
   readonly tone?: MatchScreenTone;
   readonly matchPublicId?: string;
 }) {
+  const sponsors = useScoreboardSponsors(source, matchPublicId);
   return (
     <header
       aria-label="Thông tin bảng điểm"
       className={cn(
-        "scoreboard-header rounded-2xl border px-3 py-2 backdrop-blur sm:px-5",
+        'scoreboard-header rounded-2xl border px-3 py-2 backdrop-blur sm:px-5',
         // The scoreboard keeps its lighter arena bar; pause and scoring share the console tones.
-        tone === "arena"
-          ? "border-white/10 bg-blue-950/25"
-          : matchToneBarClassName[tone],
+        tone === 'arena' ? 'border-white/10 bg-blue-950/25' : matchToneBarClassName[tone],
       )}
     >
-      <div className="scoreboard-controls">
-        <div className="min-w-0">
-          <ScoreboardSourceSwitcher
-            source={source}
-            matchPublicId={matchPublicId ?? ""}
-            onSelect={onSelect}
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <ConnectionBadge hasSnapshot={hasSnapshot} status={status} />
-          <FullscreenButton />
-        </div>
+      <div className="flex w-full min-w-0 items-center gap-3">
+        <ScoreboardSourceSwitcher
+          matchPublicId={matchPublicId}
+          onSelect={onSelect}
+          source={source}
+        />
+        <SponsorMarquee sponsors={sponsors} />
+        <FullscreenButton />
       </div>
     </header>
-  );
-}
-
-function ConnectionBadge({
-  status,
-  hasSnapshot,
-}: {
-  readonly status: ScoreboardConnectionStatus;
-  readonly hasSnapshot: boolean;
-}) {
-  const state =
-    status === "connected"
-      ? "connected"
-      : hasSnapshot
-        ? "reconnecting"
-        : "connecting";
-  return (
-    <p
-      aria-live="polite"
-      className={cn(
-        "inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-3 py-1.5 text-md font-bold",
-        state === "connected"
-          ? "border-emerald-300/40 bg-emerald-500/15 text-emerald-200"
-          : "border-amber-200/40 bg-amber-500/15 text-amber-100",
-      )}
-    >
-      <span
-        aria-hidden="true"
-        className={cn(
-          "size-2 rounded-full",
-          state === "connected"
-            ? "bg-emerald-300"
-            : "animate-pulse bg-amber-200",
-        )}
-      />
-      {CONNECTION_LABEL[state]}
-    </p>
   );
 }
 
@@ -99,7 +46,7 @@ function FullscreenButton() {
   const fullscreen = useFullscreen();
   if (!fullscreen.supported) return null;
   const Icon = fullscreen.active ? Minimize : Maximize;
-  const label = fullscreen.active ? "Thoát toàn màn hình" : "Toàn màn hình";
+  const label = fullscreen.active ? 'Thoát toàn màn hình' : 'Toàn màn hình';
   return (
     <button
       aria-label={label}

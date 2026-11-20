@@ -14,6 +14,8 @@ export const RealtimeEvent = {
   MATCH_STATE_REQUEST: 'match:state:request',
   PUBLIC_MATCH_STATE: 'scoreboard:state',
   PUBLIC_MATCH_STATE_REQUEST: 'scoreboard:state:request',
+  /** Sent to every scoreboard of a tournament when a supervisor announces a weight class's podium. */
+  TOURNAMENT_RESULTS_ANNOUNCED: 'tournament:results:announced',
   MATCH_FINISHED: 'match:finished',
   MATCH_COMPLETE: 'match:complete',
   APPEAL_COMPLETE: 'appeal:complete',
@@ -369,6 +371,29 @@ export interface PublicJudgeVotes {
  * database IDs, session/presence data, access codes, and judge identities;
  * judge votes appear only by position, after their window has resolved.
  */
+/** One athlete on the podium of "Kết quả giải đấu". Image paths resolve through the media route. */
+export interface TournamentPodiumAthlete {
+  name: string;
+  organization: string | null;
+  imagePath: string | null;
+}
+
+/**
+ * "Công bố Kết quả giải đấu": the podium of one weight class, pushed to every
+ * scoreboard of the tournament. Joint third places are the two semi-final losers.
+ */
+export interface TournamentResultsAnnouncedPayload {
+  announcementId: string;
+  announcedAt: string;
+  tournament: { name: string; imagePath: string | null };
+  weightClass: { name: string };
+  podium: {
+    first: TournamentPodiumAthlete;
+    second: TournamentPodiumAthlete | null;
+    thirds: TournamentPodiumAthlete[];
+  };
+}
+
 export interface PublicMatchStatePayload {
   /** Public event identity; optional for compatibility with older servers. */
   tournament?: { name: string; location: string | null; imagePath: string | null };

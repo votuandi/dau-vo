@@ -17,6 +17,7 @@ import {
   TournamentStatus,
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
+import { bracketRoundLabel } from '@martial-arts-scoring/shared-types';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ValidatedOfficialSession } from '../official-access/official-access.types';
 import { assignmentError } from './match-official-assignments.errors';
@@ -70,7 +71,13 @@ export class MatchOfficialAssignmentsService {
         status: true,
         requiredJudgeCount: true,
         weightClass: { select: { id: true, name: true } },
-        bracketFixture: { select: { roundNumber: true, position: true } },
+        bracketFixture: {
+          select: {
+            roundNumber: true,
+            position: true,
+            bracket: { select: { roundCount: true } },
+          },
+        },
         athletes: {
           orderBy: { color: 'asc' },
           select: { color: true, name: true },
@@ -106,6 +113,7 @@ export class MatchOfficialAssignmentsService {
         slots: { orderBy: { side: 'asc' }, include: { resolvedEntrant: true } },
         bracket: {
           select: {
+            roundCount: true,
             roundStaffing: true,
             weightClass: { select: { id: true, name: true } },
           },
@@ -132,6 +140,10 @@ export class MatchOfficialAssignmentsService {
           requiredJudgeCount: staffing.requiredJudgeCount,
           weightClass: fixture.bracket.weightClass,
           roundNumber: fixture.roundNumber,
+          roundLabel: bracketRoundLabel(
+            fixture.roundNumber,
+            fixture.bracket.roundCount,
+          ),
           position: fixture.position,
           athletes: fixture.slots.map((slot) => ({
             color: slot.side,
@@ -143,10 +155,16 @@ export class MatchOfficialAssignmentsService {
     });
     return {
       matches: [
-        ...matches.map((match) => ({
+        ...matches.map(({ bracketFixture, ...match }) => ({
           ...match,
-          roundNumber: match.bracketFixture?.roundNumber ?? null,
-          position: match.bracketFixture?.position ?? null,
+          roundNumber: bracketFixture?.roundNumber ?? null,
+          roundLabel: bracketFixture
+            ? bracketRoundLabel(
+                bracketFixture.roundNumber,
+                bracketFixture.bracket.roundCount,
+              )
+            : null,
+          position: bracketFixture?.position ?? null,
           claimable:
             !match.officialAssignments.some(
               (x) => x.role === TournamentOfficialRole.SUPERVISOR,

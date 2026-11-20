@@ -14,6 +14,7 @@ import {
   TournamentOfficialRole,
   TournamentStatus,
 } from '@prisma/client';
+import { bracketRoundLabel } from '@martial-arts-scoring/shared-types';
 import { PrismaService } from '../prisma/prisma.service';
 import { SportRulesRegistry } from '../sport-rules/sport-rules.registry';
 import { SportGroupRulesNotImplementedError } from '../sport-rules/sport-rules.errors';
@@ -214,13 +215,6 @@ export class BracketRoundStaffingService {
     );
   }
   private label(roundNumber: number, roundCount: number) {
-    const distance = roundCount - roundNumber;
-    return distance === 0
-      ? 'Chung kết'
-      : distance === 1
-        ? 'Bán kết'
-        : distance === 2
-          ? 'Tứ kết'
-          : `Vòng ${roundNumber}`;
+    return bracketRoundLabel(roundNumber, roundCount);
   }
 }
