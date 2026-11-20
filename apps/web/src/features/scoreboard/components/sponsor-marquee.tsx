@@ -21,8 +21,8 @@ function LogoRun({
           <li
             // Repeats exist only to fill the loop; assistive technology reads each sponsor once.
             aria-hidden={copy > 0 || undefined}
-            // Each logo tile is as tall as the header row; its width follows the logo.
-            className="mr-2 flex h-full shrink-0 items-center rounded-lg bg-white/95 px-2 py-1 shadow-sm sm:mr-3"
+            // Each logo, without a frame, is as tall as the strip; its width follows the logo.
+            className="mr-4 flex h-full shrink-0 items-center sm:mr-6"
             key={`${String(copy)}-${sponsor.id}`}
             title={sponsor.name}
           >
@@ -75,7 +75,8 @@ export function SponsorMarquee({ sponsors }: { readonly sponsors: readonly Publi
   return (
     <div
       aria-label="Nhà tài trợ"
-      className="sponsor-marquee relative min-w-0 flex-1 self-stretch overflow-hidden"
+      // A slim strip that fits inside the header row next to the match code button.
+      className="sponsor-marquee relative h-7 min-w-0 flex-1 overflow-hidden sm:h-8"
       ref={viewportRef}
       role="region"
     >
