@@ -4,6 +4,7 @@ import { CalendarDays, KeyRound, MapPin, Save, XCircle } from 'lucide-react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { PageHeader } from '@/components/ui/page-header';
 import { TournamentStatusBadge } from '@/features/admin-management/tournament-status-badge';
 import { ClipboardCopyButton } from '@/components/ui/clipboard-copy-button';
@@ -59,6 +60,7 @@ function TournamentEditor({
   const [startDate, setStartDate] = useState(toDateInputValue(tournament.startDate));
   const [endDate, setEndDate] = useState(toDateInputValue(tournament.endDate));
   const [status, setStatus] = useState(tournament.status);
+  const [allowLiveWatch, setAllowLiveWatch] = useState(tournament.allowLiveWatch);
   const [sportId, setSportId] = useState(tournament.sportId);
   const sportsQuery = useQuery(activeSportsQueryOptions);
   const matchesQuery = useQuery(tournamentMatchesQueryOptions(tournament.id));
@@ -126,6 +128,7 @@ function TournamentEditor({
       startDate: startDate || null,
       endDate: endDate || null,
       status,
+      allowLiveWatch,
     });
   }
 
@@ -273,6 +276,15 @@ function TournamentEditor({
               </option>
             ))}
           </select>
+        </div>
+        <div className="sm:col-span-2">
+          <Switch
+            checked={allowLiveWatch}
+            description="Khán giả nhập mã giải đấu ở trang /watch để xem danh sách trận đấu, kết quả và sơ đồ nhánh đấu."
+            disabled={updateMutation.isPending || isReadOnly}
+            label="Cho phép theo dõi trực tiếp"
+            onCheckedChange={setAllowLiveWatch}
+          />
         </div>
 
         {validationError ? (

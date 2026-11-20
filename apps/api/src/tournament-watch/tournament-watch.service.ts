@@ -1,5 +1,19 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { AthleteColor, TournamentStatus, type Prisma } from '@prisma/client';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  AthleteColor,
+  BracketFixtureStatus,
+  BracketStatus,
+  MatchLifecycle,
+  MatchStatus,
+  TournamentStatus,
+  type Prisma,
+} from '@prisma/client';
+import { MatchDisplayState } from '@martial-arts-scoring/shared-types';
 import { bracketRoundLabel } from '@martial-arts-scoring/shared-types';
 
 import { BracketConfirmationService } from '../brackets/bracket-confirmation.service';
@@ -13,6 +27,10 @@ import { PrismaService } from '../prisma/prisma.service';
 const TOURNAMENT_NOT_FOUND = {
   code: 'WATCH_TOURNAMENT_NOT_FOUND',
   message: 'Không tìm thấy giải đấu với mã này',
+};
+export const LIVE_WATCH_DISABLED = {
+  code: 'WATCH_LIVE_WATCH_DISABLED',
+  message: 'Giải đấu này không cho phép theo dõi trực tiếp',
 };
 const MATCH_NOT_FOUND = {
   code: 'WATCH_MATCH_NOT_FOUND',
@@ -55,6 +73,7 @@ const watchMatchSelect = {
       roundNumber: true,
       position: true,
       displayReference: true,
+      winnerDecision: true,
       bracket: { select: { roundCount: true } },
     },
   },
@@ -85,7 +104,40 @@ function athleteView(athletes: WatchMatchRecord['athletes']): Array<{
   }));
 }
 
-function bracketRoundView(fixture: WatchMatchRecord['bracketFixture']) {
+type ManualDecisionType =
+  'ADMIN_TIEBREAK' | 'WITHDRAWAL_OR_INJURY' | 'ADMIN_OVERRIDE';
+const MANUAL_DECISION_TYPES: readonly string[] = [
+  'ADMIN_TIEBREAK',
+  'WITHDRAWAL_OR_INJURY',
+  'ADMIN_OVERRIDE',
+];
+
+/** The organiser's manual winner decision on a fixture; automatic (rules) results return null. */
+export function manualDecisionView(
+  decision: Prisma.JsonValue | null | undefined,
+): { type: ManualDecisionType; reason: string | null } | null {
+  if (!decision || typeof decision !== 'object' || Array.isArray(decision))
+    return null;
+  const { decisionType, reason } = decision;
+  if (
+    typeof decisionType !== 'string' ||
+    !MANUAL_DECISION_TYPES.includes(decisionType)
+  )
+    return null;
+  return {
+    type: decisionType as ManualDecisionType,
+    reason: typeof reason === 'string' && reason.trim() ? reason : null,
+  };
+}
+
+function bracketRoundView(
+  fixture: {
+    roundNumber: number;
+    position: number;
+    displayReference: string;
+    bracket: { roundCount: number };
+  } | null,
+) {
   if (fixture === null) return null;
   return {
     roundNumber: fixture.roundNumber,
@@ -97,6 +149,7 @@ function bracketRoundView(fixture: WatchMatchRecord['bracketFixture']) {
 
 function watchMatchView(match: WatchMatchRecord) {
   return {
+    kind: 'MATCH' as const,
     id: match.id,
     publicId: match.publicId,
     lifecycle: match.lifecycle,
@@ -115,6 +168,84 @@ function watchMatchView(match: WatchMatchRecord) {
     athletes: athleteView(match.athletes),
     score: matchFinalScore(match),
     winnerColor: match.outcome?.winnerColor ?? null,
+    manualDecision: manualDecisionView(match.bracketFixture?.winnerDecision),
+  };
+}
+
+const decidedFixtureSelect = {
+  id: true,
+  roundNumber: true,
+  position: true,
+  displayReference: true,
+  winnerDecision: true,
+  winnerEntrantId: true,
+  createdAt: true,
+  updatedAt: true,
+  bracket: {
+    select: {
+      roundCount: true,
+      weightClass: { select: { id: true, name: true } },
+    },
+  },
+  slots: {
+    orderBy: { side: 'asc' },
+    select: {
+      side: true,
+      resolvedEntrant: {
+        select: {
+          id: true,
+          snapshotName: true,
+          snapshotOrganization: true,
+          snapshotImagePath: true,
+        },
+      },
+    },
+  },
+} satisfies Prisma.BracketFixtureSelect;
+
+type DecidedFixtureRecord = Prisma.BracketFixtureGetPayload<{
+  select: typeof decidedFixtureSelect;
+}>;
+
+/**
+ * A fixture the organiser decided before any match was played (withdrawal or
+ * injury). It has no match record, so it is shown as a finished match without
+ * a score, a live view or a detailed result.
+ */
+function decidedFixtureView(fixture: DecidedFixtureRecord) {
+  const winnerColor =
+    fixture.slots.find(
+      (slot) => slot.resolvedEntrant?.id === fixture.winnerEntrantId,
+    )?.side ?? null;
+  return {
+    kind: 'DECIDED_FIXTURE' as const,
+    id: fixture.id,
+    publicId: null,
+    lifecycle: MatchLifecycle.COMPLETED,
+    phase: MatchStatus.FINISHED,
+    displayState: MatchDisplayState.COMPLETED,
+    currentRound: null,
+    regulationRoundCount: 0,
+    startedAt: null,
+    finishedAt: fixture.updatedAt,
+    createdAt: fixture.createdAt,
+    weightClass: fixture.bracket.weightClass,
+    bracketRound: bracketRoundView(fixture),
+    athletes: fixture.slots.flatMap((slot) =>
+      slot.resolvedEntrant
+        ? [
+            {
+              color: slot.side,
+              name: slot.resolvedEntrant.snapshotName,
+              organization: slot.resolvedEntrant.snapshotOrganization,
+              imageUrl: imageUrl(slot.resolvedEntrant.snapshotImagePath),
+            },
+          ]
+        : [],
+    ),
+    score: null,
+    winnerColor,
+    manualDecision: manualDecisionView(fixture.winnerDecision),
   };
 }
 
@@ -132,11 +263,26 @@ export class TournamentWatchService {
 
   async overview(code: string) {
     const tournament = await this.requireTournament(code);
-    const matches = await this.prisma.match.findMany({
-      where: { tournamentId: tournament.id, deletedAt: null },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-      select: watchMatchSelect,
-    });
+    const [matches, decidedFixtures] = await Promise.all([
+      this.prisma.match.findMany({
+        where: { tournamentId: tournament.id, deletedAt: null },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        select: watchMatchSelect,
+      }),
+      this.prisma.bracketFixture.findMany({
+        where: {
+          bracket: {
+            tournamentId: tournament.id,
+            status: { in: [BracketStatus.ACTIVE, BracketStatus.COMPLETED] },
+          },
+          status: BracketFixtureStatus.COMPLETED,
+          winnerEntrantId: { not: null },
+          match: null,
+        },
+        orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+        select: decidedFixtureSelect,
+      }),
+    ]);
     return {
       tournament: {
         publicCode: tournament.publicCode,
@@ -149,7 +295,10 @@ export class TournamentWatchService {
         imageUrl: imageUrl(tournament.imagePath),
         sport: { name: tournament.sport.name },
       },
-      matches: matches.map(watchMatchView),
+      matches: [
+        ...matches.map(watchMatchView),
+        ...decidedFixtures.map(decidedFixtureView),
+      ],
     };
   }
 
@@ -309,10 +458,14 @@ export class TournamentWatchService {
               endDate: true,
               status: true,
               imagePath: true,
+              allowLiveWatch: true,
               sport: { select: { name: true } },
             },
           });
     if (tournament === null) throw new NotFoundException(TOURNAMENT_NOT_FOUND);
+    // The organiser closed the public view: no schedule, bracket or result is shared.
+    if (!tournament.allowLiveWatch)
+      throw new ForbiddenException(LIVE_WATCH_DISABLED);
     return tournament;
   }
 }

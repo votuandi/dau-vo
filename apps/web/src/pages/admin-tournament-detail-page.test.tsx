@@ -7,7 +7,7 @@ import { clearToasts } from '@/components/ui/toast';
 import { TournamentStatus } from '@/types/shared';
 import { AdminTournamentDetailPage } from './admin-tournament-detail-page';
 
-const api = vi.hoisted(() => ({ getTournament: vi.fn() }));
+const api = vi.hoisted(() => ({ getTournament: vi.fn(), updateTournament: vi.fn() }));
 const access = vi.hoisted(() => ({ isReadOnly: false }));
 let writeText = vi.fn();
 
@@ -38,19 +38,21 @@ const tournament = {
   sportId: 'sport-1',
   startDate: null,
   status: TournamentStatus.ARCHIVED,
+  allowLiveWatch: true,
   updatedAt: '2026-09-01T00:00:00.000Z',
 };
 
-function renderPage(): void {
+function renderPage(path = '/admin/tournaments/tournament-1/judges'): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/admin/tournaments/tournament-1/judges']}>
+      <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route
             path="/admin/tournaments/:tournamentId/judges"
             element={<AdminTournamentDetailPage />}
           />
+          <Route path="/admin/tournaments/:tournamentId" element={<AdminTournamentDetailPage />} />
         </Routes>
       </MemoryRouter>
       <Toaster />
@@ -89,5 +91,32 @@ describe('AdminTournamentDetailPage tournament login code', () => {
     expect(
       await screen.findByText('Không thể sao chép mã. Vui lòng sao chép thủ công.'),
     ).toBeVisible();
+  });
+});
+
+describe('AdminTournamentDetailPage live watch setting', () => {
+  beforeEach(() => {
+    access.isReadOnly = false;
+    api.getTournament.mockResolvedValue({
+      tournament: { ...tournament, status: TournamentStatus.ACTIVE },
+    });
+    api.updateTournament.mockImplementation((_id: string, input: object) =>
+      Promise.resolve({ tournament: { ...tournament, ...input } }),
+    );
+  });
+
+  it('shows "Cho phép theo dõi trực tiếp" on by default and saves it when turned off', async () => {
+    renderPage('/admin/tournaments/tournament-1');
+    const toggle = await screen.findByRole('switch', { name: 'Cho phép theo dõi trực tiếp' });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    fireEvent.click(screen.getByRole('button', { name: /Lưu thay đổi/ }));
+    await waitFor(() => {
+      expect(api.updateTournament).toHaveBeenCalledWith(
+        'tournament-1',
+        expect.objectContaining({ allowLiveWatch: false }),
+      );
+    });
   });
 });

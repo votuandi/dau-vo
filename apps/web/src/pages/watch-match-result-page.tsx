@@ -8,9 +8,11 @@ import { matchVariantClassName } from '@/features/match-presentation';
 import { watchMatchStatus } from '@/features/tournament-watch/watch-match-status';
 import { scoreboardPath } from '@/features/scoreboard/scoreboard-view-model';
 import { watchMatchGroup } from '@/features/tournament-watch/match-order';
+import { MANUAL_DECISION_LABEL } from '@/features/tournament-watch/manual-decision';
 import { normalizeWatchCode, watchTournamentPath } from '@/features/tournament-watch/watch-paths';
 import { watchQueryKeys } from '@/features/tournament-watch/watch-queries';
-import { ApiClientError } from '@/services/api/client';
+import { WatchErrorMessage } from '@/features/tournament-watch/watch-error-message';
+import { retryWatchQuery } from '@/features/tournament-watch/watch-errors';
 import { watchApi, type WatchMatchResult, type WatchOutcomeMethod } from '@/services/api/watch';
 
 const REFRESH_MS = 5_000;
@@ -98,6 +100,12 @@ function ResultContent({ data, code }: { readonly data: WatchMatchResult; readon
         })}
       </section>
 
+      {match.manualDecision ? (
+        <p className="rounded-xl border border-border bg-muted/50 p-4 text-sm">
+          <span className="font-semibold">{MANUAL_DECISION_LABEL[match.manualDecision.type]}</span>
+          {match.manualDecision.reason ? ` · Lý do: ${match.manualDecision.reason}` : null}
+        </p>
+      ) : null}
       {outcome ? (
         <p className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm">
           <span className="font-bold">
@@ -253,8 +261,7 @@ export function WatchMatchResultPage() {
       current.state.data && watchMatchGroup(current.state.data.match) === 'live'
         ? REFRESH_MS
         : false,
-    retry: (count, error) =>
-      !(error instanceof ApiClientError && error.status === 404) && count < 2,
+    retry: retryWatchQuery,
   });
 
   return (
@@ -269,14 +276,11 @@ export function WatchMatchResultPage() {
       {query.isPending ? (
         <p className="text-muted-foreground">Đang tải kết quả…</p>
       ) : query.isError ? (
-        <p
-          className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm font-semibold text-destructive"
-          role="alert"
-        >
-          {query.error instanceof ApiClientError && query.error.status === 404
-            ? 'Không tìm thấy trận đấu trong giải này.'
-            : 'Không thể tải kết quả trận đấu. Vui lòng thử lại.'}
-        </p>
+        <WatchErrorMessage
+          error={query.error}
+          fallbackMessage="Không thể tải kết quả trận đấu. Vui lòng thử lại."
+          notFoundMessage="Không tìm thấy trận đấu trong giải này."
+        />
       ) : (
         <ResultContent code={code} data={query.data} />
       )}

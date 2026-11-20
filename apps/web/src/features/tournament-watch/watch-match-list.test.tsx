@@ -13,6 +13,8 @@ function match(
   phase: MatchPhase,
 ): WatchMatch {
   return {
+    kind: 'MATCH',
+    manualDecision: null,
     id: `id-${publicId}`,
     publicId,
     lifecycle,
@@ -77,6 +79,89 @@ describe('WatchMatchList', () => {
     await userEvent.click(screen.getByRole('button', { name: /Trận DONE1/ }));
     expect(screen.getByRole('button', { name: 'Xem trực tiếp' })).toBeDisabled();
     expect(screen.getByRole('link', { name: 'Kết quả chi tiết' })).toBeInTheDocument();
+  });
+
+  it('shows the score between both athletes once a match is finished, and VS before', () => {
+    render(
+      <MemoryRouter>
+        <WatchMatchList
+          matches={[
+            {
+              ...match(
+                'DONE2',
+                MatchLifecycle.COMPLETED,
+                MatchDisplayState.COMPLETED,
+                MatchPhase.FINISHED,
+              ),
+              score: { RED: 8, BLUE: 3 },
+              winnerColor: AthleteColor.RED,
+            },
+            match('UP2', MatchLifecycle.READY, MatchDisplayState.READY, MatchPhase.WAITING),
+          ]}
+          tournamentCode="ABC234"
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('img', { name: 'Tỉ số 8 – 3, giáp đỏ thắng' })).toBeInTheDocument();
+    const upcoming = screen.getByText('Trận UP2').closest('li') as HTMLElement;
+    expect(within(upcoming).getByText('VS')).toBeInTheDocument();
+  });
+
+  it('filters by status and searches by athlete name without diacritics', async () => {
+    renderList();
+    await userEvent.selectOptions(screen.getByLabelText('Trạng thái'), 'finished');
+    expect(screen.getByText('Trận DONE1')).toBeInTheDocument();
+    expect(screen.queryByText('Trận LIVE1')).not.toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText('Trạng thái'), '');
+    await userEvent.type(screen.getByLabelText('Tìm kiếm trận đấu'), 'xanh live1');
+    expect(screen.getByText('Trận LIVE1')).toBeInTheDocument();
+    expect(screen.queryByText('Trận UP1')).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Tìm kiếm trận đấu'), 'khong co');
+    expect(screen.getByText('Không có trận đấu phù hợp với bộ lọc.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Xoá bộ lọc' }));
+    expect(screen.getByText('Trận UP1')).toBeInTheDocument();
+  });
+
+  it('shows a fixture decided without a match as finished, with the decision and no actions', () => {
+    render(
+      <MemoryRouter>
+        <WatchMatchList
+          matches={[
+            {
+              ...match(
+                'X',
+                MatchLifecycle.COMPLETED,
+                MatchDisplayState.COMPLETED,
+                MatchPhase.FINISHED,
+              ),
+              kind: 'DECIDED_FIXTURE',
+              publicId: null,
+              id: 'fixture-1',
+              bracketRound: {
+                roundNumber: 1,
+                position: 13,
+                displayReference: 'R1-M13',
+                label: 'Vòng 1',
+              },
+              winnerColor: AthleteColor.BLUE,
+              manualDecision: { type: 'WITHDRAWAL_OR_INJURY', reason: 'Chấn thương' },
+            },
+          ]}
+          tournamentCode="ABC234"
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('heading', { level: 3 })).toHaveTextContent('Đã diễn ra');
+    expect(screen.getByText('Trận R1-M13')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Chỉ định giáp xanh thắng' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Thắng do đối thủ bỏ cuộc hoặc chấn thương', { exact: false }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Lý do: Chấn thương/)).toBeInTheDocument();
+    const item = screen.getByText('Trận R1-M13').closest('li') as HTMLElement;
+    expect(within(item).queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('gives an upcoming match no actions', () => {

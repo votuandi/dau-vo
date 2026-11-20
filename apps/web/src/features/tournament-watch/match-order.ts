@@ -28,6 +28,11 @@ export function watchMatchGroup(match: Pick<WatchMatch, 'lifecycle'>): WatchMatc
   }
 }
 
+/** Match code shown to spectators: the public match id, or the bracket reference for a decided fixture. */
+export function watchMatchCode(match: Pick<WatchMatch, 'publicId' | 'bracketRound'>): string {
+  return match.publicId ?? match.bracketRound?.displayReference ?? '';
+}
+
 const time = (value: string | null): number => (value ? Date.parse(value) : 0);
 
 /** Live first (earliest started on top), then finished (latest first), then upcoming (scheduled order). */
@@ -45,7 +50,9 @@ export function groupWatchMatches(
     matches: matches
       .filter((match) => watchMatchGroup(match) === group)
       .sort(
-        (a, b) => compareWithinGroup(group, a, b) || a.publicId.localeCompare(b.publicId, 'en'),
+        (a, b) =>
+          compareWithinGroup(group, a, b) ||
+          watchMatchCode(a).localeCompare(watchMatchCode(b), 'en'),
       ),
   })).filter((entry) => entry.matches.length > 0);
 }

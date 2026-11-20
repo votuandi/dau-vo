@@ -9,7 +9,8 @@ import { WatchBracketView } from '@/features/tournament-watch/watch-bracket-view
 import { WatchMatchList } from '@/features/tournament-watch/watch-match-list';
 import { normalizeWatchCode, watchTournamentPath } from '@/features/tournament-watch/watch-paths';
 import { watchQueryKeys } from '@/features/tournament-watch/watch-queries';
-import { ApiClientError } from '@/services/api/client';
+import { WatchErrorMessage } from '@/features/tournament-watch/watch-error-message';
+import { retryWatchQuery } from '@/features/tournament-watch/watch-errors';
 import { watchApi, type WatchTournament } from '@/services/api/watch';
 
 type WatchTab = 'matches' | 'bracket';
@@ -113,21 +114,17 @@ function WatchTournament({ code }: { readonly code: string }) {
     queryKey: watchQueryKeys.overview(code),
     queryFn: () => watchApi.overview(code),
     refetchInterval: REFRESH_MS,
-    retry: (count, error) =>
-      !(error instanceof ApiClientError && error.status === 404) && count < 2,
+    retry: retryWatchQuery,
   });
 
   if (query.isPending) return <p className="text-muted-foreground">Đang tìm giải đấu…</p>;
   if (query.isError)
     return (
-      <p
-        className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm font-semibold text-destructive"
-        role="alert"
-      >
-        {query.error instanceof ApiClientError && query.error.status === 404
-          ? `Không tìm thấy giải đấu có mã “${code}”. Vui lòng kiểm tra lại.`
-          : 'Không thể tải giải đấu. Vui lòng thử lại.'}
-      </p>
+      <WatchErrorMessage
+        error={query.error}
+        fallbackMessage="Không thể tải giải đấu. Vui lòng thử lại."
+        notFoundMessage={`Không tìm thấy giải đấu có mã “${code}”. Vui lòng kiểm tra lại.`}
+      />
     );
 
   return (

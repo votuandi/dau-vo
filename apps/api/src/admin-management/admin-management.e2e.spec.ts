@@ -479,6 +479,7 @@ describe('Admin tournament and match management (integration)', () => {
       description: 'Initial description',
       location: 'Initial venue',
       status: TournamentStatus.DRAFT,
+      allowLiveWatch: true,
       sportId: DEFAULT_SPORT.id,
       sport: {
         id: DEFAULT_SPORT.id,
@@ -522,6 +523,7 @@ describe('Admin tournament and match management (integration)', () => {
         description: 'Updated description',
         location: 'Updated venue',
         status: TournamentStatus.ACTIVE,
+        allowLiveWatch: false,
       })
       .expect(200);
     expect(
@@ -530,6 +532,7 @@ describe('Admin tournament and match management (integration)', () => {
       description: 'Updated description',
       location: 'Updated venue',
       status: TournamentStatus.ACTIVE,
+      allowLiveWatch: false,
     });
 
     await authenticated(request(app.getHttpServer()).get('/api/tournaments'))

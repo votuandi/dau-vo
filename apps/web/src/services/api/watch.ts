@@ -26,9 +26,10 @@ export interface WatchMatchAthlete {
   readonly imageUrl: string | null;
 }
 
-export interface WatchMatch {
+export type WatchManualDecisionType = 'ADMIN_TIEBREAK' | 'WITHDRAWAL_OR_INJURY' | 'ADMIN_OVERRIDE';
+
+interface WatchMatchBase {
   readonly id: string;
-  readonly publicId: string;
   readonly lifecycle: MatchLifecycle;
   readonly phase: MatchPhase;
   readonly displayState: MatchDisplayState;
@@ -48,7 +49,26 @@ export interface WatchMatch {
   /** Published final score by corner; null until a scored result exists. */
   readonly score: { readonly RED: number; readonly BLUE: number } | null;
   readonly winnerColor: AthleteColor | null;
+  /** The organiser chose the winner (withdrawal, injury, tie-break or override); null for rule-based results. */
+  readonly manualDecision: {
+    readonly type: WatchManualDecisionType;
+    readonly reason: string | null;
+  } | null;
 }
+
+/** A match that was (or will be) played, with its own scoreboard and result. */
+export interface WatchPlayedMatch extends WatchMatchBase {
+  readonly kind: 'MATCH';
+  readonly publicId: string;
+}
+
+/** A bracket fixture the organiser decided before any match existed: no scoreboard, no result. */
+export interface WatchDecidedFixture extends WatchMatchBase {
+  readonly kind: 'DECIDED_FIXTURE';
+  readonly publicId: null;
+}
+
+export type WatchMatch = WatchPlayedMatch | WatchDecidedFixture;
 
 export interface WatchOverview {
   readonly tournament: WatchTournament;
@@ -74,7 +94,7 @@ export type WatchOutcomeMethod =
   'REGULATION_SCORE' | 'OVERTIME_SCORE' | 'MANUAL_AFTER_OVERTIME_TIE' | 'ADMIN_MANUAL';
 
 export interface WatchMatchResult {
-  readonly match: WatchMatch;
+  readonly match: WatchPlayedMatch;
   readonly rounds: readonly {
     readonly stage: 'REGULATION' | 'OVERTIME';
     readonly roundNumber: number;
