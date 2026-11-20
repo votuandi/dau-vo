@@ -105,6 +105,16 @@ describe('AdminTournamentDetailPage live watch setting', () => {
     );
   });
 
+  it('treats a tournament without the setting as allowing live watching', async () => {
+    api.getTournament.mockResolvedValue({
+      tournament: { ...tournament, allowLiveWatch: undefined, status: TournamentStatus.ACTIVE },
+    });
+    renderPage('/admin/tournaments/tournament-1');
+    expect(
+      await screen.findByRole('switch', { name: 'Cho phép theo dõi trực tiếp' }),
+    ).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('shows "Cho phép theo dõi trực tiếp" on by default and saves it when turned off', async () => {
     renderPage('/admin/tournaments/tournament-1');
     const toggle = await screen.findByRole('switch', { name: 'Cho phép theo dõi trực tiếp' });

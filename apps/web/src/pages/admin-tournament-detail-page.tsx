@@ -60,7 +60,8 @@ function TournamentEditor({
   const [startDate, setStartDate] = useState(toDateInputValue(tournament.startDate));
   const [endDate, setEndDate] = useState(toDateInputValue(tournament.endDate));
   const [status, setStatus] = useState(tournament.status);
-  const [allowLiveWatch, setAllowLiveWatch] = useState(tournament.allowLiveWatch);
+  // On unless the organiser turned it off: data without the field (older server or cache) means on.
+  const [allowLiveWatch, setAllowLiveWatch] = useState(tournament.allowLiveWatch ?? true);
   const [sportId, setSportId] = useState(tournament.sportId);
   const sportsQuery = useQuery(activeSportsQueryOptions);
   const matchesQuery = useQuery(tournamentMatchesQueryOptions(tournament.id));
