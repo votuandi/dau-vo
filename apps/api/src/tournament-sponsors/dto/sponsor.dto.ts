@@ -45,7 +45,7 @@ export class CreateSponsorDto {
 
   @IsOptional()
   @IsBoolean()
-  isDisabled?: boolean;
+  isEnabled?: boolean;
 }
 
 export class UpdateSponsorDto {
@@ -82,5 +82,5 @@ export class UpdateSponsorDto {
 
   @IsOptional()
   @IsBoolean()
-  isDisabled?: boolean;
+  isEnabled?: boolean;
 }

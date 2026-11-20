@@ -23,7 +23,7 @@ function sponsor(overrides: Partial<TournamentSponsor>): TournamentSponsor {
     tier: 1,
     tierName: 'Kim cương',
     displayIndex: 1,
-    isDisabled: false,
+    isEnabled: true,
     createdAt: '2026-11-20T00:00:00.000Z',
     updatedAt: '2026-11-20T00:00:00.000Z',
     deletedAt: null,
@@ -59,7 +59,7 @@ describe('SponsorsPage', () => {
           tier: 2,
           tierName: 'Bạc',
           displayIndex: 3,
-          isDisabled: true,
+          isEnabled: false,
         }),
       ],
     });
@@ -94,7 +94,7 @@ describe('SponsorsPage', () => {
     fireEvent.change(within(form).getByLabelText('Thông tin chi tiết'), {
       target: { value: 'Đồng hành cùng giải' },
     });
-    fireEvent.click(within(form).getByRole('switch', { name: 'Ngừng tài trợ' }));
+    fireEvent.click(within(form).getByRole('switch', { name: 'Đang tài trợ' }));
     fireEvent.click(within(form).getByRole('button', { name: 'Thêm mới' }));
     await waitFor(() => {
       expect(api.createSponsor).toHaveBeenCalledWith('tournament-1', {
@@ -103,7 +103,7 @@ describe('SponsorsPage', () => {
         tier: 2,
         tierName: 'Vàng',
         displayIndex: 4,
-        isDisabled: true,
+        isEnabled: false,
       });
     });
   });

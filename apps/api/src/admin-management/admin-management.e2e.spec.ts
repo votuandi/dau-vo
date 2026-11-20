@@ -1034,7 +1034,7 @@ describe('Admin tournament and match management (integration)', () => {
       tier: number;
       tierName: string;
       displayIndex: number;
-      isDisabled: boolean;
+      isEnabled: boolean;
       deletedAt: string | null;
     }
     const tournament = await createTournament('sponsors');
@@ -1066,7 +1066,7 @@ describe('Admin tournament and match management (integration)', () => {
       tier: 1,
       tierName: 'Kim cương',
       displayIndex: 1,
-      isDisabled: false,
+      isEnabled: true,
       deletedAt: null,
     });
     const silver = await create({
@@ -1086,10 +1086,10 @@ describe('Admin tournament and match management (integration)', () => {
     const disabled = await authenticated(
       request(app.getHttpServer()).patch(`${base}/${gold.sponsor.id}`),
     )
-      .send({ isDisabled: true, displayIndex: 10 })
+      .send({ isEnabled: false, displayIndex: 10 })
       .expect(200);
     expect((disabled.body as { sponsor: SponsorView }).sponsor).toMatchObject({
-      isDisabled: true,
+      isEnabled: false,
       displayIndex: 10,
     });
     expect((await list()).map((s) => s.name)).toEqual([

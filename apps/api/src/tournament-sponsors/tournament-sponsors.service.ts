@@ -32,7 +32,7 @@ const sponsorSelect = {
   tier: true,
   tierName: true,
   displayIndex: true,
-  isDisabled: true,
+  isEnabled: true,
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
@@ -101,7 +101,7 @@ export class TournamentSponsorService {
             tier: input.tier,
             tierName,
             displayIndex,
-            isDisabled: input.isDisabled ?? false,
+            isEnabled: input.isEnabled ?? true,
           },
           select: sponsorSelect,
         });
@@ -135,9 +135,7 @@ export class TournamentSponsorService {
       ...(input.displayIndex === undefined
         ? {}
         : { displayIndex: input.displayIndex }),
-      ...(input.isDisabled === undefined
-        ? {}
-        : { isDisabled: input.isDisabled }),
+      ...(input.isEnabled === undefined ? {} : { isEnabled: input.isEnabled }),
     };
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -180,9 +178,9 @@ export class TournamentSponsorService {
         await this.audit(
           tx,
           actorId,
-          input.isDisabled === true && !before.isDisabled
+          input.isEnabled === false && before.isEnabled
             ? 'SPONSOR_DISABLED'
-            : input.isDisabled === false && before.isDisabled
+            : input.isEnabled === true && !before.isEnabled
               ? 'SPONSOR_ENABLED'
               : 'SPONSOR_UPDATED',
           id,

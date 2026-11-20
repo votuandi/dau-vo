@@ -55,7 +55,7 @@ interface SponsorValues {
   readonly tier: string;
   readonly tierName: string;
   readonly displayIndex: string;
-  readonly isDisabled: boolean;
+  readonly isEnabled: boolean;
   readonly file: File | null;
   readonly imageError: string;
 }
@@ -73,7 +73,7 @@ function emptySponsorValues(items: readonly TournamentSponsor[]): SponsorValues 
     tier: '1',
     tierName: '',
     displayIndex: String(lastIndex + 1),
-    isDisabled: false,
+    isEnabled: true,
     file: null,
     imageError: '',
   };
@@ -86,7 +86,7 @@ function sponsorValues(item: TournamentSponsor): SponsorValues {
     tier: String(item.tier),
     tierName: item.tierName,
     displayIndex: String(item.displayIndex),
-    isDisabled: item.isDisabled,
+    isEnabled: item.isEnabled,
     file: null,
     imageError: '',
   };
@@ -142,7 +142,7 @@ function SponsorForm({
           tier,
           tierName: values.tierName.trim(),
           displayIndex,
-          isDisabled: values.isDisabled,
+          isEnabled: values.isEnabled,
           file: values.file,
         });
       }}
@@ -228,11 +228,11 @@ function SponsorForm({
       </label>
       <div className="flex items-center sm:pt-6">
         <Switch
-          checked={values.isDisabled}
-          description="Nhà tài trợ vẫn được lưu nhưng không còn hiển thị là đang tài trợ."
-          label="Ngừng tài trợ"
-          onCheckedChange={(isDisabled) => {
-            onValuesChange({ ...values, isDisabled });
+          checked={values.isEnabled}
+          description="Tắt khi nhà tài trợ ngừng tài trợ; thông tin vẫn được lưu."
+          label="Đang tài trợ"
+          onCheckedChange={(isEnabled) => {
+            onValuesChange({ ...values, isEnabled });
           }}
         />
       </div>
@@ -376,7 +376,7 @@ export function SponsorsPage({
       if (kind === 'delete') await adminManagementApi.deleteSponsor(tournamentId, item.id);
       else
         await adminManagementApi.updateSponsor(tournamentId, item.id, {
-          isDisabled: !item.isDisabled,
+          isEnabled: !item.isEnabled,
         });
     },
     onSuccess: (_data, { kind }) => {
@@ -492,7 +492,7 @@ export function SponsorsPage({
           <li
             className={cn(
               'rounded-xl border border-border bg-card p-4 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-primary/30 hover:shadow-md',
-              item.isDisabled && 'bg-muted/40',
+              !item.isEnabled && 'bg-muted/40',
             )}
             key={item.id}
           >
@@ -527,7 +527,7 @@ export function SponsorsPage({
                     <Badge tone="primary">
                       Bậc {item.tier} · {item.tierName}
                     </Badge>
-                    {item.isDisabled ? (
+                    {!item.isEnabled ? (
                       <Badge dot tone="warning">
                         Ngừng tài trợ
                       </Badge>
@@ -571,21 +571,21 @@ export function SponsorsPage({
                     Sửa
                   </Button>
                   <Button
-                    aria-label={item.isDisabled ? 'Tài trợ lại' : 'Ngừng tài trợ'}
+                    aria-label={!item.isEnabled ? 'Tài trợ lại' : 'Ngừng tài trợ'}
                     disabled={busy}
                     onClick={() => {
                       setPending({ kind: 'toggle', item });
                     }}
                     size="sm"
                     type="button"
-                    variant={item.isDisabled ? 'success-soft' : 'warning-soft'}
+                    variant={!item.isEnabled ? 'success-soft' : 'warning-soft'}
                   >
-                    {item.isDisabled ? (
+                    {!item.isEnabled ? (
                       <RotateCcw aria-hidden="true" className="size-4" />
                     ) : (
                       <Ban aria-hidden="true" className="size-4" />
                     )}
-                    {item.isDisabled ? 'Tài trợ lại' : 'Ngừng tài trợ'}
+                    {!item.isEnabled ? 'Tài trợ lại' : 'Ngừng tài trợ'}
                   </Button>
                   <Button
                     aria-label="Xóa"
@@ -611,7 +611,7 @@ export function SponsorsPage({
           actionLabel={
             pending.kind === 'delete'
               ? 'Xóa nhà tài trợ'
-              : pending.item.isDisabled
+              : !pending.item.isEnabled
                 ? 'Tài trợ lại'
                 : 'Ngừng tài trợ'
           }
@@ -619,7 +619,7 @@ export function SponsorsPage({
           description={
             pending.kind === 'delete'
               ? `“${pending.item.name}” sẽ bị gỡ khỏi danh sách và vị trí xuất hiện ${String(pending.item.displayIndex)} được giải phóng.`
-              : pending.item.isDisabled
+              : !pending.item.isEnabled
                 ? `“${pending.item.name}” sẽ được đánh dấu là đang tài trợ trở lại.`
                 : `“${pending.item.name}” vẫn ở trong danh sách nhưng được đánh dấu ngừng tài trợ.`
           }
@@ -632,7 +632,7 @@ export function SponsorsPage({
           title={
             pending.kind === 'delete'
               ? 'Xóa nhà tài trợ?'
-              : pending.item.isDisabled
+              : !pending.item.isEnabled
                 ? 'Tài trợ lại?'
                 : 'Ngừng tài trợ?'
           }

@@ -518,7 +518,8 @@ model TournamentSponsor {
   tierName     String    @map("tier_name") @db.VarChar(255)
   /// Display position in sponsor lists ("Vị trí xuất hiện").
   displayIndex Int       @map("display_index")
-  isDisabled   Boolean   @default(false) @map("is_disabled")
+  /// "Đang tài trợ": false once the sponsorship has stopped.
+  isEnabled    Boolean   @default(true) @map("is_enabled")
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(3)

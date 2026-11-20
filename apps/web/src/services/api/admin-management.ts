@@ -247,7 +247,8 @@ export interface TournamentSponsor {
   readonly tierName: string;
   /** Display position ("Vị trí xuất hiện"), unique among non-deleted sponsors. */
   readonly displayIndex: number;
-  readonly isDisabled: boolean;
+  /** "Đang tài trợ"; false once the sponsorship has stopped. */
+  readonly isEnabled: boolean;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly deletedAt: string | null;
@@ -258,7 +259,7 @@ export interface SponsorInput {
   readonly tier?: number;
   readonly tierName?: string;
   readonly displayIndex?: number;
-  readonly isDisabled?: boolean;
+  readonly isEnabled?: boolean;
 }
 export interface TournamentAthlete {
   readonly id: string;
