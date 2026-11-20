@@ -108,18 +108,35 @@ describe('SponsorsPage', () => {
     });
   });
 
-  it('blocks a display position already used by another sponsor', async () => {
+  it('explains, without blocking, that a taken position reorders the others', async () => {
     renderPage();
     const first = item(await screen.findAllByRole('listitem'), 0);
     fireEvent.click(within(first).getByRole('button', { name: 'Sửa' }));
     const form = screen.getByRole('form', { name: 'Chỉnh sửa nhà tài trợ' });
     const position = within(form).getByLabelText(/Vị trí xuất hiện/);
     fireEvent.change(position, { target: { value: '3' } });
-    expect(within(form).getByRole('alert')).toHaveTextContent('đã được nhà tài trợ khác sử dụng');
-    expect(within(form).getByRole('button', { name: 'Lưu' })).toBeDisabled();
-    // Its own position is not a conflict.
-    fireEvent.change(position, { target: { value: '1' } });
-    expect(within(form).getByRole('button', { name: 'Lưu' })).toBeEnabled();
+    expect(position).toHaveAccessibleDescription(
+      'Vị trí xuất hiện này đã được nhà tài trợ Silver Co sử dụng. Thay đổi này sẽ làm thay đổi vị trí của các Nhà tài trợ khác.',
+    );
+    expect(within(form).queryByRole('alert')).toBeNull();
+    fireEvent.click(within(form).getByRole('button', { name: 'Lưu' }));
+    await waitFor(() => {
+      expect(api.updateSponsor).toHaveBeenCalledWith(
+        'tournament-1',
+        'sponsor-1',
+        expect.objectContaining({ displayIndex: 3 }),
+      );
+    });
+  });
+
+  it('shows no reorder notice for the sponsor’s own position', async () => {
+    renderPage();
+    const first = item(await screen.findAllByRole('listitem'), 0);
+    fireEvent.click(within(first).getByRole('button', { name: 'Sửa' }));
+    const form = screen.getByRole('form', { name: 'Chỉnh sửa nhà tài trợ' });
+    expect(within(form).getByLabelText(/Vị trí xuất hiện/)).toHaveAccessibleDescription(
+      'Thứ tự hiển thị trong danh sách.',
+    );
   });
 
   it('soft deletes a sponsor after confirmation', async () => {

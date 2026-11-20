@@ -25,7 +25,9 @@ import {
 } from '@/services/api/admin-management';
 
 const DISPLAY_INDEX_TAKEN = 'SPONSOR_DISPLAY_INDEX_ALREADY_EXISTS';
-const DISPLAY_INDEX_TAKEN_MESSAGE = 'Vị trí xuất hiện này đã được nhà tài trợ khác sử dụng.';
+// The server shifts other sponsors itself; this only surfaces a concurrent-write race.
+const DISPLAY_INDEX_TAKEN_MESSAGE =
+  'Vị trí xuất hiện vừa được thay đổi bởi thao tác khác. Hãy thử lại.';
 
 function sponsorImageError(file: File): string {
   const problem = imageFileProblem(file);
@@ -112,8 +114,8 @@ function SponsorForm({
 }: {
   readonly mode: 'create' | 'edit';
   readonly values: SponsorValues;
-  /** Positions used by the other sponsors, for an early duplicate warning. */
-  readonly takenIndexes: ReadonlySet<number>;
+  /** Names of the other sponsors by their position, to explain a reorder before saving. */
+  readonly takenIndexes: ReadonlyMap<number, string>;
   readonly busy: boolean;
   readonly onCancel: () => void;
   readonly onSubmit: (input: SponsorSubmission) => void;
@@ -121,13 +123,12 @@ function SponsorForm({
 }) {
   const tier = positiveInteger(values.tier);
   const displayIndex = positiveInteger(values.displayIndex);
-  const indexTaken = displayIndex !== null && takenIndexes.has(displayIndex);
+  const takenBy = displayIndex === null ? undefined : takenIndexes.get(displayIndex);
   const valid =
     values.name.trim() !== '' &&
     values.tierName.trim() !== '' &&
     tier !== null &&
-    displayIndex !== null &&
-    !indexTaken;
+    displayIndex !== null;
   return (
     <form
       aria-label={mode === 'edit' ? 'Chỉnh sửa nhà tài trợ' : 'Thêm nhà tài trợ'}
@@ -198,7 +199,6 @@ function SponsorForm({
         Vị trí xuất hiện
         <input
           aria-describedby="sponsor-index-hint"
-          aria-invalid={indexTaken || undefined}
           className={inputClassName}
           inputMode="numeric"
           max={1_000_000}
@@ -211,13 +211,18 @@ function SponsorForm({
           type="number"
           value={values.displayIndex}
         />
-        {indexTaken ? (
-          <span className="form-error block" id="sponsor-index-hint" role="alert">
-            {DISPLAY_INDEX_TAKEN_MESSAGE}
+        {takenBy === undefined ? (
+          <span className="block text-xs font-normal text-muted-foreground" id="sponsor-index-hint">
+            Thứ tự hiển thị trong danh sách.
           </span>
         ) : (
-          <span className="block text-xs font-normal text-muted-foreground" id="sponsor-index-hint">
-            Thứ tự hiển thị trong danh sách; không trùng với nhà tài trợ khác.
+          <span
+            aria-live="polite"
+            className="block text-xs font-normal text-warning"
+            id="sponsor-index-hint"
+          >
+            Vị trí xuất hiện này đã được nhà tài trợ {takenBy} sử dụng. Thay đổi này sẽ làm thay đổi
+            vị trí của các Nhà tài trợ khác.
           </span>
         )}
       </label>
@@ -390,8 +395,10 @@ export function SponsorsPage({
   const items = query.data ?? [];
   const busy = save.isPending || act.isPending;
   const editingId = draft?.mode === 'edit' ? draft.item.id : null;
-  const takenIndexes = new Set(
-    items.filter((item) => item.id !== editingId).map((item) => item.displayIndex),
+  const takenIndexes = new Map(
+    items
+      .filter((item) => item.id !== editingId)
+      .map((item) => [item.displayIndex, item.name] as const),
   );
 
   return (

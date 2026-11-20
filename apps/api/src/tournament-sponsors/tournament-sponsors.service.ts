@@ -42,6 +42,10 @@ export type SponsorView = Prisma.TournamentSponsorGetPayload<{
   select: typeof sponsorSelect;
 }>;
 
+/** Temporary positions used while reordering; far above any real display index. */
+const SHIFT_OFFSET = 1_000_000_000;
+const PARKED_DISPLAY_INDEX = 2_000_000_000;
+
 @Injectable()
 export class TournamentSponsorService {
   private readonly logger = new Logger(TournamentSponsorService.name);
@@ -80,7 +84,15 @@ export class TournamentSponsorService {
         await this.lockTournament(tx, tournamentId);
         const displayIndex =
           input.displayIndex ?? (await this.nextDisplayIndex(tx, tournamentId));
-        await this.assertDisplayIndexFree(tx, tournamentId, displayIndex);
+        // Inserting at a taken position pushes it and every later sponsor down by one.
+        if (await this.isDisplayIndexTaken(tx, tournamentId, displayIndex))
+          await this.shiftDisplayIndexes(
+            tx,
+            actorId,
+            tournamentId,
+            { gte: displayIndex },
+            1,
+          );
         const row = await tx.tournamentSponsor.create({
           data: {
             tournamentId,
@@ -131,15 +143,35 @@ export class TournamentSponsorService {
       return await this.prisma.$transaction(async (tx) => {
         await this.lockTournament(tx, tournamentId);
         const before = await this.findLive(tx, tournamentId, id);
+        const target = input.displayIndex;
         if (
-          input.displayIndex !== undefined &&
-          input.displayIndex !== before.displayIndex
-        )
-          await this.assertDisplayIndexFree(
-            tx,
-            tournamentId,
-            input.displayIndex,
-          );
+          target !== undefined &&
+          target !== before.displayIndex &&
+          (await this.isDisplayIndexTaken(tx, tournamentId, target))
+        ) {
+          // Move like a drag-and-drop: park this sponsor, then close the gap it leaves and
+          // open one at the target by shifting only the sponsors in between.
+          await tx.tournamentSponsor.update({
+            where: { id },
+            data: { displayIndex: PARKED_DISPLAY_INDEX },
+          });
+          if (target < before.displayIndex)
+            await this.shiftDisplayIndexes(
+              tx,
+              actorId,
+              tournamentId,
+              { gte: target, lt: before.displayIndex },
+              1,
+            );
+          else
+            await this.shiftDisplayIndexes(
+              tx,
+              actorId,
+              tournamentId,
+              { gt: before.displayIndex, lte: target },
+              -1,
+            );
+        }
         const after = await tx.tournamentSponsor.update({
           where: { id },
           data,
@@ -268,15 +300,55 @@ export class TournamentSponsorService {
     return (last._max.displayIndex ?? 0) + 1;
   }
 
-  private async assertDisplayIndexFree(
+  private async isDisplayIndexTaken(
     tx: Prisma.TransactionClient,
     tournamentId: string,
     displayIndex: number,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const taken = await tx.tournamentSponsor.count({
       where: { tournamentId, displayIndex, deletedAt: null },
     });
-    if (taken) throw new ConflictException(SPONSOR_DISPLAY_INDEX_EXISTS);
+    return taken > 0;
+  }
+
+  /**
+   * Moves every live sponsor whose position is in `range` by `delta`. The unique index is
+   * checked row by row, so the rows are first lifted out of the way by an offset and then
+   * lowered onto their new positions.
+   */
+  private async shiftDisplayIndexes(
+    tx: Prisma.TransactionClient,
+    actorId: string,
+    tournamentId: string,
+    range: Prisma.IntFilter,
+    delta: 1 | -1,
+  ): Promise<void> {
+    const lifted = await tx.tournamentSponsor.updateMany({
+      where: { tournamentId, deletedAt: null, displayIndex: range },
+      data: { displayIndex: { increment: SHIFT_OFFSET } },
+    });
+    if (!lifted.count) return;
+    await tx.tournamentSponsor.updateMany({
+      where: {
+        tournamentId,
+        deletedAt: null,
+        displayIndex: { gte: SHIFT_OFFSET, lt: PARKED_DISPLAY_INDEX },
+      },
+      data: { displayIndex: { increment: delta - SHIFT_OFFSET } },
+    });
+    await tx.auditLog.create({
+      data: {
+        adminUserId: actorId,
+        eventType: AuditEventType.ADMIN_ACTION,
+        metadata: {
+          action: 'SPONSOR_POSITIONS_SHIFTED',
+          targetId: tournamentId,
+          range: range as Prisma.InputJsonValue,
+          delta,
+          count: lifted.count,
+        },
+      },
+    });
   }
 
   /** Serialises sponsor writes per tournament and rejects deleted or archived tournaments. */

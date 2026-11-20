@@ -1026,7 +1026,7 @@ describe('Admin tournament and match management (integration)', () => {
       });
   });
 
-  it('manages sponsors with unique display positions and soft delete', async () => {
+  it('manages sponsors with display positions and soft delete', async () => {
     interface SponsorView {
       id: string;
       name: string;
@@ -1081,21 +1081,8 @@ describe('Admin tournament and match management (integration)', () => {
       (await create({ name: 'Auto', tier: 3, tierName: 'Đồng' })).sponsor
         .displayIndex,
     ).toBe(6);
-    expect(
-      (
-        await create(
-          { name: 'Dup', tier: 3, tierName: 'Đồng', displayIndex: 5 },
-          409,
-        )
-      ).code,
-    ).toBe('SPONSOR_DISPLAY_INDEX_ALREADY_EXISTS');
     await create({ name: 'Bad', tier: 0, tierName: 'x' }, 400);
 
-    await authenticated(
-      request(app.getHttpServer()).patch(`${base}/${gold.sponsor.id}`),
-    )
-      .send({ displayIndex: 5 })
-      .expect(409);
     const disabled = await authenticated(
       request(app.getHttpServer()).patch(`${base}/${gold.sponsor.id}`),
     )
@@ -1135,6 +1122,85 @@ describe('Admin tournament and match management (integration)', () => {
     expect(
       (await create({ name: 'Late', tier: 1, tierName: 'Vàng' }, 409)).code,
     ).toBe('TOURNAMENT_ARCHIVED');
+  });
+
+  it('shifts other sponsors when a taken display position is chosen', async () => {
+    interface SponsorView {
+      id: string;
+      name: string;
+      displayIndex: number;
+    }
+    const tournament = await createTournament('sponsor-reorder');
+    const base = `/api/admin/tournaments/${tournament.id}/sponsors`;
+    const create = async (name: string, displayIndex?: number) =>
+      (
+        (
+          await authenticated(request(app.getHttpServer()).post(base))
+            .send({ name, tier: 1, tierName: 'Vàng', displayIndex })
+            .expect(201)
+        ).body as { sponsor: SponsorView }
+      ).sponsor;
+    const move = (id: string, displayIndex: number) =>
+      authenticated(request(app.getHttpServer()).patch(`${base}/${id}`))
+        .send({ displayIndex })
+        .expect(200);
+    const positions = async () =>
+      (
+        (
+          await authenticated(request(app.getHttpServer()).get(base)).expect(
+            200,
+          )
+        ).body as { sponsors: SponsorView[] }
+      ).sponsors.map((s) => `${String(s.displayIndex)}:${s.name}`);
+
+    const [a, b, , , e] = [
+      await create('A'),
+      await create('B'),
+      await create('C'),
+      await create('D'),
+      await create('E'),
+    ];
+    // Inserting at a taken position pushes it and everything after it down.
+    const f = await create('F', 2);
+    expect(await positions()).toEqual([
+      '1:A',
+      '2:F',
+      '3:B',
+      '4:C',
+      '5:D',
+      '6:E',
+    ]);
+    // Moving up shifts only the sponsors in between down by one.
+    await move(e.id, 2);
+    expect(await positions()).toEqual([
+      '1:A',
+      '2:E',
+      '3:F',
+      '4:B',
+      '5:C',
+      '6:D',
+    ]);
+    // Moving down closes the gap it leaves.
+    await move(a.id, 4);
+    expect(await positions()).toEqual([
+      '1:E',
+      '2:F',
+      '3:B',
+      '4:A',
+      '5:C',
+      '6:D',
+    ]);
+    // A free position is simply taken without moving anyone.
+    await move(f.id, 9);
+    await move(b.id, 3);
+    expect(await positions()).toEqual([
+      '1:E',
+      '3:B',
+      '4:A',
+      '5:C',
+      '6:D',
+      '9:F',
+    ]);
   });
 
   it('rejects cross-tournament, inactive, mismatched, inactive-class, and inactive-organization selections', async () => {
