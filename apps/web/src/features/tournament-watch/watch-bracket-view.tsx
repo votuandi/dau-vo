@@ -8,13 +8,10 @@ import { BracketZoomControls } from '@/features/tournament-bracket/bracket-zoom-
 import { watchApi } from '@/services/api/watch';
 import { watchQueryKeys } from './watch-queries';
 
-const REFRESH_MS = 15_000;
-
 export function WatchBracketView({ tournamentCode }: { readonly tournamentCode: string }) {
   const query = useQuery({
     queryKey: watchQueryKeys.brackets(tournamentCode),
     queryFn: () => watchApi.brackets(tournamentCode),
-    refetchInterval: REFRESH_MS,
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zoomPercent, setZoomPercent] = useState(100);

@@ -9,7 +9,9 @@ import {
   BracketFixtureStatus,
   BracketStatus,
   MatchLifecycle,
+  MatchRulesVersion,
   MatchStatus,
+  ScoreEventType,
   TournamentStatus,
   type Prisma,
 } from '@prisma/client';
@@ -51,6 +53,7 @@ const imageUrl = (key: string | null | undefined): string | null =>
 const athleteSelect = {
   orderBy: { color: 'asc' },
   select: {
+    id: true,
     color: true,
     name: true,
     organization: true,
@@ -62,6 +65,7 @@ const watchMatchSelect = {
   id: true,
   publicId: true,
   status: true,
+  rulesVersion: true,
   currentRound: true,
   regulationRoundCount: true,
   startedAt: true,
@@ -78,6 +82,14 @@ const watchMatchSelect = {
     },
   },
   athletes: athleteSelect,
+  rounds: {
+    where: { invalidatedAt: null },
+    select: { id: true },
+  },
+  scoreEvents: {
+    where: { revertedAt: null },
+    select: { athleteId: true, value: true, type: true, roundId: true },
+  },
   ...matchFinalScoreSelect,
   outcome: {
     select: {
@@ -98,10 +110,49 @@ function athleteView(athletes: WatchMatchRecord['athletes']): Array<{
   organization: string | null;
   imageUrl: string | null;
 }> {
-  return athletes.map(({ athlete, ...snapshot }) => ({
+  return athletes.map(({ id: _id, athlete, ...snapshot }) => ({
     ...snapshot,
     imageUrl: imageUrl(athlete?.imagePath),
   }));
+}
+
+function liveMatchScore(
+  match: WatchMatchRecord,
+): { RED: number; BLUE: number } | null {
+  if (
+    match.lifecycle !== MatchLifecycle.IN_PROGRESS &&
+    match.lifecycle !== MatchLifecycle.SUSPENDED
+  )
+    return null;
+  const validRoundIds = new Set((match.rounds ?? []).map((round) => round.id));
+  const scoresByAthlete = new Map<string, number>();
+  for (const athlete of match.athletes) scoresByAthlete.set(athlete.id, 0);
+  for (const event of match.scoreEvents ?? []) {
+    if (match.rulesVersion === MatchRulesVersion.FAULT_APPEAL_OVERTIME_V2) {
+      if (
+        (event.type === ScoreEventType.JUDGE_POINT ||
+          event.type === ScoreEventType.ADMIN_ADJUSTMENT) &&
+        event.roundId !== null &&
+        validRoundIds.has(event.roundId)
+      ) {
+        scoresByAthlete.set(
+          event.athleteId,
+          (scoresByAthlete.get(event.athleteId) ?? 0) + event.value,
+        );
+      }
+    } else {
+      scoresByAthlete.set(
+        event.athleteId,
+        (scoresByAthlete.get(event.athleteId) ?? 0) + event.value,
+      );
+    }
+  }
+  const red = match.athletes.find((a) => a.color === AthleteColor.RED);
+  const blue = match.athletes.find((a) => a.color === AthleteColor.BLUE);
+  return {
+    RED: red ? (scoresByAthlete.get(red.id) ?? 0) : 0,
+    BLUE: blue ? (scoresByAthlete.get(blue.id) ?? 0) : 0,
+  };
 }
 
 type ManualDecisionType =
@@ -166,7 +217,10 @@ function watchMatchView(match: WatchMatchRecord) {
     weightClass: match.weightClass,
     bracketRound: bracketRoundView(match.bracketFixture),
     athletes: athleteView(match.athletes),
-    score: matchFinalScore(match),
+    score:
+      match.lifecycle === MatchLifecycle.COMPLETED
+        ? matchFinalScore(match)
+        : liveMatchScore(match),
     winnerColor: match.outcome?.winnerColor ?? null,
     manualDecision: manualDecisionView(match.bracketFixture?.winnerDecision),
   };
@@ -405,6 +459,7 @@ export class TournamentWatchService {
           where: { invalidatedAt: null },
           orderBy: [{ startedAt: 'asc' }, { attemptNumber: 'asc' }],
           select: {
+            id: true,
             stage: true,
             roundNumber: true,
             attemptNumber: true,
@@ -467,7 +522,7 @@ export class TournamentWatchService {
         : null;
     };
     return {
-      match: watchMatchView({ ...rest, outcome }),
+      match: watchMatchView({ ...rest, rounds, outcome }),
       rounds: rounds.map((round) => ({
         stage: round.stage,
         roundNumber: round.roundNumber,

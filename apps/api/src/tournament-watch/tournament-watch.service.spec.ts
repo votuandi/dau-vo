@@ -241,6 +241,75 @@ describe('TournamentWatchService', () => {
     expect(prisma.tournament.findFirst).toHaveBeenCalledTimes(1);
   });
 
+  it('returns the current live score for an in-progress match', async () => {
+    const { prisma, service } = setup();
+    prisma.bracketFixture.findMany.mockResolvedValue([]);
+    prisma.match.findMany.mockResolvedValue([
+      {
+        id: 'm-live',
+        publicId: 'LIVE1',
+        lifecycle: 'IN_PROGRESS',
+        status: 'ROUND_1_RUNNING',
+        rulesVersion: 'FAULT_APPEAL_OVERTIME_V2',
+        currentRound: 1,
+        regulationRoundCount: 2,
+        startedAt: new Date('2026-11-20T08:05:00Z'),
+        finishedAt: null,
+        createdAt: new Date('2026-11-20T08:00:00Z'),
+        weightClass: { id: 'w-1', name: 'Nam 54kg' },
+        bracketFixture: null,
+        athletes: [
+          {
+            id: 'a-red',
+            color: 'RED',
+            name: 'An',
+            organization: 'CLB A',
+            athlete: null,
+          },
+          {
+            id: 'a-blue',
+            color: 'BLUE',
+            name: 'Bình',
+            organization: 'CLB B',
+            athlete: null,
+          },
+        ],
+        rounds: [{ id: 'r-1' }],
+        scoreEvents: [
+          { athleteId: 'a-red', value: 2, type: 'JUDGE_POINT', roundId: 'r-1' },
+          {
+            athleteId: 'a-red',
+            value: 1,
+            type: 'ADMIN_ADJUSTMENT',
+            roundId: 'r-1',
+          },
+          {
+            athleteId: 'a-blue',
+            value: 1,
+            type: 'JUDGE_POINT',
+            roundId: 'r-1',
+          },
+          {
+            athleteId: 'a-blue',
+            value: 5,
+            type: 'JUDGE_POINT',
+            roundId: 'r-invalid',
+          },
+        ],
+        outcome: null,
+      },
+    ]);
+    const { matches } = await service.overview('ABC234');
+    expect(matches).toEqual([
+      expect.objectContaining({
+        id: 'm-live',
+        publicId: 'LIVE1',
+        score: { RED: 3, BLUE: 1 },
+        winnerColor: null,
+      }),
+    ]);
+  });
+
   it('pairs each active weight class with its current bracket and hides round settings', async () => {
     const { service } = setup();
     const { weightClasses } = await service.brackets('ABC234');
