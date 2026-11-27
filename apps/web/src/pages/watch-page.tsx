@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { CalendarDays, GitFork, MapPin } from 'lucide-react';
+import { CalendarDays, GitFork, MapPin, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { underlineListClassName, underlineTriggerClassName } from '@/components/ui/tab-styles';
 import { inputClassName } from '@/features/admin-management/presentation';
@@ -23,7 +23,6 @@ const TABS: readonly {
   { id: 'matches', label: 'Danh sách trận đấu', icon: CalendarDays },
   { id: 'bracket', label: 'Sơ đồ nhánh đấu', icon: GitFork },
 ];
-const REFRESH_MS = 10_000;
 
 function formatDate(value: string | null): string | null {
   return value ? new Date(value).toLocaleDateString('vi-VN', { timeZone: 'UTC' }) : null;
@@ -109,14 +108,27 @@ function WatchTabs({
 }
 
 function WatchTournament({ code }: { readonly code: string }) {
+  const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
   const tab: WatchTab = params.get('tab') === 'bracket' ? 'bracket' : 'matches';
   const query = useQuery({
     queryKey: watchQueryKeys.overview(code),
     queryFn: () => watchApi.overview(code),
-    refetchInterval: REFRESH_MS,
     retry: retryWatchQuery,
   });
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        query.refetch(),
+        queryClient.invalidateQueries({ queryKey: watchQueryKeys.brackets(code) }),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   if (query.isPending) return <p className="text-muted-foreground">Đang tìm giải đấu…</p>;
   if (query.isError)
@@ -128,9 +140,23 @@ function WatchTournament({ code }: { readonly code: string }) {
       />
     );
 
+  const isUpdating = refreshing || query.isFetching;
+
   return (
     <div className="space-y-6">
-      <TournamentSummary tournament={query.data.tournament} />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <TournamentSummary tournament={query.data.tournament} />
+        <Button
+          className="shrink-0 self-start sm:self-center"
+          disabled={isUpdating}
+          onClick={() => void handleRefresh()}
+          type="button"
+          variant="outline"
+        >
+          <RefreshCw aria-hidden="true" className={isUpdating ? 'size-4 animate-spin' : 'size-4'} />
+          {isUpdating ? 'Đang cập nhật…' : 'Cập nhật kết quả'}
+        </Button>
+      </div>
       <WatchSponsorStrip sponsors={query.data.sponsors ?? []} />
       <WatchTabs
         onSelect={(next) => {

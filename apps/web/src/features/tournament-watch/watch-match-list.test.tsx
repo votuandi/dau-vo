@@ -164,6 +164,28 @@ describe('WatchMatchList', () => {
     expect(within(item).queryByRole('button')).not.toBeInTheDocument();
   });
 
+  it('shows the current score for an in-progress match', () => {
+    render(
+      <MemoryRouter>
+        <WatchMatchList
+          matches={[
+            {
+              ...match(
+                'LIVE2',
+                MatchLifecycle.IN_PROGRESS,
+                MatchDisplayState.IN_PROGRESS,
+                MatchPhase.ROUND_1_RUNNING,
+              ),
+              score: { RED: 4, BLUE: 2 },
+            },
+          ]}
+          tournamentCode="ABC234"
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('img', { name: 'Tỉ số 4 – 2' })).toBeInTheDocument();
+  });
+
   it('gives an upcoming match no actions', () => {
     renderList();
     const item = screen.getByText('Trận UP1').closest('li');
