@@ -49,8 +49,8 @@ export function PageHeader({
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <h1
                 className={cn(
-                  'min-w-0 break-words font-black tracking-tight',
-                  compact ? 'text-xl md:text-2xl' : 'text-3xl md:text-4xl',
+                  'min-w-0 break-words font-semibold tracking-tight',
+                  compact ? 'text-xl md:text-2xl' : 'text-2xl md:text-3xl',
                 )}
               >
                 {title}

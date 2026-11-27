@@ -1,9 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { toast } from '@/components/ui/toast';
-import { getApiErrorMessage } from '@/features/admin-management/presentation';
+import {
+  getApiErrorMessage,
+  inputClassName,
+  selectClassName,
+} from '@/features/admin-management/presentation';
 import {
   superAdminApi,
   type CreateSportInput,
@@ -93,6 +100,7 @@ export function SuperAdminSportsPage() {
           }}
           type="button"
         >
+          <Plus aria-hidden="true" className="size-4" />
           Thêm môn thể thao
         </Button>
       </div>
@@ -110,22 +118,23 @@ export function SuperAdminSportsPage() {
           />
         </div>
       ) : null}
-      <div className="mt-6 grid gap-3 rounded-xl border border-border bg-card p-4 md:grid-cols-3">
-        <label>
+      <div className="app-card mt-6 grid gap-3.5 p-4 md:grid-cols-3">
+        <label className="form-field">
           Tìm kiếm
           <input
             aria-label="Tìm kiếm môn thể thao"
-            className="mt-1 w-full rounded border p-2"
+            className={inputClassName}
             onChange={(e) => {
               setSearch(e.target.value);
             }}
+            placeholder="Tên hoặc mã môn"
             value={search}
           />
         </label>
-        <label>
+        <label className="form-field">
           Trạng thái
           <select
-            className="mt-1 w-full rounded border p-2"
+            className={selectClassName}
             onChange={(e) => {
               setStatus(e.target.value);
             }}
@@ -136,10 +145,10 @@ export function SuperAdminSportsPage() {
             <option value="false">Đã vô hiệu hóa</option>
           </select>
         </label>
-        <label>
+        <label className="form-field">
           Nhóm môn thể thao
           <select
-            className="mt-1 w-full rounded border p-2"
+            className={selectClassName}
             onChange={(e) => {
               setGroupId(e.target.value);
             }}
@@ -155,12 +164,12 @@ export function SuperAdminSportsPage() {
         </label>
       </div>
       {sports.isPending ? (
-        <p aria-live="polite" className="mt-6">
+        <p aria-live="polite" className="mt-6 text-sm text-muted-foreground">
           Đang tải môn thể thao…
         </p>
       ) : null}
       {sports.isError || groups.isError ? (
-        <div className="mt-6 rounded border border-destructive p-4" role="alert">
+        <Alert className="mt-6" role="alert" tone="error">
           Không thể tải danh mục môn thể thao.{' '}
           <Button
             onClick={() => {
@@ -173,33 +182,43 @@ export function SuperAdminSportsPage() {
           >
             Thử lại
           </Button>
-        </div>
+        </Alert>
       ) : null}
       {sports.data ? (
         <>
-          <div className="mt-6 overflow-x-auto rounded-xl border border-border">
+          <div className="app-table-wrap mt-6">
             <table className="w-full min-w-[850px] text-left text-sm">
-              <thead className="bg-muted">
+              <thead className="border-b border-foreground/[0.08] bg-muted/50 text-xs text-muted-foreground">
                 <tr>
                   {['Tên', 'Mã', 'Nhóm môn thể thao', 'Trạng thái', 'Giải đấu', ''].map((h) => (
-                    <th className="p-3 font-semibold" key={h}>
+                    <th className="px-4 py-3 font-medium" key={h}>
                       {h}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-border/70">
                 {filtered.map((sport) => (
-                  <tr className="border-t" key={sport.id}>
-                    <td className="p-3 font-semibold">{sport.name}</td>
-                    <td className="p-3">{sport.code}</td>
-                    <td className="p-3">
-                      {sport.sportGroup.name}{' '}
-                      <span className="text-muted-foreground">({sport.sportGroup.code})</span>
+                  <tr className="transition-colors hover:bg-sky-50/40" key={sport.id}>
+                    <td className="px-4 py-3.5 font-bold text-foreground">{sport.name}</td>
+                    <td className="px-4 py-3.5 font-mono text-xs text-muted-foreground">
+                      {sport.code}
                     </td>
-                    <td className="p-3">{sport.isActive ? 'Đang hoạt động' : 'Đã vô hiệu hóa'}</td>
-                    <td className="p-3">{sport.tournamentCount}</td>
-                    <td className="p-3">
+                    <td className="px-4 py-3.5">
+                      {sport.sportGroup.name}{' '}
+                      <span className="font-mono text-xs text-muted-foreground">
+                        ({sport.sportGroup.code})
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <Badge dot tone={sport.isActive ? 'success' : 'neutral'}>
+                        {sport.isActive ? 'Đang hoạt động' : 'Đã vô hiệu hóa'}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3.5 font-semibold tabular-nums">
+                      {sport.tournamentCount}
+                    </td>
+                    <td className="px-4 py-3.5">
                       <div className="flex flex-wrap gap-2">
                         <Button
                           onClick={() => {
@@ -208,7 +227,7 @@ export function SuperAdminSportsPage() {
                           }}
                           size="sm"
                           type="button"
-                          variant="outline"
+                          variant="soft"
                         >
                           Chỉnh sửa
                         </Button>
@@ -222,7 +241,7 @@ export function SuperAdminSportsPage() {
                             }}
                             size="sm"
                             type="button"
-                            variant="outline"
+                            variant="warning-soft"
                           >
                             Vô hiệu hóa
                           </Button>
@@ -234,13 +253,14 @@ export function SuperAdminSportsPage() {
                             }}
                             size="sm"
                             type="button"
+                            variant="success-soft"
                           >
                             Kích hoạt
                           </Button>
                         )}
                       </div>
                       {sport.isActive && sport.tournamentCount > 0 ? (
-                        <p className="mt-1 text-xs text-destructive">
+                        <p className="mt-1.5 text-xs text-destructive">
                           Không thể vô hiệu hóa vì môn thể thao đã được sử dụng bởi giải đấu.
                         </p>
                       ) : null}
@@ -251,7 +271,10 @@ export function SuperAdminSportsPage() {
             </table>
           </div>
           {filtered.length === 0 ? (
-            <p className="mt-6 rounded border p-5" role="status">
+            <p
+              className="app-card mt-6 border-dashed p-8 text-center text-sm text-muted-foreground"
+              role="status"
+            >
               Không có môn thể thao phù hợp.
             </p>
           ) : null}

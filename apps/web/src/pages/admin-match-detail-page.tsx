@@ -143,7 +143,7 @@ function MatchEditor({
   }, [blueAthleteId, redAthleteId]);
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
+    <section className="app-card p-5 sm:p-7">
       <h2 className="text-xl font-black tracking-tight">Cấu hình trận đấu</h2>
       <p className="mt-2 text-sm text-muted-foreground">
         Số hiệp chính: {match.regulationRoundCount}.
@@ -388,24 +388,24 @@ function MatchDetailContent({ matchId }: { readonly matchId: string }) {
           }
           title={<span className="font-mono tracking-[0.14em]">{match.publicId}</span>}
         />
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2">
           {match.athletes.map((athlete) => (
             <div
               className={cn(
-                'rounded-xl border border-border border-l-4 bg-card p-4 shadow-sm',
+                'rounded-xl border border-foreground/[0.08] border-l-2 bg-card p-4 shadow-[0_1px_2px_rgba(0,0,0,0.05)]',
                 athlete.color === AthleteColor.RED ? 'border-l-red-600' : 'border-l-blue-600',
               )}
               key={athlete.id}
             >
               <p
                 className={cn(
-                  'text-xs font-black uppercase tracking-wider',
+                  'text-xs font-medium',
                   athlete.color === AthleteColor.RED ? 'text-red-700' : 'text-blue-700',
                 )}
               >
                 {athlete.color === AthleteColor.RED ? 'Đỏ (RED)' : 'Xanh (BLUE)'}
               </p>
-              <p className="mt-1 text-lg font-bold">{athlete.name}</p>
+              <p className="mt-1 text-base font-semibold">{athlete.name}</p>
               <p className="text-sm text-muted-foreground">
                 {athlete.organization ?? 'Không đơn vị'}
               </p>

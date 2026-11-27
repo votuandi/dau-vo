@@ -61,7 +61,7 @@ function ResultContent({ data, code }: { readonly data: WatchMatchResult; readon
         <h1 className="text-2xl font-black sm:text-3xl">Kết quả chi tiết</h1>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2" aria-label="Vận động viên">
+      <section className="grid gap-4 sm:grid-cols-2" aria-label="Vận động viên">
         {CORNERS.map((color) => {
           const item = athlete(color);
           const isWinner = outcome?.winnerColor === color;
@@ -69,32 +69,36 @@ function ResultContent({ data, code }: { readonly data: WatchMatchResult; readon
           return (
             <div
               className={cn(
-                'flex items-center gap-3 rounded-xl border bg-card p-4 shadow-sm',
-                isWinner ? 'border-amber-400 ring-2 ring-amber-200' : 'border-border',
-                color === AthleteColor.RED
-                  ? 'border-l-4 border-l-red-500'
-                  : 'border-l-4 border-l-blue-500',
+                'flex items-center gap-3.5 rounded-xl border border-l-2 bg-card p-5 shadow-[0_1px_2px_rgba(0,0,0,0.05)]',
+                isWinner
+                  ? 'border-amber-400/70 ring-1 ring-amber-400/40'
+                  : 'border-foreground/[0.08]',
+                color === AthleteColor.RED ? 'border-l-red-600' : 'border-l-blue-600',
               )}
               key={color}
             >
               {item?.imageUrl ? (
-                <img alt="" className="size-12 rounded-full object-cover" src={item.imageUrl} />
+                <img
+                  alt=""
+                  className="size-12 shrink-0 rounded-full object-cover ring-1 ring-foreground/10"
+                  src={item.imageUrl}
+                />
               ) : null}
               <div className="min-w-0 flex-1">
-                <p className={cn('text-xs font-bold uppercase', cornerText(color))}>
-                  {cornerLabel(color)}
-                </p>
-                <p className="truncate text-lg font-bold">
+                <p className={cn('text-xs font-medium', cornerText(color))}>{cornerLabel(color)}</p>
+                <p className="mt-0.5 truncate text-base font-semibold">
                   {item?.name ?? 'Chưa xác định'}
                   {isWinner ? (
-                    <Crown aria-label="Thắng" className="ml-1.5 inline size-5 text-amber-500" />
+                    <Crown aria-label="Thắng" className="ml-1.5 inline size-4 text-amber-600" />
                   ) : null}
                 </p>
                 <p className="truncate text-sm text-muted-foreground">
                   {item?.organization ?? 'Chưa cập nhật đơn vị'}
                 </p>
               </div>
-              <span className="text-3xl font-black tabular-nums">{final ?? '–'}</span>
+              <span className="text-3xl font-semibold tracking-tight tabular-nums">
+                {final ?? '–'}
+              </span>
             </div>
           );
         })}

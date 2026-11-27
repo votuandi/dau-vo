@@ -134,7 +134,7 @@ function TournamentEditor({
   }
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
+    <section className="app-card p-5 sm:p-7">
       <h2 className="text-xl font-black tracking-tight">Thông tin giải đấu</h2>
       <form className="mt-5 grid gap-4 sm:grid-cols-2" noValidate onSubmit={handleSubmit}>
         <div className="sm:col-span-2">

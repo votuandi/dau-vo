@@ -1,10 +1,13 @@
 /* eslint-disable @typescript-eslint/no-confusing-void-expression */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type SyntheticEvent } from 'react';
+import { ArrowLeft, UserPlus } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { DateInput } from '@/components/ui/date-input';
 import { toast } from '@/components/ui/toast';
+import { inputClassName } from '@/features/admin-management/presentation';
 import { ApiClientError } from '@/services/api/client';
 import { superAdminApi, type CreateSuperAdminUserInput } from '@/services/api/super-admin';
 import { superAdminUserKeys } from './query-keys';
@@ -108,78 +111,82 @@ export function CreateSuperAdminUserPage() {
   }
   return (
     <section className="mx-auto w-full max-w-2xl">
-      <Link className="text-primary underline" to="/super-admin/users">
-        ← Danh sách người dùng
+      <Link
+        className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-primary"
+        to="/super-admin/users"
+      >
+        <ArrowLeft aria-hidden="true" className="size-4" />
+        Danh sách người dùng
       </Link>
-      <h1 className="mt-4 text-3xl font-black">Thêm người dùng</h1>
+      <h1 className="mt-4 text-3xl font-black tracking-tight">Thêm người dùng</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Tài khoản mới mặc định là USER. Quyền ADMIN chỉ được kích hoạt cùng thời hạn và giới hạn
         giải đấu.
       </p>
-      <form
-        className="mt-6 space-y-4 rounded-xl border border-border bg-card p-5"
-        noValidate
-        onSubmit={submit}
-        ref={form}
-      >
-        {(['fullName', 'username', 'email', 'phone', 'organization'] as const).map((field) => (
+      <form className="app-card mt-6 space-y-5 p-6 sm:p-8" noValidate onSubmit={submit} ref={form}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {(['fullName', 'username', 'email', 'phone', 'organization'] as const).map((field) => (
+            <div className={field === 'organization' ? 'sm:col-span-2' : undefined} key={field}>
+              <FieldInput
+                error={errors[field]}
+                field={field}
+                label={
+                  {
+                    fullName: 'Họ và tên',
+                    username: 'Tên đăng nhập',
+                    email: 'Email',
+                    phone: 'Số điện thoại',
+                    organization: 'Đơn vị (tùy chọn)',
+                  }[field]
+                }
+                onChange={change}
+                type={field === 'email' ? 'email' : 'text'}
+                value={values[field]}
+              />
+            </div>
+          ))}
           <FieldInput
-            error={errors[field]}
-            field={field}
-            key={field}
-            label={
-              {
-                fullName: 'Họ và tên',
-                username: 'Tên đăng nhập',
-                email: 'Email',
-                phone: 'Số điện thoại',
-                organization: 'Đơn vị (tùy chọn)',
-              }[field]
-            }
+            error={errors.password}
+            field="password"
+            label="Mật khẩu"
             onChange={change}
-            type={field === 'email' ? 'email' : 'text'}
-            value={values[field]}
+            type="password"
+            value={values.password}
           />
-        ))}
-        <FieldInput
-          error={errors.password}
-          field="password"
-          label="Mật khẩu"
-          onChange={change}
-          type="password"
-          value={values.password}
-        />
-        <FieldInput
-          error={errors.passwordConfirmation}
-          field="passwordConfirmation"
-          label="Xác nhận mật khẩu"
-          onChange={change}
-          type="password"
-          value={values.passwordConfirmation}
-        />
-        <fieldset>
-          <legend className="font-semibold">Loại tài khoản ban đầu</legend>
-          <label className="mr-5">
-            <input
-              checked={accountType === 'USER'}
-              name="accountType"
-              onChange={() => setAccountType('USER')}
-              type="radio"
-            />{' '}
-            USER
-          </label>
-          <label>
-            <input
-              checked={accountType === 'ADMIN'}
-              name="accountType"
-              onChange={() => setAccountType('ADMIN')}
-              type="radio"
-            />{' '}
-            ADMIN
-          </label>
+          <FieldInput
+            error={errors.passwordConfirmation}
+            field="passwordConfirmation"
+            label="Xác nhận mật khẩu"
+            onChange={change}
+            type="password"
+            value={values.passwordConfirmation}
+          />
+        </div>
+        <fieldset className="space-y-2.5">
+          <legend className="form-label">Loại tài khoản ban đầu</legend>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border bg-muted/35 px-4 py-3 text-sm font-semibold transition hover:border-primary/40 has-[:checked]:border-primary has-[:checked]:bg-sky-50/80">
+              <input
+                checked={accountType === 'USER'}
+                name="accountType"
+                onChange={() => setAccountType('USER')}
+                type="radio"
+              />{' '}
+              USER
+            </label>
+            <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border bg-muted/35 px-4 py-3 text-sm font-semibold transition hover:border-primary/40 has-[:checked]:border-primary has-[:checked]:bg-sky-50/80">
+              <input
+                checked={accountType === 'ADMIN'}
+                name="accountType"
+                onChange={() => setAccountType('ADMIN')}
+                type="radio"
+              />{' '}
+              ADMIN
+            </label>
+          </div>
         </fieldset>
         {accountType === 'ADMIN' ? (
-          <div className="grid gap-4 rounded-lg bg-muted p-4 sm:grid-cols-2">
+          <div className="grid gap-4 rounded-2xl border border-primary/15 bg-sky-50/60 p-4 sm:grid-cols-2">
             <FieldInput
               error={errors.adminActiveUntil}
               field="adminActiveUntil"
@@ -199,10 +206,13 @@ export function CreateSuperAdminUserPage() {
           </div>
         ) : null}
         {create.isError && Object.keys(errors).length === 0 ? (
-          <p role="alert">Không thể tạo người dùng. Vui lòng thử lại.</p>
+          <Alert role="alert" tone="error">
+            Không thể tạo người dùng. Vui lòng thử lại.
+          </Alert>
         ) : null}
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-3 border-t border-border/70 pt-5">
           <Button disabled={create.isPending} type="submit">
+            <UserPlus aria-hidden="true" className="size-4" />
             {create.isPending ? 'Đang tạo…' : 'Tạo người dùng'}
           </Button>
           <Button asChild type="button" variant="outline">
@@ -230,11 +240,11 @@ function FieldInput({
 }) {
   const id = `create-user-${field}`;
   return (
-    <label className="block" htmlFor={id}>
+    <label className="form-field block" htmlFor={id}>
       {label}
       {type === 'date' ? (
         <DateInput
-          className="mt-1 w-full rounded border p-2"
+          className={inputClassName}
           id={id}
           onChange={(next) => onChange(field, next)}
           required={field !== 'organization'}
@@ -244,7 +254,7 @@ function FieldInput({
         <input
           aria-describedby={error ? `${id}-error` : undefined}
           aria-invalid={Boolean(error)}
-          className="mt-1 w-full rounded border p-2"
+          className={inputClassName}
           id={id}
           min={type === 'number' ? 0 : undefined}
           onChange={(e) => onChange(field, e.target.value)}

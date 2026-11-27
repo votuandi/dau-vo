@@ -83,8 +83,8 @@
   left: 0;
   bottom: -1px;
   width: 100%;
-  height: 3px;
-  background: linear-gradient(90deg, #0ea5e9, #7c3aed, #e11d48);
+  height: 2px;
+  background: var(--home-brand);
   transform: scaleX(0);
   transform-origin: 0 50%;
   pointer-events: none;
@@ -118,19 +118,8 @@
 /* Hero */
 .home-hero {
   position: relative;
-  background:
-    radial-gradient(ellipse at 85% 30%, #cce8ff 0, transparent 55%),
-    radial-gradient(ellipse at 0% 100%, #e0f2fe 0, transparent 45%),
-    linear-gradient(140deg, #fff, #f0f7ff);
-}
-.home-hero::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(#0369a11a 1px, transparent 1px);
-  background-size: 22px 22px;
-  mask-image: linear-gradient(180deg, #000 0%, transparent 80%);
-  pointer-events: none;
+  background: #f5f7fa;
+  border-bottom: 1px solid #e5eaf0;
 }
 .home-hero > .container {
   position: relative;
@@ -138,30 +127,20 @@
 .home-eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.5rem 0.9rem;
-  border: 1px solid #c8dfee;
-  border-radius: 2rem;
-  background: #fff;
-  box-shadow: var(--home-shadow-sm);
-  color: var(--home-brand);
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
+  gap: 0.5rem;
+  color: var(--home-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 .home-eyebrow > span,
 .home-live i {
   width: 0.45rem;
   height: 0.45rem;
   border-radius: 50%;
-  background: #10b981;
-  box-shadow: 0 0 0 3px #10b98133;
+  background: #16a34a;
 }
 .home-gradient-text {
-  background: linear-gradient(100deg, #0369a1, #0ea5e9 55%, #1d4ed8);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--home-brand);
 }
 
 /* Buttons */
@@ -170,69 +149,47 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.65rem;
-  min-height: 3.2rem;
-  padding: 0.9rem 1.4rem;
-  overflow: hidden;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.65rem 1.25rem;
   border: 1px solid transparent;
-  border-radius: 1rem;
-  font-weight: 750;
-  box-shadow: var(--home-shadow-sm);
+  border-radius: 0.5rem;
+  font-weight: 500;
   transition:
-    transform 0.2s,
-    box-shadow 0.2s,
-    background 0.2s,
-    border-color 0.2s;
-}
-.home-button::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(110deg, transparent 30%, #ffffff40 50%, transparent 70%);
-  transform: translateX(-120%);
-  transition: transform 0.6s;
-  pointer-events: none;
-}
-.home-button:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--home-shadow-md);
-}
-.home-button:hover::after {
-  transform: translateX(120%);
+    background 0.15s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.15s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.15s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .home-button:active {
-  transform: translateY(0);
+  transform: scale(0.98);
 }
 .home-button svg {
-  transition: transform 0.2s;
+  transition: transform 0.15s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .home-button:hover svg {
-  transform: translateX(3px);
+  transform: translateX(2px);
 }
 .home-button-sm {
-  min-height: 2.6rem;
-  padding: 0.55rem 1rem;
-  border-radius: 0.8rem;
+  min-height: 2.25rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 0.5rem;
   font-size: 0.85rem;
 }
 .home-button-primary {
-  background: linear-gradient(135deg, #0284c7, #0369a1 60%, #075985);
+  background: var(--home-brand);
   color: white;
-  box-shadow:
-    0 1px 0 #ffffff33 inset,
-    0 8px 20px #0369a138;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 .home-button-primary:hover {
-  box-shadow:
-    0 1px 0 #ffffff33 inset,
-    0 14px 30px #0369a14d;
+  background: var(--home-brand-dark);
 }
 .home-button-danger {
-  background: linear-gradient(135deg, #dc2626, #b91c1c 60%, #991b1b);
+  background: #dc2626;
   color: white;
-  box-shadow:
-    0 1px 0 #ffffff33 inset,
-    0 8px 20px #b91c1c38;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.home-button-danger:hover {
+  background: #b91c1c;
 }
 .home-button-danger:disabled {
   opacity: 0.7;
@@ -331,14 +288,12 @@
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.6rem 0.85rem 0.6rem 0.6rem;
-  border: 1px solid #e2edf5;
-  border-radius: 1rem;
-  background: #ffffffeb;
-  backdrop-filter: blur(8px);
-  box-shadow: var(--home-shadow-md);
+  padding: 0.55rem 0.8rem 0.55rem 0.55rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
   font-size: 0.75rem;
-  animation: home-float 6s ease-in-out infinite;
 }
 .home-float b {
   display: block;

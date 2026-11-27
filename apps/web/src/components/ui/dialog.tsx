@@ -79,12 +79,15 @@ export function Dialog({
       aria-describedby={descriptionId}
       aria-labelledby={titleId}
       aria-modal="true"
-      className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/65 p-4 backdrop-blur-md"
       role="dialog"
     >
       <div className="grid min-h-full place-items-center py-4">
         <div
-          className={cn('w-full max-w-md rounded-2xl bg-card p-5 shadow-2xl sm:p-7', className)}
+          className={cn(
+            'app-dialog-panel w-full max-w-md rounded-2xl border border-white/60 bg-white/95 p-5 shadow-2xl shadow-slate-950/25 ring-1 ring-slate-900/5 backdrop-blur-xl sm:p-7',
+            className,
+          )}
           ref={panel}
         >
           <div className="flex items-start justify-between gap-3">

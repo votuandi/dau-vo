@@ -189,8 +189,8 @@ export function AdminTournamentsPage() {
         title="Giải đấu"
       />
 
-      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-7">
+      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_23rem]">
+        <section className="app-card p-5 sm:p-7">
           <div className="flex items-center justify-between gap-4">
             <h2 className="text-xl font-black tracking-tight">Danh sách giải đấu</h2>
             {tournamentsQuery.isSuccess ? (
@@ -244,7 +244,7 @@ export function AdminTournamentsPage() {
                 const isArchived = tournament.status === TournamentStatus.ARCHIVED;
                 return (
                   <li
-                    className="rounded-xl border border-border bg-white/60 p-4 transition-[border-color,box-shadow] duration-200 hover:border-primary/30 hover:shadow-md"
+                    className="rounded-xl border border-foreground/[0.08] bg-card p-4 transition-[border-color,background-color] duration-150 hover:border-foreground/[0.16] hover:bg-muted/25"
                     key={tournament.id}
                   >
                     <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -341,7 +341,7 @@ export function AdminTournamentsPage() {
         </section>
 
         {!isReadOnly ? (
-          <section className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-6">
+          <section className="app-card p-5 sm:p-6 lg:sticky lg:top-24">
             <h2 className="flex items-center gap-2 text-xl font-black tracking-tight">
               <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
                 <Plus aria-hidden="true" className="size-4" />

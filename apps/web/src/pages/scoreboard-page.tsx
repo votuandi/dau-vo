@@ -88,9 +88,21 @@ export function ScoreboardPage() {
     );
   return (
     <main className="arena-background grid min-h-dvh place-items-center p-4 text-white sm:p-6">
-      <div className="w-full max-w-lg space-y-6 rounded-3xl border border-slate-200 bg-white p-6 text-slate-900 shadow-2xl sm:p-8">
-        <h1 className="text-3xl font-black">Bảng điểm</h1>
-        <p className="text-sm leading-6 text-slate-600">
+      <div className="w-full max-w-lg space-y-6 rounded-2xl border border-white/10 bg-card p-7 text-foreground shadow-[0_12px_36px_rgba(0,0,0,0.28)] sm:p-8">
+        <div className="flex items-center gap-3">
+          <img
+            src={`${import.meta.env.BASE_URL}logo.webp`}
+            alt="Logo Chấm Điểm Võ Thuật"
+            width={44}
+            height={44}
+            className="size-11 shrink-0 rounded-lg bg-muted/60 object-contain p-1 ring-1 ring-foreground/[0.08]"
+          />
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">Trình chiếu trực tiếp</p>
+            <h1 className="mt-0.5 text-2xl font-semibold tracking-tight">Bảng điểm</h1>
+          </div>
+        </div>
+        <p className="text-sm leading-6 text-muted-foreground">
           Nhập mã trận đấu hoặc mã giám sát để hiển thị bảng điểm trực tiếp.
         </p>
         <ScoreboardAccessForm onSelect={select} />

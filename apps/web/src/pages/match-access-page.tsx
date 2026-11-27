@@ -1,10 +1,23 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import {
+  ArrowLeft,
+  LogIn,
+  LogOut,
+  RefreshCw,
+  ShieldCheck,
+  Smartphone,
+  Wifi,
+  WifiOff,
+} from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { MatchLifecycle, TournamentOfficialRole } from '@/types/shared';
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { toast } from '@/components/ui/toast';
+import { inputClassName } from '@/features/admin-management/presentation';
 import { getOrCreateDeviceId } from '@/features/match-access/device';
 import {
   officialSessionQueryKey,
@@ -109,12 +122,28 @@ function Waiting({
   logoutError: string | null;
 }) {
   return (
-    <main className="mx-auto grid min-h-dvh w-full max-w-xl place-items-center p-4">
-      <section aria-live="polite" className="w-full rounded-2xl border bg-card p-7 shadow-xl">
-        <p className="text-sm font-bold text-primary">{session.tournament.name}</p>
-        <h1 className="mt-2 text-3xl font-black">Đang chờ phân công</h1>
-        <p className="mt-4">{session.official.name}</p>
-        <p className="mt-2 text-sm text-muted-foreground">
+    <main className="arena-background grid min-h-dvh w-full place-items-center p-4">
+      <section
+        aria-live="polite"
+        className="w-full max-w-lg rounded-2xl border border-white/10 bg-card p-7 shadow-[0_12px_36px_rgba(0,0,0,0.28)] sm:p-8"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-medium text-muted-foreground">{session.tournament.name}</p>
+          <Badge dot tone={connected ? 'success' : 'warning'}>
+            {connected ? (
+              <Wifi aria-hidden="true" className="size-3.5" />
+            ) : (
+              <WifiOff aria-hidden="true" className="size-3.5" />
+            )}
+            {connected ? 'Trực tuyến' : 'Ngoại tuyến'}
+          </Badge>
+        </div>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight">Đang chờ phân công</h1>
+        <p className="mt-3 inline-flex items-center gap-2 rounded-lg bg-muted/70 px-3 py-1.5 text-sm font-medium text-foreground">
+          <Smartphone aria-hidden="true" className="size-4 text-muted-foreground" />
+          {session.official.name}
+        </p>
+        <p className="mt-4 text-sm leading-6 text-muted-foreground">
           {connected
             ? 'Đã kết nối. Vui lòng chờ giám sát phân công trận đấu.'
             : 'Ngoại tuyến. Đang chờ kết nối để nhận phân công.'}
@@ -126,12 +155,13 @@ function Waiting({
           type="button"
           variant="destructive-gradient"
         >
+          <LogOut aria-hidden="true" className="size-4" />
           {pending ? 'Đang đăng xuất…' : 'Đăng xuất'}
         </Button>
         {logoutError ? (
-          <p className="mt-4 text-sm text-destructive" role="alert">
-            {logoutError}
-          </p>
+          <Alert className="mt-4" tone="error">
+            <p role="alert">{logoutError}</p>
+          </Alert>
         ) : null}
       </section>
     </main>
@@ -305,18 +335,22 @@ function SupervisorAssignment({
 
   return (
     <main className="mx-auto w-full max-w-7xl p-4 sm:p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-primary">{session.tournament.name}</p>
-          <h1 className="text-3xl font-black">Khu vực giám sát</h1>
+      <header className="app-card flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
+        <div className="flex items-center gap-3">
+          <ShieldCheck aria-hidden="true" className="size-5 shrink-0 text-muted-foreground" />
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">{session.tournament.name}</p>
+            <h1 className="text-2xl font-semibold tracking-tight">Khu vực giám sát</h1>
+          </div>
         </div>
         <Button disabled={pending} onClick={logout} type="button" variant="destructive-gradient">
+          <LogOut aria-hidden="true" className="size-4" />
           {pending ? 'Đang đăng xuất…' : 'Đăng xuất'}
         </Button>
         {logoutError ? (
-          <p className="text-sm text-destructive" role="alert">
-            {logoutError}
-          </p>
+          <Alert className="w-full" tone="error">
+            <p role="alert">{logoutError}</p>
+          </Alert>
         ) : null}
       </header>
       <p aria-live="polite" className="sr-only">
@@ -361,7 +395,7 @@ function SupervisorAssignment({
                   <button
                     aria-controls={`official-weight-panel-${id}`}
                     aria-selected={activeTab === id}
-                    className={`shrink-0 rounded-lg px-4 py-2 text-sm font-bold focus-visible:ring-2 focus-visible:ring-ring ${activeTab === id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
+                    className={`shrink-0 rounded-lg px-3.5 py-2 text-sm font-medium transition-[color,background-color] duration-150 focus-visible:ring-2 focus-visible:ring-ring ${activeTab === id ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-muted hover:text-foreground'}`}
                     id={`official-weight-tab-${id}`}
                     key={id}
                     onClick={() => {
@@ -408,7 +442,7 @@ function SupervisorAssignment({
                           <button
                             ref={selected?.id === m.id ? selectedMatchRef : undefined}
                             aria-pressed={selected?.id === m.id}
-                            className={`min-h-28 rounded-xl border p-4 text-left focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 ${selected?.id === m.id ? 'border-primary bg-cyan-50 ring-2 ring-primary' : 'bg-white hover:bg-cyan-50'}`}
+                            className={`min-h-28 rounded-xl border p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,background-color] duration-150 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 ${selected?.id === m.id ? 'border-primary bg-primary/[0.04] ring-1 ring-primary' : 'border-foreground/[0.08] bg-card hover:border-foreground/[0.16] hover:bg-muted/30'}`}
                             disabled={!isEligible(m)}
                             key={m.id}
                             onClick={() => {
@@ -465,11 +499,11 @@ function SupervisorAssignment({
           {selected ? (
             <section
               aria-label={`Chọn giám định cho trận ${selected.publicId}`}
-              className="scroll-mt-4 rounded-2xl border bg-white p-5 outline-none"
+              className="app-card scroll-mt-4 p-5 outline-none sm:p-6"
               ref={assignmentPanelRef}
               tabIndex={-1}
             >
-              <p className="mb-3 text-sm text-muted-foreground">
+              <p className="mb-3 text-sm font-semibold text-primary">
                 {selected.weightClass?.name ?? 'Chưa phân hạng cân'}
                 {selected.roundNumber ? ` · Vòng ${String(selected.roundNumber)}` : ''}
               </p>
@@ -485,7 +519,7 @@ function SupervisorAssignment({
                 Chọn trận khác
               </Button>
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <h2 className="min-w-0 break-words text-xl font-black">
+                <h2 className="min-w-0 break-words text-xl font-black tracking-tight">
                   Chọn giám định · {selected.publicId}
                 </h2>
                 <Button
@@ -493,13 +527,18 @@ function SupervisorAssignment({
                   onClick={() => {
                     void refresh();
                   }}
-                  variant="secondary"
+                  size="sm"
+                  variant="outline"
                   type="button"
                 >
+                  <RefreshCw
+                    aria-hidden="true"
+                    className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`}
+                  />
                   {refreshing ? 'Đang cập nhật…' : 'Cập nhật'}
                 </Button>
               </div>
-              <p aria-live="polite" className="mt-2 text-sm">
+              <p aria-live="polite" className="mt-2 text-sm font-semibold text-muted-foreground">
                 Đã chọn {picked.length}/{required} giám định.
               </p>
               <fieldset
@@ -509,23 +548,28 @@ function SupervisorAssignment({
                 <legend className="sr-only">Chọn giám định</legend>
                 {state.data?.referees.map((r) => {
                   const unavailable = r.status !== 'READY';
+                  const checked = picked.includes(r.id);
                   return (
                     <label
-                      className="flex min-h-12 items-center justify-between gap-3 rounded border p-3"
+                      className={`flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-xl border p-3 transition-colors ${
+                        checked
+                          ? 'border-primary bg-sky-50/80'
+                          : unavailable
+                            ? 'cursor-not-allowed border-border/60 bg-muted/40 opacity-65'
+                            : 'border-border/80 bg-white hover:border-primary/40 hover:bg-sky-50/40'
+                      }`}
                       key={r.id}
                     >
-                      <span className="min-w-0 break-words">
-                        {r.name} ·{' '}
-                        <span className="font-semibold">
+                      <span className="min-w-0 break-words text-sm">
+                        <span className="font-semibold text-foreground">{r.name}</span> ·{' '}
+                        <span className="font-semibold text-muted-foreground">
                           {presentOfficialStatus(r.status).label}
                         </span>
                       </span>
                       <input
-                        checked={picked.includes(r.id)}
+                        checked={checked}
                         aria-label={`Chọn giám định ${r.name}`}
-                        disabled={
-                          unavailable || (!picked.includes(r.id) && picked.length >= required)
-                        }
+                        disabled={unavailable || (!checked && picked.length >= required)}
                         onChange={() => {
                           setPicked((old) =>
                             old.includes(r.id)
@@ -542,7 +586,7 @@ function SupervisorAssignment({
                 })}
               </fieldset>
               <Button
-                className="mt-4"
+                className="mt-5 w-full"
                 disabled={
                   take.isPending ||
                   refreshing ||
@@ -642,30 +686,29 @@ function RoleMismatch({
   const activeLabel = activeRole === TournamentOfficialRole.JUDGE ? 'giám định' : 'giám sát';
 
   return (
-    <main className="mx-auto grid min-h-dvh w-full max-w-xl place-items-center p-4">
-      <section className="w-full rounded-2xl border bg-card p-7 shadow-xl">
-        <p className="text-sm font-bold text-primary">Khu vực {expectedLabel}</p>
-        <h1 className="mt-2 text-3xl font-black">Phiên không đúng vai trò</h1>
-        <p className="mt-4 text-muted-foreground">
+    <main className="arena-background grid min-h-dvh w-full place-items-center p-4">
+      <section className="w-full max-w-lg rounded-3xl border border-white/20 bg-white/95 p-7 shadow-2xl shadow-slate-950/35 backdrop-blur-xl sm:p-9">
+        <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary">
+          Khu vực {expectedLabel}
+        </p>
+        <h1 className="mt-2 text-3xl font-black tracking-tight">Phiên không đúng vai trò</h1>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">
           Bạn đang có phiên {activeLabel}. Đăng xuất phiên đó để đăng nhập vào khu vực{' '}
           {expectedLabel}.
         </p>
-        <Button className="mt-6" onClick={returnToActiveRole} type="button">
-          Về khu vực {activeLabel}
-        </Button>
-        <Button
-          className="mt-3"
-          disabled={pending}
-          onClick={logout}
-          type="button"
-          variant="destructive-gradient"
-        >
-          {pending ? 'Đang đăng xuất…' : 'Đăng xuất'}
-        </Button>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Button onClick={returnToActiveRole} type="button">
+            Về khu vực {activeLabel}
+          </Button>
+          <Button disabled={pending} onClick={logout} type="button" variant="destructive-gradient">
+            <LogOut aria-hidden="true" className="size-4" />
+            {pending ? 'Đang đăng xuất…' : 'Đăng xuất'}
+          </Button>
+        </div>
         {logoutError ? (
-          <p className="mt-4 text-sm text-destructive" role="alert">
-            {logoutError}
-          </p>
+          <Alert className="mt-4" tone="error">
+            <p role="alert">{logoutError}</p>
+          </Alert>
         ) : null}
       </section>
     </main>
@@ -891,50 +934,74 @@ export function MatchAccessPage({ expectedRole }: Props) {
     }
     login.mutate();
   };
+  const isJudge = expectedRole === TournamentOfficialRole.JUDGE;
   return (
-    <main className="mx-auto grid min-h-dvh max-w-lg place-items-center p-4">
-      <form className="w-full rounded-2xl border bg-card p-7 shadow-xl" onSubmit={submit}>
-        <p className="text-sm font-bold text-primary">
-          {expectedRole === TournamentOfficialRole.JUDGE ? 'Khu vực giám định' : 'Khu vực giám sát'}
-        </p>
-        <h1 className="mt-2 text-3xl font-black">
+    <main className="arena-background grid min-h-dvh w-full place-items-center p-4">
+      <form
+        className="w-full max-w-md rounded-2xl border border-white/10 bg-card p-7 shadow-[0_12px_36px_rgba(0,0,0,0.28)] sm:p-8"
+        onSubmit={submit}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <span className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            {isJudge ? (
+              <Smartphone aria-hidden="true" className="size-4" />
+            ) : (
+              <ShieldCheck aria-hidden="true" className="size-4" />
+            )}
+            {isJudge ? 'Khu vực giám định' : 'Khu vực giám sát'}
+          </span>
+          <Link
+            className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            to="/"
+          >
+            <ArrowLeft aria-hidden="true" className="size-3.5" />
+            Trang chủ
+          </Link>
+        </div>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight">
           {revoked ? 'Phiên đã bị thu hồi' : 'Đăng nhập'}
         </h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">
+          Nhập mã giải đấu và mã bảo mật riêng do ban tổ chức cấp.
+        </p>
         {revoked ? (
-          <p className="mt-4" role="alert">
+          <Alert className="mt-4" role="alert" tone="warning">
             Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.
-          </p>
+          </Alert>
         ) : null}
-        <label className="mt-6 block font-semibold">
+        <label className="form-field mt-6 block">
           Mã giải đấu
           <input
             autoFocus
-            className="mt-2 w-full rounded border p-3"
+            className={`${inputClassName} font-mono uppercase tracking-widest`}
             maxLength={32}
             onChange={(e) => {
               setCode(e.target.value);
             }}
+            placeholder="VD: TOUR2026"
             value={code}
           />
         </label>
-        <label className="mt-4 block font-semibold">
+        <label className="form-field mt-4 block">
           Mã bảo mật riêng
           <input
-            className="mt-2 w-full rounded border p-3"
+            className={inputClassName}
             maxLength={72}
             onChange={(e) => {
               setPasscode(e.target.value);
             }}
+            placeholder="Nhập mã bảo mật"
             type="password"
             value={passcode}
           />
         </label>
         {error ? (
-          <p className="mt-4 text-sm text-destructive" role="alert">
-            {error}
-          </p>
+          <Alert className="mt-4" tone="error">
+            <p role="alert">{error}</p>
+          </Alert>
         ) : null}
-        <Button className="mt-6 w-full" disabled={login.isPending} type="submit">
+        <Button className="mt-6 w-full" disabled={login.isPending} size="lg" type="submit">
+          <LogIn aria-hidden="true" className="size-4" />
           {login.isPending ? 'Đang đăng nhập…' : 'Đăng nhập'}
         </Button>
       </form>

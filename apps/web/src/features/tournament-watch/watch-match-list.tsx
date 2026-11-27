@@ -217,7 +217,7 @@ function WatchMatchItem({
   return (
     <li
       className={cn(
-        'rounded-xl border shadow-md shadow-slate-900/10 transition-shadow duration-200',
+        'flex h-full flex-col rounded-xl border shadow-md shadow-slate-900/10 transition-shadow duration-200',
         itemSurfaceClassName(match, group),
         expandable && 'hover:shadow-lg hover:shadow-slate-900/15',
         expanded && 'ring-2 ring-primary/30',
@@ -227,14 +227,14 @@ function WatchMatchItem({
         <button
           aria-controls={detailsId}
           aria-expanded={expanded}
-          className="w-full cursor-pointer rounded-xl p-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex w-full flex-1 cursor-pointer flex-col justify-between rounded-xl p-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={onToggle}
           type="button"
         >
           {summary}
         </button>
       ) : (
-        <div className="p-4">{summary}</div>
+        <div className="flex flex-1 flex-col justify-between p-4">{summary}</div>
       )}
       {expandable && expanded ? (
         <div className="flex flex-wrap gap-2 border-t border-black/5 px-4 py-3" id={detailsId}>
@@ -407,7 +407,7 @@ export function WatchMatchList({
             {WATCH_MATCH_GROUP_LABEL[group]}
             <span className="rounded-full bg-muted px-2 text-xs tabular-nums">{items.length}</span>
           </h3>
-          <ul className="grid items-start gap-3 md:grid-cols-2">
+          <ul className="grid items-stretch gap-3 md:grid-cols-2">
             {items.map((match) => (
               <WatchMatchItem
                 expanded={expandedId === match.id}

@@ -22,7 +22,7 @@ const decimal = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 });
 const format = (value: number | null) => (value === null ? '—' : decimal.format(value));
 const average = (stats: DashboardScoreStats) => (stats.count ? stats.sum / stats.count : null);
 const panel =
-  'dashboard-panel min-w-0 overflow-hidden rounded-2xl border border-indigo-100/80 bg-white p-5 shadow-sm sm:p-6';
+  'dashboard-panel min-w-0 overflow-hidden rounded-2xl border border-foreground/[0.08] bg-card p-5 shadow-[0_1px_2px_rgba(0,0,0,0.05)] sm:p-6';
 
 function ScoreCell({ stats }: { readonly stats: DashboardScoreStats }) {
   return stats.count ? (

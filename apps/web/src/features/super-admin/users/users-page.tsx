@@ -1,10 +1,17 @@
 /* eslint-disable @typescript-eslint/no-confusing-void-expression, react-hooks/exhaustive-deps */
 import { useQuery } from '@tanstack/react-query';
+import { ChevronRight, Plus } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Pagination } from '@/components/ui/pagination';
-import { formatDate } from '@/features/admin-management/presentation';
+import {
+  formatDate,
+  inputClassName,
+  selectClassName,
+} from '@/features/admin-management/presentation';
 import {
   superAdminApi,
   type ActiveStatus,
@@ -84,15 +91,18 @@ export function SuperAdminUsersPage() {
           <p className="mt-1 text-sm text-muted-foreground">Quản lý thư mục tài khoản hệ thống.</p>
         </div>
         <Button asChild>
-          <Link to="/super-admin/users/new">Thêm người dùng</Link>
+          <Link to="/super-admin/users/new">
+            <Plus aria-hidden="true" className="size-4" />
+            Thêm người dùng
+          </Link>
         </Button>
       </div>
-      <div className="mt-6 grid gap-3 rounded-xl border border-border bg-card p-4 md:grid-cols-2 xl:grid-cols-5">
-        <label className="md:col-span-2 xl:col-span-1">
+      <div className="app-card mt-6 grid gap-3.5 p-4 md:grid-cols-2 xl:grid-cols-5">
+        <label className="form-field md:col-span-2 xl:col-span-1">
           Tìm kiếm
           <input
             aria-label="Tìm kiếm người dùng"
-            className="mt-1 w-full rounded border p-2"
+            className={inputClassName}
             onChange={(e) => setSearchText(e.target.value)}
             placeholder="Tên, email, điện thoại"
             value={searchText}
@@ -122,23 +132,23 @@ export function SuperAdminUsersPage() {
         />
       </div>
       {users.isPending ? (
-        <p aria-live="polite" className="mt-6">
+        <p aria-live="polite" className="mt-6 text-sm text-muted-foreground">
           Đang tải người dùng…
         </p>
       ) : null}
       {users.isError ? (
-        <div className="mt-6 rounded border border-destructive p-4" role="alert">
+        <Alert className="mt-6" role="alert" tone="error">
           Không thể tải người dùng.{' '}
           <Button onClick={() => void users.refetch()} size="sm" type="button" variant="outline">
             Thử lại
           </Button>
-        </div>
+        </Alert>
       ) : null}
       {users.data ? (
         <>
-          <div className="mt-6 overflow-x-auto rounded-xl border border-border">
+          <div className="app-table-wrap mt-6">
             <table className="w-full min-w-[1000px] text-left text-sm">
-              <thead className="bg-muted">
+              <thead className="border-b border-foreground/[0.08] bg-muted/50 text-xs text-muted-foreground">
                 <tr>
                   {[
                     'Họ tên / tên đăng nhập',
@@ -150,46 +160,82 @@ export function SuperAdminUsersPage() {
                     'Ngày tạo',
                     '',
                   ].map((h) => (
-                    <th className="p-3 font-semibold" key={h}>
+                    <th className="px-4 py-3 font-medium" key={h}>
                       {h}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-border/70">
                 {users.data.items.map((user) => (
-                  <tr className="border-t" key={user.id}>
-                    <td className="p-3">
-                      <strong>{user.fullName ?? '—'}</strong>
+                  <tr className="transition-colors hover:bg-sky-50/40" key={user.id}>
+                    <td className="px-4 py-3.5">
+                      <strong className="font-bold text-foreground">{user.fullName ?? '—'}</strong>
                       <br />
-                      <span className="text-muted-foreground">{user.username}</span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {user.username}
+                      </span>
                     </td>
-                    <td className="p-3">
+                    <td className="px-4 py-3.5">
                       {user.email ?? '—'}
                       <br />
-                      <span className="text-muted-foreground">{user.phone ?? '—'}</span>
+                      <span className="text-xs text-muted-foreground">{user.phone ?? '—'}</span>
                     </td>
-                    <td className="p-3">{user.organization ?? '—'}</td>
-                    <td className="p-3">{user.role}</td>
-                    <td className="p-3">{label(user)}</td>
-                    <td className="p-3">
+                    <td className="px-4 py-3.5">{user.organization ?? '—'}</td>
+                    <td className="px-4 py-3.5">
+                      <Badge
+                        tone={
+                          user.role === 'SUPER_ADMIN'
+                            ? 'danger'
+                            : user.role === 'ADMIN'
+                              ? 'primary'
+                              : 'neutral'
+                        }
+                      >
+                        {user.role}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <Badge
+                        dot
+                        tone={user.deletedAt ? 'danger' : user.isActive ? 'success' : 'warning'}
+                      >
+                        {label(user)}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3.5">
                       {user.adminEntitlement ? (
                         <>
-                          {user.adminEntitlement.status}
+                          <Badge
+                            tone={
+                              user.adminEntitlement.status === 'ACTIVE'
+                                ? 'success'
+                                : user.adminEntitlement.status === 'SUSPENDED'
+                                  ? 'warning'
+                                  : 'neutral'
+                            }
+                          >
+                            {user.adminEntitlement.status}
+                          </Badge>
                           <br />
-                          <span className="text-muted-foreground">
+                          <span className="mt-1 inline-block text-xs text-muted-foreground">
                             đến {formatDate(user.adminEntitlement.activeUntil)}
                           </span>
                         </>
                       ) : (
-                        'Không có'
+                        <span className="text-muted-foreground">Không có</span>
                       )}
                     </td>
-                    <td className="p-3">{formatDate(user.createdAt)}</td>
-                    <td className="p-3">
-                      <Link className="text-primary underline" to={`/super-admin/users/${user.id}`}>
-                        Chi tiết
-                      </Link>
+                    <td className="px-4 py-3.5 tabular-nums text-muted-foreground">
+                      {formatDate(user.createdAt)}
+                    </td>
+                    <td className="px-4 py-3.5 text-right">
+                      <Button asChild size="sm" variant="soft">
+                        <Link to={`/super-admin/users/${user.id}`}>
+                          Chi tiết
+                          <ChevronRight aria-hidden="true" className="size-3.5" />
+                        </Link>
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -197,7 +243,10 @@ export function SuperAdminUsersPage() {
             </table>
           </div>
           {users.data.items.length === 0 ? (
-            <p className="mt-6 rounded border p-5" role="status">
+            <p
+              className="app-card mt-6 border-dashed p-8 text-center text-sm text-muted-foreground"
+              role="status"
+            >
               Không có người dùng phù hợp.
             </p>
           ) : null}
@@ -230,10 +279,10 @@ function Filter<T extends string>({
   readonly onChange: (name: string, value: string) => void;
 }) {
   return (
-    <label>
+    <label className="form-field">
       {label}
       <select
-        className="mt-1 w-full rounded border p-2"
+        className={selectClassName}
         name={name}
         onChange={(e) => onChange(name, e.target.value)}
         value={value ?? ''}

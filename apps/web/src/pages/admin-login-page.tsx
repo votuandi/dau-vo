@@ -1,6 +1,8 @@
 import { useState, type SyntheticEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Check, Eye, EyeOff, LogIn, ShieldCheck } from 'lucide-react';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
   authenticatedUserQueryKey,
@@ -58,6 +60,7 @@ export function AdminLoginPage() {
   const sessionQuery = useQuery(authenticatedUserQueryOptions);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [formErrors, setFormErrors] = useState<LoginFormErrors>({});
 
   const loginMutation = useMutation({
@@ -93,50 +96,59 @@ export function AdminLoginPage() {
   return (
     <section className="mx-auto grid w-full max-w-5xl overflow-hidden rounded-[1.75rem] border border-white/50 bg-card/35 shadow-2xl shadow-blue-950/20 backdrop-blur-lg backdrop-saturate-150 md:grid-cols-[1.05fr_0.95fr]">
       <div className="relative hidden overflow-hidden bg-gradient-to-br from-sky-700/60 via-blue-950/60 to-red-800/60 p-10 text-white md:flex md:flex-col md:justify-between">
-        <span
-          aria-hidden="true"
-          className="absolute -right-20 -top-20 size-64 rounded-full bg-white/15 blur-2xl"
-        />
-        <span
-          aria-hidden="true"
-          className="absolute -bottom-28 -left-16 size-72 rounded-full bg-red-300/20 blur-3xl"
-        />
-        <img
-          src={`${import.meta.env.BASE_URL}logo.webp`}
-          alt="Logo Chấm Điểm Võ Thuật"
-          width={64}
-          height={64}
-          className="relative size-16 rounded-2xl bg-white/20 object-contain p-1 shadow-lg ring-1 ring-white/40 backdrop-blur"
-        />
-        <div className="relative">
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/90">
+        <div className="flex items-center gap-3">
+          <img
+            src={`${import.meta.env.BASE_URL}logo.webp`}
+            alt="Logo Chấm Điểm Võ Thuật"
+            width={44}
+            height={44}
+            className="size-11 rounded-xl bg-white/20 object-contain p-1 shadow-sm ring-1 ring-white/40 backdrop-blur"
+          />
+          <div>
+            <p className="text-sm font-semibold text-white">Chấm Điểm Võ Thuật</p>
+            <p className="text-xs text-white/80">Nền tảng điều hành giải đấu</p>
+          </div>
+        </div>
+        <div className="my-8">
+          <p className="inline-flex items-center gap-2 text-xs font-medium text-white/90">
+            <ShieldCheck aria-hidden="true" className="size-4 text-white/85" />
             Khu vực quản trị
           </p>
-          <h1 className="mt-4 text-4xl font-black leading-tight tracking-tight">
-            Điều hành giải đấu an toàn và tập trung.
+          <h1 className="mt-3 text-3xl font-semibold leading-tight tracking-tight text-white">
+            Điều hành giải đấu an toàn và tập trung
           </h1>
-          <p className="mt-4 max-w-md text-sm leading-6 text-white/90">
+          <p className="mt-3 max-w-md text-sm leading-6 text-white/90">
             Đăng nhập bằng tài khoản quản trị được cấp để truy cập bảng điều khiển.
           </p>
+          <ul className="mt-6 space-y-2.5 text-sm text-white/90">
+            {[
+              'Quản lý hạng cân, đơn vị và vận động viên tập trung',
+              'Bốc thăm nhánh đấu tự động và phân công trọng tài',
+              'Theo dõi diễn biến và kết quả theo thời gian thực',
+            ].map((item) => (
+              <li className="flex items-center gap-2.5" key={item}>
+                <Check aria-hidden="true" className="size-4 shrink-0 text-emerald-300" />
+                {item}
+              </li>
+            ))}
+          </ul>
         </div>
+        <p className="text-xs text-white/75">Đồng bộ giám định · giám sát · bảng điểm trực tiếp</p>
       </div>
 
-      <div className="p-7 sm:p-10">
-        <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">
-          Chấm Điểm Võ Thuật
-        </p>
-        <h2 className="mt-3 text-3xl font-black tracking-tight">Đăng nhập quản trị</h2>
+      <div className="bg-white p-7 sm:p-10">
+        <p className="text-xs font-medium text-muted-foreground">Chấm Điểm Võ Thuật</p>
+        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+          Đăng nhập quản trị
+        </h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Nhập thông tin tài khoản để tiếp tục.
         </p>
 
         {sessionQuery.isError ? (
-          <div
-            className="mt-6 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-            role="status"
-          >
+          <Alert className="mt-6" role="status" tone="warning">
             Không thể khôi phục phiên trước đó. Bạn vẫn có thể đăng nhập lại.
-          </div>
+          </Alert>
         ) : null}
 
         <form className="mt-7 space-y-5" noValidate onSubmit={handleSubmit}>
@@ -157,6 +169,7 @@ export function AdminLoginPage() {
               onChange={(event) => {
                 setUsername(event.target.value);
               }}
+              placeholder="Nhập tên đăng nhập"
               spellCheck={false}
               type="text"
               value={username}
@@ -172,21 +185,38 @@ export function AdminLoginPage() {
             <label className="form-label" htmlFor="admin-password">
               Mật khẩu
             </label>
-            <input
-              aria-describedby={formErrors.password ? 'admin-password-error' : undefined}
-              aria-invalid={Boolean(formErrors.password)}
-              autoComplete="current-password"
-              className={inputClassName}
-              disabled={loginMutation.isPending}
-              id="admin-password"
-              maxLength={256}
-              name="password"
-              onChange={(event) => {
-                setPassword(event.target.value);
-              }}
-              type="password"
-              value={password}
-            />
+            <div className="relative">
+              <input
+                aria-describedby={formErrors.password ? 'admin-password-error' : undefined}
+                aria-invalid={Boolean(formErrors.password)}
+                autoComplete="current-password"
+                className={`${inputClassName} pr-11`}
+                disabled={loginMutation.isPending}
+                id="admin-password"
+                maxLength={256}
+                name="password"
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                }}
+                placeholder="Nhập mật khẩu"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+              />
+              <button
+                aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                className="absolute right-2 top-[calc(50%+3px)] grid size-8 -translate-y-1/2 place-items-center rounded-lg text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => {
+                  setShowPassword((prev) => !prev);
+                }}
+                type="button"
+              >
+                {showPassword ? (
+                  <EyeOff aria-hidden="true" className="size-4" />
+                ) : (
+                  <Eye aria-hidden="true" className="size-4" />
+                )}
+              </button>
+            </div>
             {formErrors.password ? (
               <p className="form-error" id="admin-password-error">
                 {formErrors.password}
@@ -195,18 +225,23 @@ export function AdminLoginPage() {
           </div>
 
           {loginMutation.isError ? (
-            <div
-              className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-              role="alert"
-            >
+            <Alert role="alert" tone="error">
               {getLoginErrorMessage(loginMutation.error)}
-            </div>
+            </Alert>
           ) : null}
 
           <Button className="w-full" disabled={loginMutation.isPending} size="lg" type="submit">
+            <LogIn aria-hidden="true" className="size-4" />
             {loginMutation.isPending ? 'Đang đăng nhập…' : 'Đăng nhập'}
           </Button>
         </form>
+
+        <p className="mt-6 border-t border-border/70 pt-5 text-center text-sm text-muted-foreground">
+          Chưa có tài khoản?{' '}
+          <Link className="font-bold text-primary hover:underline" to="/register">
+            Đăng ký ngay
+          </Link>
+        </p>
       </div>
     </section>
   );

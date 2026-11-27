@@ -34,7 +34,7 @@ import {
 
 const number = new Intl.NumberFormat('vi-VN');
 const panelClassName =
-  'dashboard-panel min-w-0 rounded-2xl border border-indigo-100/80 bg-gradient-to-br from-white to-indigo-50/30 p-5 shadow-sm sm:p-6';
+  'dashboard-panel min-w-0 rounded-2xl border border-foreground/[0.08] bg-card p-5 shadow-[0_1px_2px_rgba(0,0,0,0.05)] sm:p-6';
 
 export function DashboardOverview() {
   const [scope, setScope] = useState('all');

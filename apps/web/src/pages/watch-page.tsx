@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { CalendarDays, GitFork, MapPin } from 'lucide-react';
+import { CalendarDays, GitFork, MapPin, Radio, RefreshCw, Search } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { underlineListClassName, underlineTriggerClassName } from '@/components/ui/tab-styles';
 import { inputClassName } from '@/features/admin-management/presentation';
@@ -22,7 +23,6 @@ const TABS: readonly {
   { id: 'matches', label: 'Danh sách trận đấu', icon: CalendarDays },
   { id: 'bracket', label: 'Sơ đồ nhánh đấu', icon: GitFork },
 ];
-const REFRESH_MS = 10_000;
 
 function formatDate(value: string | null): string | null {
   return value ? new Date(value).toLocaleDateString('vi-VN', { timeZone: 'UTC' }) : null;
@@ -33,26 +33,35 @@ function TournamentSummary({ tournament }: { readonly tournament: WatchTournamen
     .filter(Boolean)
     .join(' – ');
   return (
-    <div className="flex items-center gap-4">
+    <div className="app-card flex items-center gap-4 p-5 sm:p-6">
       {tournament.imageUrl ? (
         <img
           alt={`Logo ${tournament.name}`}
-          className="size-16 shrink-0 rounded-xl border border-border bg-white object-contain"
+          className="size-16 shrink-0 rounded-2xl border border-border/80 bg-white object-contain p-1 shadow-sm"
           src={tournament.imageUrl}
         />
       ) : null}
       <div className="min-w-0">
-        <h2 className="text-2xl font-black leading-tight sm:text-3xl">{tournament.name}</h2>
-        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          <span>{tournament.sport.name}</span>
-          {tournament.location ? (
-            <span className="inline-flex items-center gap-1">
-              <MapPin aria-hidden="true" className="size-3.5" />
-              {tournament.location}
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge dot tone="primary">
+            {tournament.sport.name}
+          </Badge>
+          {dates ? (
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground">
+              <CalendarDays aria-hidden="true" className="size-3.5" />
+              {dates}
             </span>
           ) : null}
-          {dates ? <span>{dates}</span> : null}
-        </p>
+        </div>
+        <h2 className="mt-2 text-2xl font-black leading-tight tracking-tight sm:text-3xl">
+          {tournament.name}
+        </h2>
+        {tournament.location ? (
+          <p className="mt-1 inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+            <MapPin aria-hidden="true" className="size-4 text-primary/70" />
+            {tournament.location}
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -108,14 +117,27 @@ function WatchTabs({
 }
 
 function WatchTournament({ code }: { readonly code: string }) {
+  const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
   const tab: WatchTab = params.get('tab') === 'bracket' ? 'bracket' : 'matches';
   const query = useQuery({
     queryKey: watchQueryKeys.overview(code),
     queryFn: () => watchApi.overview(code),
-    refetchInterval: REFRESH_MS,
     retry: retryWatchQuery,
   });
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        query.refetch(),
+        queryClient.invalidateQueries({ queryKey: watchQueryKeys.brackets(code) }),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   if (query.isPending) return <p className="text-muted-foreground">Đang tìm giải đấu…</p>;
   if (query.isError)
@@ -127,9 +149,25 @@ function WatchTournament({ code }: { readonly code: string }) {
       />
     );
 
+  const isUpdating = refreshing || query.isFetching;
+
   return (
     <div className="space-y-6">
-      <TournamentSummary tournament={query.data.tournament} />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <TournamentSummary tournament={query.data.tournament} />
+        </div>
+        <Button
+          className="shrink-0 self-start sm:self-center"
+          disabled={isUpdating}
+          onClick={() => void handleRefresh()}
+          type="button"
+          variant="outline"
+        >
+          <RefreshCw aria-hidden="true" className={isUpdating ? 'size-4 animate-spin' : 'size-4'} />
+          {isUpdating ? 'Đang cập nhật…' : 'Cập nhật kết quả'}
+        </Button>
+      </div>
       <WatchTabs
         onSelect={(next) => {
           setParams(next === 'bracket' ? { tab: 'bracket' } : {}, { replace: true });
@@ -165,35 +203,53 @@ export function WatchPage() {
 
   return (
     <section className="mx-auto w-full max-w-5xl space-y-8">
-      <div className="space-y-4">
-        <div>
-          <h1 className="text-3xl font-black">Theo dõi giải đấu</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Nhập mã giải đấu do ban tổ chức cung cấp để xem lịch thi đấu, kết quả và sơ đồ nhánh
-            đấu.
-          </p>
+      <div className="app-card p-6 sm:p-8">
+        <div className="space-y-4">
+          <div>
+            <p className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <Radio aria-hidden="true" className="size-4 text-emerald-600" />
+              Khán đài trực tuyến
+            </p>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
+              Theo dõi giải đấu
+            </h1>
+            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Nhập mã giải đấu do ban tổ chức cung cấp để xem lịch thi đấu, kết quả và sơ đồ nhánh
+              đấu.
+            </p>
+          </div>
+          <form className="flex max-w-xl gap-2" onSubmit={submit}>
+            <label className="sr-only" htmlFor="watch-tournament-code">
+              Mã giải đấu
+            </label>
+            <div className="relative flex-1">
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              />
+              <input
+                autoCapitalize="characters"
+                autoComplete="off"
+                className={`${inputClassName} mt-0 pl-9 font-mono uppercase tracking-widest`}
+                id="watch-tournament-code"
+                maxLength={32}
+                onChange={(event) => {
+                  setDraft(event.target.value);
+                }}
+                placeholder="Mã giải đấu"
+                spellCheck={false}
+                value={draft}
+              />
+            </div>
+            <Button
+              className="h-11 min-w-20 shrink-0"
+              disabled={!normalizeWatchCode(draft)}
+              type="submit"
+            >
+              OK
+            </Button>
+          </form>
         </div>
-        <form className="flex max-w-xl gap-2" onSubmit={submit}>
-          <label className="sr-only" htmlFor="watch-tournament-code">
-            Mã giải đấu
-          </label>
-          <input
-            autoCapitalize="characters"
-            autoComplete="off"
-            className={`${inputClassName} mt-0 font-mono uppercase tracking-widest`}
-            id="watch-tournament-code"
-            maxLength={32}
-            onChange={(event) => {
-              setDraft(event.target.value);
-            }}
-            placeholder="Mã giải đấu"
-            spellCheck={false}
-            value={draft}
-          />
-          <Button className="h-11 min-w-20" disabled={!normalizeWatchCode(draft)} type="submit">
-            OK
-          </Button>
-        </form>
       </div>
       {code ? <WatchTournament code={code} key={code} /> : null}
     </section>

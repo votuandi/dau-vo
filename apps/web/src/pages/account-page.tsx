@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode, type SyntheticEvent } from 'react';
+import { CalendarDays, KeyRound, Save, ShieldCheck, UserRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/toast';
 import { effectiveAdminAccessState, entitlementQueryOptions } from '@/features/auth/admin-access';
@@ -48,11 +50,7 @@ function value(data: FormData, key: string): string {
 }
 
 function Card({ children }: { readonly children: ReactNode }) {
-  return (
-    <section className="rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
-      {children}
-    </section>
-  );
+  return <section className="app-card p-6 sm:p-8">{children}</section>;
 }
 
 function FieldError({
@@ -145,10 +143,15 @@ function ProfileForm({ profile }: { readonly profile: AccountProfile }) {
 
   return (
     <Card>
-      <h2 className="text-xl font-bold">Thông tin cá nhân</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Email và số điện thoại phải chưa được tài khoản khác sử dụng.
-      </p>
+      <div className="flex items-center gap-3">
+        <UserRound aria-hidden="true" className="size-5 shrink-0 text-muted-foreground" />
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Thông tin cá nhân</h2>
+          <p className="text-sm text-muted-foreground">
+            Email và số điện thoại phải chưa được tài khoản khác sử dụng.
+          </p>
+        </div>
+      </div>
       <form className="mt-6 grid gap-5 sm:grid-cols-2" onSubmit={submit}>
         {fields.map(([name, label, type, required]) => (
           <label className="form-field" key={name}>
@@ -167,8 +170,9 @@ function ProfileForm({ profile }: { readonly profile: AccountProfile }) {
             <FieldError id={`${name}-error`} message={errors[name]} />
           </label>
         ))}
-        <div className="sm:col-span-2">
+        <div className="flex justify-end border-t border-border/70 pt-4 sm:col-span-2">
           <Button disabled={update.isPending} type="submit">
+            <Save aria-hidden="true" className="size-4" />
             {update.isPending ? 'Đang lưu…' : 'Lưu thay đổi'}
           </Button>
         </div>
@@ -231,7 +235,15 @@ function PasswordForm() {
 
   return (
     <Card>
-      <h2 className="text-xl font-bold">Đổi mật khẩu</h2>
+      <div className="flex items-center gap-3">
+        <KeyRound aria-hidden="true" className="size-5 shrink-0 text-muted-foreground" />
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Đổi mật khẩu</h2>
+          <p className="text-sm text-muted-foreground">
+            Sử dụng mật khẩu từ 8 ký tự trở lên để bảo vệ tài khoản.
+          </p>
+        </div>
+      </div>
       <form className="mt-6 grid gap-5" onSubmit={submit}>
         {fields.map(([name, label, autoComplete]) => (
           <label className="form-field" key={name}>
@@ -250,8 +262,9 @@ function PasswordForm() {
             <FieldError id={`${name}-error`} message={errors[name]} />
           </label>
         ))}
-        <div>
+        <div className="flex justify-end border-t border-border/70 pt-4">
           <Button disabled={change.isPending} type="submit">
+            <KeyRound aria-hidden="true" className="size-4" />
             {change.isPending ? 'Đang đổi…' : 'Đổi mật khẩu'}
           </Button>
         </div>
@@ -289,28 +302,54 @@ export function AccountPage() {
     );
 
   const profile = profileQuery.data;
+  const displayName = profile.fullName?.trim() ? profile.fullName : profile.username;
+  const initials = displayName.trim().charAt(0).toUpperCase();
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <header>
-        <h1 className="text-3xl font-black tracking-tight">Tài khoản</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Tài khoản</h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">
           Quản lý thông tin cá nhân và bảo mật tài khoản của bạn.
         </p>
       </header>
       {hasNoMembership ? <MembershipNotice /> : null}
       <Card>
-        <dl className="grid gap-4 text-sm sm:grid-cols-3">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          <span
+            aria-hidden="true"
+            className="grid size-12 shrink-0 place-items-center rounded-xl bg-muted text-lg font-semibold text-foreground ring-1 ring-foreground/[0.08]"
+          >
+            {initials}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="truncate text-lg font-semibold">{displayName}</h2>
+              <Badge tone="neutral">{roleLabels[profile.role]}</Badge>
+            </div>
+            <p className="mt-0.5 text-sm text-muted-foreground">{profile.email}</p>
+          </div>
+        </div>
+        <dl className="mt-6 grid gap-4 border-t border-border/70 pt-5 text-sm sm:grid-cols-3">
           <div>
-            <dt className="text-muted-foreground">Tên đăng nhập</dt>
-            <dd className="mt-1 font-semibold">{profile.username}</dd>
+            <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <UserRound aria-hidden="true" className="size-3.5" />
+              Tên đăng nhập
+            </dt>
+            <dd className="mt-1 font-mono font-medium text-foreground">{profile.username}</dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">Vai trò</dt>
-            <dd className="mt-1 font-semibold">{roleLabels[profile.role]}</dd>
+            <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <ShieldCheck aria-hidden="true" className="size-3.5" />
+              Vai trò
+            </dt>
+            <dd className="mt-1 font-medium text-foreground">{roleLabels[profile.role]}</dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">Ngày tạo</dt>
-            <dd className="mt-1 font-semibold">
+            <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <CalendarDays aria-hidden="true" className="size-3.5" />
+              Ngày tạo
+            </dt>
+            <dd className="mt-1 font-medium tabular-nums text-foreground">
               {new Date(profile.createdAt).toLocaleDateString('vi-VN')}
             </dd>
           </div>

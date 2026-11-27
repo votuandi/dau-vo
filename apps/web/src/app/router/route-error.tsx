@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { RefreshCw, TriangleAlert } from 'lucide-react';
 import { isRouteErrorResponse, useRouteError } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 
@@ -45,22 +46,26 @@ export function RouteError() {
 
   return (
     <div className="grid min-h-dvh place-items-center p-6 text-center" role="alert">
-      <div className="max-w-md">
-        <h1 className="text-xl font-bold">
+      <div className="app-card w-full max-w-md p-8">
+        <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-amber-50 text-amber-600 ring-1 ring-amber-200/80">
+          <TriangleAlert aria-hidden="true" className="size-7" />
+        </span>
+        <h1 className="mt-5 text-2xl font-black tracking-tight">
           {chunkError ? 'Đã có phiên bản mới' : notFound ? 'Không tìm thấy trang' : 'Đã xảy ra lỗi'}
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
           {chunkError
             ? 'Ứng dụng vừa được cập nhật. Vui lòng tải lại trang để tiếp tục.'
             : 'Không thể hiển thị trang này. Vui lòng tải lại trang hoặc thử lại sau.'}
         </p>
         <Button
-          className="mt-4"
+          className="mt-6"
           onClick={() => {
             window.location.reload();
           }}
           type="button"
         >
+          <RefreshCw aria-hidden="true" className="size-4" />
           Tải lại trang
         </Button>
       </div>

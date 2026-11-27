@@ -1,4 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  CreditCard,
+  LayoutDashboard,
+  LogIn,
+  LogOut,
+  Radio,
+  Shield,
+  Trophy,
+  UserPlus,
+  UserRound,
+  type LucideIcon,
+} from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Suspense, useEffect } from 'react';
 import { RouteFallback } from '@/components/route-fallback';
@@ -12,6 +24,12 @@ import {
 import { effectiveAdminAccessState, entitlementQueryOptions } from '@/features/auth/admin-access';
 import { cn } from '@/lib/utils';
 import { authApi } from '@/services/api/auth';
+
+interface NavItem {
+  readonly to: string;
+  readonly label: string;
+  readonly icon: LucideIcon;
+}
 
 export function AppLayout() {
   const location = useLocation();
@@ -62,24 +80,29 @@ function StandardAppLayout() {
       void navigate('/login', { replace: true });
     },
   });
-  const navigationItems = user
+  const navigationItems: NavItem[] = user
     ? [
-        ...(user.role === 'SUPER_ADMIN' ? [{ to: '/tournaments', label: 'Giải đấu' }] : []),
-        { to: '/account', label: 'Tài khoản' },
-        ...(user.role === 'SUPER_ADMIN' ? [] : [{ to: '/subscription', label: 'Gói đăng ký' }]),
+        ...(user.role === 'SUPER_ADMIN'
+          ? [{ to: '/tournaments', label: 'Giải đấu', icon: Trophy }]
+          : []),
+        { to: '/account', label: 'Tài khoản', icon: UserRound },
+        ...(user.role === 'SUPER_ADMIN'
+          ? []
+          : [{ to: '/subscription', label: 'Gói đăng ký', icon: CreditCard }]),
         ...(accessState === 'ACTIVE_ADMIN' || accessState === 'EXPIRED_READ_ONLY'
           ? [
-              { to: '/admin', label: 'Bảng điều khiển' },
-              { to: '/admin/tournaments', label: 'Giải đấu quản lý' },
+              { to: '/admin', label: 'Bảng điều khiển', icon: LayoutDashboard },
+              { to: '/admin/tournaments', label: 'Giải đấu quản lý', icon: Trophy },
             ]
           : []),
         ...(user.role === 'SUPER_ADMIN'
-          ? [{ to: '/super-admin', label: 'Quản trị hệ thống' }]
+          ? [{ to: '/super-admin', label: 'Quản trị hệ thống', icon: Shield }]
           : []),
       ]
     : [
-        { to: '/login', label: 'Đăng nhập' },
-        { to: '/register', label: 'Đăng ký' },
+        { to: '/watch', label: 'Theo dõi giải', icon: Radio },
+        { to: '/login', label: 'Đăng nhập', icon: LogIn },
+        { to: '/register', label: 'Đăng ký', icon: UserPlus },
       ];
 
   return (
@@ -95,50 +118,57 @@ function StandardAppLayout() {
         </div>
       ) : null}
       <header className="sticky top-0 z-20 border-b border-white/70 bg-white/75 shadow-sm shadow-blue-950/5 backdrop-blur-xl">
-        <div className="container flex min-h-16 flex-col justify-center gap-3 py-3 md:flex-row md:items-center md:justify-between">
-          <NavLink className="flex items-center gap-3" to="/">
+        <div className="container flex min-h-16 flex-col justify-center gap-3 py-2.5 md:flex-row md:items-center md:justify-between">
+          <NavLink
+            className="flex items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            to="/"
+          >
             <img
               src={`${import.meta.env.BASE_URL}logo.webp`}
               alt="Logo Chấm Điểm Võ Thuật"
-              width={48}
-              height={48}
-              className="size-12 shrink-0 object-contain"
+              width={40}
+              height={40}
+              className="size-10 shrink-0 rounded-lg object-contain"
             />
             <span>
-              <span className="block text-sm font-extrabold uppercase tracking-[0.18em] text-primary">
+              <span className="block text-sm font-semibold text-foreground">
                 Chấm Điểm Võ Thuật
               </span>
-              <span className="block text-xs text-muted-foreground">Chấm điểm võ thuật</span>
+              <span className="block text-xs text-muted-foreground">
+                Chấm điểm võ thuật thời gian thực
+              </span>
             </span>
           </NavLink>
 
-          <nav aria-label="Điều hướng chính" className="flex flex-wrap gap-1">
-            {navigationItems.map((item) => (
+          <nav aria-label="Điều hướng chính" className="flex flex-wrap items-center gap-1">
+            {navigationItems.map(({ to, label, icon: Icon }) => (
               <NavLink
                 className={({ isActive }) =>
                   cn(
-                    'rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground transition-all hover:bg-white/80 hover:text-primary',
-                    isActive &&
-                      'bg-gradient-to-r from-sky-700 to-blue-800 text-white shadow-md shadow-sky-700/20 ring-1 ring-red-500/20 hover:text-white',
+                    'inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-[color,background-color] duration-150 hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    isActive && 'bg-muted text-foreground ring-1 ring-inset ring-foreground/[0.08]',
                   )
                 }
-                end={item.to === '/admin' || item.to === '/login'}
-                key={item.to}
-                to={item.to}
+                end={to === '/admin' || to === '/login'}
+                key={to}
+                to={to}
               >
-                {item.label}
+                <Icon aria-hidden="true" className="size-4 shrink-0 text-current opacity-75" />
+                {label}
               </NavLink>
             ))}
             {user ? (
               <Button
+                className="ml-1"
                 disabled={logoutMutation.isPending}
                 onClick={() => {
                   logoutMutation.mutate();
                 }}
                 size="sm"
                 type="button"
-                variant="destructive-gradient"
+                variant="outline"
               >
+                <LogOut aria-hidden="true" className="size-4 text-muted-foreground" />
                 {logoutMutation.isPending ? 'Đang đăng xuất…' : 'Đăng xuất'}
               </Button>
             ) : null}
@@ -146,7 +176,7 @@ function StandardAppLayout() {
         </div>
       </header>
 
-      <main className="container flex flex-1 items-center py-10 md:py-16 [&>*]:min-w-0">
+      <main className="container flex flex-1 items-center py-8 md:py-12 [&>*]:min-w-0">
         <Suspense fallback={<RouteFallback />}>
           <Outlet />
         </Suspense>

@@ -132,22 +132,21 @@ export function AdminDashboardPage() {
           <li key={to}>
             <Link
               className={cn(
-                'group flex h-full flex-col rounded-2xl border p-5 shadow-sm transition-[box-shadow,border-color,transform] duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none motion-reduce:hover:translate-y-0',
+                'group flex h-full flex-col rounded-2xl border p-6 shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition-[border-color,background-color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                 featured
-                  ? 'border-primary/20 bg-gradient-to-br from-primary to-blue-900 text-primary-foreground shadow-primary/20'
-                  : 'border-border bg-card hover:border-primary/30',
+                  ? 'border-primary/20 bg-primary text-primary-foreground hover:bg-primary/95'
+                  : 'border-foreground/[0.08] bg-white/85 backdrop-blur-md hover:border-foreground/[0.16] hover:bg-white',
               )}
               to={to}
             >
-              <span
+              <Icon
+                aria-hidden="true"
                 className={cn(
-                  'grid size-12 place-items-center rounded-xl',
-                  featured ? 'bg-white/15' : 'bg-primary/10 text-primary',
+                  'size-5',
+                  featured ? 'text-primary-foreground/90' : 'text-muted-foreground',
                 )}
-              >
-                <Icon aria-hidden="true" className="size-6" />
-              </span>
-              <span className="mt-5 text-lg font-black tracking-tight">{title}</span>
+              />
+              <span className="mt-4 text-base font-semibold tracking-tight">{title}</span>
               <span
                 className={cn(
                   'mt-1.5 flex-1 text-sm leading-6',
@@ -158,14 +157,14 @@ export function AdminDashboardPage() {
               </span>
               <span
                 className={cn(
-                  'mt-5 inline-flex items-center gap-1.5 text-sm font-bold',
+                  'mt-5 inline-flex items-center gap-1.5 text-sm font-medium',
                   featured ? 'text-primary-foreground' : 'text-primary',
                 )}
               >
                 Mở
                 <ArrowRight
                   aria-hidden="true"
-                  className="size-4 transition-transform group-hover:translate-x-0.5"
+                  className="size-4 transition-transform duration-150 group-hover:translate-x-0.5"
                 />
               </span>
             </Link>

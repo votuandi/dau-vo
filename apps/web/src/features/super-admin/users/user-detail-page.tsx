@@ -1,12 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { useState, type SyntheticEvent } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DateTimeInput } from '@/components/ui/date-input';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { toast } from '@/components/ui/toast';
 import { authenticatedUserQueryKey } from '@/features/auth/authenticated-user-session';
-import { formatDate, formatDateTime } from '@/features/admin-management/presentation';
+import {
+  formatDate,
+  formatDateTime,
+  inputClassName,
+} from '@/features/admin-management/presentation';
 import { ApiClientError } from '@/services/api/client';
 import { superAdminApi, type AdminAccessInput, type ManagedUser } from '@/services/api/super-admin';
 import { superAdminUserKeys } from './query-keys';
@@ -228,11 +234,20 @@ export function SuperAdminUserDetailPage() {
   };
   return (
     <section className="mx-auto w-full max-w-5xl" aria-busy={busy}>
-      <Link className="text-primary underline" to="/super-admin/users">
-        ← Danh sách người dùng
+      <Link
+        className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-primary"
+        to="/super-admin/users"
+      >
+        <ArrowLeft aria-hidden="true" className="size-4" />
+        Danh sách người dùng
       </Link>
-      <h1 className="mt-4 text-3xl font-black">{user.username}</h1>
-      <p className="mt-1 text-muted-foreground">
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <h1 className="text-3xl font-black tracking-tight">{user.username}</h1>
+        <Badge dot tone={user.deletedAt ? 'danger' : user.isActive ? 'success' : 'warning'}>
+          {user.deletedAt ? 'Đã xóa mềm' : user.isActive ? 'Đang hoạt động' : 'Tạm khóa'}
+        </Badge>
+      </div>
+      <p className="mt-1.5 text-sm text-muted-foreground">
         Tạo lúc {formatDateTime(user.createdAt)} ·{' '}
         {user.deletedAt ? 'Đã xóa mềm' : user.isActive ? 'Đang hoạt động' : 'Tạm khóa'}
       </p>
@@ -240,10 +255,10 @@ export function SuperAdminUserDetailPage() {
         <form onSubmit={saveProfile} noValidate>
           <div className="grid gap-4 md:grid-cols-2">
             {fields.map((field) => (
-              <label key={field}>
+              <label className="form-field" key={field}>
                 {labels[field]}
                 <input
-                  className="mt-1 w-full rounded border p-2"
+                  className={inputClassName}
                   disabled={!editing || busy}
                   value={draft[field]}
                   type={field === 'email' ? 'email' : 'text'}
@@ -318,20 +333,20 @@ export function SuperAdminUserDetailPage() {
         ) : (
           <>
             <form className="mt-4 grid gap-4 md:grid-cols-3" onSubmit={submitAccess}>
-              <label>
+              <label className="form-field">
                 Bắt đầu
                 <DateTimeInput
-                  className="mt-1 w-full rounded border p-2"
+                  className={inputClassName}
                   onChange={setActiveFrom}
                   name="activeFrom"
                   required
                   value={activeFrom ?? toLocalDateTimeInput(entitlement?.activeFrom)}
                 />
               </label>
-              <label>
+              <label className="form-field">
                 Hết hạn
                 <DateTimeInput
-                  className="mt-1 w-full rounded border p-2"
+                  className={inputClassName}
                   disabled={busy || Boolean(user.deletedAt)}
                   name="activeUntil"
                   onChange={setActiveUntil}
@@ -339,10 +354,10 @@ export function SuperAdminUserDetailPage() {
                   value={activeUntil ?? toLocalDateTimeInput(entitlement?.activeUntil)}
                 />
               </label>
-              <label>
+              <label className="form-field">
                 Giới hạn giải đấu
                 <input
-                  className="mt-1 w-full rounded border p-2"
+                  className={inputClassName}
                   defaultValue={entitlement?.tournamentLimit ?? ''}
                   min="0"
                   name="tournamentLimit"
@@ -517,9 +532,9 @@ export function SuperAdminUserDetailPage() {
 }
 function Card({ title, children }: { readonly title: string; readonly children: React.ReactNode }) {
   return (
-    <section className="mt-6 rounded-xl border border-border bg-card p-5">
-      <h2 className="text-xl font-bold">{title}</h2>
-      <div className="mt-3">{children}</div>
+    <section className="app-card mt-6 p-6">
+      <h2 className="text-xl font-black tracking-tight">{title}</h2>
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
